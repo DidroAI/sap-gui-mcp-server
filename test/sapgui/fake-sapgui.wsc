@@ -1,0 +1,176 @@
+<?xml version="1.0"?>
+<!--
+  A stand-in for SAP GUI's scripting object, for tests on Windows without SAP GUI.
+
+  It serves test/sapgui/fixtures/world.json (a made-up SAP GUI) as COM objects
+  with the members of SAP GUI scripting that the server uses. The PowerShell
+  host binds it instead of the running SAP GUI when these are set:
+
+    SAPGUI_MCP_FAKE=script:C:\path\to\fake-sapgui.wsc
+    SAPGUI_MCP_FAKE_WORLD=C:\path\to\world.json
+
+  Actions change the fake screen a little, so a test can see them: a set
+  changes the field, and every other action is written to the status bar.
+-->
+<component>
+<public>
+  <property name="GetScriptingEngine"><get/></property>
+</public>
+<script language="JScript">
+<![CDATA[
+var engine = null;
+
+function coll(arr) {
+  return { Count: arr.length, ElementAt: function (i) { return arr[i]; }, Item: function (i) { return arr[i]; } };
+}
+
+var LEAF = { GuiTextField: 1, GuiCTextField: 1, GuiPasswordField: 1, GuiLabel: 1, GuiCheckBox: 1, GuiRadioButton: 1,
+  GuiComboBox: 1, GuiButton: 1, GuiOkCodeField: 1, GuiStatusPane: 1 };
+
+function control(node, ses, index) {
+  var o = {}, k;
+  for (k in node) if (k != "kids" && k != "label" && k != "Entries" && k != "Columns" && k != "grid" && k != "tree" && k != "toolbar") o[k] = node[k];
+  index[o.Id] = o;
+  if (node.label !== undefined) o.LeftLabel = { Text: node.label };
+  if (node.Entries) {
+    var es = [];
+    for (k = 0; k < node.Entries.length; k++) es.push({ Key: node.Entries[k][0], Value: node.Entries[k][1] });
+    o.Entries = coll(es);
+  }
+  if (node.Columns) {
+    var cs = [];
+    for (k = 0; k < node.Columns.length; k++) cs.push({ Title: node.Columns[k] });
+    o.Columns = coll(cs);
+  }
+  if (!LEAF[o.Type]) {
+    var kids = [];
+    for (k = 0; k < node.kids.length; k++) kids.push(control(node.kids[k], ses, index));
+    o.Children = coll(kids);
+  }
+  var say = function (what) { ses.say(what + " " + o.Id.substr(ses.Id.length + 1)); };
+  o.Press = function () { say("Press"); };
+  o.Select = function () { say("Select"); };
+  o.SetFocus = function () { ses.focus = o.Id.substr(ses.Id.length + 1); };
+  if (o.Type == "GuiMainWindow" || o.Type == "GuiModalWindow") {
+    o.SendVKey = function (n) {
+      var ok = ses.find("wnd[0]/tbar[0]/okcd"), code = ok ? ok.Text : "";
+      if (ok) ok.Text = "";
+      ses.say("SendVKey " + n + " on " + o.Name + (code ? " okcode " + code : "") + (ses.focus ? " focus " + ses.focus : ""));
+    };
+    o.HardCopy = function (file, format) {
+      // A 1x1 bitmap: the host has to convert it to PNG.
+      var bytes = [66, 77, 58, 0, 0, 0, 0, 0, 0, 0, 54, 0, 0, 0, 40, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 24, 0, 0, 0, 0, 0, 4, 0, 0, 0,
+        19, 11, 0, 0, 19, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 32, 48, 0];
+      var f = new ActiveXObject("Scripting.FileSystemObject").CreateTextFile(file, true, false), s = "";
+      for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+      f.Write(s);
+      f.Close();
+      return file;
+    };
+  }
+  var g = node.grid, t = node.tree, tb = node.toolbar;
+  if (g) {
+    var ids = [], titles = {}, pos = {};
+    for (k = 0; k < g.cols.length; k++) { ids.push(g.cols[k][0]); titles[g.cols[k][0]] = g.cols[k][1]; pos[g.cols[k][0]] = k; }
+    o.ColumnOrder = coll(ids);
+    o.RowCount = g.rows.length;
+    o.SelectedRows = "";
+    o.GetDisplayedColumnTitle = function (c) { return titles[c]; };
+    o.GetCellValue = function (r, c) { return g.rows[r][pos[c]]; };
+    o.SetCurrentCell = function (r, c) { o.cell = r + "," + c; };
+    o.DoubleClickCurrentCell = function () { say("DoubleClickCurrentCell " + o.cell + " in"); };
+  }
+  if (t) {
+    var by = {}, keys = [];
+    for (k = 0; k < t.nodes.length; k++) { by[t.nodes[k].key] = t.nodes[k]; keys.push(t.nodes[k].key); }
+    var level = function (key) { return by[key].parent ? 1 + level(by[key].parent) : 0; };
+    // Read as a value with no argument, JScript hands out the function itself
+    // instead of calling it: the function then has to be the collection.
+    o.GetAllNodeKeys = function () { return coll(keys); };
+    o.GetAllNodeKeys.Count = keys.length;
+    o.GetAllNodeKeys.ElementAt = function (i) { return keys[i]; };
+    o.GetParent = function (key) { return by[key].parent; };
+    o.IsFolder = function (key) { return !!by[key].folder; };
+    o.IsFolderExpanded = function (key) { return !!by[key].expanded; };
+    o.GetHierarchyLevel = function (key) { return level(key); };
+    o.GetNodeTextByKey = function (key) { return by[key].text; };
+    o.GetColumnNames = null;
+    if (t.columns) {
+      var names = [];
+      for (k = 0; k < t.columns.length; k++) names.push(t.columns[k][0]);
+      o.GetColumnNames = function () { return coll(names); };
+      o.GetColumnNames.Count = names.length;
+      o.GetColumnNames.ElementAt = function (i) { return names[i]; };
+    }
+    o.GetColumnTitleFromName = function (c) {
+      for (var i = 0; i < t.columns.length; i++) if (t.columns[i][0] == c) return t.columns[i][1];
+      return "";
+    };
+    o.GetItemText = function (key, c) { return (by[key].items && by[key].items[c]) || ""; };
+    o.ExpandNode = function (key) { by[key].expanded = true; };
+    o.CollapseNode = function (key) { by[key].expanded = false; };
+    o.SelectNode = function (key) { say("SelectNode [" + key + "] in"); };
+    o.DoubleClickNode = function (key) { say("DoubleClickNode [" + key + "] in"); };
+    o.DoubleClickItem = function (key, c) { say("DoubleClickItem [" + key + "] " + c + " in"); };
+  }
+  if (tb) {
+    o.ButtonCount = tb.length;
+    o.GetButtonId = function (i) { return tb[i][0]; };
+    o.GetButtonText = function (i) { return tb[i][1]; };
+    o.GetButtonTooltip = function (i) { return tb[i][2]; };
+    o.PressToolbarButton = function (id) { say("PressToolbarButton " + id + " in"); };
+  }
+  return o;
+}
+
+function session(spec) {
+  var index = {}, wins = [], i;
+  var ses = { Id: spec.Id, Type: "GuiSession", Name: "ses", Busy: false, Info: spec.Info, focus: "" };
+  ses.find = function (id) { return index[id.charAt(0) == "/" ? id : spec.Id + "/" + id] || null; };
+  ses.say = function (text) {
+    var bar = ses.find("wnd[0]/sbar");
+    if (bar) { bar.Text = "fake: " + text; bar.MessageType = "S"; }
+  };
+  for (i = 0; i < spec.windows.length; i++) wins.push(control(spec.windows[i], ses, index));
+  ses.Children = coll(wins);
+  ses.ActiveWindow = ses.find(spec.active);
+  ses.FindById = function (id, raise) {
+    var o = ses.find(id);
+    if (!o && raise !== false) throw new Error("The control could not be found by id.");
+    return o;
+  };
+  return ses;
+}
+
+function build() {
+  var shell = new ActiveXObject("WScript.Shell");
+  var path = shell.ExpandEnvironmentStrings("%SAPGUI_MCP_FAKE_WORLD%");
+  var file = new ActiveXObject("Scripting.FileSystemObject").OpenTextFile(path, 1, false, 0);
+  var world = eval("(" + file.ReadAll() + ")");
+  file.Close();
+  var cons = [], all = {}, c, s;
+  for (c = 0; c < world.connections.length; c++) {
+    var spec = world.connections[c], sessions = [];
+    for (s = 0; s < spec.sessions.length; s++) {
+      var one = session(spec.sessions[s]);
+      sessions.push(one);
+      all[one.Id] = one;
+    }
+    cons.push({ Id: spec.Id, Type: "GuiConnection", Description: spec.Description, DisabledByServer: spec.DisabledByServer, Children: coll(sessions) });
+  }
+  return {
+    Type: "GuiApplication", Children: coll(cons), ActiveSession: all[world.active] || null,
+    FindById: function (id, raise) {
+      if (!all[id] && raise !== false) throw new Error("The control could not be found by id.");
+      return all[id] || null;
+    }
+  };
+}
+
+function get_GetScriptingEngine() {
+  if (!engine) engine = build();
+  return engine;
+}
+]]>
+</script>
+</component>

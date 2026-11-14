@@ -1,0 +1,2561 @@
+{
+ "active": "/app/con[0]/ses[1]",
+ "connections": [
+  {
+   "Description": "DEM demo system",
+   "DisabledByServer": false,
+   "sessions": [
+    {
+     "name": "va01",
+     "Info": {
+      "SystemName": "DEM",
+      "Client": "100",
+      "User": "TESTER",
+      "Transaction": "VA01",
+      "Program": "SAPMV45A",
+      "ScreenNumber": 101,
+      "SessionNumber": 1,
+      "Language": "EN"
+     },
+     "active": "wnd[0]",
+     "windows": [
+      {
+       "Type": "GuiMainWindow",
+       "Text": "Create Sales Order: Initial Screen",
+       "kids": [
+        {
+         "Type": "GuiMenubar",
+         "kids": [
+          {
+           "Type": "GuiMenu",
+           "Text": "Menu",
+           "kids": [
+            {
+             "Type": "GuiMenu",
+             "Text": "Create",
+             "kids": [],
+             "Id": "/app/con[0]/ses[0]/wnd[0]/mbar/menu[0]/menu[0]",
+             "Name": "menu[0]"
+            },
+            {
+             "Type": "GuiMenu",
+             "Text": "Save",
+             "kids": [],
+             "Id": "/app/con[0]/ses[0]/wnd[0]/mbar/menu[0]/menu[1]",
+             "Name": "menu[1]"
+            },
+            {
+             "Type": "GuiMenu",
+             "Text": "Exit",
+             "kids": [],
+             "Id": "/app/con[0]/ses[0]/wnd[0]/mbar/menu[0]/menu[2]",
+             "Name": "menu[2]"
+            }
+           ],
+           "Id": "/app/con[0]/ses[0]/wnd[0]/mbar/menu[0]",
+           "Name": "menu[0]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Edit",
+           "kids": [],
+           "Id": "/app/con[0]/ses[0]/wnd[0]/mbar/menu[1]",
+           "Name": "menu[1]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Goto",
+           "kids": [],
+           "Id": "/app/con[0]/ses[0]/wnd[0]/mbar/menu[2]",
+           "Name": "menu[2]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "System",
+           "kids": [],
+           "Id": "/app/con[0]/ses[0]/wnd[0]/mbar/menu[3]",
+           "Name": "menu[3]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Help",
+           "kids": [],
+           "Id": "/app/con[0]/ses[0]/wnd[0]/mbar/menu[4]",
+           "Name": "menu[4]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[0]/wnd[0]/mbar",
+         "Name": "mbar"
+        },
+        {
+         "Type": "GuiToolbar",
+         "kids": [
+          {
+           "Type": "GuiOkCodeField",
+           "Text": "",
+           "kids": [],
+           "Id": "/app/con[0]/ses[0]/wnd[0]/tbar[0]/okcd",
+           "Name": "okcd"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Enter   (Enter)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[0]/wnd[0]/tbar[0]/btn[0]",
+           "Name": "btn[0]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Save   (Ctrl+S)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[0]/wnd[0]/tbar[0]/btn[11]",
+           "Name": "btn[11]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Back   (F3)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[0]/wnd[0]/tbar[0]/btn[3]",
+           "Name": "btn[3]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Exit   (Shift+F3)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[0]/wnd[0]/tbar[0]/btn[15]",
+           "Name": "btn[15]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Cancel   (F12)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[0]/wnd[0]/tbar[0]/btn[12]",
+           "Name": "btn[12]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[0]/wnd[0]/tbar[0]",
+         "Name": "tbar[0]"
+        },
+        {
+         "Type": "GuiTitlebar",
+         "Text": "Create Sales Order: Initial Screen",
+         "kids": [],
+         "Id": "/app/con[0]/ses[0]/wnd[0]/titl",
+         "Name": "titl"
+        },
+        {
+         "Type": "GuiToolbar",
+         "kids": [
+          {
+           "Type": "GuiButton",
+           "Text": "Create with Reference",
+           "Tooltip": "Create with Reference   (F8)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[0]/wnd[0]/tbar[1]/btn[8]",
+           "Name": "btn[8]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "Sales",
+           "Tooltip": "Sales",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[0]/wnd[0]/tbar[1]/btn[5]",
+           "Name": "btn[5]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[0]/wnd[0]/tbar[1]",
+         "Name": "tbar[1]"
+        },
+        {
+         "Type": "GuiUserArea",
+         "kids": [
+          {
+           "Type": "GuiLabel",
+           "Text": "Order Type",
+           "kids": [],
+           "Id": "/app/con[0]/ses[0]/wnd[0]/usr/lblVBAK-AUART",
+           "Name": "VBAK-AUART"
+          },
+          {
+           "Type": "GuiCTextField",
+           "Text": "OR",
+           "Tooltip": "Sales Document Type",
+           "Changeable": true,
+           "label": "Order Type",
+           "kids": [],
+           "Id": "/app/con[0]/ses[0]/wnd[0]/usr/ctxtVBAK-AUART",
+           "Name": "VBAK-AUART"
+          },
+          {
+           "Type": "GuiTextField",
+           "Text": "Standard Order",
+           "Changeable": false,
+           "kids": [],
+           "Id": "/app/con[0]/ses[0]/wnd[0]/usr/txtTVAKT-BEZEI",
+           "Name": "TVAKT-BEZEI"
+          },
+          {
+           "Type": "GuiBox",
+           "Text": "Organizational Data",
+           "kids": [],
+           "Id": "/app/con[0]/ses[0]/wnd[0]/usr/boxORG",
+           "Name": "ORG"
+          },
+          {
+           "Type": "GuiLabel",
+           "Text": "Sales Organization",
+           "kids": [],
+           "Id": "/app/con[0]/ses[0]/wnd[0]/usr/lblVBAK-VKORG",
+           "Name": "VBAK-VKORG"
+          },
+          {
+           "Type": "GuiCTextField",
+           "Text": "",
+           "Tooltip": "Sales Organization",
+           "Changeable": true,
+           "label": "Sales Organization",
+           "kids": [],
+           "Id": "/app/con[0]/ses[0]/wnd[0]/usr/ctxtVBAK-VKORG",
+           "Name": "VBAK-VKORG"
+          },
+          {
+           "Type": "GuiCTextField",
+           "Text": "",
+           "Tooltip": "Distribution Channel",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[0]/wnd[0]/usr/ctxtVBAK-VTWEG",
+           "Name": "VBAK-VTWEG"
+          },
+          {
+           "Type": "GuiPasswordField",
+           "Text": "********",
+           "Tooltip": "Secret",
+           "Changeable": true,
+           "label": "Secret",
+           "kids": [],
+           "Id": "/app/con[0]/ses[0]/wnd[0]/usr/pwdDEMO-SECRET",
+           "Name": "DEMO-SECRET"
+          }
+         ],
+         "Id": "/app/con[0]/ses[0]/wnd[0]/usr",
+         "Name": "usr"
+        },
+        {
+         "Type": "GuiStatusbar",
+         "Text": "",
+         "MessageType": "",
+         "kids": [
+          {
+           "Type": "GuiStatusPane",
+           "Text": "",
+           "kids": [],
+           "Id": "/app/con[0]/ses[0]/wnd[0]/sbar/pane[0]",
+           "Name": "pane[0]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[0]/wnd[0]/sbar",
+         "Name": "sbar"
+        }
+       ],
+       "Id": "/app/con[0]/ses[0]/wnd[0]",
+       "Name": "wnd[0]"
+      }
+     ],
+     "Id": "/app/con[0]/ses[0]"
+    },
+    {
+     "name": "va03",
+     "Info": {
+      "SystemName": "DEM",
+      "Client": "100",
+      "User": "TESTER",
+      "Transaction": "VA03",
+      "Program": "SAPMV45A",
+      "ScreenNumber": 4001,
+      "SessionNumber": 2,
+      "Language": "EN"
+     },
+     "active": "wnd[0]",
+     "windows": [
+      {
+       "Type": "GuiMainWindow",
+       "Text": "Display Standard Order 4711: Overview",
+       "kids": [
+        {
+         "Type": "GuiMenubar",
+         "kids": [
+          {
+           "Type": "GuiMenu",
+           "Text": "Menu",
+           "kids": [
+            {
+             "Type": "GuiMenu",
+             "Text": "Create",
+             "kids": [],
+             "Id": "/app/con[0]/ses[1]/wnd[0]/mbar/menu[0]/menu[0]",
+             "Name": "menu[0]"
+            },
+            {
+             "Type": "GuiMenu",
+             "Text": "Save",
+             "kids": [],
+             "Id": "/app/con[0]/ses[1]/wnd[0]/mbar/menu[0]/menu[1]",
+             "Name": "menu[1]"
+            },
+            {
+             "Type": "GuiMenu",
+             "Text": "Exit",
+             "kids": [],
+             "Id": "/app/con[0]/ses[1]/wnd[0]/mbar/menu[0]/menu[2]",
+             "Name": "menu[2]"
+            }
+           ],
+           "Id": "/app/con[0]/ses[1]/wnd[0]/mbar/menu[0]",
+           "Name": "menu[0]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Edit",
+           "kids": [],
+           "Id": "/app/con[0]/ses[1]/wnd[0]/mbar/menu[1]",
+           "Name": "menu[1]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Goto",
+           "kids": [],
+           "Id": "/app/con[0]/ses[1]/wnd[0]/mbar/menu[2]",
+           "Name": "menu[2]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "System",
+           "kids": [],
+           "Id": "/app/con[0]/ses[1]/wnd[0]/mbar/menu[3]",
+           "Name": "menu[3]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Help",
+           "kids": [],
+           "Id": "/app/con[0]/ses[1]/wnd[0]/mbar/menu[4]",
+           "Name": "menu[4]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[1]/wnd[0]/mbar",
+         "Name": "mbar"
+        },
+        {
+         "Type": "GuiToolbar",
+         "kids": [
+          {
+           "Type": "GuiOkCodeField",
+           "Text": "",
+           "kids": [],
+           "Id": "/app/con[0]/ses[1]/wnd[0]/tbar[0]/okcd",
+           "Name": "okcd"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Enter   (Enter)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[1]/wnd[0]/tbar[0]/btn[0]",
+           "Name": "btn[0]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Save   (Ctrl+S)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[1]/wnd[0]/tbar[0]/btn[11]",
+           "Name": "btn[11]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Back   (F3)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[1]/wnd[0]/tbar[0]/btn[3]",
+           "Name": "btn[3]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Exit   (Shift+F3)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[1]/wnd[0]/tbar[0]/btn[15]",
+           "Name": "btn[15]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Cancel   (F12)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[1]/wnd[0]/tbar[0]/btn[12]",
+           "Name": "btn[12]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[1]/wnd[0]/tbar[0]",
+         "Name": "tbar[0]"
+        },
+        {
+         "Type": "GuiTitlebar",
+         "Text": "Display Standard Order 4711: Overview",
+         "kids": [],
+         "Id": "/app/con[0]/ses[1]/wnd[0]/titl",
+         "Name": "titl"
+        },
+        {
+         "Type": "GuiToolbar",
+         "kids": [],
+         "Id": "/app/con[0]/ses[1]/wnd[0]/tbar[1]",
+         "Name": "tbar[1]"
+        },
+        {
+         "Type": "GuiUserArea",
+         "kids": [
+          {
+           "Type": "GuiSimpleContainer",
+           "kids": [
+            {
+             "Type": "GuiTextField",
+             "Text": "4711",
+             "Changeable": false,
+             "label": "Standard Order",
+             "kids": [],
+             "Id": "/app/con[0]/ses[1]/wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021/txtVBAK-VBELN",
+             "Name": "VBAK-VBELN"
+            },
+            {
+             "Type": "GuiButton",
+             "Text": "",
+             "Tooltip": "Display document header details",
+             "Changeable": true,
+             "kids": [],
+             "Id": "/app/con[0]/ses[1]/wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021/btnBT_HEAD",
+             "Name": "BT_HEAD"
+            }
+           ],
+           "Id": "/app/con[0]/ses[1]/wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021",
+           "Name": "SUBSCREEN_HEADER:SAPMV45A:4021"
+          },
+          {
+           "Type": "GuiTabStrip",
+           "kids": [
+            {
+             "Type": "GuiTab",
+             "Text": "Sales",
+             "kids": [
+              {
+               "Type": "GuiScrollContainer",
+               "kids": [
+                {
+                 "Type": "GuiCheckBox",
+                 "Text": "Complete dlv.",
+                 "Selected": true,
+                 "Changeable": false,
+                 "kids": [],
+                 "Id": "/app/con[0]/ses[1]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/chkVBAK-AUTLF",
+                 "Name": "VBAK-AUTLF"
+                },
+                {
+                 "Type": "GuiRadioButton",
+                 "Text": "Gross",
+                 "Selected": false,
+                 "Changeable": false,
+                 "kids": [],
+                 "Id": "/app/con[0]/ses[1]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/radRV45A-DEMO1",
+                 "Name": "RV45A-DEMO1"
+                },
+                {
+                 "Type": "GuiRadioButton",
+                 "Text": "Net",
+                 "Selected": true,
+                 "Changeable": false,
+                 "kids": [],
+                 "Id": "/app/con[0]/ses[1]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/radRV45A-DEMO2",
+                 "Name": "RV45A-DEMO2"
+                },
+                {
+                 "Type": "GuiComboBox",
+                 "Text": "No block",
+                 "Key": " ",
+                 "Changeable": true,
+                 "label": "Delivery block",
+                 "Entries": [
+                  [
+                   " ",
+                   "No block"
+                  ],
+                  [
+                   "01",
+                   "Credit limit"
+                  ],
+                  [
+                   "02",
+                   "Political reasons"
+                  ]
+                 ],
+                 "kids": [],
+                 "Id": "/app/con[0]/ses[1]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/cmbVBAK-LIFSK",
+                 "Name": "VBAK-LIFSK"
+                },
+                {
+                 "Type": "GuiTableControl",
+                 "RowCount": 3,
+                 "VisibleRowCount": 3,
+                 "Columns": [
+                  "Item",
+                  "Material",
+                  "Order Quantity",
+                  "Rej"
+                 ],
+                 "kids": [
+                  {
+                   "Type": "GuiTextField",
+                   "Text": "10",
+                   "Changeable": false,
+                   "kids": [],
+                   "Id": "/app/con[0]/ses[1]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/txtVBAP-POSNR[0,0]",
+                   "Name": "VBAP-POSNR"
+                  },
+                  {
+                   "Type": "GuiCTextField",
+                   "Text": "M-01",
+                   "Changeable": false,
+                   "kids": [],
+                   "Id": "/app/con[0]/ses[1]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/ctxtRV45A-MABNR[1,0]",
+                   "Name": "RV45A-MABNR"
+                  },
+                  {
+                   "Type": "GuiTextField",
+                   "Text": "5",
+                   "Changeable": false,
+                   "kids": [],
+                   "Id": "/app/con[0]/ses[1]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/txtRV45A-KWMENG[2,0]",
+                   "Name": "RV45A-KWMENG"
+                  },
+                  {
+                   "Type": "GuiCheckBox",
+                   "Text": "",
+                   "Tooltip": "Rejected",
+                   "Selected": false,
+                   "Changeable": false,
+                   "kids": [],
+                   "Id": "/app/con[0]/ses[1]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/chkVBAP-ABGRU[3,0]",
+                   "Name": "VBAP-ABGRU"
+                  },
+                  {
+                   "Type": "GuiTextField",
+                   "Text": "20",
+                   "Changeable": false,
+                   "kids": [],
+                   "Id": "/app/con[0]/ses[1]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/txtVBAP-POSNR[0,1]",
+                   "Name": "VBAP-POSNR"
+                  },
+                  {
+                   "Type": "GuiCTextField",
+                   "Text": "M-02",
+                   "Changeable": false,
+                   "kids": [],
+                   "Id": "/app/con[0]/ses[1]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/ctxtRV45A-MABNR[1,1]",
+                   "Name": "RV45A-MABNR"
+                  },
+                  {
+                   "Type": "GuiTextField",
+                   "Text": "1",
+                   "Changeable": false,
+                   "kids": [],
+                   "Id": "/app/con[0]/ses[1]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/txtRV45A-KWMENG[2,1]",
+                   "Name": "RV45A-KWMENG"
+                  },
+                  {
+                   "Type": "GuiCheckBox",
+                   "Text": "",
+                   "Tooltip": "Rejected",
+                   "Selected": true,
+                   "Changeable": false,
+                   "kids": [],
+                   "Id": "/app/con[0]/ses[1]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/chkVBAP-ABGRU[3,1]",
+                   "Name": "VBAP-ABGRU"
+                  },
+                  {
+                   "Type": "GuiTextField",
+                   "Text": "",
+                   "Changeable": false,
+                   "kids": [],
+                   "Id": "/app/con[0]/ses[1]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/txtVBAP-POSNR[0,2]",
+                   "Name": "VBAP-POSNR"
+                  },
+                  {
+                   "Type": "GuiCTextField",
+                   "Text": "",
+                   "Changeable": false,
+                   "kids": [],
+                   "Id": "/app/con[0]/ses[1]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/ctxtRV45A-MABNR[1,2]",
+                   "Name": "RV45A-MABNR"
+                  },
+                  {
+                   "Type": "GuiTextField",
+                   "Text": "",
+                   "Changeable": false,
+                   "kids": [],
+                   "Id": "/app/con[0]/ses[1]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/txtRV45A-KWMENG[2,2]",
+                   "Name": "RV45A-KWMENG"
+                  },
+                  {
+                   "Type": "GuiCheckBox",
+                   "Text": "",
+                   "Tooltip": "Rejected",
+                   "Selected": false,
+                   "Changeable": false,
+                   "kids": [],
+                   "Id": "/app/con[0]/ses[1]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/chkVBAP-ABGRU[3,2]",
+                   "Name": "VBAP-ABGRU"
+                  }
+                 ],
+                 "Id": "/app/con[0]/ses[1]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG",
+                 "Name": "SAPMV45ATCTRL_U_ERF_AUFTRAG"
+                }
+               ],
+               "Id": "/app/con[0]/ses[1]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400",
+               "Name": "SUBSCREEN_BODY:SAPMV45A:4400"
+              }
+             ],
+             "Id": "/app/con[0]/ses[1]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01",
+             "Name": "T\\01"
+            },
+            {
+             "Type": "GuiTab",
+             "Text": "Item overview",
+             "kids": [],
+             "Id": "/app/con[0]/ses[1]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\02",
+             "Name": "T\\02"
+            },
+            {
+             "Type": "GuiTab",
+             "Text": "Ordering party",
+             "kids": [],
+             "Id": "/app/con[0]/ses[1]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\03",
+             "Name": "T\\03"
+            }
+           ],
+           "Id": "/app/con[0]/ses[1]/wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW",
+           "Name": "TAXI_TABSTRIP_OVERVIEW"
+          }
+         ],
+         "Id": "/app/con[0]/ses[1]/wnd[0]/usr",
+         "Name": "usr"
+        },
+        {
+         "Type": "GuiStatusbar",
+         "Text": "Standard Order 4711 is displayed",
+         "MessageType": "S",
+         "kids": [
+          {
+           "Type": "GuiStatusPane",
+           "Text": "Standard Order 4711 is displayed",
+           "kids": [],
+           "Id": "/app/con[0]/ses[1]/wnd[0]/sbar/pane[0]",
+           "Name": "pane[0]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[1]/wnd[0]/sbar",
+         "Name": "sbar"
+        }
+       ],
+       "Id": "/app/con[0]/ses[1]/wnd[0]",
+       "Name": "wnd[0]"
+      }
+     ],
+     "Id": "/app/con[0]/ses[1]"
+    },
+    {
+     "name": "va03-texts",
+     "Info": {
+      "SystemName": "DEM",
+      "Client": "100",
+      "User": "TESTER",
+      "Transaction": "VA03",
+      "Program": "SAPMV45A",
+      "ScreenNumber": 4002,
+      "SessionNumber": 3,
+      "Language": "EN"
+     },
+     "active": "wnd[0]",
+     "windows": [
+      {
+       "Type": "GuiMainWindow",
+       "Text": "Display Standard Order 4711: Header Data",
+       "kids": [
+        {
+         "Type": "GuiMenubar",
+         "kids": [
+          {
+           "Type": "GuiMenu",
+           "Text": "Menu",
+           "kids": [
+            {
+             "Type": "GuiMenu",
+             "Text": "Create",
+             "kids": [],
+             "Id": "/app/con[0]/ses[2]/wnd[0]/mbar/menu[0]/menu[0]",
+             "Name": "menu[0]"
+            },
+            {
+             "Type": "GuiMenu",
+             "Text": "Save",
+             "kids": [],
+             "Id": "/app/con[0]/ses[2]/wnd[0]/mbar/menu[0]/menu[1]",
+             "Name": "menu[1]"
+            },
+            {
+             "Type": "GuiMenu",
+             "Text": "Exit",
+             "kids": [],
+             "Id": "/app/con[0]/ses[2]/wnd[0]/mbar/menu[0]/menu[2]",
+             "Name": "menu[2]"
+            }
+           ],
+           "Id": "/app/con[0]/ses[2]/wnd[0]/mbar/menu[0]",
+           "Name": "menu[0]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Edit",
+           "kids": [],
+           "Id": "/app/con[0]/ses[2]/wnd[0]/mbar/menu[1]",
+           "Name": "menu[1]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Goto",
+           "kids": [],
+           "Id": "/app/con[0]/ses[2]/wnd[0]/mbar/menu[2]",
+           "Name": "menu[2]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "System",
+           "kids": [],
+           "Id": "/app/con[0]/ses[2]/wnd[0]/mbar/menu[3]",
+           "Name": "menu[3]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Help",
+           "kids": [],
+           "Id": "/app/con[0]/ses[2]/wnd[0]/mbar/menu[4]",
+           "Name": "menu[4]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[2]/wnd[0]/mbar",
+         "Name": "mbar"
+        },
+        {
+         "Type": "GuiToolbar",
+         "kids": [
+          {
+           "Type": "GuiOkCodeField",
+           "Text": "",
+           "kids": [],
+           "Id": "/app/con[0]/ses[2]/wnd[0]/tbar[0]/okcd",
+           "Name": "okcd"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Enter   (Enter)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[2]/wnd[0]/tbar[0]/btn[0]",
+           "Name": "btn[0]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Save   (Ctrl+S)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[2]/wnd[0]/tbar[0]/btn[11]",
+           "Name": "btn[11]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Back   (F3)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[2]/wnd[0]/tbar[0]/btn[3]",
+           "Name": "btn[3]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Exit   (Shift+F3)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[2]/wnd[0]/tbar[0]/btn[15]",
+           "Name": "btn[15]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Cancel   (F12)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[2]/wnd[0]/tbar[0]/btn[12]",
+           "Name": "btn[12]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[2]/wnd[0]/tbar[0]",
+         "Name": "tbar[0]"
+        },
+        {
+         "Type": "GuiTitlebar",
+         "Text": "Display Standard Order 4711: Header Data",
+         "kids": [],
+         "Id": "/app/con[0]/ses[2]/wnd[0]/titl",
+         "Name": "titl"
+        },
+        {
+         "Type": "GuiToolbar",
+         "kids": [],
+         "Id": "/app/con[0]/ses[2]/wnd[0]/tbar[1]",
+         "Name": "tbar[1]"
+        },
+        {
+         "Type": "GuiUserArea",
+         "kids": [
+          {
+           "Type": "GuiTabStrip",
+           "kids": [
+            {
+             "Type": "GuiTab",
+             "Text": "Texts",
+             "kids": [
+              {
+               "Type": "GuiCustomControl",
+               "kids": [
+                {
+                 "Type": "GuiContainerShell",
+                 "kids": [
+                  {
+                   "Type": "GuiShell",
+                   "SubType": "Splitter",
+                   "kids": [
+                    {
+                     "Type": "GuiContainerShell",
+                     "kids": [
+                      {
+                       "Type": "GuiShell",
+                       "SubType": "Tree",
+                       "tree": {
+                        "columns": null,
+                        "nodes": [
+                         {
+                          "key": "          1",
+                          "parent": "",
+                          "text": "Header texts",
+                          "folder": true,
+                          "expanded": true
+                         },
+                         {
+                          "key": "          2",
+                          "parent": "          1",
+                          "text": "Form Header",
+                          "folder": false
+                         },
+                         {
+                          "key": "          3",
+                          "parent": "          1",
+                          "text": "Shipping instructions",
+                          "folder": false
+                         },
+                         {
+                          "key": "          4",
+                          "parent": "",
+                          "text": "Other",
+                          "folder": true,
+                          "expanded": false
+                         },
+                         {
+                          "key": "          5",
+                          "parent": "          4",
+                          "text": "Hidden under a closed folder",
+                          "folder": false
+                         }
+                        ]
+                       },
+                       "kids": [],
+                       "Id": "/app/con[0]/ses[2]/wnd[0]/usr/tabsTAXI_TABSTRIP_HEAD/tabpT\\08/cntlSPLITTER_CONTAINER/shellcont/shell/shellcont[0]/shell",
+                       "Name": "shell"
+                      }
+                     ],
+                     "Id": "/app/con[0]/ses[2]/wnd[0]/usr/tabsTAXI_TABSTRIP_HEAD/tabpT\\08/cntlSPLITTER_CONTAINER/shellcont/shell/shellcont[0]",
+                     "Name": "shellcont[0]"
+                    },
+                    {
+                     "Type": "GuiContainerShell",
+                     "kids": [
+                      {
+                       "Type": "GuiShell",
+                       "SubType": "Toolbar",
+                       "toolbar": [
+                        [
+                         "TB_DELETE",
+                         "",
+                         "Delete text"
+                        ],
+                        [
+                         "TB_DETAIL",
+                         "Detail",
+                         "Detail"
+                        ],
+                        [
+                         "",
+                         "",
+                         "separator"
+                        ]
+                       ],
+                       "kids": [],
+                       "Id": "/app/con[0]/ses[2]/wnd[0]/usr/tabsTAXI_TABSTRIP_HEAD/tabpT\\08/cntlSPLITTER_CONTAINER/shellcont/shell/shellcont[1]/shell",
+                       "Name": "shell"
+                      },
+                      {
+                       "Type": "GuiShell",
+                       "SubType": "TextEdit",
+                       "Text": "Deliver to gate 1.\nRing twice.",
+                       "kids": [],
+                       "Id": "/app/con[0]/ses[2]/wnd[0]/usr/tabsTAXI_TABSTRIP_HEAD/tabpT\\08/cntlSPLITTER_CONTAINER/shellcont/shell/shellcont[1]/shell[1]",
+                       "Name": "shell[1]"
+                      }
+                     ],
+                     "Id": "/app/con[0]/ses[2]/wnd[0]/usr/tabsTAXI_TABSTRIP_HEAD/tabpT\\08/cntlSPLITTER_CONTAINER/shellcont/shell/shellcont[1]",
+                     "Name": "shellcont[1]"
+                    }
+                   ],
+                   "Id": "/app/con[0]/ses[2]/wnd[0]/usr/tabsTAXI_TABSTRIP_HEAD/tabpT\\08/cntlSPLITTER_CONTAINER/shellcont/shell",
+                   "Name": "shell"
+                  }
+                 ],
+                 "Id": "/app/con[0]/ses[2]/wnd[0]/usr/tabsTAXI_TABSTRIP_HEAD/tabpT\\08/cntlSPLITTER_CONTAINER/shellcont",
+                 "Name": "shellcont"
+                }
+               ],
+               "Id": "/app/con[0]/ses[2]/wnd[0]/usr/tabsTAXI_TABSTRIP_HEAD/tabpT\\08/cntlSPLITTER_CONTAINER",
+               "Name": "SPLITTER_CONTAINER"
+              }
+             ],
+             "Id": "/app/con[0]/ses[2]/wnd[0]/usr/tabsTAXI_TABSTRIP_HEAD/tabpT\\08",
+             "Name": "T\\08"
+            },
+            {
+             "Type": "GuiTab",
+             "Text": "Sales",
+             "kids": [],
+             "Id": "/app/con[0]/ses[2]/wnd[0]/usr/tabsTAXI_TABSTRIP_HEAD/tabpT\\01",
+             "Name": "T\\01"
+            }
+           ],
+           "Id": "/app/con[0]/ses[2]/wnd[0]/usr/tabsTAXI_TABSTRIP_HEAD",
+           "Name": "TAXI_TABSTRIP_HEAD"
+          }
+         ],
+         "Id": "/app/con[0]/ses[2]/wnd[0]/usr",
+         "Name": "usr"
+        },
+        {
+         "Type": "GuiStatusbar",
+         "Text": "",
+         "MessageType": "",
+         "kids": [
+          {
+           "Type": "GuiStatusPane",
+           "Text": "",
+           "kids": [],
+           "Id": "/app/con[0]/ses[2]/wnd[0]/sbar/pane[0]",
+           "Name": "pane[0]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[2]/wnd[0]/sbar",
+         "Name": "sbar"
+        }
+       ],
+       "Id": "/app/con[0]/ses[2]/wnd[0]",
+       "Name": "wnd[0]"
+      }
+     ],
+     "Id": "/app/con[0]/ses[2]"
+    },
+    {
+     "name": "va05",
+     "Info": {
+      "SystemName": "DEM",
+      "Client": "100",
+      "User": "TESTER",
+      "Transaction": "VA05",
+      "Program": "SAPLSLVC_FULLSCREEN",
+      "ScreenNumber": 500,
+      "SessionNumber": 4,
+      "Language": "EN"
+     },
+     "active": "wnd[0]",
+     "windows": [
+      {
+       "Type": "GuiMainWindow",
+       "Text": "List of Sales Orders",
+       "kids": [
+        {
+         "Type": "GuiMenubar",
+         "kids": [
+          {
+           "Type": "GuiMenu",
+           "Text": "Menu",
+           "kids": [
+            {
+             "Type": "GuiMenu",
+             "Text": "Create",
+             "kids": [],
+             "Id": "/app/con[0]/ses[3]/wnd[0]/mbar/menu[0]/menu[0]",
+             "Name": "menu[0]"
+            },
+            {
+             "Type": "GuiMenu",
+             "Text": "Save",
+             "kids": [],
+             "Id": "/app/con[0]/ses[3]/wnd[0]/mbar/menu[0]/menu[1]",
+             "Name": "menu[1]"
+            },
+            {
+             "Type": "GuiMenu",
+             "Text": "Exit",
+             "kids": [],
+             "Id": "/app/con[0]/ses[3]/wnd[0]/mbar/menu[0]/menu[2]",
+             "Name": "menu[2]"
+            }
+           ],
+           "Id": "/app/con[0]/ses[3]/wnd[0]/mbar/menu[0]",
+           "Name": "menu[0]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Edit",
+           "kids": [],
+           "Id": "/app/con[0]/ses[3]/wnd[0]/mbar/menu[1]",
+           "Name": "menu[1]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Goto",
+           "kids": [],
+           "Id": "/app/con[0]/ses[3]/wnd[0]/mbar/menu[2]",
+           "Name": "menu[2]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "System",
+           "kids": [],
+           "Id": "/app/con[0]/ses[3]/wnd[0]/mbar/menu[3]",
+           "Name": "menu[3]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Help",
+           "kids": [],
+           "Id": "/app/con[0]/ses[3]/wnd[0]/mbar/menu[4]",
+           "Name": "menu[4]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[3]/wnd[0]/mbar",
+         "Name": "mbar"
+        },
+        {
+         "Type": "GuiToolbar",
+         "kids": [
+          {
+           "Type": "GuiOkCodeField",
+           "Text": "",
+           "kids": [],
+           "Id": "/app/con[0]/ses[3]/wnd[0]/tbar[0]/okcd",
+           "Name": "okcd"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Enter   (Enter)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[3]/wnd[0]/tbar[0]/btn[0]",
+           "Name": "btn[0]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Save   (Ctrl+S)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[3]/wnd[0]/tbar[0]/btn[11]",
+           "Name": "btn[11]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Back   (F3)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[3]/wnd[0]/tbar[0]/btn[3]",
+           "Name": "btn[3]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Exit   (Shift+F3)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[3]/wnd[0]/tbar[0]/btn[15]",
+           "Name": "btn[15]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Cancel   (F12)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[3]/wnd[0]/tbar[0]/btn[12]",
+           "Name": "btn[12]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[3]/wnd[0]/tbar[0]",
+         "Name": "tbar[0]"
+        },
+        {
+         "Type": "GuiTitlebar",
+         "Text": "List of Sales Orders",
+         "kids": [],
+         "Id": "/app/con[0]/ses[3]/wnd[0]/titl",
+         "Name": "titl"
+        },
+        {
+         "Type": "GuiToolbar",
+         "kids": [],
+         "Id": "/app/con[0]/ses[3]/wnd[0]/tbar[1]",
+         "Name": "tbar[1]"
+        },
+        {
+         "Type": "GuiUserArea",
+         "kids": [
+          {
+           "Type": "GuiCustomControl",
+           "kids": [
+            {
+             "Type": "GuiContainerShell",
+             "kids": [
+              {
+               "Type": "GuiShell",
+               "SubType": "GridView",
+               "grid": {
+                "cols": [
+                 [
+                  "VBELN",
+                  "Sales Doc."
+                 ],
+                 [
+                  "AUDAT",
+                  "Doc. Date"
+                 ],
+                 [
+                  "NETWR",
+                  "Net value"
+                 ]
+                ],
+                "rows": [
+                 [
+                  "4700",
+                  "01.02.2005",
+                  "100.00"
+                 ],
+                 [
+                  "4701",
+                  "01.02.2005",
+                  "200.00"
+                 ],
+                 [
+                  "4702",
+                  "01.02.2005",
+                  "300.00"
+                 ],
+                 [
+                  "4703",
+                  "01.02.2005",
+                  "400.00"
+                 ],
+                 [
+                  "4704",
+                  "01.02.2005",
+                  "500.00"
+                 ],
+                 [
+                  "4705",
+                  "01.02.2005",
+                  "600.00"
+                 ],
+                 [
+                  "4706",
+                  "01.02.2005",
+                  "700.00"
+                 ],
+                 [
+                  "4707",
+                  "01.02.2005",
+                  "800.00"
+                 ],
+                 [
+                  "4708",
+                  "01.02.2005",
+                  "900.00"
+                 ],
+                 [
+                  "4709",
+                  "01.02.2005",
+                  "1000.00"
+                 ],
+                 [
+                  "4710",
+                  "01.02.2005",
+                  "1100.00"
+                 ],
+                 [
+                  "4711",
+                  "01.02.2005",
+                  "1200.00"
+                 ],
+                 [
+                  "4712",
+                  "01.02.2005",
+                  "1300.00"
+                 ],
+                 [
+                  "4713",
+                  "01.02.2005",
+                  "1400.00"
+                 ],
+                 [
+                  "4714",
+                  "01.02.2005",
+                  "1500.00"
+                 ],
+                 [
+                  "4715",
+                  "01.02.2005",
+                  "1600.00"
+                 ],
+                 [
+                  "4716",
+                  "01.02.2005",
+                  "1700.00"
+                 ],
+                 [
+                  "4717",
+                  "01.02.2005",
+                  "1800.00"
+                 ],
+                 [
+                  "4718",
+                  "01.02.2005",
+                  "1900.00"
+                 ],
+                 [
+                  "4719",
+                  "01.02.2005",
+                  "2000.00"
+                 ],
+                 [
+                  "4720",
+                  "01.02.2005",
+                  "2100.00"
+                 ],
+                 [
+                  "4721",
+                  "01.02.2005",
+                  "2200.00"
+                 ],
+                 [
+                  "4722",
+                  "01.02.2005",
+                  "2300.00"
+                 ],
+                 [
+                  "4723",
+                  "01.02.2005",
+                  "2400.00"
+                 ],
+                 [
+                  "4724",
+                  "01.02.2005",
+                  "2500.00"
+                 ],
+                 [
+                  "4725",
+                  "01.02.2005",
+                  "2600.00"
+                 ],
+                 [
+                  "4726",
+                  "01.02.2005",
+                  "2700.00"
+                 ],
+                 [
+                  "4727",
+                  "01.02.2005",
+                  "2800.00"
+                 ],
+                 [
+                  "4728",
+                  "01.02.2005",
+                  "2900.00"
+                 ],
+                 [
+                  "4729",
+                  "01.02.2005",
+                  "3000.00"
+                 ],
+                 [
+                  "4730",
+                  "01.02.2005",
+                  "3100.00"
+                 ],
+                 [
+                  "4731",
+                  "01.02.2005",
+                  "3200.00"
+                 ],
+                 [
+                  "4732",
+                  "01.02.2005",
+                  "3300.00"
+                 ],
+                 [
+                  "4733",
+                  "01.02.2005",
+                  "3400.00"
+                 ],
+                 [
+                  "4734",
+                  "01.02.2005",
+                  "3500.00"
+                 ],
+                 [
+                  "4735",
+                  "01.02.2005",
+                  "3600.00"
+                 ],
+                 [
+                  "4736",
+                  "01.02.2005",
+                  "3700.00"
+                 ],
+                 [
+                  "4737",
+                  "01.02.2005",
+                  "3800.00"
+                 ],
+                 [
+                  "4738",
+                  "01.02.2005",
+                  "3900.00"
+                 ],
+                 [
+                  "4739",
+                  "01.02.2005",
+                  "4000.00"
+                 ],
+                 [
+                  "4740",
+                  "01.02.2005",
+                  "4100.00"
+                 ],
+                 [
+                  "4741",
+                  "01.02.2005",
+                  "4200.00"
+                 ],
+                 [
+                  "4742",
+                  "01.02.2005",
+                  "4300.00"
+                 ],
+                 [
+                  "4743",
+                  "01.02.2005",
+                  "4400.00"
+                 ],
+                 [
+                  "4744",
+                  "01.02.2005",
+                  "4500.00"
+                 ],
+                 [
+                  "4745",
+                  "01.02.2005",
+                  "4600.00"
+                 ],
+                 [
+                  "4746",
+                  "01.02.2005",
+                  "4700.00"
+                 ],
+                 [
+                  "4747",
+                  "01.02.2005",
+                  "4800.00"
+                 ],
+                 [
+                  "4748",
+                  "01.02.2005",
+                  "4900.00"
+                 ],
+                 [
+                  "4749",
+                  "01.02.2005",
+                  "5000.00"
+                 ],
+                 [
+                  "4750",
+                  "01.02.2005",
+                  "5100.00"
+                 ],
+                 [
+                  "4751",
+                  "01.02.2005",
+                  "5200.00"
+                 ]
+                ]
+               },
+               "kids": [],
+               "Id": "/app/con[0]/ses[3]/wnd[0]/usr/cntlGRID1/shellcont/shell",
+               "Name": "shell"
+              }
+             ],
+             "Id": "/app/con[0]/ses[3]/wnd[0]/usr/cntlGRID1/shellcont",
+             "Name": "shellcont"
+            }
+           ],
+           "Id": "/app/con[0]/ses[3]/wnd[0]/usr/cntlGRID1",
+           "Name": "GRID1"
+          }
+         ],
+         "Id": "/app/con[0]/ses[3]/wnd[0]/usr",
+         "Name": "usr"
+        },
+        {
+         "Type": "GuiStatusbar",
+         "Text": "",
+         "MessageType": "",
+         "kids": [
+          {
+           "Type": "GuiStatusPane",
+           "Text": "",
+           "kids": [],
+           "Id": "/app/con[0]/ses[3]/wnd[0]/sbar/pane[0]",
+           "Name": "pane[0]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[3]/wnd[0]/sbar",
+         "Name": "sbar"
+        }
+       ],
+       "Id": "/app/con[0]/ses[3]/wnd[0]",
+       "Name": "wnd[0]"
+      }
+     ],
+     "Id": "/app/con[0]/ses[3]"
+    },
+    {
+     "name": "se80",
+     "Info": {
+      "SystemName": "DEM",
+      "Client": "100",
+      "User": "TESTER",
+      "Transaction": "SE80",
+      "Program": "SAPLSEOD",
+      "ScreenNumber": 1000,
+      "SessionNumber": 5,
+      "Language": "EN"
+     },
+     "active": "wnd[0]",
+     "windows": [
+      {
+       "Type": "GuiMainWindow",
+       "Text": "Object Navigator",
+       "kids": [
+        {
+         "Type": "GuiMenubar",
+         "kids": [
+          {
+           "Type": "GuiMenu",
+           "Text": "Menu",
+           "kids": [
+            {
+             "Type": "GuiMenu",
+             "Text": "Create",
+             "kids": [],
+             "Id": "/app/con[0]/ses[4]/wnd[0]/mbar/menu[0]/menu[0]",
+             "Name": "menu[0]"
+            },
+            {
+             "Type": "GuiMenu",
+             "Text": "Save",
+             "kids": [],
+             "Id": "/app/con[0]/ses[4]/wnd[0]/mbar/menu[0]/menu[1]",
+             "Name": "menu[1]"
+            },
+            {
+             "Type": "GuiMenu",
+             "Text": "Exit",
+             "kids": [],
+             "Id": "/app/con[0]/ses[4]/wnd[0]/mbar/menu[0]/menu[2]",
+             "Name": "menu[2]"
+            }
+           ],
+           "Id": "/app/con[0]/ses[4]/wnd[0]/mbar/menu[0]",
+           "Name": "menu[0]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Edit",
+           "kids": [],
+           "Id": "/app/con[0]/ses[4]/wnd[0]/mbar/menu[1]",
+           "Name": "menu[1]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Goto",
+           "kids": [],
+           "Id": "/app/con[0]/ses[4]/wnd[0]/mbar/menu[2]",
+           "Name": "menu[2]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "System",
+           "kids": [],
+           "Id": "/app/con[0]/ses[4]/wnd[0]/mbar/menu[3]",
+           "Name": "menu[3]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Help",
+           "kids": [],
+           "Id": "/app/con[0]/ses[4]/wnd[0]/mbar/menu[4]",
+           "Name": "menu[4]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[4]/wnd[0]/mbar",
+         "Name": "mbar"
+        },
+        {
+         "Type": "GuiToolbar",
+         "kids": [
+          {
+           "Type": "GuiOkCodeField",
+           "Text": "",
+           "kids": [],
+           "Id": "/app/con[0]/ses[4]/wnd[0]/tbar[0]/okcd",
+           "Name": "okcd"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Enter   (Enter)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[4]/wnd[0]/tbar[0]/btn[0]",
+           "Name": "btn[0]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Save   (Ctrl+S)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[4]/wnd[0]/tbar[0]/btn[11]",
+           "Name": "btn[11]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Back   (F3)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[4]/wnd[0]/tbar[0]/btn[3]",
+           "Name": "btn[3]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Exit   (Shift+F3)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[4]/wnd[0]/tbar[0]/btn[15]",
+           "Name": "btn[15]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Cancel   (F12)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[4]/wnd[0]/tbar[0]/btn[12]",
+           "Name": "btn[12]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[4]/wnd[0]/tbar[0]",
+         "Name": "tbar[0]"
+        },
+        {
+         "Type": "GuiTitlebar",
+         "Text": "Object Navigator",
+         "kids": [],
+         "Id": "/app/con[0]/ses[4]/wnd[0]/titl",
+         "Name": "titl"
+        },
+        {
+         "Type": "GuiToolbar",
+         "kids": [
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Activate   (Ctrl+F3)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[4]/wnd[0]/tbar[1]/btn[27]",
+           "Name": "btn[27]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[4]/wnd[0]/tbar[1]",
+         "Name": "tbar[1]"
+        },
+        {
+         "Type": "GuiUserArea",
+         "kids": [
+          {
+           "Type": "GuiCustomControl",
+           "kids": [
+            {
+             "Type": "GuiContainerShell",
+             "kids": [
+              {
+               "Type": "GuiShell",
+               "SubType": "HTMLViewer",
+               "kids": [],
+               "Id": "/app/con[0]/ses[4]/wnd[0]/usr/cntlDOCK/shellcont/shell",
+               "Name": "shell"
+              },
+              {
+               "Type": "GuiShell",
+               "SubType": "Tree",
+               "tree": {
+                "columns": [
+                 [
+                  "&Hierarchy",
+                  "Object Name"
+                 ],
+                 [
+                  "DESC",
+                  "Description"
+                 ]
+                ],
+                "nodes": [
+                 {
+                  "key": "ROOT",
+                  "parent": "",
+                  "text": "",
+                  "items": {
+                   "&Hierarchy": "ZDEMO",
+                   "DESC": "Demo package"
+                  },
+                  "folder": true,
+                  "expanded": true
+                 },
+                 {
+                  "key": "N1",
+                  "parent": "ROOT",
+                  "text": "",
+                  "items": {
+                   "&Hierarchy": "Programs",
+                   "DESC": ""
+                  },
+                  "folder": true,
+                  "expanded": true
+                 },
+                 {
+                  "key": "N2",
+                  "parent": "N1",
+                  "text": "",
+                  "items": {
+                   "&Hierarchy": "ZDEMO_REPORT",
+                   "DESC": "Demo report"
+                  },
+                  "folder": false
+                 },
+                 {
+                  "key": "N3",
+                  "parent": "ROOT",
+                  "text": "",
+                  "items": {
+                   "&Hierarchy": "Classes",
+                   "DESC": ""
+                  },
+                  "folder": true,
+                  "expanded": false
+                 },
+                 {
+                  "key": "N4",
+                  "parent": "N3",
+                  "text": "",
+                  "items": {
+                   "&Hierarchy": "ZCL_DEMO",
+                   "DESC": "Hidden"
+                  },
+                  "folder": false
+                 }
+                ]
+               },
+               "kids": [],
+               "Id": "/app/con[0]/ses[4]/wnd[0]/usr/cntlDOCK/shellcont/shell[1]",
+               "Name": "shell[1]"
+              }
+             ],
+             "Id": "/app/con[0]/ses[4]/wnd[0]/usr/cntlDOCK/shellcont",
+             "Name": "shellcont"
+            }
+           ],
+           "Id": "/app/con[0]/ses[4]/wnd[0]/usr/cntlDOCK",
+           "Name": "DOCK"
+          }
+         ],
+         "Id": "/app/con[0]/ses[4]/wnd[0]/usr",
+         "Name": "usr"
+        },
+        {
+         "Type": "GuiStatusbar",
+         "Text": "",
+         "MessageType": "",
+         "kids": [
+          {
+           "Type": "GuiStatusPane",
+           "Text": "",
+           "kids": [],
+           "Id": "/app/con[0]/ses[4]/wnd[0]/sbar/pane[0]",
+           "Name": "pane[0]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[4]/wnd[0]/sbar",
+         "Name": "sbar"
+        }
+       ],
+       "Id": "/app/con[0]/ses[4]/wnd[0]",
+       "Name": "wnd[0]"
+      }
+     ],
+     "Id": "/app/con[0]/ses[4]"
+    },
+    {
+     "name": "f4",
+     "Info": {
+      "SystemName": "DEM",
+      "Client": "100",
+      "User": "TESTER",
+      "Transaction": "VA01",
+      "Program": "SAPLSDH4",
+      "ScreenNumber": 120,
+      "SessionNumber": 6,
+      "Language": "EN"
+     },
+     "active": "wnd[1]",
+     "windows": [
+      {
+       "Type": "GuiMainWindow",
+       "Text": "Create Sales Order: Initial Screen",
+       "kids": [
+        {
+         "Type": "GuiMenubar",
+         "kids": [
+          {
+           "Type": "GuiMenu",
+           "Text": "Menu",
+           "kids": [
+            {
+             "Type": "GuiMenu",
+             "Text": "Create",
+             "kids": [],
+             "Id": "/app/con[0]/ses[5]/wnd[0]/mbar/menu[0]/menu[0]",
+             "Name": "menu[0]"
+            },
+            {
+             "Type": "GuiMenu",
+             "Text": "Save",
+             "kids": [],
+             "Id": "/app/con[0]/ses[5]/wnd[0]/mbar/menu[0]/menu[1]",
+             "Name": "menu[1]"
+            },
+            {
+             "Type": "GuiMenu",
+             "Text": "Exit",
+             "kids": [],
+             "Id": "/app/con[0]/ses[5]/wnd[0]/mbar/menu[0]/menu[2]",
+             "Name": "menu[2]"
+            }
+           ],
+           "Id": "/app/con[0]/ses[5]/wnd[0]/mbar/menu[0]",
+           "Name": "menu[0]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Edit",
+           "kids": [],
+           "Id": "/app/con[0]/ses[5]/wnd[0]/mbar/menu[1]",
+           "Name": "menu[1]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Goto",
+           "kids": [],
+           "Id": "/app/con[0]/ses[5]/wnd[0]/mbar/menu[2]",
+           "Name": "menu[2]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "System",
+           "kids": [],
+           "Id": "/app/con[0]/ses[5]/wnd[0]/mbar/menu[3]",
+           "Name": "menu[3]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Help",
+           "kids": [],
+           "Id": "/app/con[0]/ses[5]/wnd[0]/mbar/menu[4]",
+           "Name": "menu[4]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[5]/wnd[0]/mbar",
+         "Name": "mbar"
+        },
+        {
+         "Type": "GuiToolbar",
+         "kids": [
+          {
+           "Type": "GuiOkCodeField",
+           "Text": "",
+           "kids": [],
+           "Id": "/app/con[0]/ses[5]/wnd[0]/tbar[0]/okcd",
+           "Name": "okcd"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Enter   (Enter)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[5]/wnd[0]/tbar[0]/btn[0]",
+           "Name": "btn[0]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Save   (Ctrl+S)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[5]/wnd[0]/tbar[0]/btn[11]",
+           "Name": "btn[11]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Back   (F3)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[5]/wnd[0]/tbar[0]/btn[3]",
+           "Name": "btn[3]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Exit   (Shift+F3)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[5]/wnd[0]/tbar[0]/btn[15]",
+           "Name": "btn[15]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Cancel   (F12)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[5]/wnd[0]/tbar[0]/btn[12]",
+           "Name": "btn[12]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[5]/wnd[0]/tbar[0]",
+         "Name": "tbar[0]"
+        },
+        {
+         "Type": "GuiTitlebar",
+         "Text": "Create Sales Order: Initial Screen",
+         "kids": [],
+         "Id": "/app/con[0]/ses[5]/wnd[0]/titl",
+         "Name": "titl"
+        },
+        {
+         "Type": "GuiToolbar",
+         "kids": [],
+         "Id": "/app/con[0]/ses[5]/wnd[0]/tbar[1]",
+         "Name": "tbar[1]"
+        },
+        {
+         "Type": "GuiUserArea",
+         "kids": [
+          {
+           "Type": "GuiCTextField",
+           "Text": "",
+           "Tooltip": "Sales Document Type",
+           "Changeable": true,
+           "label": "Order Type",
+           "kids": [],
+           "Id": "/app/con[0]/ses[5]/wnd[0]/usr/ctxtVBAK-AUART",
+           "Name": "VBAK-AUART"
+          }
+         ],
+         "Id": "/app/con[0]/ses[5]/wnd[0]/usr",
+         "Name": "usr"
+        },
+        {
+         "Type": "GuiStatusbar",
+         "Text": "",
+         "MessageType": "",
+         "kids": [
+          {
+           "Type": "GuiStatusPane",
+           "Text": "",
+           "kids": [],
+           "Id": "/app/con[0]/ses[5]/wnd[0]/sbar/pane[0]",
+           "Name": "pane[0]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[5]/wnd[0]/sbar",
+         "Name": "sbar"
+        }
+       ],
+       "Id": "/app/con[0]/ses[5]/wnd[0]",
+       "Name": "wnd[0]"
+      },
+      {
+       "Type": "GuiModalWindow",
+       "Text": "Sales Document Type (1) 3 Entries found",
+       "kids": [
+        {
+         "Type": "GuiToolbar",
+         "kids": [
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Copy   (Enter)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[5]/wnd[1]/tbar[0]/btn[0]",
+           "Name": "btn[0]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Cancel   (F12)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[5]/wnd[1]/tbar[0]/btn[12]",
+           "Name": "btn[12]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[5]/wnd[1]/tbar[0]",
+         "Name": "tbar[0]"
+        },
+        {
+         "Type": "GuiUserArea",
+         "kids": [
+          {
+           "Type": "GuiLabel",
+           "Text": "SaTy",
+           "kids": [],
+           "Id": "/app/con[0]/ses[5]/wnd[1]/usr/lbl[1,1]",
+           "Name": "[1,1]"
+          },
+          {
+           "Type": "GuiLabel",
+           "Text": "Description",
+           "kids": [],
+           "Id": "/app/con[0]/ses[5]/wnd[1]/usr/lbl[6,1]",
+           "Name": "[6,1]"
+          },
+          {
+           "Type": "GuiLabel",
+           "Text": "CS",
+           "kids": [],
+           "Id": "/app/con[0]/ses[5]/wnd[1]/usr/lbl[1,3]",
+           "Name": "[1,3]"
+          },
+          {
+           "Type": "GuiLabel",
+           "Text": "Cash Sale",
+           "kids": [],
+           "Id": "/app/con[0]/ses[5]/wnd[1]/usr/lbl[6,3]",
+           "Name": "[6,3]"
+          },
+          {
+           "Type": "GuiLabel",
+           "Text": "OR",
+           "kids": [],
+           "Id": "/app/con[0]/ses[5]/wnd[1]/usr/lbl[1,4]",
+           "Name": "[1,4]"
+          },
+          {
+           "Type": "GuiLabel",
+           "Text": "Standard Order",
+           "kids": [],
+           "Id": "/app/con[0]/ses[5]/wnd[1]/usr/lbl[6,4]",
+           "Name": "[6,4]"
+          },
+          {
+           "Type": "GuiLabel",
+           "Text": "RE",
+           "kids": [],
+           "Id": "/app/con[0]/ses[5]/wnd[1]/usr/lbl[1,5]",
+           "Name": "[1,5]"
+          },
+          {
+           "Type": "GuiLabel",
+           "Text": "Returns",
+           "kids": [],
+           "Id": "/app/con[0]/ses[5]/wnd[1]/usr/lbl[6,5]",
+           "Name": "[6,5]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[5]/wnd[1]/usr",
+         "Name": "usr"
+        }
+       ],
+       "Id": "/app/con[0]/ses[5]/wnd[1]",
+       "Name": "wnd[1]"
+      }
+     ],
+     "Id": "/app/con[0]/ses[5]"
+    },
+    {
+     "name": "ask",
+     "Info": {
+      "SystemName": "DEM",
+      "Client": "100",
+      "User": "TESTER",
+      "Transaction": "VA02",
+      "Program": "SAPLSPO1",
+      "ScreenNumber": 100,
+      "SessionNumber": 7,
+      "Language": "EN"
+     },
+     "active": "wnd[1]",
+     "windows": [
+      {
+       "Type": "GuiMainWindow",
+       "Text": "Change Standard Order 4711: Overview",
+       "kids": [
+        {
+         "Type": "GuiMenubar",
+         "kids": [
+          {
+           "Type": "GuiMenu",
+           "Text": "Menu",
+           "kids": [
+            {
+             "Type": "GuiMenu",
+             "Text": "Create",
+             "kids": [],
+             "Id": "/app/con[0]/ses[6]/wnd[0]/mbar/menu[0]/menu[0]",
+             "Name": "menu[0]"
+            },
+            {
+             "Type": "GuiMenu",
+             "Text": "Save",
+             "kids": [],
+             "Id": "/app/con[0]/ses[6]/wnd[0]/mbar/menu[0]/menu[1]",
+             "Name": "menu[1]"
+            },
+            {
+             "Type": "GuiMenu",
+             "Text": "Exit",
+             "kids": [],
+             "Id": "/app/con[0]/ses[6]/wnd[0]/mbar/menu[0]/menu[2]",
+             "Name": "menu[2]"
+            }
+           ],
+           "Id": "/app/con[0]/ses[6]/wnd[0]/mbar/menu[0]",
+           "Name": "menu[0]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Edit",
+           "kids": [],
+           "Id": "/app/con[0]/ses[6]/wnd[0]/mbar/menu[1]",
+           "Name": "menu[1]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Goto",
+           "kids": [],
+           "Id": "/app/con[0]/ses[6]/wnd[0]/mbar/menu[2]",
+           "Name": "menu[2]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "System",
+           "kids": [],
+           "Id": "/app/con[0]/ses[6]/wnd[0]/mbar/menu[3]",
+           "Name": "menu[3]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Help",
+           "kids": [],
+           "Id": "/app/con[0]/ses[6]/wnd[0]/mbar/menu[4]",
+           "Name": "menu[4]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[6]/wnd[0]/mbar",
+         "Name": "mbar"
+        },
+        {
+         "Type": "GuiToolbar",
+         "kids": [
+          {
+           "Type": "GuiOkCodeField",
+           "Text": "",
+           "kids": [],
+           "Id": "/app/con[0]/ses[6]/wnd[0]/tbar[0]/okcd",
+           "Name": "okcd"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Enter   (Enter)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[6]/wnd[0]/tbar[0]/btn[0]",
+           "Name": "btn[0]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Save   (Ctrl+S)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[6]/wnd[0]/tbar[0]/btn[11]",
+           "Name": "btn[11]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Back   (F3)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[6]/wnd[0]/tbar[0]/btn[3]",
+           "Name": "btn[3]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Exit   (Shift+F3)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[6]/wnd[0]/tbar[0]/btn[15]",
+           "Name": "btn[15]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Cancel   (F12)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[6]/wnd[0]/tbar[0]/btn[12]",
+           "Name": "btn[12]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[6]/wnd[0]/tbar[0]",
+         "Name": "tbar[0]"
+        },
+        {
+         "Type": "GuiTitlebar",
+         "Text": "Change Standard Order 4711: Overview",
+         "kids": [],
+         "Id": "/app/con[0]/ses[6]/wnd[0]/titl",
+         "Name": "titl"
+        },
+        {
+         "Type": "GuiToolbar",
+         "kids": [
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Delete   (Shift+F2)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[6]/wnd[0]/tbar[1]/btn[14]",
+           "Name": "btn[14]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "Reject document",
+           "Tooltip": "Reject document",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[6]/wnd[0]/tbar[1]/btn[20]",
+           "Name": "btn[20]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[6]/wnd[0]/tbar[1]",
+         "Name": "tbar[1]"
+        },
+        {
+         "Type": "GuiUserArea",
+         "kids": [
+          {
+           "Type": "GuiTextField",
+           "Text": "PO-1",
+           "Changeable": true,
+           "label": "PO Number",
+           "kids": [],
+           "Id": "/app/con[0]/ses[6]/wnd[0]/usr/txtVBAK-BSTNK",
+           "Name": "VBAK-BSTNK"
+          }
+         ],
+         "Id": "/app/con[0]/ses[6]/wnd[0]/usr",
+         "Name": "usr"
+        },
+        {
+         "Type": "GuiStatusbar",
+         "Text": "",
+         "MessageType": "",
+         "kids": [
+          {
+           "Type": "GuiStatusPane",
+           "Text": "",
+           "kids": [],
+           "Id": "/app/con[0]/ses[6]/wnd[0]/sbar/pane[0]",
+           "Name": "pane[0]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[6]/wnd[0]/sbar",
+         "Name": "sbar"
+        }
+       ],
+       "Id": "/app/con[0]/ses[6]/wnd[0]",
+       "Name": "wnd[0]"
+      },
+      {
+       "Type": "GuiModalWindow",
+       "Text": "Exit Document",
+       "kids": [
+        {
+         "Type": "GuiToolbar",
+         "kids": [],
+         "Id": "/app/con[0]/ses[6]/wnd[1]/tbar[0]",
+         "Name": "tbar[0]"
+        },
+        {
+         "Type": "GuiUserArea",
+         "kids": [
+          {
+           "Type": "GuiTextField",
+           "Text": "Data will be lost.",
+           "Changeable": false,
+           "kids": [],
+           "Id": "/app/con[0]/ses[6]/wnd[1]/usr/txtSPOP-TEXTLINE1",
+           "Name": "SPOP-TEXTLINE1"
+          },
+          {
+           "Type": "GuiTextField",
+           "Text": "Do you want to save the document?",
+           "Changeable": false,
+           "kids": [],
+           "Id": "/app/con[0]/ses[6]/wnd[1]/usr/txtSPOP-TEXTLINE2",
+           "Name": "SPOP-TEXTLINE2"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "Yes",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[6]/wnd[1]/usr/btnSPOP-OPTION1",
+           "Name": "SPOP-OPTION1"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "No",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[6]/wnd[1]/usr/btnSPOP-OPTION2",
+           "Name": "SPOP-OPTION2"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "Cancel",
+           "Tooltip": "Cancel   (F12)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[6]/wnd[1]/usr/btnSPOP-OPTION_CAN",
+           "Name": "SPOP-OPTION_CAN"
+          }
+         ],
+         "Id": "/app/con[0]/ses[6]/wnd[1]/usr",
+         "Name": "usr"
+        }
+       ],
+       "Id": "/app/con[0]/ses[6]/wnd[1]",
+       "Name": "wnd[1]"
+      }
+     ],
+     "Id": "/app/con[0]/ses[6]"
+    },
+    {
+     "name": "easy",
+     "Info": {
+      "SystemName": "DEM",
+      "Client": "100",
+      "User": "TESTER",
+      "Transaction": "SESSION_MANAGER",
+      "Program": "SAPLSMTR_NAVIGATION",
+      "ScreenNumber": 100,
+      "SessionNumber": 8,
+      "Language": "EN"
+     },
+     "active": "wnd[0]",
+     "windows": [
+      {
+       "Type": "GuiMainWindow",
+       "Text": "SAP Easy Access",
+       "kids": [
+        {
+         "Type": "GuiMenubar",
+         "kids": [
+          {
+           "Type": "GuiMenu",
+           "Text": "Menu",
+           "kids": [
+            {
+             "Type": "GuiMenu",
+             "Text": "Create",
+             "kids": [],
+             "Id": "/app/con[0]/ses[7]/wnd[0]/mbar/menu[0]/menu[0]",
+             "Name": "menu[0]"
+            },
+            {
+             "Type": "GuiMenu",
+             "Text": "Save",
+             "kids": [],
+             "Id": "/app/con[0]/ses[7]/wnd[0]/mbar/menu[0]/menu[1]",
+             "Name": "menu[1]"
+            },
+            {
+             "Type": "GuiMenu",
+             "Text": "Exit",
+             "kids": [],
+             "Id": "/app/con[0]/ses[7]/wnd[0]/mbar/menu[0]/menu[2]",
+             "Name": "menu[2]"
+            }
+           ],
+           "Id": "/app/con[0]/ses[7]/wnd[0]/mbar/menu[0]",
+           "Name": "menu[0]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Edit",
+           "kids": [],
+           "Id": "/app/con[0]/ses[7]/wnd[0]/mbar/menu[1]",
+           "Name": "menu[1]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Goto",
+           "kids": [],
+           "Id": "/app/con[0]/ses[7]/wnd[0]/mbar/menu[2]",
+           "Name": "menu[2]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "System",
+           "kids": [],
+           "Id": "/app/con[0]/ses[7]/wnd[0]/mbar/menu[3]",
+           "Name": "menu[3]"
+          },
+          {
+           "Type": "GuiMenu",
+           "Text": "Help",
+           "kids": [],
+           "Id": "/app/con[0]/ses[7]/wnd[0]/mbar/menu[4]",
+           "Name": "menu[4]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[7]/wnd[0]/mbar",
+         "Name": "mbar"
+        },
+        {
+         "Type": "GuiToolbar",
+         "kids": [
+          {
+           "Type": "GuiOkCodeField",
+           "Text": "",
+           "kids": [],
+           "Id": "/app/con[0]/ses[7]/wnd[0]/tbar[0]/okcd",
+           "Name": "okcd"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Enter   (Enter)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[7]/wnd[0]/tbar[0]/btn[0]",
+           "Name": "btn[0]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Save   (Ctrl+S)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[7]/wnd[0]/tbar[0]/btn[11]",
+           "Name": "btn[11]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Back   (F3)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[7]/wnd[0]/tbar[0]/btn[3]",
+           "Name": "btn[3]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Exit   (Shift+F3)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[7]/wnd[0]/tbar[0]/btn[15]",
+           "Name": "btn[15]"
+          },
+          {
+           "Type": "GuiButton",
+           "Text": "",
+           "Tooltip": "Cancel   (F12)",
+           "Changeable": true,
+           "kids": [],
+           "Id": "/app/con[0]/ses[7]/wnd[0]/tbar[0]/btn[12]",
+           "Name": "btn[12]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[7]/wnd[0]/tbar[0]",
+         "Name": "tbar[0]"
+        },
+        {
+         "Type": "GuiTitlebar",
+         "Text": "SAP Easy Access",
+         "kids": [],
+         "Id": "/app/con[0]/ses[7]/wnd[0]/titl",
+         "Name": "titl"
+        },
+        {
+         "Type": "GuiToolbar",
+         "kids": [],
+         "Id": "/app/con[0]/ses[7]/wnd[0]/tbar[1]",
+         "Name": "tbar[1]"
+        },
+        {
+         "Type": "GuiUserArea",
+         "kids": [
+          {
+           "Type": "GuiCustomControl",
+           "kids": [
+            {
+             "Type": "GuiContainerShell",
+             "kids": [
+              {
+               "Type": "GuiShell",
+               "SubType": "Picture",
+               "kids": [],
+               "Id": "/app/con[0]/ses[7]/wnd[0]/usr/cntlIMAGE_CONTAINER/shellcont/shell",
+               "Name": "shell"
+              }
+             ],
+             "Id": "/app/con[0]/ses[7]/wnd[0]/usr/cntlIMAGE_CONTAINER/shellcont",
+             "Name": "shellcont"
+            }
+           ],
+           "Id": "/app/con[0]/ses[7]/wnd[0]/usr/cntlIMAGE_CONTAINER",
+           "Name": "IMAGE_CONTAINER"
+          }
+         ],
+         "Id": "/app/con[0]/ses[7]/wnd[0]/usr",
+         "Name": "usr"
+        },
+        {
+         "Type": "GuiStatusbar",
+         "Text": "",
+         "MessageType": "",
+         "kids": [
+          {
+           "Type": "GuiStatusPane",
+           "Text": "",
+           "kids": [],
+           "Id": "/app/con[0]/ses[7]/wnd[0]/sbar/pane[0]",
+           "Name": "pane[0]"
+          }
+         ],
+         "Id": "/app/con[0]/ses[7]/wnd[0]/sbar",
+         "Name": "sbar"
+        }
+       ],
+       "Id": "/app/con[0]/ses[7]/wnd[0]",
+       "Name": "wnd[0]"
+      }
+     ],
+     "Id": "/app/con[0]/ses[7]"
+    }
+   ],
+   "Id": "/app/con[0]"
+  },
+  {
+   "Description": "Server without scripting",
+   "DisabledByServer": true,
+   "sessions": [],
+   "Id": "/app/con[1]"
+  }
+ ]
+}

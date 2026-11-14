@@ -1,0 +1,138 @@
+{
+ "activeWindow": "wnd[0]",
+ "client": "100",
+ "program": "SAPLSMTR_NAVIGATION",
+ "screen": "100",
+ "system": "DEM",
+ "transaction": "SESSION_MANAGER",
+ "windows": [
+  {
+   "controls": [
+    {
+     "changeable": false,
+     "id": "wnd[0]",
+     "name": "wnd[0]",
+     "text": "SAP Easy Access",
+     "tip": "",
+     "type": "GuiMainWindow"
+    },
+    {
+     "id": "wnd[0]/mbar",
+     "menus": [
+      "Menu",
+      "Edit",
+      "Goto",
+      "System",
+      "Help"
+     ],
+     "name": "mbar",
+     "type": "GuiMenubar"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/tbar[0]",
+     "name": "tbar[0]",
+     "text": "",
+     "tip": "",
+     "type": "GuiToolbar"
+    },
+    {
+     "id": "wnd[0]/tbar[0]/okcd",
+     "name": "okcd",
+     "type": "GuiOkCodeField"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[0]",
+     "name": "btn[0]",
+     "text": "",
+     "tip": "Enter   (Enter)",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[11]",
+     "name": "btn[11]",
+     "text": "",
+     "tip": "Save   (Ctrl+S)",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[3]",
+     "name": "btn[3]",
+     "text": "",
+     "tip": "Back   (F3)",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[15]",
+     "name": "btn[15]",
+     "text": "",
+     "tip": "Exit   (Shift+F3)",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[12]",
+     "name": "btn[12]",
+     "text": "",
+     "tip": "Cancel   (F12)",
+     "type": "GuiButton"
+    },
+    {
+     "id": "wnd[0]/titl",
+     "name": "titl",
+     "type": "GuiTitlebar"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/tbar[1]",
+     "name": "tbar[1]",
+     "text": "",
+     "tip": "",
+     "type": "GuiToolbar"
+    },
+    {
+     "id": "wnd[0]/usr",
+     "name": "usr",
+     "type": "GuiUserArea"
+    },
+    {
+     "id": "wnd[0]/usr/cntlIMAGE_CONTAINER",
+     "name": "IMAGE_CONTAINER",
+     "type": "GuiCustomControl"
+    },
+    {
+     "id": "wnd[0]/usr/cntlIMAGE_CONTAINER/shellcont",
+     "name": "shellcont",
+     "type": "GuiContainerShell"
+    },
+    {
+     "id": "wnd[0]/usr/cntlIMAGE_CONTAINER/shellcont/shell",
+     "name": "shell",
+     "sub": "Picture",
+     "type": "GuiShell"
+    },
+    {
+     "id": "wnd[0]/sbar",
+     "messageType": "",
+     "name": "sbar",
+     "text": "",
+     "type": "GuiStatusbar"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/sbar/pane[0]",
+     "name": "pane[0]",
+     "text": "",
+     "tip": "",
+     "type": "GuiStatusPane"
+    }
+   ],
+   "id": "wnd[0]",
+   "title": "SAP Easy Access"
+  }
+ ]
+}

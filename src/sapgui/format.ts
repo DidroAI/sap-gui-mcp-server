@@ -1,0 +1,107 @@
+/**
+ * The full text view of an SAP GUI screen, from the host's facts.
+ *
+ * Same format, line for line, as the Python bridge this was ported from
+ * (sapgui.py `look`): a header, a WINDOW line per window, then one line per
+ * control: `<scripting id>  <type>  <label and value>  <state>`. ALV grids,
+ * trees, text editors and toolbars inside containers follow with their
+ * content. core/compact.ts shortens this view.
+ */
+import type { Control, Screen } from "./facts.js";
+
+/** Containers and frames: they hold controls and show nothing themselves. */
+const SKIP = new Set([
+  "GuiUserArea",
+  "GuiSimpleContainer",
+  "GuiScrollContainer",
+  "GuiCustomControl",
+  "GuiContainerShell",
+  "GuiSplitterContainer",
+  "GuiDockShell",
+  "GuiTitlebar",
+  "GuiMenubar",
+  "GuiTabStrip",
+  "GuiMenu",
+]);
+
+const BLANK = "[\\t\\n\\v\\f\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+";
+const EDGES = new RegExp(`^${BLANK}|${BLANK}$`, "g");
+
+/** One line, no outer blanks. */
+export function esc(s: unknown): string {
+  return String(s ?? "")
+    .replace(/\n/g, " ")
+    .replace(EDGES, "");
+}
+
+function shellLines(c: Control): string[] {
+  if (c.error !== undefined) return [`${c.id}  shell error ${esc(c.error)}`];
+  const out: string[] = [];
+  if (c.sub === "GridView" && c.grid) {
+    const g = c.grid;
+    out.push(`${c.id}  grid  ${g.rowCount} rows; columns: ${g.cols.map((col, i) => `${col}=${esc(g.titles[i])}`).join(" | ")}`);
+    g.rows.forEach((cells, r) => out.push(`  row ${r}: ${cells.map(esc).join(" | ")}`));
+    if (g.rowCount > g.rows.length) out.push(`  ... ${g.rowCount - g.rows.length} more rows`);
+  } else if (c.sub === "Tree" && c.tree) {
+    const heads = c.tree.headers.map(esc).filter(Boolean);
+    out.push(`${c.id}  tree  ${c.tree.shown} nodes shown${heads.length ? `; columns: ${heads.join(" | ")}` : ""}`);
+    for (const n of c.tree.nodes) {
+      // Column trees keep more text in item columns; the same text twice is shown once.
+      const text = n.items ? [...new Set([esc(n.text), ...n.items.map(esc)].filter(Boolean))].join(" | ") : esc(n.text);
+      const state = n.folder ? (n.expanded ? "[-] " : "[+] ") : "";
+      out.push(`  ${"  ".repeat(n.depth)}${state}${text}  {node ${esc(n.key)}}`);
+    }
+  } else if (c.sub === "TextEdit") {
+    out.push(`${c.id}  text-editor  "${esc(c.text).slice(0, 2000)}"`);
+  } else if (c.sub === "Toolbar") {
+    const buttons = (c.buttons ?? []).map((b) => `${esc(b.text) || esc(b.tip)} {${b.id}}`);
+    if (buttons.length) out.push(`${c.id}  toolbar  ${buttons.join(", ")}`);
+  } else if (c.sub === "HTMLViewer") {
+    out.push(`${c.id}  html-viewer`);
+  } else {
+    out.push(`${c.id}  shell ${c.sub ?? ""}`);
+  }
+  return out;
+}
+
+/** The lines one control gives: none for a container, several for a grid or a tree. */
+export function controlLines(c: Control): string[] {
+  const t = c.type;
+  if (t === "GuiShell") return shellLines(c);
+  const id = c.id;
+  const text = esc(c.text);
+  const tip = esc(c.tip);
+  if (t === "GuiMenubar") return [`${id}  menubar  ${(c.menus ?? []).map((m, i) => `${esc(m)} {menu[${i}]}`).join(", ")}`];
+  if (SKIP.has(t)) return [];
+  if (t === "GuiTextField" || t === "GuiCTextField" || t === "GuiPasswordField") {
+    const value = t === "GuiPasswordField" ? "" : text;
+    return [`${id}  field  ${esc(c.label) || tip} = "${value}"  (${c.changeable ? "edit" : "read-only"})`];
+  }
+  if (t === "GuiLabel") return text ? [`${id}  label  ${text}`] : [];
+  if (t === "GuiCheckBox") return [`${id}  checkbox  [${c.selected ? "x" : " "}] ${text || tip}`];
+  if (t === "GuiRadioButton") return [`${id}  radio  [${c.selected ? "x" : " "}] ${text || tip}`];
+  if (t === "GuiComboBox") {
+    const options = (c.entries ?? []).slice(0, 30).map(([k, v]) => `${esc(k)}:${esc(v)}`);
+    return [`${id}  dropdown  ${esc(c.label) || tip} = "${esc(c.key)}" ${text}  options: ${options.join(", ")}`];
+  }
+  if (t === "GuiButton") return [`${id}  button  ${text || tip}${text && tip && tip !== text ? `  (${tip})` : ""}`];
+  if (t === "GuiTab") return [`${id}  tab  ${text}`];
+  if (t === "GuiStatusbar") {
+    const type = esc(c.messageType);
+    return text ? [`${id}  status  ${type ? `${type}: ` : ""}${text}`] : [];
+  }
+  if (t === "GuiBox") return text ? [`${id}  group  ${text}`] : [];
+  if (t === "GuiTableControl")
+    return [`${id}  table  rows ${c.rowCount ?? "None"} (visible ${c.visibleRowCount ?? "None"}); columns: ${(c.columns ?? []).map(esc).join(" | ")}`];
+  if (t === "GuiOkCodeField") return [`${id}  command-field`];
+  return text ? [`${id}  ${t.slice(3).toLowerCase()}  ${text}`] : [];
+}
+
+export function fullView(s: Screen): string {
+  const out = [`TRANSACTION ${s.transaction}  PROGRAM ${s.program}  SCREEN ${s.screen}`];
+  for (const w of s.windows) {
+    out.push(`WINDOW ${w.id}  "${esc(w.title)}"`);
+    for (const c of w.controls) out.push(...controlLines(c));
+  }
+  return out.join("\n");
+}

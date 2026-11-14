@@ -1,0 +1,178 @@
+{
+ "active": "/app/con[0]/ses[1]",
+ "connections": [
+  {
+   "description": "DEM demo system",
+   "disabledByServer": false,
+   "id": "/app/con[0]",
+   "sessions": [
+    {
+     "activeWindow": "wnd[0]",
+     "busy": false,
+     "client": "100",
+     "id": "/app/con[0]/ses[0]",
+     "language": "EN",
+     "program": "SAPMV45A",
+     "screen": "101",
+     "sessionNumber": 1,
+     "system": "DEM",
+     "transaction": "VA01",
+     "user": "TESTER",
+     "windows": [
+      {
+       "id": "wnd[0]",
+       "title": "Create Sales Order: Initial Screen"
+      }
+     ]
+    },
+    {
+     "activeWindow": "wnd[0]",
+     "busy": false,
+     "client": "100",
+     "id": "/app/con[0]/ses[1]",
+     "language": "EN",
+     "program": "SAPMV45A",
+     "screen": "4001",
+     "sessionNumber": 2,
+     "system": "DEM",
+     "transaction": "VA03",
+     "user": "TESTER",
+     "windows": [
+      {
+       "id": "wnd[0]",
+       "title": "Display Standard Order 4711: Overview"
+      }
+     ]
+    },
+    {
+     "activeWindow": "wnd[0]",
+     "busy": false,
+     "client": "100",
+     "id": "/app/con[0]/ses[2]",
+     "language": "EN",
+     "program": "SAPMV45A",
+     "screen": "4002",
+     "sessionNumber": 3,
+     "system": "DEM",
+     "transaction": "VA03",
+     "user": "TESTER",
+     "windows": [
+      {
+       "id": "wnd[0]",
+       "title": "Display Standard Order 4711: Header Data"
+      }
+     ]
+    },
+    {
+     "activeWindow": "wnd[0]",
+     "busy": false,
+     "client": "100",
+     "id": "/app/con[0]/ses[3]",
+     "language": "EN",
+     "program": "SAPLSLVC_FULLSCREEN",
+     "screen": "500",
+     "sessionNumber": 4,
+     "system": "DEM",
+     "transaction": "VA05",
+     "user": "TESTER",
+     "windows": [
+      {
+       "id": "wnd[0]",
+       "title": "List of Sales Orders"
+      }
+     ]
+    },
+    {
+     "activeWindow": "wnd[0]",
+     "busy": false,
+     "client": "100",
+     "id": "/app/con[0]/ses[4]",
+     "language": "EN",
+     "program": "SAPLSEOD",
+     "screen": "1000",
+     "sessionNumber": 5,
+     "system": "DEM",
+     "transaction": "SE80",
+     "user": "TESTER",
+     "windows": [
+      {
+       "id": "wnd[0]",
+       "title": "Object Navigator"
+      }
+     ]
+    },
+    {
+     "activeWindow": "wnd[1]",
+     "busy": false,
+     "client": "100",
+     "id": "/app/con[0]/ses[5]",
+     "language": "EN",
+     "program": "SAPLSDH4",
+     "screen": "120",
+     "sessionNumber": 6,
+     "system": "DEM",
+     "transaction": "VA01",
+     "user": "TESTER",
+     "windows": [
+      {
+       "id": "wnd[0]",
+       "title": "Create Sales Order: Initial Screen"
+      },
+      {
+       "id": "wnd[1]",
+       "title": "Sales Document Type (1) 3 Entries found"
+      }
+     ]
+    },
+    {
+     "activeWindow": "wnd[1]",
+     "busy": false,
+     "client": "100",
+     "id": "/app/con[0]/ses[6]",
+     "language": "EN",
+     "program": "SAPLSPO1",
+     "screen": "100",
+     "sessionNumber": 7,
+     "system": "DEM",
+     "transaction": "VA02",
+     "user": "TESTER",
+     "windows": [
+      {
+       "id": "wnd[0]",
+       "title": "Change Standard Order 4711: Overview"
+      },
+      {
+       "id": "wnd[1]",
+       "title": "Exit Document"
+      }
+     ]
+    },
+    {
+     "activeWindow": "wnd[0]",
+     "busy": false,
+     "client": "100",
+     "id": "/app/con[0]/ses[7]",
+     "language": "EN",
+     "program": "SAPLSMTR_NAVIGATION",
+     "screen": "100",
+     "sessionNumber": 8,
+     "system": "DEM",
+     "transaction": "SESSION_MANAGER",
+     "user": "TESTER",
+     "windows": [
+      {
+       "id": "wnd[0]",
+       "title": "SAP Easy Access"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "description": "Server without scripting",
+   "disabledByServer": true,
+   "id": "/app/con[1]",
+   "sessions": []
+  }
+ ]
+}
