@@ -68,7 +68,12 @@ export function commitQuestion(screen: Screen): string | undefined {
   const usrButton = w.controls.some((c) => c.type === "GuiButton" && c.id.includes("/usr/"));
   const hitList = w.controls.some((c) => /\/lbl\[\d+,\d+\]$/.test(c.id) || (c.type === "GuiShell" && c.sub === "GridView"));
   if (hitList && !usrButton) return undefined;
-  const texts = w.controls.filter((c) => c.type !== "GuiButton" && c.id !== w.id).map((c) => clean(c.text));
+  // The title alone can ask ("Save Data"). Otherwise a question is text with answer buttons in the popup body
+  // (Yes / No of POPUP_TO_CONFIRM): a popup whose only buttons sit in its toolbar is a dialog, and a checkbox
+  // such as MM03's "Create views selected" asks nothing.
+  if (commitWord(clean(w.title))) return clean(w.title);
+  if (!usrButton) return undefined;
+  const texts = w.controls.filter((c) => c.type !== "GuiButton" && c.type !== "GuiCheckBox" && c.type !== "GuiRadioButton" && c.id !== w.id).map((c) => clean(c.text));
   const question = [w.title, ...texts].filter(Boolean).join(" ").replace(/\s+/g, " ");
   return commitWord(question) ? question : undefined;
 }
