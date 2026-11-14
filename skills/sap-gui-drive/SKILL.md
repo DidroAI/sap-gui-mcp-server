@@ -16,9 +16,10 @@ do by hand, under their authorisations.
 2. One `sap_act` per step, on ids from the view. Each action answers with
    the new screen: read it before the next step instead of calling
    `sap_look` again.
-3. After every action, read the **status bar** (`STATUS:` / `sbar` line).
-   SAP reports errors (`E`), warnings (`W`) and successes (`S`) there; a
-   red error means the step did not go through.
+3. After every action, read the **status bar** line (`sbar  status  E: ...`
+   in SAP GUI and Web GUI; message toasts and popovers in Fiori). SAP
+   reports errors (`E`), warnings (`W`) and successes (`S`) there; an error
+   means the step did not go through.
 
 ## How SAP screens behave
 
