@@ -8,7 +8,8 @@ const view = (over: { type?: string; status?: string; rows?: string[]; extra?: s
     `TRANSACTION ZT01  PROGRAM ZPROG  SCREEN ${over.screen ?? "100"}  SYSTEM XYZ (100)`,
     `WINDOW wnd[0]  "${over.title ?? "Synthetic Order: Overview"}"`,
     "okcd  command-field",
-    "tbar[0]  toolbar  Back {btn[3]}, Exit {btn[15]}",
+    "btn[3]  button  Back (F3)",
+    "btn[15]  button  Exit (Shift+F3)",
     `ctxtZHDR-TYPE  field  Order Type = "${over.type ?? ""}"  (edit)`,
     'ctxtZHDR-ORG  field  Sales Organization = "1000"  (edit)',
     'ctxtZHDR-CHAN  field  Distribution Channel = "10"  (edit)',
@@ -20,7 +21,7 @@ const view = (over: { type?: string; status?: string; rows?: string[]; extra?: s
     "mbar  menubar  Order {menu[0]}, Edit {menu[1]}",
   ].join("\n");
 
-const POPUP = [view({ type: "AB" }).split("\n").slice(0, 2).join("\n"), 'WINDOW wnd[1]  "Information"', "txtMESSTXT1  label  Something happened", "tbar[0]  toolbar  Continue {btn[0]}"].join("\n");
+const POPUP = [view({ type: "AB" }).split("\n").slice(0, 2).join("\n"), 'WINDOW wnd[1]  "Information"', "txtMESSTXT1  label  Something happened", "btn[0]  button  Continue (Enter)"].join("\n");
 
 describe("sameScreen", () => {
   test("same header and windows, whatever the controls hold", () => {
@@ -40,12 +41,12 @@ describe("sameScreen", () => {
 
 describe("diffViews", () => {
   test("nothing changed", () => {
-    expect(diffViews(view(), view()).text).toBe("NO CHANGE on the screen (14 lines; sap_look shows it).");
+    expect(diffViews(view(), view()).text).toBe("NO CHANGE on the screen (15 lines; sap_look shows it).");
   });
   test("a changed line, a new line and a line that is gone", () => {
     const d = diffViews(view({ extra: ["lblOLD  label  Old"] }), view({ type: "AB", status: "E: Order type AB is not defined" }));
     expect(d.text.split("\n")).toEqual([
-      "CHANGED 3 of 15 lines (same screen; sap_look shows all of it):",
+      "CHANGED 3 of 16 lines (same screen; sap_look shows all of it):",
       '~ ctxtZHDR-TYPE  field  Order Type = "AB"  (edit)',
       "+ sbar  status  E: Order type AB is not defined",
       "- lblOLD  label  Old",
@@ -76,7 +77,7 @@ describe("Views: what an action answers with", () => {
   test("the same screen with a small change: the changes", () => {
     const v = new Views();
     v.present("s", view());
-    expect(v.present("s", view({ type: "AB" }))).toBe('CHANGED 1 of 14 lines (same screen; sap_look shows all of it):\n~ ctxtZHDR-TYPE  field  Order Type = "AB"  (edit)');
+    expect(v.present("s", view({ type: "AB" }))).toBe('CHANGED 1 of 15 lines (same screen; sap_look shows all of it):\n~ ctxtZHDR-TYPE  field  Order Type = "AB"  (edit)');
     // Counted from the view just given, not from the first one.
     expect(v.present("s", view({ type: "AB" }))).toStartWith("NO CHANGE");
   });
@@ -96,7 +97,7 @@ describe("Views: what an action answers with", () => {
     const v = new Views();
     v.present("s", view());
     v.present("s", POPUP);
-    expect(v.present("s", view({ type: "AB" }))).toBe('CHANGED 1 of 14 lines since you last saw this screen, before the popup (same screen; sap_look shows all of it):\n~ ctxtZHDR-TYPE  field  Order Type = "AB"  (edit)');
+    expect(v.present("s", view({ type: "AB" }))).toBe('CHANGED 1 of 15 lines since you last saw this screen, before the popup (same screen; sap_look shows all of it):\n~ ctxtZHDR-TYPE  field  Order Type = "AB"  (edit)');
   });
   test("back on a screen seen earlier, with another screen in between: whole", () => {
     const v = new Views();

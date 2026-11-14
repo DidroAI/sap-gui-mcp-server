@@ -59,13 +59,12 @@ describe("compact", () => {
     expect(out).toContain("cntlGRID/shell  grid  2 rows; columns: A=Col A | B=Col B");
   });
 
-  test("a toolbar is one line: each button by name, with the id to press", () => {
+  test("toolbar buttons keep a line each, their whole name and key, and a short id", () => {
     // The same button number in two toolbars: the id says which.
-    expect(out).toContain("tbar[0]  toolbar  Back (F3) {tbar[0]/btn[3]}");
-    expect(out).toContain("tbar[1]  toolbar  Other (Shift+F3) {tbar[1]/btn[3]}");
-    expect(out.some((l) => l.includes("  button  Back"))).toBe(false);
-    // A popup's toolbar: the popup's buttons, by their own short ids.
-    expect(compact(FULL).split("\n")).toContain("tbar[0]  toolbar  Continue (Enter) {btn[0]}");
+    expect(out).toContain("tbar[0]/btn[3]  button  Back (F3)");
+    expect(out).toContain("tbar[1]/btn[3]  button  Other (Shift+F3)");
+    // A popup's button, by its own short id: the screen behind is not in the way.
+    expect(compact(FULL).split("\n")).toContain("btn[0]  button  Continue (Enter)");
   });
 
   test("writes a table control as one line per row, with the filled cells only", () => {
@@ -93,25 +92,15 @@ describe("compact", () => {
   });
 
   test("with every rule off, the view is the one of before: full ids for buttons and shells, the table id on each row", () => {
-    const plain = compact(MAIN, { handles: false, toolbars: false, dropdowns: false, lists: false, emptyColumns: false, shortRows: false, maxChars: 0 }).split("\n");
+    const plain = compact(MAIN, { handles: false, repeatedButtons: false, dropdowns: false, lists: false, emptyColumns: false, shortRows: false, maxChars: 0 }).split("\n");
     expect(plain).toContain("wnd[0]/tbar[0]/btn[3]  button  Back (F3)");
     expect(plain).toContain("cntlGRID/shellcont/shell  grid  2 rows; columns: A=Col A | B=Col B");
     expect(plain).toContain("  tblZPROGTC_ITEMS row 0: Item=10; Material=WIDGET-1; Done [x]");
   });
 });
 
-describe("compact: toolbars and repeated buttons", () => {
+describe("compact: repeated buttons", () => {
   const view = (lines: string[]) => compact(["TRANSACTION Z  PROGRAM Z  SCREEN 1", 'WINDOW wnd[0]  "Z"', ...lines].join("\n")).split("\n").slice(2);
-  test("each button keeps its whole name: its text, and its tooltip with the function key", () => {
-    expect(
-      view([
-        "wnd[0]/tbar[0]/btn[11]  button  Save (Ctrl+S)",
-        "wnd[0]/tbar[0]/btn[3]  button  Back (F3)",
-        "wnd[0]/tbar[1]/btn[13]  button  Orders  (List of sales orders (Shift+F1))",
-        "wnd[0]/tbar[1]/btn[8]  button  Execute   (F8)",
-      ]),
-    ).toEqual(["tbar[0]  toolbar  Save (Ctrl+S) {btn[11]}, Back (F3) {btn[3]}", "tbar[1]  toolbar  Orders  (List of sales orders (Shift+F1)) {btn[13]}, Execute   (F8) {btn[8]}"]);
-  });
   test("buttons of the screen that differ only by their field share a line, the names in braces", () => {
     expect(
       view([
@@ -163,7 +152,7 @@ describe("compact: classic lists", () => {
   ].join("\n");
   test("one line per row of the list; rows that share their columns are written without them", () => {
     expect(compact(SAPGUI).split("\n").slice(2)).toEqual([
-      "tbar[0]  toolbar  Copy   (Enter) {btn[0]}",
+      "btn[0]  button  Copy   (Enter)",
       "wnd[1]/usr  list  3 rows  (cell ids: wnd[1]/usr/lbl[col,row], col in braces; rows without braces have their cells in columns 1,6; a checkbox is chk[col,row])",
       "  row 1: Type | Description",
       "  row 3: AA | First kind",
@@ -262,10 +251,10 @@ describe("compact: the screen behind a popup", () => {
     expect(c).not.toContain("Back (F3)");
     expect(c).not.toContain("Sold-To Party");
     expect(c).toContain("2 more lines behind the popup");
-    expect(c).toContain("tbar[0]  toolbar  Continue (Enter) {btn[0]}");
+    expect(c).toContain("btn[0]  button  Continue (Enter)");
   });
   test("leaves a screen without popup alone", () => {
     const one = full.split("\n").slice(0, 6).join("\n");
-    expect(compact(one)).toContain("tbar[0]  toolbar  Back (F3) {btn[3]}");
+    expect(compact(one)).toContain("btn[3]  button  Back (F3)");
   });
 });

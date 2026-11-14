@@ -15,10 +15,11 @@
  * - **Lists.** The cells of a classic list (`lbl[col,row]`) become one line
  *   per row of the list, each cell with its column in braces; rows that share
  *   their columns (a table drawn as a list) are written without them.
- * - **Toolbars.** The buttons of a toolbar (`tbar[n]`) share one line,
- *   `Name (key) {btn[N]}`, each with its whole name. Buttons of the screen
- *   that only differ by the field they belong to ("Multiple selection" on a
- *   selection screen) share one line too, with the names in braces.
+ * - **Repeated buttons.** Buttons that differ only by the field they belong
+ *   to ("Multiple selection" on a selection screen) share one line, with the
+ *   names in braces. Toolbar buttons keep a line each, with their whole name
+ *   and key: putting a toolbar on one line saved nothing once the ids were
+ *   short (measured), and leaving the key out lost what an icon button shows.
  * - **Dropdowns.** The current entry and the number of entries; the entries
  *   come from `{"do":"combo","id":...}` without a key, or sap_look with the
  *   dropdown's id.
@@ -37,8 +38,8 @@ import { shortIds } from "./ids.js";
 export interface CompactOptions {
   /** Shortest unique handles (default). False: the last segment when unique, else the path below the user area. */
   handles?: boolean;
-  /** Toolbars and repeated buttons on one line (default true). */
-  toolbars?: boolean;
+  /** Buttons that differ only by their field on one line (default true). */
+  repeatedButtons?: boolean;
   /** Dropdown entries as a count (default true). */
   dropdowns?: boolean;
   /** List cells as one line per list line (default true). */
@@ -99,7 +100,6 @@ function trimBehindPopups(lines: string[]): string[] {
 const CELL = /^(?<tbl>.*\/tbl[^/[]+)\/(?<ctl>[a-z]+)(?<name>[^[\s]+)\[(?<c>\d+),(?<r>\d+)\]\s+(?<rest>.*)$/;
 /** A cell of a classic list: a label, checkbox or field directly in the user area, named by column and line. */
 const LIST_CELL = /^(?<area>wnd\[\d+\]\/usr)\/(?<ctl>lbl|chk|txt|ctxt)\[(?<c>\d+),(?<r>\d+)\]$/;
-const TOOLBAR_BUTTON = /^(?<bar>wnd\[\d+\]\/tbar\[\d+\])\/btn\[\d+\]$/;
 /** The id of a control line: everything before the first two spaces. */
 const idOf = (line: string): string => line.split("  ", 1)[0] ?? "";
 const lastSegment = (id: string): string => id.slice(id.lastIndexOf("/") + 1);
@@ -118,7 +118,7 @@ function plainHandles(ids: string[]): Map<string, string> {
 }
 
 /** One line of the result while it is built: text, or a line that is filled in at the end. */
-type Out = string | { cells: string[]; prefix: string } | { bar: string; buttons: string[] } | { list: List; r?: number };
+type Out = string | { cells: string[]; prefix: string } | { list: List; r?: number };
 
 /** A classic list: its cells by line. */
 interface List {
@@ -144,11 +144,6 @@ function sharedColumns(list: List): string | undefined {
   return n >= 3 && n * 10 >= list.lines.size * 4 && sig.includes(",") ? sig : undefined;
 }
 
-/** A button's name as the full view has it: its text, and its tooltip with the function key. */
-function buttonName(rest: string): string {
-  return rest.replace(/^button {2}/, "");
-}
-
 /**
  * Buttons of the screen with one text and ids that differ in one place only
  * (`btn%_SVBELN_%_APP_%-VALU_PUSH`, `btn%_SAUART_%_APP_%-VALU_PUSH`...): one
@@ -159,7 +154,7 @@ function foldRepeatedButtons(lines: string[]): string[] {
   lines.forEach((l, i) => {
     if (l.startsWith(" ") || l.startsWith("WINDOW ")) return;
     const [id = "", kind = "", ...rest] = l.split("  ");
-    if (kind !== "button" || id.includes("{") || /btn\[\d+\]$/.test(id)) return;
+    if (kind !== "button" || /btn\[\d+\]$/.test(id)) return;
     const key = rest.join("  ");
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)?.push(i);
@@ -251,7 +246,7 @@ function fit(lines: string[], maxChars: number): string[] {
 }
 
 export function compact(full: string, options: CompactOptions = {}): string {
-  const opt: CompactOptions = { handles: true, toolbars: true, dropdowns: true, lists: true, listColumns: true, emptyColumns: true, shortRows: true, maxChars: DEFAULT_MAX_CHARS, ...options };
+  const opt: CompactOptions = { handles: true, repeatedButtons: true, dropdowns: true, lists: true, listColumns: true, emptyColumns: true, shortRows: true, maxChars: DEFAULT_MAX_CHARS, ...options };
   const lines = trimBehindPopups(full.split("\n"));
   const ids = (opt.screen === undefined ? lines : opt.screen.split("\n")).filter((l) => l.startsWith("wnd[")).map(idOf);
   const handles = opt.handles ? shortIds(ids) : plainHandles(ids);
@@ -260,7 +255,6 @@ export function compact(full: string, options: CompactOptions = {}): string {
   const titles = new Map<string, string[]>();
   const tableRows = new Map<string, string[]>();
   const lists = new Map<string, List>();
-  const bars = new Map<string, { bar: string; buttons: string[] }>();
   const out: Out[] = [];
   for (const l of lines) {
     if (!l.startsWith("wnd[")) {
@@ -338,18 +332,6 @@ export function compact(full: string, options: CompactOptions = {}): string {
       continue;
     }
 
-    const bar = opt.toolbars && rest.startsWith("button  ") ? TOOLBAR_BUTTON.exec(id)?.groups?.bar : undefined;
-    if (bar) {
-      let b = bars.get(bar);
-      if (!b) {
-        b = { bar, buttons: [] };
-        bars.set(bar, b);
-        out.push(b);
-      }
-      b.buttons.push(`${buttonName(rest)} {${short(id)}}`);
-      continue;
-    }
-
     if (opt.dropdowns && rest.startsWith("dropdown  ")) {
       const m = /^(.*?) {2}(\d+ )?options: (.*)$/.exec(rest);
       if (m) {
@@ -361,13 +343,10 @@ export function compact(full: string, options: CompactOptions = {}): string {
     out.push(`${short(id)}  ${rest}`);
   }
 
-  // A toolbar's handle: `tbar[1]`, or `wnd[1]/tbar[0]` when two windows show one.
-  const barHandles = shortIds(bars.keys());
   const shared = new Map<List, string | undefined>();
   for (const l of lists.values()) shared.set(l, opt.listColumns ? sharedColumns(l) : undefined);
   let text = out.map((x) => {
     if (typeof x === "string") return x;
-    if ("bar" in x) return `${barHandles.get(x.bar) ?? x.bar}  toolbar  ${x.buttons.join(", ")}`;
     if ("cells" in x) return `${x.prefix}${x.cells.join("; ") || "(empty)"}`;
     const h = short(x.list.area);
     const cols = shared.get(x.list);
@@ -379,7 +358,7 @@ export function compact(full: string, options: CompactOptions = {}): string {
     const plain = cols !== undefined && cells.map((c) => c.c).join(",") === cols;
     return `  row ${x.r}: ${cells.map((c) => (plain ? c.text : `${c.text} {${c.c}}`)).join(" | ")}`;
   });
-  if (opt.toolbars) text = foldRepeatedButtons(text);
+  if (opt.repeatedButtons) text = foldRepeatedButtons(text);
   if (opt.emptyColumns) text = foldEmptyColumns(text);
   return fit(text, opt.maxChars ?? 0).join("\n");
 }

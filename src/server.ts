@@ -359,7 +359,7 @@ export function createServer({ policy, surfaces, view = "diff" }: ServerOptions)
   {"do":"grid","id":"...","row":0,"col":"VBELN","how":"double|select"}   any row of the grid: one that is not on screen is scrolled to first
   {"do":"toolbar","id":"...","button":"<id>"}
   {"do":"scroll","id":"...","to":120}               grid, table control, tree or list: to a row counted from 0, or "next", "prev", "first", "last" (Fiori: scrolls a table or the page when the view ends with SCROLL)
-Ids: use them as the view shows them. A toolbar line lists its buttons as Name {btn[N]}: press btn[N], or send function key N with "key". A handle such as cntlGRID1/shell or shellcont[1]/shell is a shortened id; an id that names several controls is refused with the list of them, and an id from an earlier screen is refused with the screen you are on.
+Ids: use them as the view shows them. A toolbar button btn[N] is function key N: press it, or send the key. A handle such as cntlGRID1/shell or shellcont[1]/shell is a shortened id; an id that names several controls is refused with the list of them, and an id from an earlier screen is refused with the screen you are on.
 For "key", "key" is an SAP virtual key number (0 to 99) or a key name (Enter, Escape, Tab, F4, Control+S). The command field takes commands through "okcode" only.
 An action that may write to SAP is refused, run, or held for the user's yes, as the user set it up. When held, the client asks the user itself if it can, and the answer here is the result; if it cannot, the answer holds a token for sap_confirm.`,
       inputSchema: { action: actionSchema, session, full: z.boolean().optional().describe("answer with the whole screen even when little changed") },
