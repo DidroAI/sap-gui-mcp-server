@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 /**
  *   sap-gui-mcp-server            the stdio MCP server (default)
+ *   sap-gui-mcp-server setup      adds the server to Claude Code, Codex and Claude Desktop
  *   sap-gui-mcp-server doctor     checks what the server can reach on this machine
  *   sap-gui-mcp-server sessions   lists the SAP sessions it finds, then exits
  */
 import { disconnectChrome } from "./browser/chrome.js";
+import { doctorReport } from "./cli/doctor.js";
+import { setup } from "./cli/setup.js";
 import { policyFromEnv } from "./core/guard.js";
 import { Registry } from "./core/registry.js";
 import { SERVER_VERSION, sessionLine } from "./server.js";
@@ -15,6 +18,8 @@ const HELP = `sap-gui-mcp-server ${SERVER_VERSION}: an MCP server that sees and 
 
 Usage:
   sap-gui-mcp-server            start the stdio server (what MCP clients run)
+  sap-gui-mcp-server setup [claude-code|codex|claude-desktop] [--dry-run]
+                                add the server to the MCP clients found on this machine
   sap-gui-mcp-server doctor     check SAP GUI scripting and Chrome access on this machine
   sap-gui-mcp-server sessions   list the SAP sessions found now
   sap-gui-mcp-server --version | --help
@@ -38,13 +43,16 @@ async function main(argv: string[]): Promise<number> {
   if (!cmd) return await serveStdio(), -1;
   const surfaces = surfacesFromEnv();
   if (cmd === "doctor") {
-    let ok = true;
-    for (const s of surfaces)
-      for (const c of await s.doctor()) {
-        ok &&= c.ok;
-        console.log(`${c.ok ? "ok  " : "FAIL"} ${s.name.padEnd(7)} ${c.check}: ${c.detail}`);
-      }
-    return ok ? 0 : 1;
+    if (surfaces.some((s) => s.name !== "sapgui")) console.error("Checking… (if Chrome asks whether to allow remote debugging, click Allow)\n");
+    const report = await doctorReport(surfaces, SERVER_VERSION);
+    console.log(report.text);
+    return report.ok ? 0 : 1;
+  }
+  if (cmd === "setup") {
+    const only = argv.slice(1).filter((a) => !a.startsWith("--"));
+    const r = setup({ dryRun: argv.includes("--dry-run"), only });
+    console.log(r.lines.join("\n"));
+    return 0;
   }
   if (cmd === "sessions") {
     const r = new Registry(surfaces, policyFromEnv());
