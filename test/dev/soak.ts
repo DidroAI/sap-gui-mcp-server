@@ -98,7 +98,7 @@ const FLOW: Step[] = [
   { name: "scroll the list to row 60", act: { do: "scroll", id: "shell", to: 60 }, expect: /row 6\d:/, isNew: true },
   { name: "rows 30 to 59 of the list", look: { id: "shell", rows: "30-59" }, expect: /row 30:[^]*row 59:/, isNew: true },
   { name: "select a row that is not on screen", act: { do: "grid", id: "shell", row: 5, col: "VBELN", how: "select" }, expect: /scrolled to it/, isNew: true },
-  { name: "a row the list does not have", act: { do: "grid", id: "shell", row: 5000, col: "VBELN", how: "select" }, expect: /^(?!grid select)[^]*not on screen/, isNew: true },
+  { name: "a row the list does not have", act: { do: "grid", id: "shell", row: 5000, col: "VBELN", how: "select" }, expect: /^(?!grid select)[^]*the list has \d+ rows/, isNew: true },
   // A double-click would open VA02 (change): the row is only selected.
   { name: "select the first row of the list", act: { do: "grid", id: "shell", row: 0, col: "VBELN", how: "select" }, expect: /  grid  \d+ rows|NO CHANGE/ },
   key(3, /List of Sales Orders/, "Back to the VA05 selection"),
@@ -119,7 +119,7 @@ const FLOW: Step[] = [
   set("ctxtI1-LOW", "EN"),
   key(8, /Promotion Order/, "F8 to the SE16 list"),
   { name: "scroll the classic list down", act: { do: "scroll", id: "usr", to: "next" }, expect: /first \d+/, isNew: true },
-  { name: "look at the list again", look: {}, expect: /Promotion Order|line \d+:/ },
+  { name: "look at the list again", look: {}, expect: /  row \d+: / },
   key(3, /Selection Screen/, "Back to the SE16 selection"),
   // MM03: two popups, then a screen with 29 tabs.
   { ...ok("/nMM03"), expect: /TRANSACTION MM03/ },
