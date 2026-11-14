@@ -1,0 +1,156 @@
+/**
+ * The two MCP tools of record and replay:
+ *
+ *   sap_record   start, stop, assert, capture, variable, note, undo, status, list, export
+ *   sap_replay   run a recorded test again on the active session, with no model
+ *
+ * Recordings and exports are read and written in one directory
+ * (SAP_RECORD_DIR, default ./sap-tests) and named, never addressed by path:
+ * an agent cannot make the server read or write elsewhere.
+ */
+import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
+import type { Policy } from "../core/guard.js";
+import type { Registry } from "../core/registry.js";
+import { exportTest, TARGET_NAMES, TARGETS } from "./export/index.js";
+import { FILE_SUFFIX, inputsOf, slug } from "./format.js";
+import type { Recorder } from "./recorder.js";
+import { replay, resultText } from "./replay.js";
+
+const text = (t: string): CallToolResult => ({ content: [{ type: "text", text: t }] });
+const fail = (t: string): CallToolResult => ({ isError: true, content: [{ type: "text", text: t }] });
+async function answer(f: () => Promise<CallToolResult>): Promise<CallToolResult> {
+  try {
+    return await f();
+  } catch (e) {
+    return fail((e as Error).message);
+  }
+}
+
+const OPS = ["start", "stop", "status", "assert", "capture", "variable", "note", "undo", "list", "export"] as const;
+const SHOWN_MAX = 6000;
+
+export function registerRecordTools(server: McpServer, registry: Registry, policy: Policy, recorder: Recorder): void {
+  /** The name of the last recording stopped in this server, for export and replay without a name. */
+  let last: string | undefined;
+  const session = z.string().optional().describe("session from sap_sessions; default: the active one");
+
+  server.registerTool(
+    "sap_record",
+    {
+      title: "Record the SAP session as a test",
+      description: `Records what sap_act does as a repeatable test, and marks what the test must check. Off until "start". Operations ("op"):
+  {"op":"start","name":"VA03 display order"}        every sap_act that works is a step from now on; begin with an okcode like /nVA03
+  {"op":"assert","check":"status","contains":"saved"}   the status bar must say this after the last step
+  {"op":"assert","check":"field","id":"txtVBAK-NETWR","equals":"2.500,00"}   a field's value (without equals/contains/matches: its value now)
+  {"op":"assert","check":"title","contains":"Overview"}   also: "transaction", and "text" (anywhere on the screen)
+  {"op":"variable","name":"order","value":"19097"}  a value that changes between runs: written \${order} wherever it was typed or expected
+  {"op":"capture","name":"order","from":"status","pattern":"Order (\\\\d+)"}   a value SAP produced at the last step (a document number), for the steps after it; also from "field" (with id) or "title"
+  {"op":"note","text":"Open the order"}             what the last step is for
+  {"op":"undo"}                                     drop the last step from the recording (SAP is not undone)
+  {"op":"status"}                                   the steps so far
+  {"op":"stop"}                                     finish; the file is ${FILE_SUFFIX} in the recordings directory
+  {"op":"list"}                                     recordings in the directory
+  {"op":"export","name":"...","to":"calm"}          ${TARGET_NAMES.join(", ")}
+A check or capture is tried on the screen as it is now and refused if it does not hold. Recorded values are written to the file as typed.`,
+      inputSchema: {
+        op: z.enum(OPS),
+        name: z.string().optional().describe("start, export: the recording's name; variable, capture: the variable's name"),
+        description: z.string().optional(),
+        replace: z.boolean().optional().describe("start: record over a recording of the same name"),
+        check: z.enum(["status", "field", "title", "transaction", "text"]).optional(),
+        id: z.string().optional().describe("assert, capture on a field: the control id from sap_look"),
+        equals: z.string().optional(),
+        contains: z.string().optional(),
+        matches: z.string().optional().describe("a regular expression"),
+        value: z.string().optional().describe("variable: the value it has in this recording"),
+        from: z.enum(["status", "field", "title"]).optional(),
+        pattern: z.string().optional().describe("capture: a regular expression whose first group is the value"),
+        text: z.string().optional().describe("note: the text"),
+        to: z.enum(TARGET_NAMES as [string, ...string[]]).optional(),
+        session,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    },
+    (a) =>
+      answer(async () => {
+        switch (a.op) {
+          case "start": {
+            if (!a.name) return fail('start needs "name".');
+            const { driver, info } = await registry.session(a.session);
+            return text(await recorder.start(driver, info, a.name, a.description, a.replace === true));
+          }
+          case "stop": {
+            const r = await recorder.stop();
+            last = r.test.name;
+            return text(r.text);
+          }
+          case "status":
+            return text(recorder.status());
+          case "assert": {
+            if (!a.check) return fail('assert needs "check": status, field, title, transaction or text.');
+            return text(await recorder.assert(await registry.driver(a.session), { check: a.check, id: a.id, equals: a.equals, contains: a.contains, matches: a.matches }));
+          }
+          case "capture": {
+            if (!a.name || !a.from) return fail('capture needs "name" and "from": status, field or title.');
+            return text(await recorder.capture(await registry.driver(a.session), { name: a.name, from: a.from, id: a.id, pattern: a.pattern }));
+          }
+          case "variable": {
+            if (!a.name || a.value === undefined) return fail('variable needs "name" and "value".');
+            return text(await recorder.variable(a.name, a.value, a.description));
+          }
+          case "note":
+            return a.text ? text(await recorder.note(a.text)) : fail('note needs "text".');
+          case "undo":
+            return text(await recorder.undo());
+          case "list": {
+            const files = (await readdir(recorder.options.dir).catch(() => [] as string[])).filter((f) => f.endsWith(FILE_SUFFIX)).sort();
+            return text(files.length ? `Recordings in ${recorder.options.dir}:\n${files.map((f) => `- ${f.slice(0, -FILE_SUFFIX.length)}`).join("\n")}` : `No recording in ${recorder.options.dir}.`);
+          }
+          case "export": {
+            const name = a.name ?? last;
+            if (!name) return fail('export needs "name", the recording to export (see {"op":"list"}).');
+            if (!a.to) return fail(`export needs "to": ${TARGET_NAMES.map((t) => `${t} (${TARGETS[t].what})`).join("; ")}.`);
+            const test = await recorder.load(name);
+            const out = exportTest(test, a.to);
+            const path = join(recorder.options.dir, `${slug(name.replace(/\.saptest\.json$/i, ""))}${out.suffix}`);
+            await mkdir(recorder.options.dir, { recursive: true });
+            await writeFile(path, out.text, "utf8");
+            const shown = out.text.length > SHOWN_MAX ? `${out.text.slice(0, SHOWN_MAX)}\n... (${out.text.length - SHOWN_MAX} more characters in the file)` : out.text;
+            return text(`Written to ${path}\n\n${shown}`);
+          }
+        }
+      }),
+  );
+
+  server.registerTool(
+    "sap_replay",
+    {
+      title: "Replay a recorded SAP test",
+      description:
+        'Runs a recording made with sap_record again on the active session, step by step, with no model: the same actions on the same ids, under the same write setting and transaction lists as sap_act. Answers pass or fail per step; on a failure, the screen there (the session stays on it). Give "variables" to run it on other data, e.g. {"order":"4711"}. Steps that may write need SAP_WRITE=on.',
+      inputSchema: {
+        name: z.string().optional().describe("the recording (default: the one just stopped)"),
+        variables: z.record(z.string(), z.string()).optional(),
+        screens: z.enum(["strict", "loose"]).optional().describe("loose: landing on another screen than recorded is a note, not a failure"),
+        session,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+    },
+    (a) =>
+      answer(async () => {
+        if (recorder.recording) return fail('A recording is on: stop it first with sap_record {"op":"stop"}.');
+        const name = a.name ?? last;
+        if (!name) return fail('Give "name", the recording to replay (sap_record {"op":"list"} lists them).');
+        const test = await recorder.load(name);
+        const { driver } = await registry.session(a.session);
+        const r = await replay(driver, policy, test, { ...(a.variables ? { variables: a.variables } : {}), ...(a.screens ? { screens: a.screens } : {}), leaveOnFailure: false });
+        const needs = inputsOf(test);
+        const out = `${resultText(r)}${r.aborted && needs.length ? `\nThe test takes: ${needs.join(", ")}.` : ""}`;
+        return r.passed ? text(out) : fail(out);
+      }),
+  );
+}

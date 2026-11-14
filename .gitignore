@@ -8,3 +8,5 @@ coverage/
 # Screens hold business data: captures stay out of the repository.
 captures/
 *.png
+# Recordings made while developing hold what was typed: they stay out of this repository.
+sap-tests/
