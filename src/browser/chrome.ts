@@ -30,6 +30,7 @@ import { homedir } from "node:os";
 import { posix, win32 } from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { allowedOrigins, classify, originAllowed, originOf, type TabOwner, type TabSigns, tabSigns } from "./classify.js";
+import type { DoctorCheck } from "../core/types.js";
 
 export interface ChromeTab {
   /** The CDP target id, stable for the life of the tab. */
@@ -361,13 +362,28 @@ export async function disconnectChrome(): Promise<void> {
 }
 
 /** Setup checks: is there a Chrome we can attach to, which version, how many tabs; when not, the one step to take. */
-export async function chromeDoctor(env: Record<string, string | undefined>): Promise<{ ok: boolean; check: string; detail: string }[]> {
+export async function chromeDoctor(env: Record<string, string | undefined>): Promise<DoctorCheck[]> {
   const check = "Chrome";
   let c: Connection;
   try {
     c = await chrome(env);
   } catch (e) {
-    return [{ ok: false, check, detail: (e as Error).message }];
+    const message = (e as Error).message;
+    if (env.SAP_CHROME_CDP)
+      return [{ ok: false, check, detail: message.split(/(?<=\.) /)[0] ?? message, fix: "Check that this Chrome runs with --remote-debugging-port and --user-data-dir, or unset SAP_CHROME_CDP to use your everyday Chrome." }];
+    const busy = await portOpen("127.0.0.1", 9222);
+    return [
+      {
+        ok: false,
+        check,
+        detail: busy
+          ? "something listens on 127.0.0.1:9222, but no Chrome has written its DevToolsActivePort file, so the server cannot tell it is your Chrome"
+          : "no Chrome with remote debugging allowed is running (looked for Chrome, Chrome Beta and Edge)",
+        fix: busy
+          ? `If it is your Chrome: quit Chrome completely and open it again, then run doctor again. If it is a Chrome you started for testing: set SAP_CHROME_CDP=http://127.0.0.1:9222.`
+          : `In Chrome ${MIN_CHROME_AUTO_CONNECT} or later, open chrome://inspect/#remote-debugging and tick "Allow remote debugging for this browser instance". Then run doctor again and click Allow when Chrome asks.`,
+      },
+    ];
   }
   const version = c.browser.version();
   const out = [{ ok: true, check, detail: `attached to Chrome ${version} through ${c.endpoint.from}` }];
@@ -377,12 +393,6 @@ export async function chromeDoctor(env: Record<string, string | undefined>): Pro
       ok: true,
       check: "Chrome version",
       detail: `Chrome ${major} is older than ${MIN_CHROME_AUTO_CONNECT}: it cannot allow remote debugging from chrome://inspect, so it must be started with --remote-debugging-port (as it is now)${major >= MIN_CHROME_PORT_NEEDS_DATA_DIR ? "" : `; from Chrome ${MIN_CHROME_PORT_NEEDS_DATA_DIR} on, that switch also needs --user-data-dir`}.`,
-    });
-  if (/^https?:\/\//.test(c.endpoint.url) || c.endpoint.from === "SAP_CHROME_CDP")
-    out.push({
-      ok: true,
-      check: "Chrome debugging port",
-      detail: `Chrome ${MIN_CHROME_PORT_NEEDS_DATA_DIR} and later open --remote-debugging-port only together with --user-data-dir=<a directory other than Chrome's default>; keep both when you restart this Chrome.`,
     });
   const origins = allowedOrigins(env);
   if (origins) out.push({ ok: true, check: "Origins", detail: `only tabs of ${origins.join(", ")} are looked at (SAP_ALLOW_ORIGINS)` });

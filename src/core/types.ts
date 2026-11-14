@@ -101,14 +101,22 @@ export interface Driver {
   close(): Promise<void>;
 }
 
+/** One setup check: a short name, what was found, and (when not ok) the one thing to do. */
+export interface DoctorCheck {
+  ok: boolean;
+  check: string;
+  detail: string;
+  fix?: string;
+}
+
 /** A surface finds sessions and opens drivers on them. */
 export interface Surface {
   readonly name: SurfaceName;
   /** Sessions open right now. Never logs on and never opens anything. */
   discover(): Promise<SessionInfo[]>;
   open(session: SessionInfo): Promise<Driver>;
-  /** Setup checks for `doctor`: one line each, ok or not, with what to change. */
-  doctor(): Promise<{ ok: boolean; check: string; detail: string }[]>;
+  /** Setup checks for `doctor`: one each, ok or not, what was found, and what to change when not ok. */
+  doctor(): Promise<DoctorCheck[]>;
 }
 
 /** An action that could not run: the message is meant for the model. */

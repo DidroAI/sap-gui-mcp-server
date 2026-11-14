@@ -61,6 +61,13 @@ no checkbox state. These numbers come from a small internal probe, not a
 benchmark yet. A public, repeatable benchmark is on the way, with whole
 tasks, held-out screens, and Claude's and Codex's own computer-use tools.
 
+## Set up with your agent
+
+The easiest way: paste the prompt in [docs/setup-prompt.md](docs/setup-prompt.md)
+into Claude Code or Codex. The agent installs the server, adds it to your MCP
+clients (`setup`), runs `doctor` and walks you through each setting, then
+looks at your SAP screen to prove it works.
+
 ## Quick start
 
 Requires Node 22 or later.
@@ -84,6 +91,15 @@ Claude Desktop, Cursor and other clients take the same command:
 Then open SAP and ask: *"Look at my SAP screen and tell me which fields are
 required"*, or *"In VA03, open order 19097 and tell me its delivery
 status"*.
+
+Or let the server add itself to every MCP client it finds (Claude Code,
+Codex, Claude Desktop); it never overwrites an existing entry and keeps a
+`.bak` of any file it changes:
+
+```sh
+npx -y sap-gui-mcp-server setup --dry-run   # what it would change
+npx -y sap-gui-mcp-server setup
+```
 
 Check your setup at any time:
 
