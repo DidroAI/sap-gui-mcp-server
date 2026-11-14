@@ -131,8 +131,19 @@ function Sap-Processes {
 # The object SAP GUI registers for scripting, and no other: the name is fixed.
 # (The Windows tests replace this one function with a fake SAP GUI, in
 # test/sapgui/fake-host.ps1; nothing in the shipped host can change it.)
+#
+# "SAPGUI" is the display name of an entry in the running object table, not a
+# class name, so it is bound as a moniker, as VBScript's GetObject("SAPGUI")
+# does (Marshal.GetActiveObject wants a registered class and answers "Invalid
+# class string"). Windows resolves a moniker name in the running object table
+# first, then as a file path: the working directory is moved to the Windows
+# system folder first, so that a file named SAPGUI in the folder the server
+# was started from can never be what gets bound.
 function Get-SapGui {
-  try { , [System.Runtime.InteropServices.Marshal]::GetActiveObject('SAPGUI') }
+  try {
+    [Environment]::CurrentDirectory = [Environment]::SystemDirectory
+    , [System.Runtime.InteropServices.Marshal]::BindToMoniker('SAPGUI')
+  }
   catch {
     # SAP GUI registers that object only while scripting is on.
     if (@(Sap-Processes).Count -gt 0) { throw 'SCRIPTING_OFF: SAP GUI is running but does not offer scripting' }
