@@ -45,12 +45,15 @@ function shellLines(c: Control): string[] {
   const out: string[] = [];
   if (c.sub === "GridView" && c.grid) {
     const g = c.grid;
+    const first = g.first ?? 0;
     out.push(`${c.id}  grid  ${g.rowCount} rows; columns: ${g.cols.map((col, i) => `${col}=${esc(g.titles[i])}`).join(" | ")}`);
-    g.rows.forEach((cells, r) => out.push(`  row ${r}: ${cells.map(esc).join(" | ")}`));
-    if (g.rowCount > g.rows.length) out.push(`  ... ${g.rowCount - g.rows.length} more rows`);
+    g.rows.forEach((cells, r) => out.push(`  row ${first + r}: ${cells.map(esc).join(" | ")}`));
+    if (g.rowCount > g.rows.length) out.push(`  ... ${g.rowCount - g.rows.length} more rows (shown: ${first} to ${first + g.rows.length - 1}; scroll for the others)`);
   } else if (c.sub === "Tree" && c.tree) {
     const heads = c.tree.headers.map(esc).filter(Boolean);
-    out.push(`${c.id}  tree  ${c.tree.shown} nodes shown${heads.length ? `; columns: ${heads.join(" | ")}` : ""}`);
+    // A tree longer than the host reads at once says which part this is.
+    const part = c.tree.nodes.length < c.tree.shown ? ` (${c.tree.nodes.length} listed, first ${c.tree.first ?? 0}; scroll for the others)` : "";
+    out.push(`${c.id}  tree  ${c.tree.shown} nodes shown${part}${heads.length ? `; columns: ${heads.join(" | ")}` : ""}`);
     for (const n of c.tree.nodes) {
       // Column trees keep more text in item columns; the same text twice is shown once.
       const text = n.items ? [...new Set([esc(n.text), ...n.items.map(esc)].filter(Boolean))].join(" | ") : esc(n.text);
@@ -77,6 +80,9 @@ export function controlLines(c: Control): string[] {
   const id = c.id;
   const text = esc(c.text);
   const tip = esc(c.tip);
+  // A classic list that scrolls: its cells (lbl[col,row]) follow as their own lines.
+  if (t === "GuiUserArea" && c.scroll)
+    return [`${id}  list  ${c.scroll.maximum + c.scroll.pageSize} rows (visible ${c.scroll.pageSize}${c.scroll.position ? `, first ${c.scroll.position}` : ""}; scroll for the others)`];
   if (t === "GuiMenubar") return [`${id}  menubar  ${(c.menus ?? []).map((m, i) => `${esc(m)} {menu[${i}]}`).join(", ")}`];
   if (SKIP.has(t)) return [];
   if (t === "GuiTextField" || t === "GuiCTextField" || t === "GuiPasswordField") {
@@ -87,8 +93,9 @@ export function controlLines(c: Control): string[] {
   if (t === "GuiCheckBox") return [`${id}  checkbox  [${c.selected ? "x" : " "}] ${text || tip}`];
   if (t === "GuiRadioButton") return [`${id}  radio  [${c.selected ? "x" : " "}] ${text || tip}`];
   if (t === "GuiComboBox") {
-    const options = (c.entries ?? []).slice(0, 30).map(([k, v]) => `${esc(k)}:${esc(v)}`);
-    return [`${id}  dropdown  ${esc(c.label) || tip} = "${esc(c.key)}" ${text}  options: ${options.join(", ")}`];
+    const all = c.entries ?? [];
+    const options = all.slice(0, 30).map(([k, v]) => `${esc(k)}:${esc(v)}`);
+    return [`${id}  dropdown  ${esc(c.label) || tip} = "${esc(c.key)}" ${text}  ${all.length} options: ${options.join(", ")}${all.length > 30 ? ", ..." : ""}`];
   }
   if (t === "GuiButton") return [`${id}  button  ${text || tip}${text && tip && tip !== text ? `  (${tip})` : ""}`];
   if (t === "GuiTab") return [`${id}  tab  ${text}`];
@@ -98,7 +105,8 @@ export function controlLines(c: Control): string[] {
   }
   if (t === "GuiBox") return text ? [`${id}  group  ${text}`] : [];
   if (t === "GuiTableControl")
-    return [`${id}  table  rows ${c.rowCount ?? "None"} (visible ${c.visibleRowCount ?? "None"}); columns: ${(c.columns ?? []).map(esc).join(" | ")}`];
+    return [`${id}  table  rows ${c.rowCount ?? "None"} (visible ${c.visibleRowCount ?? "None"}${c.firstRow ? `, first ${c.firstRow}` : ""}); columns: ${(c.columns ?? []).map(esc).join(" | ")}`];
+
   if (t === "GuiOkCodeField") return [`${id}  command-field`];
   return text ? [`${id}  ${t.slice(3).toLowerCase()}  ${text}`] : [];
 }

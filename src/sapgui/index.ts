@@ -6,12 +6,16 @@
  * (host.ts, ps/host.ps1) reads raw facts, and the text view is formatted
  * here (format.ts) and shortened by core/compact.ts.
  *
- * Actions: set, press, key, select, check, combo, okcode, f4, focus,
- * dblclick, tree (double, select, expand, collapse), grid (double, select)
- * and toolbar. Ids are the ones the view shows; short ids and SAP field
- * names work too (resolve.ts).
+ * Actions: set, press, key, select, check, combo (without a key: the
+ * entries), okcode, f4, focus, dblclick, tree (double, select, expand,
+ * collapse), grid (double, select), toolbar and scroll (a grid, a table
+ * control, a list, a long tree). Ids are the ones the view shows; handles
+ * and SAP field names work too (resolve.ts), and an id that names several
+ * controls is refused with the list of them.
  */
-import { compact } from "../core/compact.js";
+import { compact, controlBlock } from "../core/compact.js";
+import { severalText } from "../core/ids.js";
+import { readRows } from "../core/rows.js";
 import { type Action, ActionError, type Assessment, type Driver, type LookOptions, type SessionInfo, type Surface } from "../core/types.js";
 import { isLogonScreen, LOGON_REFUSAL } from "../core/words.js";
 import { assess } from "./assess.js";
@@ -19,7 +23,7 @@ import type { Control, DoctorEngine, DoctorLocal, Screen, SessionFacts, Sessions
 import { fullView } from "./format.js";
 import { vkeyNumber } from "./keys.js";
 import { HostError, MAX_TIMEOUT_MS, type PowershellPolicy, powershellPolicy, PsHost, READ_TIMEOUT_MS } from "./host.js";
-import { relativeId, resolve } from "./resolve.js";
+import { relativeId, resolve, resolveStrict } from "./resolve.js";
 
 const PREFIX = "sapgui:";
 /** How long a screen read may serve the step that follows it (assess, then act). */
@@ -80,7 +84,11 @@ function explain(e: unknown): Error {
     case "PASSWORD":
       return new ActionError(`${e.message}: this server never types a password. Type it yourself.`);
     case "BUSY":
-      return new ActionError("SAP GUI is still busy with the last step. Look again in a moment.");
+      return new ActionError('SAP GUI is still busy with the last step. Look again in a moment (sap_look); a long step can be given more time with "timeout" (seconds).');
+    case "NOT_FOUND":
+      return new ActionError(`${e.message}. Use an id from the screen you are on (it may have changed since your last look).`);
+    case "NO_SCROLL":
+      return new ActionError(`${e.message}: "scroll" works on a grid, a table control, a tree or a list.`);
     default:
       return new ActionError(`SAP GUI refused: ${e.message}`);
   }
@@ -90,6 +98,8 @@ class SapguiDriver implements Driver {
   info: SessionInfo;
   private sid: string;
   private last: { at: number; screen: Screen } | undefined;
+  /** Trees longer than the host reads at once: the node each is read from, until the screen changes. */
+  private treeFrom: Record<string, number> = {};
 
   constructor(
     info: SessionInfo,
@@ -109,7 +119,10 @@ class SapguiDriver implements Driver {
 
   private async screen(reuse = false): Promise<Screen> {
     if (reuse && this.last && Date.now() - this.last.at < FRESH_MS) return this.last.screen;
-    const screen = await this.ask<Screen>("screen");
+    const paged = Object.keys(this.treeFrom).length > 0;
+    const screen = await this.ask<Screen>("screen", paged ? { treeFrom: this.treeFrom } : {});
+    // A tree that is gone takes its place in the paging with it.
+    if (paged && !Object.keys(this.treeFrom).every((id) => screen.windows.some((w) => w.controls.some((c) => c.id === id)))) this.treeFrom = {};
     this.last = { at: Date.now(), screen };
     return screen;
   }
@@ -120,14 +133,74 @@ class SapguiDriver implements Driver {
   }
 
   async look(options: LookOptions): Promise<string> {
-    const full = fullView(await this.screen());
-    return options.compact ? compact(full) : full;
+    const screen = await this.screen();
+    const full = fullView(screen);
+    if (!options.id) return options.compact ? compact(full) : full;
+    const target = this.strict(screen, options.id);
+    const missing = () => new ActionError(`No control "${options.id}" on this screen. Use an id from sap_look (the screen may have changed).`);
+    if (!target) throw missing();
+    const id = target.id;
+    if (options.rows) {
+      return readRows(
+        {
+          scrollTo: async (row) => {
+            await this.scroll(target, row);
+          },
+          block: async () => {
+            const now = fullView(await this.screen());
+            const block = controlBlock(now, id);
+            return block === undefined ? undefined : { block, screen: now };
+          },
+        },
+        options.id,
+        options.rows.from,
+        options.rows.to,
+      );
+    }
+    let block = controlBlock(full, id);
+    if (!block) throw missing();
+    // Every entry of a dropdown, also those the view cuts.
+    if (target.type === "GuiComboBox" && (target.entries?.length ?? 0) > 30)
+      block = `${block.replace(/ {2}\d+ options: .*$/, "")}  ${target.entries?.length} options: ${(target.entries ?? []).map(([k, v]) => `${k.trim()}:${v.trim()}`).join(", ")}`;
+    return options.compact ? compact(block, { dropdowns: false, maxChars: 0, screen: full }) : block;
+  }
+
+  /** The control an id means on the screen read; an id that names several is refused. */
+  private strict(screen: Screen, ident: string): Control | undefined {
+    const r = resolveStrict(screen, ident);
+    if ("several" in r) throw new ActionError(severalText(ident, r.several));
+    return "control" in r ? r.control : undefined;
+  }
+
+  /** Moves a grid, a table control, a list or a long tree; answers where it is now. */
+  private async scroll(target: Control, to: number | string, timeoutMs = ACT_MS): Promise<string> {
+    const id = target.id;
+    if (target.type === "GuiShell" && target.sub === "Tree" && target.tree) {
+      // SAP GUI gives every node on show whatever the tree is scrolled to: only a tree longer than one read is paged.
+      const t = target.tree;
+      const page = t.nodes.length;
+      const from = t.first ?? 0;
+      if (page >= t.shown && from === 0) return `all ${t.shown} nodes of ${id} are in the view: nothing to scroll`;
+      const max = Math.max(0, t.shown - page);
+      const want = typeof to === "number" ? to : to === "next" ? from + page : to === "prev" ? from - page : to === "first" ? 0 : to === "last" ? max : from;
+      const first = Math.max(0, Math.min(want, Math.max(max, 0)));
+      this.treeFrom = { ...this.treeFrom, [id]: first };
+      this.last = undefined;
+      return `scrolled ${id}: nodes ${first} to ${Math.min(first + page, t.shown) - 1} of ${t.shown}`;
+    }
+    const scrolls = (target.type === "GuiShell" && target.sub === "GridView") || target.type === "GuiTableControl" || (target.type === "GuiUserArea" && target.scroll);
+    if (!scrolls) throw new ActionError(`${id} does not scroll: "scroll" works on a grid, a table control, a tree or a list.`);
+    this.last = undefined;
+    const r = await this.ask<{ from?: number; first?: number; visible?: number; total?: number }>("act", { action: { do: "scroll", id, to } }, timeoutMs);
+    if (r.first === undefined) return `scrolled ${id}`;
+    const last = Math.min((r.first ?? 0) + (r.visible ?? 1), r.total ?? Number.MAX_SAFE_INTEGER) - 1;
+    return r.first === r.from ? `${id} is already there: rows ${r.first} to ${last} of ${r.total}` : `scrolled ${id}: rows ${r.first} to ${last} of ${r.total}`;
   }
 
   /** The control an action's id means: on the screen read, or asked from SAP GUI (menu entries are not in the read). */
   private async target(screen: Screen, action: Action): Promise<Control | undefined> {
     if (typeof action.id !== "string" || !action.id.trim()) return undefined;
-    const found = resolve(screen, action.id);
+    const found = this.strict(screen, action.id);
     if (found) return found;
     const id = relativeId(action.id);
     if (!id.startsWith("wnd[")) return undefined;
@@ -156,8 +229,14 @@ class SapguiDriver implements Driver {
       if (key === undefined) throw new ActionError('key needs "key": a virtual key number (0 Enter, 3 Back, 4 F4, 8 F8, 12 Cancel) or a function key by name (Enter, F8, Shift+F3, Control+s)');
       return this.run({ do: "key", key }, `key ${key}`, timeoutMs);
     }
-    if (typeof action.id !== "string" || !action.id.trim()) throw new ActionError(`${doing} needs "id": a control id from sap_look`);
     const screen = now;
+    if (doing === "scroll" && (typeof action.id !== "string" || !action.id.trim())) {
+      // Without an id: the one control of the screen that scrolls.
+      const all = screen.windows.flatMap((w) => w.controls).filter((c) => (c.type === "GuiShell" && (c.sub === "GridView" || c.sub === "Tree")) || c.type === "GuiTableControl" || (c.type === "GuiUserArea" && c.scroll));
+      if (all.length !== 1) throw new ActionError(all.length ? `scroll needs "id": one of ${all.map((c) => c.id).join(", ")}.` : "Nothing on this screen scrolls: no grid, table, tree or list.");
+      return this.scroll(all[0] as Control, (action.to ?? "next") as number | string, timeoutMs);
+    }
+    if (typeof action.id !== "string" || !action.id.trim()) throw new ActionError(`${doing} needs "id": a control id from sap_look`);
     const target = await this.target(screen, action);
     if (!target) throw new ActionError(`No control "${action.id}" on this screen. Use an id from sap_look (the screen may have changed).`);
     const id = target.id;
@@ -184,9 +263,12 @@ class SapguiDriver implements Driver {
       }
       case "combo": {
         if (target.type !== "GuiComboBox") throw new ActionError(`${id} is a ${target.type}, not a dropdown.`);
+        const entries = target.entries ?? [];
+        // No key: the entries, and nothing is chosen.
+        if (action.key === undefined && action.value === undefined)
+          return entries.length ? `${id} has ${entries.length} entries: ${entries.map(([k, v]) => `${k.trim()}:${v.trim()}`).join(", ")}` : `${id} has no entries`;
         // By key, or by the text the dropdown shows.
         const wanted = String(action.key ?? action.value ?? "");
-        const entries = target.entries ?? [];
         const key = entries.find(([k]) => k === wanted) ?? entries.find(([k]) => k.trim() === wanted.trim()) ?? entries.find(([, v]) => v.trim().toLowerCase() === wanted.trim().toLowerCase());
         if (entries.length && !key) throw new ActionError(`No entry "${wanted}" in ${id}. Entries: ${entries.map(([k, v]) => `${k.trim()}:${v.trim()}`).join(", ")}`);
         return this.run({ do: "combo", id, key: key?.[0] ?? wanted }, `combo ${id} = "${(key?.[0] ?? wanted).trim()}"`, timeoutMs);
@@ -207,16 +289,20 @@ class SapguiDriver implements Driver {
         if (!["double", "select"].includes(how)) throw new ActionError('grid "how" is double or select');
         return this.run({ do: "grid", id, row: action.row, col: action.col, how }, `grid ${how} row ${action.row}, column ${action.col} in ${id}`, timeoutMs);
       }
+      case "scroll":
+        return this.scroll(target, (action.to ?? "next") as number | string, timeoutMs);
       case "toolbar":
         if (typeof action.button !== "string") throw new ActionError('toolbar needs "button": the id shown as {<id>}');
         return this.run({ do: "toolbar", id, button: action.button }, `toolbar button ${action.button} in ${id}`, timeoutMs);
       default:
-        throw new ActionError(`Unknown action "${doing}". SAP GUI takes: set, press, key, select, check, combo, okcode, f4, focus, dblclick, tree, grid, toolbar.`);
+        throw new ActionError(`Unknown action "${doing}". SAP GUI takes: set, press, key, select, check, combo, okcode, f4, focus, dblclick, tree, grid, toolbar, scroll.`);
     }
   }
 
   private async run(action: Record<string, unknown>, note: string, timeoutMs = ACT_MS): Promise<string> {
     this.last = undefined;
+    // Another screen may follow: a tree's paging belongs to the screen it was asked on.
+    this.treeFrom = {};
     await this.ask("act", { action }, timeoutMs);
     return note;
   }

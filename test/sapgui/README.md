@@ -51,6 +51,13 @@ sees what reached it.
 `fake-host.ps1` and the fake are not in the published package (`files` in
 `package.json` lists `dist` only).
 
+The fake grid shows twenty rows from its `FirstVisibleRow`, and the fake
+table control has a `VerticalScrollbar`, so `e2e.mjs` also scrolls a grid,
+reads a range of rows and lists a dropdown's entries through the shipped
+host. Those checks, and the host's scroll code they exercise, were written
+on Linux and have not been run on Windows yet: run `node test/sapgui/e2e.mjs`
+there before relying on them.
+
 What the fake cannot show: how the real SAP GUI objects behave (timing,
 errors, the `HardCopy` image format). That is what `--real` is for.
 

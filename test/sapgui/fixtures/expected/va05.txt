@@ -59,4 +59,4 @@ wnd[0]/usr/cntlGRID1/shellcont/shell  grid  52 rows; columns: VBELN=Sales Doc. |
   row 47: 4747 | 01.02.2005 | 4800.00
   row 48: 4748 | 01.02.2005 | 4900.00
   row 49: 4749 | 01.02.2005 | 5000.00
-  ... 2 more rows
+  ... 2 more rows (shown: 0 to 49; scroll for the others)
