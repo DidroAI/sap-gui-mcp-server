@@ -1,19 +1,20 @@
 /**
  * The Web GUI surface: SAP GUI for HTML tabs in the user's Chrome.
  *
- * A tab is Web GUI when its URL contains /sap/bc/gui/sap/its/webgui, or when
- * its page holds Web GUI's controls (`lsdata`) and its system information
- * items. Web GUI inside a Fiori launchpad (an iframe) belongs to the Fiori
+ * Which tabs are Web GUI is decided in one place, browser/classify.ts: the
+ * URL path contains /sap/bc/gui/sap/its/webgui, or the main frame holds Web
+ * GUI's controls (`lsdata`) with its system information items or command
+ * field. Web GUI inside a Fiori launchpad (an iframe) belongs to the Fiori
  * surface, which reads and drives it with the three `...InFrame` functions.
  */
 import type { Frame, Page } from "playwright-core";
-import { chromeDoctor, chromeTabs, type ChromeTab } from "../browser/chrome.js";
+import { chromeDoctor, chromeTabs, type ChromeTab, sapTabs, stillOwned } from "../browser/chrome.js";
+import { isWebguiUrl, tabWhere, WEBGUI_PATH } from "../browser/classify.js";
 import { compact } from "../core/compact.js";
 import type { Action, Assessment, Driver, LookOptions, SessionInfo, Surface } from "../core/types.js";
-import { assessAction } from "./assess.js";
-import { extractFacts, extractMenus, type PageFacts } from "./page.js";
-import { act, look } from "./reader.js";
-import { WebGuiSession, WEBGUI_PATH } from "./session.js";
+import { extractFacts, type PageFacts } from "./page.js";
+import { act, assess, look } from "./reader.js";
+import { WebGuiSession } from "./session.js";
 
 export { assessAction } from "./assess.js";
 
@@ -58,14 +59,8 @@ export async function webguiActInFrame(frame: Frame, action: Action): Promise<st
 
 /** Classifies an action on a Web GUI frame from its current screen: read, navigate or commit. */
 export async function webguiAssessInFrame(frame: Frame, action: Action): Promise<Assessment> {
-  try {
-    const view = await look(sessionOf(frame));
-    const menus = await frame.evaluate(extractMenus);
-    return assessAction(action, view, menus);
-  } catch (e) {
-    // A screen that cannot be read cannot be ruled safe.
-    return { risk: "commit", reason: `the screen could not be read (${(e as Error).message.split("\n")[0]})` };
-  }
+  // reader.ts reads the view, the menus, the logon language and the focused control; it refuses on a logon screen.
+  return assess(sessionOf(frame), action);
 }
 
 /** SAP names its session cookie SAP_SESSIONID_<system>_<client>. */
@@ -81,7 +76,7 @@ async function identityFromCookies(page: Page): Promise<{ system?: string; clien
   return {};
 }
 
-async function describe(page: Page, id: string, where: string, f: PageFacts | undefined): Promise<SessionInfo> {
+async function describe(page: Page, id: string, f: PageFacts | undefined): Promise<SessionInfo> {
   const url = new URL(page.url());
   const cookie = f?.system && f.client ? {} : await identityFromCookies(page);
   const system = f?.system || cookie.system;
@@ -95,32 +90,30 @@ async function describe(page: Page, id: string, where: string, f: PageFacts | un
     ...(f?.user ? { user: f.user } : {}),
     ...(f?.transaction ? { transaction: f.transaction } : {}),
     ...(title ? { title } : {}),
-    where,
+    where: tabWhere(title, page.url()),
     url: `${url.origin}${url.pathname}`,
   };
 }
 
-const isWebGuiTab = (url: string, f: PageFacts | undefined) => url.includes(WEBGUI_PATH) || f?.webgui === true;
+const isWebGuiTab = (url: string, f: PageFacts | undefined) => isWebguiUrl(url) || f?.webgui === true;
 
-/** The Web GUI tabs among the open tabs, with their session facts. N in "Chrome tab N" counts all tabs, from 1. */
+/** The Web GUI tabs among the open tabs (the classifier's answer), with their session facts. */
 async function discover(env: Env): Promise<{ tab: ChromeTab; info: SessionInfo }[]> {
-  const tabs = await chromeTabs(env);
-  const found = await Promise.all(
-    tabs.map(async (tab, i) => {
-      if (!/^https?:/.test(tab.url)) return undefined;
-      const f = await facts(tab.page.mainFrame());
-      if (!isWebGuiTab(tab.url, f)) return undefined;
-      return { tab, info: await describe(tab.page, `chrome:${tab.id}`, `Chrome tab ${i + 1}`, f) };
-    }),
-  );
-  return found.filter((x) => x !== undefined);
+  const mine = (await sapTabs(env)).filter((t) => t.owner === "webgui");
+  return Promise.all(mine.map(async ({ tab }) => ({ tab, info: await describe(tab.page, `chrome:${tab.id}`, await facts(tab.page.mainFrame())) })));
 }
 
 class WebGuiDriver implements Driver {
   constructor(
     public info: SessionInfo,
     private readonly page: Page,
+    private readonly env: Env,
   ) {}
+
+  /** The tab is open, its browser connected, and it is still Web GUI's (not, say, the launchpad now). */
+  valid(): Promise<boolean> {
+    return stillOwned(this.page, "webgui", this.env);
+  }
 
   private get frame(): Frame {
     if (this.page.isClosed()) throw new Error(`${this.info.where} was closed. Call sap_sessions to list the open sessions.`);
@@ -131,7 +124,7 @@ class WebGuiDriver implements Driver {
   async refresh(): Promise<SessionInfo> {
     const f = await facts(this.frame);
     if (!isWebGuiTab(this.page.url(), f)) throw new Error(`${this.info.where} is no longer a Web GUI session. Call sap_sessions to list the open sessions.`);
-    this.info = await describe(this.page, this.info.id, this.info.where, f);
+    this.info = await describe(this.page, this.info.id, f);
     return this.info;
   }
 
@@ -170,7 +163,8 @@ export function webguiSurface(env: Record<string, string | undefined>): Surface 
     open: async (session) => {
       const tab = (await chromeTabs(env)).find((t) => `chrome:${t.id}` === session.id);
       if (!tab) throw new Error(`${session.where} is not open any more. Call sap_sessions to list the open sessions.`);
-      return new WebGuiDriver(session, tab.page);
+      if (!(await stillOwned(tab.page, "webgui", env))) throw new Error(`${session.where} is no longer a Web GUI session. Call sap_sessions to list the open sessions.`);
+      return new WebGuiDriver(session, tab.page, env);
     },
     doctor: async () => {
       const checks = await chromeDoctor(env);

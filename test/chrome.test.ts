@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { activePortEndpoints, chromeUserDataDir, parseDevToolsActivePort } from "../src/browser/chrome.js";
+import { activePortEndpoints, chromeTabs, chromeUserDataDir, edgeUserDataDir, parseDevToolsActivePort } from "../src/browser/chrome.js";
 
 describe("Chrome user-data directory", () => {
   test("macOS", () => {
@@ -21,6 +21,13 @@ describe("Chrome user-data directory", () => {
   });
   test("other platforms have none", () => {
     expect(chromeUserDataDir("freebsd", "stable", {}, "/home/u")).toBeUndefined();
+    expect(edgeUserDataDir("freebsd", {}, "/home/u")).toBeUndefined();
+  });
+  test("Microsoft Edge, the second browser", () => {
+    expect(edgeUserDataDir("win32", { LOCALAPPDATA: "C:\\Users\\u\\AppData\\Local" }, "C:\\Users\\u")).toBe("C:\\Users\\u\\AppData\\Local\\Microsoft\\Edge\\User Data");
+    expect(edgeUserDataDir("win32", {}, "C:\\Users\\u")).toBe("C:\\Users\\u\\AppData\\Local\\Microsoft\\Edge\\User Data");
+    expect(edgeUserDataDir("darwin", {}, "/Users/u")).toBe("/Users/u/Library/Application Support/Microsoft Edge");
+    expect(edgeUserDataDir("linux", { XDG_CONFIG_HOME: "/x" }, "/home/u")).toBe("/x/microsoft-edge");
   });
 });
 
@@ -47,7 +54,7 @@ describe("finding a running Chrome", () => {
       await writeFile(join(config, "google-chrome", "DevToolsActivePort"), `${port}\n/devtools/browser/abc\n`);
       await writeFile(join(config, "google-chrome-beta", "DevToolsActivePort"), "1\n/devtools/browser/stale\n");
       const tried: string[] = [];
-      const found = await activePortEndpoints({ CHROME_CONFIG_HOME: config }, tried, "linux");
+      const found = await activePortEndpoints({ CHROME_CONFIG_HOME: config, XDG_CONFIG_HOME: config }, tried, "linux", config);
       expect(found.map((e) => e.url)).toEqual([`ws://127.0.0.1:${port}/devtools/browser/abc`]);
       expect(found[0]?.from).toContain("Chrome stable");
       expect(tried.join("\n")).toContain("nothing listens");
@@ -58,7 +65,32 @@ describe("finding a running Chrome", () => {
   });
   test("no file, no endpoint", async () => {
     const tried: string[] = [];
-    expect(await activePortEndpoints({ CHROME_CONFIG_HOME: "/nonexistent-sap-gui-mcp" }, tried, "linux")).toEqual([]);
-    expect(tried).toHaveLength(2);
+    expect(await activePortEndpoints({ CHROME_CONFIG_HOME: "/nonexistent-sap-gui-mcp", XDG_CONFIG_HOME: "/nonexistent-sap-gui-mcp" }, tried, "linux", "/nonexistent-home")).toEqual([]);
+    expect(tried).toHaveLength(3);
+    expect(tried[2]).toContain("microsoft-edge");
+  });
+  test("Edge's DevToolsActivePort is an endpoint too, after Chrome's", async () => {
+    const config = await mkdtemp(join(tmpdir(), "sap-gui-mcp-"));
+    const server = createServer().listen(0, "127.0.0.1");
+    await new Promise((r) => server.once("listening", r));
+    const port = (server.address() as { port: number }).port;
+    try {
+      await mkdir(join(config, "microsoft-edge"), { recursive: true });
+      await writeFile(join(config, "microsoft-edge", "DevToolsActivePort"), `${port}\n/devtools/browser/edge\n`);
+      const found = await activePortEndpoints({ CHROME_CONFIG_HOME: config, XDG_CONFIG_HOME: config }, [], "linux", config);
+      expect(found.map((e) => e.url)).toEqual([`ws://127.0.0.1:${port}/devtools/browser/edge`]);
+      expect(found[0]?.from).toContain("Microsoft Edge");
+    } finally {
+      server.close();
+      await rm(config, { recursive: true, force: true });
+    }
+  });
+  test("with nothing configured and no browser allowing it, the server attaches to nothing: port 9222 is not tried", async () => {
+    const e = await chromeTabs({ CHROME_CONFIG_HOME: "/nonexistent-sap-gui-mcp", XDG_CONFIG_HOME: "/nonexistent-sap-gui-mcp", HOME: "/nonexistent-home" }).catch((x: Error) => x.message);
+    // Whatever listens on 9222 on this machine, the answer is "no Chrome", with the steps to take.
+    expect(e).toContain("No Chrome to attach to.");
+    expect(e).toContain("SAP_CHROME_CDP");
+    expect(e).toContain("--user-data-dir");
+    expect(e).not.toContain("9222: answers");
   });
 });

@@ -2,8 +2,12 @@
  * The PowerShell host process (ps/host.ps1): started on first use, kept
  * warm, restarted when it dies. Windows PowerShell 5.1 ships with Windows,
  * so SAP GUI scripting (COM) is reached with nothing to install.
+ *
+ * The host answers one request at a time, so requests wait in a queue here
+ * and one is sent at a time. A request's time limit starts when it is sent,
+ * not when it is queued: a slow step does not use up the time of the next.
  */
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import { type ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Transport } from "./facts.js";
@@ -19,19 +23,38 @@ export class HostError extends Error {
   }
 }
 
-interface Waiting {
+/** SAP GUI did not answer in time. */
+export class HostTimeout extends Error {
+  override name = "HostTimeout";
+}
+
+/** Time limit of a request when the caller gives none: reads. */
+export const READ_TIMEOUT_MS = 60_000;
+/** The longest any request may take: a long-running report started with F8. */
+export const MAX_TIMEOUT_MS = 600_000;
+
+interface Job {
+  id: number;
+  line: string;
+  timeoutMs: number;
   resolve: (v: unknown) => void;
   reject: (e: Error) => void;
-  timer: NodeJS.Timeout;
 }
 
 export const HOST_SCRIPT = fileURLToPath(new URL("./ps/host.ps1", import.meta.url));
 
+/** Windows PowerShell 5.1, by its full path when Windows says where it is. */
+export function powershellExe(env: Record<string, string | undefined>): string {
+  const root = env.SystemRoot ?? env.windir;
+  return root ? join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe") : "powershell.exe";
+}
+
 export class PsHost implements Transport {
   private child: ChildProcessWithoutNullStreams | undefined;
-  private waiting = new Map<number, Waiting>();
+  private queue: Job[] = [];
+  /** The request the host is working on, and its timer. */
+  private current: (Job & { timer: NodeJS.Timeout }) | undefined;
   private next = 1;
-  private buffer = "";
   private stderr = "";
 
   /** @param launch another command that speaks the host's protocol (tests). */
@@ -41,27 +64,36 @@ export class PsHost implements Transport {
   ) {}
 
   private start(): ChildProcessWithoutNullStreams {
-    const root = this.env.SystemRoot ?? this.env.windir;
-    const exe = root ? join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe") : "powershell.exe";
-    const { command, args } = this.launch ?? { command: exe, args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", HOST_SCRIPT] };
+    const { command, args } = this.launch ?? { command: powershellExe(this.env), args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", HOST_SCRIPT] };
     const child = spawn(command, args, {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
       env: this.env as NodeJS.ProcessEnv,
     });
-    this.buffer = "";
     this.stderr = "";
+    // Each child has its own buffer, and a child that was replaced or killed is not listened to any more.
+    let buffer = "";
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => this.read(chunk));
+    child.stdout.on("data", (chunk: string) => {
+      if (this.child !== child) return;
+      buffer += chunk;
+      for (let i = buffer.indexOf("\n"); i >= 0; i = buffer.indexOf("\n")) {
+        const line = buffer.slice(0, i).trim();
+        buffer = buffer.slice(i + 1);
+        this.answer(line);
+      }
+    });
     child.stderr.on("data", (chunk: string) => {
+      if (this.child !== child) return;
       this.stderr = (this.stderr + chunk).slice(-2000);
     });
     const gone = (why: string) => {
       if (this.child !== child) return;
       this.child = undefined;
       const detail = this.stderr.trim().split(/\r?\n/).slice(0, 3).join(" ");
-      this.failAll(new Error(`The SAP GUI host (PowerShell) stopped: ${why}${detail ? `. ${detail}` : ""}`));
+      // The request in flight is lost with the process; the ones still waiting go to a new process.
+      this.finish((job) => job.reject(new Error(`The SAP GUI host (PowerShell) stopped: ${why}${detail ? `. ${detail}` : ""}`)));
     };
     child.on("error", (e) => gone(e.message));
     child.on("exit", (code) => gone(`exit code ${code}`));
@@ -69,37 +101,59 @@ export class PsHost implements Transport {
     return child;
   }
 
-  private read(chunk: string): void {
-    this.buffer += chunk;
-    for (let i = this.buffer.indexOf("\n"); i >= 0; i = this.buffer.indexOf("\n")) {
-      const line = this.buffer.slice(0, i).trim();
-      this.buffer = this.buffer.slice(i + 1);
-      if (!line.startsWith("{")) continue;
-      let msg: { id?: number; ok?: boolean; result?: unknown; error?: string };
-      try {
-        msg = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      const w = msg.id === undefined ? undefined : this.waiting.get(msg.id);
-      if (!w || msg.id === undefined) continue;
-      this.settle(msg.id, w);
-      if (msg.ok) w.resolve(msg.result);
-      else w.reject(new HostError(msg.error ?? "the host gave no reason"));
+  private answer(line: string): void {
+    if (!line.startsWith("{")) return;
+    let msg: { id?: number; ok?: boolean; result?: unknown; error?: string };
+    try {
+      msg = JSON.parse(line);
+    } catch {
+      return;
     }
+    // Only the request in flight can be answered: anything else is late or stray.
+    if (!this.current || msg.id !== this.current.id) return;
+    this.finish((job) => (msg.ok ? job.resolve(msg.result) : job.reject(new HostError(msg.error ?? "the host gave no reason"))));
   }
 
-  private settle(id: number, w: Waiting): void {
-    clearTimeout(w.timer);
-    this.waiting.delete(id);
-    if (!this.waiting.size) this.idle(true);
+  /** Ends the request in flight, then sends the next one. */
+  private finish(settle: (job: Job) => void): void {
+    const job = this.current;
+    this.current = undefined;
+    if (job) {
+      clearTimeout(job.timer);
+      settle(job);
+    }
+    this.pump();
   }
 
-  private failAll(e: Error): void {
-    for (const [id, w] of [...this.waiting]) {
-      this.settle(id, w);
-      w.reject(e);
+  /** Sends the next waiting request, if the host is free. */
+  private pump(): void {
+    if (this.current) return;
+    const job = this.queue.shift();
+    if (!job) {
+      this.idle(true);
+      return;
     }
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      child = this.child ??= this.start();
+    } catch (e) {
+      job.reject(new Error(`Could not start Windows PowerShell for SAP GUI: ${(e as Error).message}`));
+      this.pump();
+      return;
+    }
+    // The clock starts now, when the request goes to the host.
+    const timer = setTimeout(() => {
+      if (this.current?.id !== job.id) return;
+      // A stuck call blocks the host: stop it, and let the next request start a new one.
+      this.child = undefined;
+      child.kill();
+      this.finish((j) =>
+        j.reject(new HostTimeout(`SAP GUI did not answer within ${Math.round(job.timeoutMs / 1000)} s (a long-running report or a modal dialog). Look at the screen or call sap_screenshot.`)),
+      );
+    }, job.timeoutMs);
+    this.current = { ...job, timer };
+    this.idle(false);
+    child.stdin.write(job.line);
   }
 
   /** An idle host does not keep the server's process alive. */
@@ -109,28 +163,12 @@ export class PsHost implements Transport {
     for (const h of [c, c.stdin, c.stdout, c.stderr] as { ref?: () => void; unref?: () => void }[]) (yes ? h.unref : h.ref)?.call(h);
   }
 
-  request<T>(op: string, params: Record<string, unknown> = {}, timeoutMs = 60_000): Promise<T> {
+  request<T>(op: string, params: Record<string, unknown> = {}, timeoutMs = READ_TIMEOUT_MS): Promise<T> {
     return new Promise<T>((resolve, reject) => {
-      let child: ChildProcessWithoutNullStreams;
-      try {
-        child = this.child ??= this.start();
-      } catch (e) {
-        reject(new Error(`Could not start Windows PowerShell for SAP GUI: ${(e as Error).message}`));
-        return;
-      }
       const id = this.next++;
-      const timer = setTimeout(() => {
-        // The host answers one request at a time: a stuck call blocks the rest, so start afresh.
-        this.child = undefined;
-        child.kill();
-        const e = new Error(
-          `SAP GUI did not answer within ${Math.round(timeoutMs / 1000)} s. A dialog may be waiting in SAP GUI (a Windows file or security dialog, or "A script is trying to access SAP GUI"): look at the screen or call sap_screenshot.`,
-        );
-        this.failAll(e);
-      }, timeoutMs);
-      this.waiting.set(id, { resolve: resolve as (v: unknown) => void, reject, timer });
-      this.idle(false);
-      child.stdin.write(`${JSON.stringify({ id, op, ...params })}\n`);
+      const limit = Math.min(Math.max(1, timeoutMs), MAX_TIMEOUT_MS);
+      this.queue.push({ id, line: `${JSON.stringify({ id, op, ...params })}\n`, timeoutMs: limit, resolve: resolve as (v: unknown) => void, reject });
+      this.pump();
     });
   }
 
@@ -138,6 +176,45 @@ export class PsHost implements Transport {
     const c = this.child;
     this.child = undefined;
     c?.stdin.end();
-    this.failAll(new Error("The SAP GUI host was closed."));
+    const closed = new Error("The SAP GUI host was closed.");
+    const waiting = this.queue.splice(0);
+    const job = this.current;
+    this.current = undefined;
+    if (job) {
+      clearTimeout(job.timer);
+      job.reject(closed);
+    }
+    for (const w of waiting) w.reject(closed);
   }
+}
+
+/** What Windows lets PowerShell do on this machine, read without the host script (which a policy may block). */
+export interface PowershellPolicy {
+  /** "FullLanguage", "ConstrainedLanguage", "RestrictedLanguage", "NoLanguage"; "" when PowerShell did not answer. */
+  languageMode: string;
+  /** The AppLocker service (AppIDSvc) is running. */
+  appLocker: boolean;
+  /** Why PowerShell could not be asked, when it could not. */
+  error?: string;
+}
+
+const POLICY_COMMAND = "$m = $ExecutionContext.SessionState.LanguageMode; $s = Get-Service -Name AppIDSvc -ErrorAction SilentlyContinue; \"sapgui-mcp|$m|$($s.Status)\"";
+
+/** Reads the policy line PowerShell printed. */
+export function parsePolicy(stdout: string, error?: string): PowershellPolicy {
+  const m = /sapgui-mcp\|([A-Za-z]*)\|([A-Za-z]*)/.exec(stdout);
+  if (!m) return { languageMode: "", appLocker: false, error: error || stdout.trim().split(/\r?\n/)[0] || "PowerShell gave no answer" };
+  return { languageMode: m[1] ?? "", appLocker: /^running$/i.test(m[2] ?? "") };
+}
+
+/**
+ * Asks PowerShell for its language mode with a one-line command: that works
+ * in Constrained Language Mode, where the host script does not.
+ */
+export function powershellPolicy(env: Record<string, string | undefined> = process.env): Promise<PowershellPolicy> {
+  return new Promise((resolve) => {
+    execFile(powershellExe(env), ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", POLICY_COMMAND], { windowsHide: true, timeout: 20_000, env: env as NodeJS.ProcessEnv }, (err, stdout, stderr) =>
+      resolve(parsePolicy(String(stdout ?? ""), err ? `${err.message.split(/\r?\n/)[0]} ${String(stderr ?? "").trim().split(/\r?\n/)[0] ?? ""}`.trim() : undefined)),
+    );
+  });
 }

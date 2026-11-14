@@ -1,10 +1,60 @@
 import { describe, expect, test } from "bun:test";
 import { decide, policyFromEnv } from "../../src/core/guard.js";
+import { Registry } from "../../src/core/registry.js";
 import { ActionError } from "../../src/core/types.js";
 import type { DoctorEngine, DoctorLocal, Transport } from "../../src/sapgui/facts.js";
 import { HostError } from "../../src/sapgui/host.js";
-import { doctor, sapguiSurface } from "../../src/sapgui/index.js";
-import { expected, fakeHost } from "./fixtures.js";
+import type { Screen, SessionsFacts } from "../../src/sapgui/facts.js";
+import { actTimeoutMs, doctor, policyCheck, sapguiSurface, SCRIPTING_OFF } from "../../src/sapgui/index.js";
+import { expected, fakeHost, sessions } from "./fixtures.js";
+
+/** A host with one session that shows `screen`; it records what it was asked, with the time limit. */
+function oneScreen(screen: Screen) {
+  const asked: { op: string; params: Record<string, unknown>; timeoutMs: number | undefined }[] = [];
+  const host: Transport = {
+    async request<T>(op: string, params: Record<string, unknown> = {}, timeoutMs?: number): Promise<T> {
+      asked.push({ op, params, timeoutMs });
+      if (op === "screen") return screen as T;
+      if (op === "describe") return { found: false } as T;
+      return { done: true } as T;
+    },
+    close() {},
+  };
+  const surface = sapguiSurface({}, { platform: "win32", transport: host });
+  return { asked, open: () => surface.open({ id: "sapgui:/app/con[0]/ses[0]", surface: "sapgui", where: "test" }) };
+}
+
+const win = (controls: Screen["windows"][number]["controls"]) => [{ id: "wnd[0]", title: "SAP", controls }];
+const LOGON: Screen = {
+  transaction: "S000",
+  program: "SAPMSYST",
+  screen: "20",
+  language: "EN",
+  activeWindow: "wnd[0]",
+  windows: win([
+    { id: "wnd[0]/tbar[0]/btn[0]", type: "GuiButton", name: "btn[0]", text: "", tip: "Enter   (Enter)", changeable: true },
+    { id: "wnd[0]/usr/txtRSYST-BNAME", type: "GuiTextField", name: "RSYST-BNAME", text: "", changeable: true, label: "User" },
+    { id: "wnd[0]/usr/pwdRSYST-BCODE", type: "GuiPasswordField", name: "RSYST-BCODE", changeable: true, label: "Password" },
+  ]),
+};
+const START_MENU: Screen = { ...LOGON, screen: "40", windows: win([{ id: "wnd[0]/tbar[0]/btn[0]", type: "GuiButton", name: "btn[0]", text: "", tip: "Enter   (Enter)", changeable: true }]) };
+const FORM: Screen = {
+  transaction: "ZT01",
+  program: "ZPROG",
+  screen: "100",
+  language: "EN",
+  activeWindow: "wnd[0]",
+  windows: win([
+    { id: "wnd[0]/tbar[1]/btn[8]", type: "GuiButton", name: "btn[8]", text: "Execute", tip: "Execute   (F8)", changeable: true },
+    { id: "wnd[0]/usr/txtZ-NAME", type: "GuiTextField", name: "Z-NAME", text: "", changeable: true, label: "Name" },
+    { id: "wnd[0]/usr/pwdZ-SECRET", type: "GuiPasswordField", name: "Z-SECRET", changeable: true, label: "Secret" },
+    { id: "wnd[0]/usr/pwdZ-ODD", type: "GuiTextField", name: "Z-ODD", text: "", changeable: true, label: "Odd" },
+    { id: "wnd[0]/usr/btnZ-POST", type: "GuiButton", name: "Z-POST", text: "Post", tip: "", changeable: true },
+    { id: "wnd[0]/usr/chkZ-FLAG", type: "GuiCheckBox", name: "Z-FLAG", text: "Flag", selected: false, changeable: true },
+    { id: "wnd[0]/usr/tabsTS/tabpT1", type: "GuiTab", name: "T1", text: "One" },
+    { id: "wnd[0]/usr/cntlED/shellcont/shell", type: "GuiShell", name: "shell", sub: "TextEdit", text: "" },
+  ]),
+};
 
 function surface() {
   const { host, asked } = fakeHost();
@@ -42,7 +92,36 @@ describe("sapgui surface", () => {
     expect(await sapguiSurface({}, { platform: "win32", transport: host }).discover()).toEqual([]);
   });
 
-  test("look: full is the bridge's view, compact is shorter", async () => {
+  test("SAP GUI running with scripting off is an error the session list can show", async () => {
+    const failing = (error: string): Transport => ({ request: async () => Promise.reject(new HostError(error)), close() {} });
+    for (const error of ["SCRIPTING_OFF: SAP GUI is running but does not offer scripting", "NO_ENGINE: SAP GUI did not give its scripting engine"])
+      await expect(sapguiSurface({}, { platform: "win32", transport: failing(error) }).discover()).rejects.toThrow(
+        "SAP GUI is running but scripting is off (in SAP GUI options, or sapgui/user_scripting on the server)",
+      );
+    expect(SCRIPTING_OFF).toBe("SAP GUI is running but scripting is off (in SAP GUI options, or sapgui/user_scripting on the server)");
+  });
+
+  test("connections without a session that scripting can see: the server has scripting off", async () => {
+    const facts: SessionsFacts = { active: "", connections: [{ id: "/app/con[0]", description: "PRD", disabledByServer: true, sessions: [] }] };
+    const host: Transport = { request: async <T>() => facts as T, close() {} };
+    await expect(sapguiSurface({}, { platform: "win32", transport: host }).discover()).rejects.toThrow(SCRIPTING_OFF);
+    // One system that allows scripting next to one that does not: the sessions are listed.
+    const mixed: Transport = { request: async <T>() => sessions() as T, close() {} };
+    expect(await sapguiSurface({}, { platform: "win32", transport: mixed }).discover()).toHaveLength(8);
+    // SAP Logon open, logged on nowhere: nothing to list, nothing wrong.
+    const none: Transport = { request: async <T>() => ({ active: "", connections: [] }) as T, close() {} };
+    expect(await sapguiSurface({}, { platform: "win32", transport: none }).discover()).toEqual([]);
+  });
+
+  test("the registry shows the scripting-off error instead of 'no session'", async () => {
+    const host: Transport = { request: async () => Promise.reject(new HostError("SCRIPTING_OFF: x")), close() {} };
+    const registry = new Registry([sapguiSurface({}, { platform: "win32", transport: host })], policyFromEnv({}));
+    const found = await registry.discover();
+    expect(found.sessions).toEqual([]);
+    expect(found.errors.join(" ")).toContain(SCRIPTING_OFF);
+  });
+
+  test("look: full is the view in fixtures/expected, compact is shorter", async () => {
     const { surface: s } = surface();
     const [info] = await s.discover();
     const d = await s.open(info!);
@@ -103,6 +182,86 @@ describe("sapgui surface", () => {
     expect(asked.some((x) => x.op === "act")).toBe(false);
   });
 
+  test("on the logon screen every action is refused, in assess and in act", async () => {
+    const { asked, open } = oneScreen(LOGON);
+    const d = await open();
+    const actions = [
+      { do: "set", id: "txtRSYST-BNAME", value: "ME" },
+      { do: "set", id: "pwdRSYST-BCODE", value: "secret" },
+      { do: "key", key: 0 },
+      { do: "press", id: "wnd[0]/tbar[0]/btn[0]" },
+      { do: "okcode", value: "/nVA03" },
+      { do: "focus", id: "txtRSYST-BNAME" },
+    ];
+    for (const action of actions) {
+      await expect(d.assess(action)).rejects.toThrow("This server never logs on; log on yourself, then ask again");
+      await expect(d.act(action)).rejects.toThrow("This server never logs on; log on yourself, then ask again");
+      await expect(d.act(action)).rejects.toBeInstanceOf(ActionError);
+    }
+    expect(asked.some((x) => x.op === "act")).toBe(false);
+    // Looking is allowed, and shows no password.
+    expect(await d.look({ compact: false })).toContain('pwdRSYST-BCODE  field  Password = ""');
+  });
+
+  test("the start menu of the same program is not the logon screen", async () => {
+    const { asked, open } = oneScreen(START_MENU);
+    const d = await open();
+    expect((await d.assess({ do: "okcode", value: "va03" })).risk).toBe("navigate");
+    await d.act({ do: "okcode", value: "/nVA03" });
+    expect(asked.at(-1)?.op).toBe("act");
+  });
+
+  test("a password field is never typed into", async () => {
+    const { asked, open } = oneScreen(FORM);
+    const d = await open();
+    await expect(d.act({ do: "set", id: "pwdZ-SECRET", value: "x" })).rejects.toThrow("password field: this server never types a password");
+    await expect(d.act({ do: "set", id: "Z-SECRET", value: "x" })).rejects.toThrow("password field");
+    // By the id's prefix too, whatever type the field reports.
+    await expect(d.act({ do: "set", id: "wnd[0]/usr/pwdZ-ODD", value: "x" })).rejects.toThrow("password field");
+    expect(asked.some((x) => x.op === "act")).toBe(false);
+  });
+
+  test("set types into fields only: a button is not pressed by it", async () => {
+    const { asked, open } = oneScreen(FORM);
+    const d = await open();
+    await expect(d.act({ do: "set", id: "btnZ-POST", value: " " })).rejects.toThrow('not a field: "set" types into fields only');
+    await expect(d.act({ do: "set", id: "tabpT1", value: "x" })).rejects.toThrow("not a field");
+    await expect(d.act({ do: "check", id: "btnZ-POST", value: true })).rejects.toThrow("not a checkbox");
+    await expect(d.act({ do: "combo", id: "btnZ-POST", key: "A" })).rejects.toThrow("not a dropdown");
+    await expect(d.act({ do: "press", id: "txtZ-NAME" })).rejects.toThrow("not a button");
+    expect(asked.some((x) => x.op === "act")).toBe(false);
+    // Fields, a text editor, and a checkbox by its own action still work.
+    expect(await d.act({ do: "set", id: "txtZ-NAME", value: "A" })).toBe('set wnd[0]/usr/txtZ-NAME = "A"');
+    expect(await d.act({ do: "set", id: "wnd[0]/usr/cntlED/shellcont/shell", value: "text" })).toBe("set wnd[0]/usr/cntlED/shellcont/shell");
+    await d.act({ do: "set", id: "chkZ-FLAG", value: true });
+    expect(asked.at(-1)?.params.action).toEqual({ do: "check", id: "wnd[0]/usr/chkZ-FLAG", value: true });
+  });
+
+  test("reads get 60 s; an action 180 s, or its own timeout up to 600 s", async () => {
+    const { asked, open } = oneScreen(FORM);
+    const d = await open();
+    await d.look({ compact: true });
+    expect(asked.at(-1)).toMatchObject({ op: "screen", timeoutMs: 60_000 });
+    await d.act({ do: "key", key: 0 });
+    expect(asked.at(-1)).toMatchObject({ op: "act", timeoutMs: 180_000 });
+    await d.act({ do: "key", key: 8, timeout: 400 });
+    expect(asked.at(-1)).toMatchObject({ op: "act", timeoutMs: 400_000, params: { action: { do: "key", key: 8 } } });
+    await d.act({ do: "press", id: "wnd[0]/tbar[1]/btn[8]", timeout: 5000 });
+    expect(asked.at(-1)).toMatchObject({ op: "act", timeoutMs: 600_000 });
+    expect(actTimeoutMs({ do: "key", key: 8, timeout: "x" })).toBe(180_000);
+    expect(actTimeoutMs({ do: "key", key: 8, timeout: -1 })).toBe(180_000);
+    expect(actTimeoutMs({ do: "key", key: 8, timeout: 30 })).toBe(30_000);
+  });
+
+  test("a key by its name is the same key for the guard and for SAP GUI", async () => {
+    const { asked, open } = oneScreen(FORM);
+    const d = await open();
+    expect((await d.assess({ do: "key", key: "Control+s" })).risk).toBe("commit");
+    await d.act({ do: "key", key: "Shift+F3" });
+    expect(asked.at(-1)?.params.action).toEqual({ do: "key", key: 15 });
+    await expect(d.act({ do: "key", key: "Space" })).rejects.toThrow('key needs "key"');
+  });
+
   test("screenshot", async () => {
     const { surface: s } = surface();
     const d = await s.open((await s.discover())[0]!);
@@ -117,6 +276,32 @@ describe("sapgui doctor", () => {
   });
   const on = { value: 1, where: "HKCU" };
   const off = { value: 0, where: "HKCU" };
+
+  test("Constrained Language Mode and AppLocker are detected and explained", async () => {
+    const good = host({ processes: ["saplogon"], settings: { UserScripting: on, WarnOnAttach: off, WarnOnConnection: off } }, { engine: true, connections: [{ description: "DEM", disabledByServer: false, sessions: 2 }] });
+    const constrained = await doctor(good, async () => ({ languageMode: "ConstrainedLanguage", appLocker: true }));
+    expect(constrained).toHaveLength(1);
+    expect(constrained[0]).toMatchObject({ ok: false, check: "PowerShell may run the host" });
+    expect(constrained[0]?.detail).toContain("Constrained Language mode");
+    expect(constrained[0]?.detail).toContain("AppLocker is active on this machine");
+    expect(constrained[0]?.detail).toContain("Full Language mode");
+    expect(constrained[0]?.detail).toContain("Web GUI or Fiori");
+
+    const blocked = await doctor(good, async () => ({ languageMode: "", appLocker: false, error: "This program is blocked by group policy. For more information, contact your system administrator." }));
+    expect(blocked).toHaveLength(1);
+    expect(blocked[0]?.ok).toBe(false);
+    expect(blocked[0]?.detail).toContain("AppLocker or a software restriction policy");
+
+    const full = await doctor(good, async () => ({ languageMode: "FullLanguage", appLocker: true }));
+    expect(full.map((c) => c.ok)).toEqual([true, true, true, true, true, true]);
+    expect(full[0]?.detail).toBe("Full Language mode; AppLocker is active and allows it");
+
+    // PowerShell could not be asked for another reason: the host's own failure says why.
+    expect(policyCheck({ languageMode: "", appLocker: false, error: "spawn powershell.exe ENOENT" })).toBeUndefined();
+    // The probe failed but the host runs and reports a restricted mode itself.
+    const late = await doctor(host({ languageMode: "ConstrainedLanguage", processes: [], settings: {} }, { engine: false, connections: [] }), async () => undefined);
+    expect(late.find((c) => c.check === "PowerShell may run the host")).toMatchObject({ ok: false });
+  });
 
   test("all good", async () => {
     const checks = await doctor(

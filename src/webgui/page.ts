@@ -198,7 +198,8 @@ export function extractLook(limits: {
   };
   const cellText = (td: Element) => {
     const inp = td.querySelector("input,textarea") as HTMLInputElement | null;
-    if (inp) return norm(inp.value);
+    // A password is never written out.
+    if (inp) return inp.type === "password" ? (inp.value ? "***" : "") : norm(inp.value);
     const cb = td.querySelector("[data-ls*=\"Type:'GuiCheckBox'\"],[ct^='C']");
     if (cb && /lsCheckBox/.test((cb as HTMLElement).className))
       return checkedOf(cb) ? "X" : "";
@@ -237,7 +238,11 @@ export function extractLook(limits: {
           (h as HTMLInputElement).disabled ||
           /--readonly|--disabled/.test(el.parentElement?.className ?? "") ||
           el.getAttribute("aria-readonly") === "true";
-        const val = type === "GuiPasswordField" ? "" : norm(h.value ?? "");
+        // A password is never written out, whatever type SAP gives the field.
+        const secret =
+          type === "GuiPasswordField" ||
+          (h as HTMLInputElement).type === "password";
+        const val = secret ? (h.value ? "***" : "") : norm(h.value ?? "");
         out(
           modal,
           `${sid}  field  ${lab || tip} = "${val}"  (${ro ? "read-only" : "edit"})`,
@@ -343,10 +348,13 @@ export function extractLook(limits: {
         out(modal, `${sid}  command-field`);
         break;
       case "GuiTextEdit": {
-        const v = norm((h as HTMLTextAreaElement).value ?? h.innerText).slice(
-          0,
-          2000,
-        );
+        const v =
+          (h as HTMLInputElement).type === "password"
+            ? "***"
+            : norm((h as HTMLTextAreaElement).value ?? h.innerText).slice(
+                0,
+                2000,
+              );
         out(modal, `${sid}  text-editor  "${v}"`);
         break;
       }
@@ -652,8 +660,18 @@ export function extractViewer(start: number): {
       const i = el as HTMLInputElement;
       if (i.type === "checkbox" || i.type === "radio")
         out.push(`html[${n}]  ${i.type}  [${i.checked ? "x" : " "}] ${lab}`);
-      else if (i.type === "button" || i.type === "submit" || i.type === "image")
+      else if (
+        i.type === "button" ||
+        i.type === "submit" ||
+        i.type === "image" ||
+        i.type === "reset"
+      )
         out.push(`html[${n}]  button  ${norm(i.value) || lab}`);
+      else if (i.type === "password")
+        // A password is never written out.
+        out.push(
+          `html[${n}]  field  ${lab} = "${i.value ? "***" : ""}"  (${i.readOnly || i.disabled ? "read-only" : "edit"})`,
+        );
       else
         out.push(
           `html[${n}]  field  ${lab} = "${norm(i.value)}"  (${i.readOnly || i.disabled ? "read-only" : "edit"})`,
@@ -712,6 +730,8 @@ export interface MarkedControl {
   checked: boolean;
   readonly: boolean;
   tag: string;
+  /** For an input element: its type ("text", "password", ...); "" otherwise. */
+  inputType: string;
 }
 
 /** Runs in the Web GUI frame: marks the control an id names and describes it. */
@@ -789,6 +809,8 @@ export function markControl(ident: string): MarkedControl | string {
     checked,
     readonly: ro(h.el),
     tag: h.el.tagName,
+    inputType:
+      h.el.tagName === "INPUT" ? (h.el as HTMLInputElement).type || "text" : "",
   };
 }
 
@@ -974,6 +996,12 @@ export interface PageFacts {
   user: string;
   transaction: string;
   title: string;
+  /** Program of the current screen (SAPMV45A), "" when the page does not say. */
+  program: string;
+  /** Logon language: the `sap-language` of the address, else the page's `lang`. "" when neither says. */
+  language: string;
+  /** The page is SAP's logon page, or the logon screen inside Web GUI. */
+  logon: boolean;
 }
 
 /**
@@ -1029,6 +1057,22 @@ export function extractFacts(): PageFacts {
     const m = /urltxstr:'\*?([A-Z0-9_/]+)/.exec(document.documentElement.innerHTML);
     if (m?.[1]) transaction = `${m[1]} (start)`;
   }
+  const program = sys("DYNPRO").split("/")[0] ?? "";
+  let language = "";
+  try {
+    language = new URLSearchParams(location.search).get("sap-language") ?? "";
+  } catch {
+    /* no address to read */
+  }
+  language ||= document.documentElement.getAttribute("lang") ?? "";
+  // SAP's logon page: a password input in a logon form, on a page that is not a Web GUI screen;
+  // or the logon screen inside Web GUI (program SAPMSYST).
+  const shown = (e: Element) => (e as HTMLElement).offsetWidth > 0 || (e as HTMLElement).offsetHeight > 0;
+  const passwords = Array.from(document.querySelectorAll("input[type='password']")).filter(shown);
+  const logonForm = !!document.querySelector("#sap-user, [name='sap-user'], [name='sap-password'], #sap-password, form[name='loginForm'], form[name='logonForm'], #LOGON_BUTTON");
+  // Screen 40 of SAPMSYST is the old start menu, shown after logon.
+  const screenNo = Number(sys("DYNPRO").split("/")[1] ?? NaN);
+  const logon = (program === "SAPMSYST" && screenNo !== 40) || (passwords.length > 0 && (logonForm || !webgui));
   return {
     webgui,
     system,
@@ -1036,5 +1080,65 @@ export function extractFacts(): PageFacts {
     user: sys("USER"),
     transaction,
     title: prop(document.getElementById("cuaheader")?.getAttribute("lsdata") ?? "", 1) || norm(document.title),
+    program,
+    language,
+    logon,
   };
+}
+
+export interface FocusedControl {
+  /** Scripting id of the control that has the focus, "" when it has none. */
+  sid: string;
+  /** Scripting type; "frame" when the focus is inside a frame (an HTML viewer); "browser" for an element without a scripting id. */
+  type: string;
+  /** For "browser": a button or a link. */
+  pressable: boolean;
+  text: string;
+}
+
+/**
+ * The control that has the keyboard focus, or null when nothing has it.
+ * Enter and Space press that control, so the guard needs to know it. Runs in
+ * the Web GUI frame after normalizeLsdata.
+ */
+export function focusedControl(): FocusedControl | null {
+  const norm = (s: string | null | undefined) => (s ?? "").replace(/[\s\u00a0]+/g, " ").replace(/^ | $/g, "");
+  const ae = document.activeElement;
+  if (!ae || ae === document.body || ae === document.documentElement) return null;
+  const facts = (el: Element) => {
+    const ls = el.getAttribute("data-ls") ?? el.getAttribute("lsdata") ?? "";
+    const raw = /"?OrigID"?:["']((?:[^'"\\]|\\.)*)["']/.exec(ls)?.[1] ?? /"?SID"?:["']((?:[^'"\\]|\\.)*)["']/.exec(ls)?.[1];
+    return { sid: raw ? raw.replace(/\\\\/g, "\\") : "", type: /[{,]"?Type"?:["']([^'"]*)["']/.exec(ls)?.[1] ?? "" };
+  };
+  if (ae.tagName === "IFRAME" || ae.tagName === "FRAME") return { sid: facts(ae).sid, type: "frame", pressable: false, text: "" };
+  for (let el: Element | null = ae; el; el = el.parentElement) {
+    // A row of an open menu: its DOM id is its scripting id.
+    if (el.tagName === "TR" && (el.getAttribute("ct") ?? "").startsWith("POMN")) return { sid: el.id, type: "GuiMenu", pressable: true, text: norm((el as HTMLElement).innerText) };
+    const f = facts(el);
+    if (f.sid && f.type) return { sid: f.sid, type: f.type, pressable: /Button$/.test(f.type) && f.type !== "GuiRadioButton", text: norm((el as HTMLElement).innerText) || norm(el.getAttribute("title")) };
+  }
+  // No scripting id: one of Web GUI's own dialogs, or the Menu button.
+  let pressable = false;
+  for (let el: Element | null = ae; el && !pressable; el = el.parentElement) {
+    const role = el.getAttribute("role") ?? "";
+    const type = (el as HTMLInputElement).type ?? "";
+    pressable = el.tagName === "BUTTON" || el.tagName === "A" || role === "button" || role === "menuitem" || role === "link" || el.getAttribute("ct") === "B" || (el.tagName === "INPUT" && /^(button|submit|image|reset)$/.test(type));
+  }
+  return { sid: "", type: "browser", pressable, text: norm((ae as HTMLElement).innerText) || norm(ae.getAttribute("title")) || norm(ae.getAttribute("aria-label")) };
+}
+
+/** Runs in an HTML viewer's frame: the element that has the focus there. `inner` when the focus is in a frame further in. */
+export function viewerFocus(): { pressable: boolean; text: string; inner: boolean } | null {
+  const norm = (s: string | null | undefined) => (s ?? "").replace(/[\s\u00a0]+/g, " ").replace(/^ | $/g, "");
+  const ae = document.activeElement;
+  if (!ae || ae === document.body || ae === document.documentElement) return null;
+  if (ae.tagName === "IFRAME" || ae.tagName === "FRAME") return { pressable: true, text: "", inner: true };
+  let pressable = false;
+  for (let el: Element | null = ae; el && !pressable; el = el.parentElement) {
+    const type = (el as HTMLInputElement).type ?? "";
+    pressable = el.tagName === "BUTTON" || el.tagName === "A" || el.getAttribute("role") === "button" || el.hasAttribute("onclick") || (el.tagName === "INPUT" && /^(button|submit|image|reset)$/.test(type));
+  }
+  const i = ae as HTMLInputElement;
+  const text = ae.tagName === "INPUT" ? (pressable ? norm(i.value) : "") : norm((ae as HTMLElement).innerText);
+  return { pressable, text: text || norm(ae.getAttribute("title")) || norm(ae.getAttribute("aria-label")), inner: false };
 }

@@ -1,26 +1,41 @@
-// End-to-end check of the sapgui surface on Windows: the built server over
-// stdio, its PowerShell host, and SAP GUI scripting through COM.
+// End-to-end check of the sapgui surface on Windows: the built server, its
+// PowerShell host, and SAP GUI scripting through COM.
 //
-//   node test/sapgui/e2e.mjs            against the fake SAP GUI (fake-sapgui.wsc, no SAP GUI needed)
-//   node test/sapgui/e2e.mjs --real     against the SAP GUI that is open (reads only: sessions, look, screenshot);
+//   node test/sapgui/e2e.mjs            against the fake SAP GUI (no SAP GUI needed): the built server runs in
+//                                       this process, with the test host (fake-host.ps1) in place of the
+//                                       shipped one. The shipped host has no switch for a fake.
+//   node test/sapgui/e2e.mjs --real     against the SAP GUI that is open (reads only: sessions, look, screenshot):
+//                                       the built command over stdio, as a client starts it;
 //                                       E2E_FULL_OUT=<file> also writes the full view there
 //
 // Run `bun run build` first. See test/sapgui/README.md.
 import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const real = process.argv.includes("--real");
-const env = { ...process.env, SAP_SURFACES: "sapgui" };
-if (!real) {
-  env.SAPGUI_MCP_FAKE = `script:${join(here, "fake-sapgui.wsc")}`;
-  env.SAPGUI_MCP_FAKE_WORLD = join(here, "fixtures", "world.json");
-}
+const dist = (file) => pathToFileURL(join(here, "..", "..", "dist", file)).href;
 const client = new Client({ name: "sapgui-e2e", version: "0" });
-await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(here, "..", "..", "dist", "cli.js")], env }));
+let host;
+if (real) {
+  const env = { ...process.env, SAP_SURFACES: "sapgui" };
+  await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(here, "..", "..", "dist", "cli.js")], env }));
+} else {
+  // The built server in this process, on the test host: the shipped functions, with the fake SAP GUI behind them.
+  const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+  const { createServer } = await import(dist("server.js"));
+  const { policyFromEnv } = await import(dist("core/guard.js"));
+  const { sapguiSurface } = await import(dist("sapgui/index.js"));
+  const { PsHost, powershellExe } = await import(dist("sapgui/host.js"));
+  const env = { ...process.env, SAPGUI_MCP_FAKE_WORLD: join(here, "fixtures", "world.json") };
+  host = new PsHost(env, { command: powershellExe(env), args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", join(here, "fake-host.ps1")] });
+  const { server } = createServer({ policy: policyFromEnv({}), surfaces: [sapguiSurface(env, { transport: host })] });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(a), client.connect(b)]);
+}
 
 let failed = 0;
 async function call(name, args = {}) {
@@ -62,8 +77,14 @@ if (real) {
 
   r = await act({ do: "set", id: "ctxtVBAK-AUART", value: "RE" }, "sapgui:/app/con[0]/ses[0]");
   check("set a field", r.text.includes('ctxtVBAK-AUART  field  Order Type = "RE"  (edit)'), `${r.ms} ms`);
+  r = await act({ do: "press", id: "tbar[0]/btn[0]" }, "sapgui:/app/con[0]/ses[0]");
+  check("press a button", r.text.includes("status  S: fake: Press wnd[0]/tbar[0]/btn[0]"));
   r = await act({ do: "press", id: "tbar[1]/btn[8]" }, "sapgui:/app/con[0]/ses[0]");
-  check("press a button", r.text.includes("status  S: fake: Press wnd[0]/tbar[1]/btn[8]"));
+  check("a button that is not known to be safe is refused", r.error && r.text.startsWith("Refused:"), r.text.split("\n")[0]);
+  r = await act({ do: "set", id: "pwdDEMO-SECRET", value: "x" }, "sapgui:/app/con[0]/ses[0]");
+  check("a password field is never typed into", r.error && r.text.includes("password"), r.text.split("\n")[0]);
+  r = await act({ do: "okcode", value: "/nex" }, "sapgui:/app/con[0]/ses[0]");
+  check("/nex is refused", r.error && r.text.includes("closes SAP sessions"), r.text.split("\n")[0]);
   r = await act({ do: "select", id: "tabpT\\02" });
   check("select a tab", r.text.includes("fake: Select wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\02"));
   r = await act({ do: "combo", id: "cmbVBAK-LIFSK", key: "Credit limit" });
@@ -98,5 +119,6 @@ if (real) {
   check("sap_screenshot", !r.error && r.text.includes("image/png"), r.text);
 }
 await client.close();
+host?.close();
 console.log(failed ? `${failed} check(s) failed` : "all checks passed");
 process.exit(failed ? 1 : 0);

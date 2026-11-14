@@ -1,5 +1,5 @@
 /**
- * Which control an id from the agent means. As in the Python bridge:
+ * Which control an id from the agent means. In this order:
  * 1. a full scripting id ("wnd[0]/usr/ctxtVBAK-AUART");
  * 2. a full id that does not exist: its last segment (models rebuild ids and get the path wrong);
  * 3. the SAP field name ("VBAK-AUART") on the active window;

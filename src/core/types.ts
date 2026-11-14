@@ -21,7 +21,7 @@ export interface SessionInfo {
   transaction?: string;
   /** Window or tab title. */
   title?: string;
-  /** Where it lives: "SAP GUI connection 0", "Chrome tab 3", ... */
+  /** Where it lives: "SAP GUI connection 0", "Chrome tab 'Display Sales Order'", ... */
   where: string;
   /** For browser tabs: the URL without query string or fragment. */
   url?: string;
@@ -83,11 +83,18 @@ export interface Driver {
   readonly info: SessionInfo;
   /** Fresh header facts (system, transaction, title) for guardrails and session lists. */
   refresh(): Promise<SessionInfo>;
+  /**
+   * Is this driver still on the session it was opened for? False when the tab
+   * was closed, the browser connection dropped, or the tab now shows something
+   * another surface owns: the registry then drops the driver and opens a new
+   * one. A driver without it is checked by `refresh` alone.
+   */
+  valid?(): Promise<boolean>;
   /** The screen as text: a header line, then one line per control. */
   look(options: LookOptions): Promise<string>;
-  /** Classify an action before it runs, from the current screen. */
+  /** Classify an action before it runs, from the current screen. The action is normalised (core/action.ts). */
   assess(action: Action): Promise<Assessment>;
-  /** Run one action; returns a one-line note of what was done. Throws ActionError when it cannot. */
+  /** Run one action, the same normalised object `assess` saw; returns a one-line note of what was done. Throws ActionError when it cannot. */
   act(action: Action): Promise<string>;
   /** PNG of the session's window or tab. */
   screenshot(): Promise<Buffer>;

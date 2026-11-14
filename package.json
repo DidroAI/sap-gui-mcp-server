@@ -26,7 +26,7 @@
     "start": "node dist/cli.js",
     "prepublishOnly": "bun run typecheck && bun run test && bun run build"
   },
-  "publishConfig": { "access": "public", "provenance": true },
+  "publishConfig": { "access": "public" },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
     "playwright-core": "1.65.0",

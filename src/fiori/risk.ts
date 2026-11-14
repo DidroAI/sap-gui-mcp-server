@@ -7,46 +7,39 @@
  * stable ids), its press handler names, its text, and its button type with
  * where it sits (page footer, dialog, filter bar, value help).
  *
+ * The table fails closed: a button, a menu entry or anything else with a
+ * press handler is a commit unless a row says it is safe. Safe by id are the
+ * standard actions that do not write (Edit, Cancel, Go, value help, sort,
+ * filter...). Safe by text are the words of core/words.ts (Back, Cancel,
+ * Display, Find, Refresh, Next, Sort, Filter, Go...), and only when the
+ * page's language is one that table covers; in any other language a button
+ * is safe by its id alone.
+ *
  * Draft apps: typing into a field of a draft-enabled app saves the draft on
  * the server at once. That is not counted as a commit; activating the draft
  * (Save, Create) is.
  */
 import type { Action, Assessment, Risk } from "../core/types.js";
+import { commitWord, safeWord } from "../core/words.js";
 import type { ControlFacts } from "./ui5.js";
 
-const word = (list: string) => new RegExp(`(?<![\\p{L}\\p{N}])(${list})(?![\\p{L}\\p{N}])`, "iu");
+/** What the rules know beyond the control: the page's language ("en-US"), for the safe words. */
+export interface RuleContext {
+  language?: string | undefined;
+}
 
-/** Verbs that write: English, German, French. Matched as whole words anywhere in a button's text. */
-export const COMMIT_TEXT = word(
-  [
-    "save|create|post|delete|submit|approve|reject|release|activate|deactivate|confirm|send|book|execute|withdraw|accept|decline|complete|copy|upload|import|publish|reverse",
-    "speichern|sichern|anlegen|erstellen|buchen|löschen|senden|absenden|genehmigen|ablehnen|freigeben|aktivieren|bestätigen|ausführen|kopieren|stornieren",
-    "enregistrer|sauvegarder|créer|comptabiliser|supprimer|soumettre|envoyer|approuver|rejeter|refuser|libérer|activer|confirmer|valider|exécuter|copier|annuler la",
-  ].join("|"),
-);
+/** "Yes" to a dialog: the dialog's own text says what that does. */
+const YES_TEXT = /^(yes|ja|oui|sí|si|sim|ja)$/i;
 
-/** Texts that say a button does not write, even when it is emphasized. Matched at the start of the text. */
-export const SAFE_TEXT = new RegExp(
-  `^(?:${[
-    "(?:ok|yes|no|go|cancel|close|back|next|previous|continue|more|less|help)$",
-    "(?:edit|display|show|hide|view|open|search|filter|sort|group|expand|collapse|refresh|export|print|select|choose|clear|reset|restore|adapt|discard|keep|details|settings|sign out|log off|share|navigate|leave)(?![\\p{L}\\p{N}])",
-    "(?:ja|nein|abbrechen|schließen|zurück|weiter|start|los)$",
-    "(?:bearbeiten|anzeigen|suchen|filtern|sortieren|verwerfen|auswählen|aktualisieren|drucken|exportieren|abmelden)(?![\\p{L}\\p{N}])",
-    "(?:oui|non|annuler|fermer|retour|suivant|précédent|continuer|lancer|démarrer)$",
-    "(?:modifier|afficher|rechercher|filtrer|trier|rejeter les modifications|sélectionner|actualiser|imprimer|exporter|se déconnecter)(?![\\p{L}\\p{N}])",
-  ].join("|")})`,
-  "iu",
-);
-
-/** Texts that only agree with what the dialog asks: the dialog's own text then says what happens. */
-const CONFIRM_TEXT = /^(ok|yes|continue|ja|weiter|oui|continuer)$/i;
+/** Icons of buttons that have no text, where the icon alone says the button only moves or shows. */
+const ICON_SAFE = /^(search|filter|sort|sort-ascending|sort-descending|refresh|nav-back|navigation-(left|right|up|down)-arrow|slim-arrow-(left|right|up|down)|expand|collapse|expand-all|collapse-all|expand-group|collapse-group|full-screen|exit-full-screen|sys-help|sys-help-2|value-help|overflow|menu2|drop-down-list|action-settings)$/i;
 
 /** Standard actions of SAP Fiori elements by id: OData V4 (`fe::…StandardAction::Save`) and V2 (`--save`, `--activate`). */
 const ID_COMMIT = /::StandardAction::(Save|Create|Delete|CreateDocument|MassEdit|Paste|Insert)\b|(?:--|::)(save|activate|delete|deleteEntry|addEntry|copy|copyButton|saveAsDraft|saveAndNew|saveAndNext|activateAndNew)$/i;
 const ID_SAFE = /::StandardAction::(Edit|Cancel|Discard|SwitchToActiveObject|SwitchToDraftObject|SwitchDraftAndActiveObject|FullScreen|EnterFullScreen|ExitFullScreen|Close|Share)\b|(?:--|::)(edit|discard|cancel|close|back|fullScreen|closeColumn|exitFullScreen|share)$/i;
 /** A back-end action behind a button: an OData action or function import (`DataFieldForAction`, `--action::…`). */
 const ID_ACTION = /DataFieldForAction::|(?:--|::)action::/i;
-const ID_READ = /-btnGo$|-btnSearch$|::FilterBar-btnSearch$|-btn(Filters|Clear|Restore|ShowHide|AdaptFilters)$|::AdaptFilters$|-vhi$|-valueHelp|::StandardAction::(Sort|Filter|Group|Personalization|Export|ExportToExcel|ShowDetails|HideDetails)\b|-(btnPersonalisation|btnExcelExport|btnFullScreen|header-expandBtn|expandBtn|collapseBtn|pinBtn)$|-searchField/i;
+const ID_READ = /-btnGo$|-btnSearch$|::FilterBar-btnSearch$|-btn(Filters|Clear|Restore|ShowHide|AdaptFilters)$|::AdaptFilters$|-vhi$|-valueHelp|::StandardAction::(Sort|Filter|Group|Personalization|Export|ExportToExcel|ShowDetails|HideDetails)\b|-(btnPersonalisation|btnExcelExport|btnFullScreen|header-expandBtn|expandBtn|collapseBtn|pinBtn|overflowButton)$|-searchField/i;
 const HANDLER_COMMIT = /save|create|post|delet|submit|approv|reject|release|activat|commit|send/i;
 
 const BUTTON_LIKE = /Button$|MenuItem$|ActionListItem$|ActionSelect$|sap\.m\.Link$/;
@@ -55,13 +48,19 @@ const FIELD_LIKE = /Input$|Field$|TextArea$|Picker$|ComboBox$|Select$|CheckBox$|
 const STRONG_TYPE = /^(Emphasized|Accept|Reject)$/;
 
 const isButton = (f: ControlFacts) => BUTTON_LIKE.test(f.type) || (/ListItem$/.test(f.type) && /Popover$|ActionSheet$|Menu$/.test(f.dialog?.type ?? ""));
-const commitText = (s: string | undefined) => (s ? COMMIT_TEXT.exec(s)?.[1] : undefined);
+/** Not a button, a row or a field, yet it reacts to a press: an icon, an image, an avatar, a custom control. */
+const isPressable = (f: ControlFacts) => (f.handlers ?? []).length > 0;
+const commitText = (s: string | undefined) => commitWord(s);
+const safeText = (f: ControlFacts, ctx: RuleContext) => !!safeWord(ctx.language, f.text);
+/** "OK" (the same in every language) or "Continue": the button only agrees with what the dialog says. */
+const agrees = (f: ControlFacts, ctx: RuleContext) => /^ok$/i.test(f.text.trim()) || safeWord(ctx.language, f.text) === "enter";
+const isLink = (f: ControlFacts) => /Link$|ObjectIdentifier$/.test(f.type);
 
 export interface Rule {
   /** Short name, shown in tests and used in the reason. */
   name: string;
   risk: Risk;
-  when: (f: ControlFacts) => boolean;
+  when: (f: ControlFacts, ctx: RuleContext) => boolean;
 }
 
 /**
@@ -76,31 +75,38 @@ export const RULES: Rule[] = [
   { name: "link with an address", risk: "navigate", when: (f) => !!f.href },
   { name: "row, tile, tab or list entry", risk: "navigate", when: (f) => ROW_LIKE.test(f.type) && !isButton(f) },
   { name: "field", risk: "navigate", when: (f) => FIELD_LIKE.test(f.type) && !isButton(f) },
-  { name: "press handler that writes", risk: "commit", when: (f) => isButton(f) && (f.handlers ?? []).some((h) => HANDLER_COMMIT.test(h)) },
-  { name: "text says it does not write", risk: "navigate", when: (f) => isButton(f) && SAFE_TEXT.test(f.text) && !(CONFIRM_TEXT.test(f.text) && f.dialog) },
-  { name: "text says it writes", risk: "commit", when: (f) => isButton(f) && !!commitText(f.text) },
+  { name: "press handler that writes", risk: "commit", when: (f) => (isButton(f) || isPressable(f)) && (f.handlers ?? []).some((h) => HANDLER_COMMIT.test(h)) },
+  { name: "text says it writes", risk: "commit", when: (f) => (isButton(f) || isPressable(f)) && !!commitText(f.text) },
   {
     name: "agrees to a dialog that writes",
     risk: "commit",
-    when: (f) => isButton(f) && CONFIRM_TEXT.test(f.text) && !!f.dialog && !f.inValueHelp && !!commitText(`${f.dialog.title} ${f.dialog.text}`),
+    when: (f, ctx) => isButton(f) && (agrees(f, ctx) || YES_TEXT.test(f.text.trim())) && !!f.dialog && !f.inValueHelp && !!commitText(`${f.dialog.title} ${f.dialog.text}`),
   },
-  { name: "agrees to a dialog", risk: "navigate", when: (f) => isButton(f) && CONFIRM_TEXT.test(f.text) && !!f.dialog },
+  { name: "agrees to a dialog", risk: "navigate", when: (f, ctx) => isButton(f) && agrees(f, ctx) && !!f.dialog },
   { name: "button of a filter bar or value help", risk: "read", when: (f) => isButton(f) && (!!f.inFilterBar || !!f.inValueHelp) },
+  { name: "text says it does not write", risk: "navigate", when: (f, ctx) => (isButton(f) || isPressable(f)) && safeText(f, ctx) },
   { name: "emphasized button of a footer toolbar", risk: "commit", when: (f) => isButton(f) && !!f.inFooter && STRONG_TYPE.test(f.buttonType ?? "") },
   { name: "emphasized button of a dialog", risk: "commit", when: (f) => isButton(f) && !!f.dialog && /Dialog$|MessageBox$/.test(f.dialog.type) && STRONG_TYPE.test(f.buttonType ?? "") },
+  { name: "link", risk: "navigate", when: (f) => isLink(f) },
+  { name: "button that opens a menu", risk: "navigate", when: (f) => /MenuButton$/.test(f.type) },
+  { name: "icon says it does not write", risk: "navigate", when: (f) => (isButton(f) || isPressable(f)) && !f.text && ICON_SAFE.test(f.icon ?? "") },
+  { name: "button that is not known to be safe", risk: "commit", when: (f) => isButton(f) },
+  { name: "control with a press handler that is not known to be safe", risk: "commit", when: (f) => isPressable(f) },
 ];
 
 const label = (f: ControlFacts) => `${f.type.replace(/^.*\./, "").toLowerCase()} "${f.text || f.icon || f.id.split(/--|::/).pop()}"`;
 
 /** Pressing, clicking or selecting one control. */
-export function assessControl(f: ControlFacts): Assessment & { rule: string } {
-  for (const r of RULES) if (r.when(f)) return { risk: r.risk, reason: `${label(f)}: ${r.name}`, rule: r.name };
+export function assessControl(f: ControlFacts, ctx: RuleContext = {}): Assessment & { rule: string } {
+  for (const r of RULES) if (r.when(f, ctx)) return { risk: r.risk, reason: `${label(f)}: ${r.name}`, rule: r.name };
+  // A text, a title, a layout: nothing to press.
   return { risk: "navigate", reason: label(f), rule: "default" };
 }
 
 /** Keys the Fiori driver knows, by the name Playwright presses. */
 export const KEYS: Record<string, { press: string; risk: Risk }> = {
   enter: { press: "Enter", risk: "navigate" },
+  space: { press: "Space", risk: "navigate" },
   escape: { press: "Escape", risk: "navigate" },
   esc: { press: "Escape", risk: "navigate" },
   tab: { press: "Tab", risk: "read" },
@@ -135,7 +141,7 @@ export function keyOf(action: Action): { name: string; press: string; risk: Risk
 }
 
 /** What the page says about the place a key would land: the focused control and the open dialog's default button. */
-export interface KeyContext {
+export interface KeyContext extends RuleContext {
   focused?: ControlFacts | undefined;
   dialogDefault?: ControlFacts | undefined;
 }
@@ -145,27 +151,32 @@ export interface KeyContext {
  * the screen: the action will fail, nothing is written).
  */
 export function assessAction(action: Action, facts: ControlFacts | undefined, ctx: KeyContext = {}): Assessment {
-  const d = action.do;
+  const d = action.do === "fill" ? "set" : action.do === "double" ? "dblclick" : action.do;
   if (d === "scroll" || d === "f4") return { risk: "read", reason: d === "f4" ? "value help" : "scroll" };
   if (d === "key") {
     const k = keyOf(action);
     if (!k) return { risk: "commit", reason: `key ${JSON.stringify(action.key ?? action.value ?? "")} is not one the Fiori surface knows` };
     if (k.risk === "commit") return { risk: "commit", reason: `key ${k.press} saves in Fiori apps` };
-    if (k.name === "enter") {
-      // Enter presses the focused button, or the default button of an open dialog.
-      for (const f of [ctx.focused, ctx.dialogDefault]) {
-        if (!f || !isButton(f)) continue;
-        const a = assessControl(f);
-        if (a.risk === "commit") return { risk: "commit", reason: `Enter would press ${a.reason}` };
+    if (k.name === "enter" || k.name === "space") {
+      // Enter and Space press the focused button; Enter also presses the default button of an open dialog.
+      for (const f of k.name === "enter" ? [ctx.focused, ctx.dialogDefault] : [ctx.focused]) {
+        if (!f || !(isButton(f) || isPressable(f))) continue;
+        const a = assessControl(f, ctx);
+        if (a.risk === "commit") return { risk: "commit", reason: `${k.press} would press ${a.reason}` };
       }
     }
     return { risk: k.risk, reason: `key ${k.press}` };
   }
-  if (!facts) return { risk: "read", reason: `no control "${action.id ?? ""}" on the screen` };
-  if (d === "set" || d === "fill" || d === "combo" || d === "check") {
+  if (d === "okcode" || d === "tree" || d === "grid" || d === "toolbar") return { risk: "read", reason: `"${d}" needs a Web GUI screen` };
+  // An id the screen does not have: the action fails in the page, where the control is looked up again.
+  if (!facts) return d === "press" || d === "click" || d === "select" || d === "dblclick" ? { risk: "commit", reason: `no control "${action.id ?? ""}" on the screen the server read, so what it does is unknown` } : { risk: "read", reason: `no control "${action.id ?? ""}" on the screen` };
+  if (d === "set" || d === "combo" || d === "check") {
+    // A toggle button is a button; a field that is a button (an action select) too.
+    if (d === "check" && isButton(facts)) return assessControl(facts, ctx);
     const where = facts.inValueHelp ? "value help" : facts.inFilterBar ? "filter" : "";
     return where ? { risk: "read", reason: `${where} field` } : { risk: "navigate", reason: `unsaved input in ${label(facts)}` };
   }
-  if (d === "press" || d === "click" || d === "select" || d === "dblclick" || d === "double") return assessControl(facts);
+  if (d === "focus") return { risk: "read", reason: "focus" };
+  if (d === "press" || d === "click" || d === "select" || d === "dblclick") return assessControl(facts, ctx);
   return { risk: "commit", reason: `action "${d}" is not one the Fiori surface knows` };
 }

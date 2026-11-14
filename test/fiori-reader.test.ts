@@ -116,6 +116,27 @@ describe("ui5Control", () => {
     expect(ui5Control({ handle: "Approved", op: "check" }).status).toBe("TARGET");
     expect(ui5Control({ handle: "Name", op: "check" }).status).toBe("NOTFIT");
   });
+  test("a password input is never typed into", () => {
+    const r = ui5Control({ handle: "Secret", op: "fill", value: "x" });
+    expect(r.status).toBe("NOTFIT");
+    expect(r.note).toContain("password field: this server never types a password");
+    expect(marked(controls)).toBeUndefined();
+    expect(ui5Control({ handle: "Secret", op: "facts" }).facts?.password).toBe(true);
+    expect(ui5Control({ handle: "Name", op: "facts" }).facts?.password).toBeUndefined();
+  });
+  test("fill refuses a button: typing does not press it", () => {
+    expect(ui5Control({ handle: "Save", op: "fill", value: " " }).status).toBe("NOTFIT");
+    expect(marked(controls)).toBeUndefined();
+  });
+  test("facts come with the page's language", () => {
+    const g = globalThis as unknown as { sap: { ui: { getCore: () => Record<string, unknown> } } };
+    const core = g.sap.ui.getCore();
+    g.sap.ui.getCore = () => ({ ...core, getConfiguration: () => ({ getLanguage: () => "de-DE" }) });
+    expect(ui5Control({ handle: "Save", op: "facts" }).language).toBe("de-DE");
+    expect(ui5Control({ handle: "", op: "facts" }).language).toBe("de-DE");
+    g.sap.ui.getCore = () => core;
+    expect(ui5Control({ handle: "Save", op: "facts" }).language).toBeUndefined();
+  });
   test("fill marks the input; a disabled control is refused", () => {
     expect(ui5Control({ handle: "Name", op: "fill", value: "x" }).status).toBe("TARGET");
     expect(marked(controls)).toBe(`${VIEW}fe::Field::Name`);

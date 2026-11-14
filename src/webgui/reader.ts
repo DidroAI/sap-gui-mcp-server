@@ -21,8 +21,11 @@
  *   {"do":"toolbar","id":"shell","button":"&FIND"}
  */
 import type { Frame, Locator } from "playwright-core";
-import { ActionError, type Action } from "../core/types.js";
-import { extractLook, extractViewer, markControl, markRow, normalizeLsdata } from "./page.js";
+import { ActionError, type Action, type Assessment } from "../core/types.js";
+import { LOGON_PROGRAM, LOGON_REFUSAL } from "../core/words.js";
+import { assessAction, type FocusFacts } from "./assess.js";
+import type { MarkedControl } from "./page.js";
+import { extractFacts, extractLook, extractMenus, extractViewer, focusedControl, markControl, markRow, normalizeLsdata, viewerFocus } from "./page.js";
 import type { WebGuiSession } from "./session.js";
 
 const MAX_GRID_ROWS = 50;
@@ -126,7 +129,56 @@ async function clientPopupLines(f: Frame): Promise<string[]> {
   return out;
 }
 
+/** Is the page SAP's logon page, or the logon screen inside Web GUI? */
+async function onLogon(session: WebGuiSession): Promise<boolean> {
+  return (await session.frame.evaluate(extractFacts).catch(() => undefined))?.logon === true;
+}
+
+/** This server never acts on a logon screen: not a key, not a click. */
+async function refuseLogon(session: WebGuiSession): Promise<void> {
+  if (await onLogon(session)) throw new ActionError(LOGON_REFUSAL);
+}
+
+/**
+ * The control that has the keyboard focus, for the guard: Enter and Space
+ * press it. Undefined when the page gives none.
+ */
+export async function focusOf(session: WebGuiSession): Promise<FocusFacts | undefined> {
+  const f = await lsFrame(session);
+  const fc = await f.evaluate(focusedControl).catch(() => null);
+  if (!fc) return undefined;
+  if (fc.type !== "frame") return fc.type === "browser" ? { sid: "", type: "browser", pressable: fc.pressable, text: fc.text } : { sid: fc.sid, type: fc.type, text: fc.text };
+  // The focus is inside an HTML viewer: ask that frame. What cannot be read counts as a button.
+  const viewer = (await viewerFrames(f).catch(() => [])).find((v) => v.sid === fc.sid);
+  const inner = viewer ? await viewer.frame.evaluate(viewerFocus).catch(() => ({ pressable: true, text: "", inner: true })) : { pressable: true, text: "", inner: true };
+  if (!inner) return { sid: fc.sid, type: "html", pressable: false, text: "" };
+  return { sid: fc.sid, type: "html", pressable: inner.pressable, text: inner.inner ? "an element of a frame the server cannot read" : inner.text };
+}
+
+/**
+ * Classifies an action from the screen as it is now: the full view, the menu
+ * entries, the logon language and the focused control. On a logon screen it
+ * refuses (ActionError). A screen that cannot be read cannot be ruled safe.
+ */
+export async function assess(session: WebGuiSession, action: Action): Promise<Assessment> {
+  await refuseLogon(session);
+  try {
+    const view = await look(session);
+    const menus = await session.frame.evaluate(extractMenus);
+    const facts = await session.frame.evaluate(extractFacts);
+    const focus = action.do === "key" || action.do === "okcode" ? await focusOf(session) : undefined;
+    return assessAction(action, view, menus, { language: facts.language, focus });
+  } catch (e) {
+    return { risk: "commit", reason: `the screen could not be read (${(e as Error).message.split("\n")[0]})` };
+  }
+}
+
 export async function look(session: WebGuiSession): Promise<string> {
+  if (await onLogon(session)) {
+    const facts = await session.frame.evaluate(extractFacts);
+    // The logon screen is not read out: nothing on it is for the agent.
+    return [`TRANSACTION   PROGRAM ${facts.program || LOGON_PROGRAM}  SCREEN `, `WINDOW wnd[0]  "${facts.title.replace(/"/g, "'")}"`, `NOTE this is the SAP logon screen. ${LOGON_REFUSAL}.`].join("\n");
+  }
   const f = await lsFrame(session);
   const r = await f.evaluate(extractLook, {
     grid: MAX_GRID_ROWS,
@@ -154,6 +206,8 @@ export async function look(session: WebGuiSession): Promise<string> {
 
 /** SAP virtual keys (sendVKey) as keyboard keys in Web GUI. */
 export function vkey(k: unknown): string {
+  // "Back" is SAP's Back (F3), as on the other surfaces.
+  if (typeof k === "string" && /^back$/i.test(k)) return "F3";
   if (typeof k === "string" && !/^\d+$/.test(k)) return k;
   const n = Number(k);
   const f = (i: number) => `F${i}`;
@@ -185,6 +239,8 @@ async function typeInto(
   loc: Locator,
   value: string,
 ): Promise<void> {
+  // A line break would be Enter: it is never typed.
+  value = value.replace(/[\r\n]+/g, " ");
   await session.closeSuggestions();
   await loc.focus({ timeout: 10000 });
   // Select all: Ctrl+A, or Cmd+A when the browser runs on macOS.
@@ -195,8 +251,26 @@ async function typeInto(
   await session.closeSuggestions();
 }
 
+/** Controls a value can be typed into. A password field is not one: this server never types a password. */
+const FIELD_TYPES = new Set(["GuiTextField", "GuiCTextField", "GuiTextEdit"]);
+const typeName = (type: string) => type.replace(/^Gui/, "").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase() || "control";
+
+/**
+ * Why `set` may not type into this control, or undefined when it may.
+ * Typing focuses the control first, and a key typed on a button presses it:
+ * so only fields are typed into.
+ */
+export function setRefusal(c: MarkedControl): string | undefined {
+  if (c.type === "GuiPasswordField" || c.inputType === "password") return `${c.sid} is a password field: this server never types a password. Type it yourself.`;
+  if (c.type === "GuiOKCodeField") return 'The command field takes {"do":"okcode","value":"..."}, not "set".';
+  if (!FIELD_TYPES.has(c.type)) return `${c.sid} is a ${typeName(c.type)}, not a field: "set" types into fields only. Use "press" for a button, "select" for a tab or a menu entry.`;
+  if (c.tag !== "INPUT" && c.tag !== "TEXTAREA" && c.type !== "GuiTextEdit") return `${c.sid} cannot be typed into (it is shown as text).`;
+  return undefined;
+}
+
 /** One action. Returns a one-line note of what was done; throws ActionError when it cannot. */
 export async function act(session: WebGuiSession, a: Action): Promise<string> {
+  await refuseLogon(session);
   try {
     return await run(session, a);
   } catch (e) {
@@ -223,6 +297,29 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       return `okcode ${a.value}`;
     case "key": {
       const k = vkey(a.key ?? a.value);
+      // In a popup, SAP binds toolbar button btn[N] to virtual key N ("Continue (Enter)" is btn[0]).
+      // Pressing that button works whether or not the keyboard focus is in the popup.
+      const n = typeof (a.key ?? a.value) === "number" ? Number(a.key ?? a.value) : k === "Enter" ? 0 : undefined;
+      if (n !== undefined) {
+        const f = await lsFrame(session);
+        const top = await f.evaluate(() => {
+          let max = 0;
+          for (const el of Array.from(document.querySelectorAll("[lsdata*='wnd[']"))) {
+            const m = /wnd\[(\d+)\]/.exec(el.getAttribute("lsdata") ?? "");
+            if (m && (el as HTMLElement).offsetWidth > 0) max = Math.max(max, Number(m[1]));
+          }
+          return max;
+        });
+        if (top > 0)
+          for (const bar of [0, 1]) {
+            const sid = `wnd[${top}]/tbar[${bar}]/btn[${n}]`;
+            const r = await f.evaluate(markControl, sid);
+            if (typeof r === "string") continue;
+            await f.locator("[data-sap-act]").first().click();
+            await session.waitRoundtrip(1200);
+            return `key ${k} (pressed ${sid})`;
+          }
+      }
       await session.pressKey(k);
       await session.waitRoundtrip();
       return `key ${k}`;
@@ -299,6 +396,8 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       if (c.type === "GuiCheckBox") return run(session, { ...a, do: "check" });
       if (c.type === "GuiComboBox")
         return run(session, { ...a, do: "combo", key: a.value });
+      const refusal = setRefusal(c);
+      if (refusal) throw new ActionError(refusal);
       if (c.readonly) throw new ActionError(`${c.sid} is read-only`);
       await typeInto(session, loc, String(a.value ?? ""));
       return `set ${c.sid}`;
@@ -315,11 +414,13 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       await session.waitRoundtrip(1200);
       return `double-clicked ${c.sid}`;
     case "f4":
+      if (!FIELD_TYPES.has(c.type) && c.type !== "GuiComboBox") throw new ActionError(`${c.sid} is a ${typeName(c.type)}: value help works on fields.`);
       await loc.focus();
       await page.keyboard.press("F4");
       await session.waitRoundtrip();
       return `value help on ${c.sid}`;
     case "check": {
+      if (c.type !== "GuiCheckBox" && c.type !== "GuiRadioButton") throw new ActionError(`${c.sid} is a ${typeName(c.type)}, not a checkbox: use "press" for a button, "select" for a tab.`);
       const on =
         a.value === undefined
           ? true
@@ -331,6 +432,7 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       return `${c.sid} ${on ? "checked" : "unchecked"}`;
     }
     case "combo": {
+      if (c.type !== "GuiComboBox") throw new ActionError(`${c.sid} is a ${typeName(c.type)}, not a dropdown.`);
       const want = String(a.key ?? a.value ?? "").toLowerCase();
       const f = await lsFrame(session);
       await loc.click();
@@ -370,6 +472,19 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
   }
 }
 
+/** Why an action may not run on this element of an HTML viewer, or undefined when it may. */
+export function htmlRefusal(doing: string, tag: string, inputType: string, id: string): string | undefined {
+  const button = tag === "BUTTON" || tag === "A" || (tag === "INPUT" && /^(button|submit|image|reset)$/.test(inputType));
+  if (doing === "set") {
+    if (inputType === "password") return `${id} is a password field: this server never types a password. Type it yourself.`;
+    if (button || (tag === "INPUT" && /^(checkbox|radio|file)$/.test(inputType))) return `${id} is not a field: "set" types into fields only. Use "press" for a button or a link.`;
+    if (tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") return `${id} is not a field: "set" types into fields only.`;
+  }
+  if (doing === "combo" && tag !== "SELECT") return `${id} is not a dropdown.`;
+  if (doing === "check" && !(tag === "INPUT" && /^(checkbox|radio)$/.test(inputType))) return `${id} is not a checkbox.`;
+  return undefined;
+}
+
 /** Actions on controls of an HTML viewer (html[n] from the view). */
 async function actHtml(session: WebGuiSession, a: Action): Promise<string> {
   const id = String(a.id);
@@ -382,7 +497,9 @@ async function actHtml(session: WebGuiSession, a: Action): Promise<string> {
   const hit = frames.find((x) => Number(n) >= x.from && Number(n) <= x.to);
   if (!hit) throw new ActionError(`no HTML viewer control ${id}`);
   const loc = hit.frame.locator(`[data-sap-html="${n}"]`);
-  const tag = await loc.evaluate((e) => e.tagName);
+  const { tag, type } = await loc.evaluate((e) => ({ tag: e.tagName, type: e.tagName === "INPUT" ? (e as HTMLInputElement).type || "text" : "" }));
+  const refusal = htmlRefusal(a.do, tag, type, id);
+  if (refusal) throw new ActionError(refusal);
   if (a.do === "combo" || (a.do === "set" && tag === "SELECT")) {
     const want = String(a.key ?? a.value ?? "");
     const r = await loc

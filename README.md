@@ -45,8 +45,9 @@ line.)
 The agent acts on those ids with one small set of JSON actions, the same on
 every surface.
 
-On our test screens (SAP demo systems, ten screens per surface, one action
-per test), the compact view saw:
+First measurements, from our own probe: SAP demo systems, ten screens per
+surface, one model-chosen action per test, one run. The method and scripts
+will be published with the benchmark. The compact view saw:
 
 | Surface | Screen content seen | Tokens, ten screens | Actions that worked |
 | --- | --- | --- | --- |
@@ -56,7 +57,9 @@ per test), the compact view saw:
 
 The other servers' labels and checkbox states were the weak point:
 Playwright MCP paired 66% of labels with their values on Web GUI and showed
-no checkbox state. A public, repeatable benchmark is on the way.
+no checkbox state. These numbers come from a small internal probe, not a
+benchmark yet. A public, repeatable benchmark is on the way, with whole
+tasks, held-out screens, and Claude's and Codex's own computer-use tools.
 
 ## Quick start
 
@@ -75,7 +78,8 @@ args = ["-y", "sap-gui-mcp-server"]
 ```
 
 Claude Desktop, Cursor and other clients take the same command:
-`npx -y sap-gui-mcp-server`.
+`npx -y sap-gui-mcp-server`. On Windows, some clients need it as
+`cmd /c npx -y sap-gui-mcp-server`.
 
 Then open SAP and ask: *"Look at my SAP screen and tell me which fields are
 required"*, or *"In VA03, open order 19097 and tell me its delivery
@@ -112,26 +116,52 @@ PowerShell, which comes with Windows.
 **Web GUI and Fiori in Chrome.** The server attaches to the Chrome you are
 using, in this order:
 
-1. `SAP_CHROME_CDP`, if you set it, e.g. `http://127.0.0.1:9222`;
+1. `SAP_CHROME_CDP`, if you set it, e.g. `http://127.0.0.1:9222`. Nothing
+   else is tried then;
 2. your running Chrome, once you allow it: open
    `chrome://inspect/#remote-debugging` and tick *Allow remote debugging*.
    This needs Chrome 144 or later; Chrome asks you to confirm when the
-   server connects;
-3. a Chrome started with `--remote-debugging-port=9222`.
+   server connects. Chrome stable is tried first, then Chrome beta, then
+   Microsoft Edge.
 
-The server tells Web GUI tabs (`/sap/bc/gui/sap/its/webgui`) from Fiori
-tabs (UI5 in the page). It reads system, client and user from the page.
-Closing the server never closes your browser.
+The server does not attach to port 9222 by itself: a browser listening
+there may belong to another tool. To use a Chrome started with
+`--remote-debugging-port`, name it with `SAP_CHROME_CDP`. Since Chrome 136
+that switch only opens the port together with `--user-data-dir`, pointing
+to a directory other than Chrome's default one:
+
+```sh
+chrome --remote-debugging-port=9333 --user-data-dir="$HOME/chrome-sap"
+SAP_CHROME_CDP=http://127.0.0.1:9333 npx -y sap-gui-mcp-server sessions
+```
+
+Each tab has one owner, decided in one place:
+
+- **Web GUI:** the address path contains `/sap/bc/gui/sap/its/webgui`, or
+  the page holds Web GUI's own controls;
+- **Fiori:** SAPUI5 runs in the page, and it is a launchpad: an address
+  under `/sap/` (`/sap/bc/ui2/flp`), or the launchpad shell (`sap.ushell`)
+  in the page;
+- any other tab is left alone. Only `http` and `https` pages are looked
+  at, never `chrome://` pages or extensions.
+
+Remote debugging gives the server (and so the agent using it) access to
+every tab of that browser, not only SAP tabs. The server only reads tabs it
+recognises as SAP, but consider a separate Chrome profile for SAP work.
+Set `SAP_ALLOW_ORIGINS` to look only at your SAP hosts. The server reads
+system, client and user from the page, and `sap_sessions` shows each tab's
+origin. Chrome does not tell a tab's position, so tabs are named by their
+title. Closing the server never closes your browser.
 
 ## Tools
 
 | Tool | Does |
 | --- | --- |
 | `sap_sessions` | lists the SAP sessions open on this machine; `*` marks the active one |
-| `sap_use` | makes another session the active one |
+| `sap_use` | makes another session the active one: by number, id, system, transaction, or surface (`fiori`, `webgui`, `sapgui`) |
 | `sap_look` | the screen as compact text; `full: true` for every id and column |
 | `sap_act` | one action, then the new screen |
-| `sap_confirm` | runs an action held for your confirmation (see below) |
+| `sap_confirm` | runs an action held for your confirmation, when your client cannot ask you itself (see below) |
 | `sap_screenshot` | a PNG of the window or tab, for charts and visual checks |
 
 Actions (`sap_act`):
@@ -150,8 +180,18 @@ Actions (`sap_act`):
 {"do": "grid", "id": "cntlGRID1/shellcont/shell", "row": 0, "col": "VBELN", "how": "double"}
 ```
 
-For `key`, 0 is Enter, 3 Back, 4 F4, 8 F8, 11 Save and 12 Cancel. Fiori
-also takes `click` and `scroll`.
+For `key`, 0 is Enter, 3 Back, 4 F4, 8 F8, 11 Save and 12 Cancel; a key
+is a number from 0 to 99 or a key name (`Enter`, `Escape`, `Shift+Tab`,
+`Control+S`). Fiori also takes `click` and `scroll`.
+
+The server brings every action to one shape before anything reads it:
+`do` must be one of the verbs above, a key must be a number or a known
+name, and line breaks are removed from ids and values. The guard and the
+surface then work from that same object.
+
+The command field (`okcd`) takes commands through `{"do": "okcode"}` only.
+`set`, `focus` or any other action on the field itself is refused, on
+every surface, so that a command cannot go round the guard.
 
 ## Guardrails
 
@@ -160,25 +200,73 @@ The server enforces these whatever the agent decides:
 | Setting | Effect |
 | --- | --- |
 | `SAP_WRITE=off` (default) | actions that may write to SAP are refused: Save, Post, Delete, Release, Approve, "Yes" on a save popup |
-| `SAP_WRITE=confirm` | such actions are held; the agent must ask you, then call `sap_confirm` with the token |
+| `SAP_WRITE=confirm` | such actions are held for your yes (see "Confirm mode") |
 | `SAP_WRITE=on` | such actions run |
-| `SAP_ALLOW_SYSTEMS=ABA/800,S4H` | only these systems, optionally with a client, are visible and usable |
-| `SAP_ALLOW_TCODES=VA03,MM03` | the agent may open only these transactions |
-| `SAP_BLOCK_TCODES=SE38,SM30` | the agent may not open these transactions |
+| `SAP_ALLOW_SYSTEMS=ABA/800,S4H` | only these systems, optionally with a client, are visible and usable. Checked on every tool, each time: a session that moves to another system is refused from then on |
+| `SAP_ALLOW_ORIGINS=https://myhost:44300` | only browser tabs of these origins are looked at (comma list) |
+| `SAP_ALLOW_TCODES=VA03,MM03` | the agent may open and work in only these transactions |
+| `SAP_BLOCK_TCODES=SE38,SM30` | the agent may not open or work in these transactions |
+
+The transaction lists apply to commands (`/nSE38`, `/oSE38`, `/*SE38`) and
+to the transaction the session is in. A menu entry, a favourite or a
+double-click in a tree can open a transaction without a command: the
+server reads the transaction before and after each action. If an action
+lands in a transaction the lists refuse, the server says so and leaves it
+with `/n`. If the session is already in one, only a command that leaves it
+is accepted. `/nex`, `/nend` and `/i` close sessions; they are not
+transactions, and the surface's own rules decide on them. On Fiori the
+"transaction" is the app's intent (such as `SalesOrder-display`), and the
+lists compare against that; a Web GUI app inside the launchpad is not
+checked by its transaction code.
 
 Each surface classifies an action before it runs:
 
 - **read:** value help, expanding a tree node;
-- **navigate:** typing, Enter, tabs, Back;
-- **commit:** anything that may save.
+- **navigate:** typing, Enter, tabs, Back, Execute (F8);
+- **commit:** anything that may save, and anything not known to be safe.
 
-Commits are recognised by the key (Save), the function code (`/11`,
-`SAVE`), and the text, tooltip or id of the button or menu entry, in
-English, German and French. When the server is unsure, it treats the action
-as a commit.
+The rule fails closed. A button, menu entry, function key or function code
+is a commit unless it is known to be safe: by its key (Enter, Back,
+Cancel, F4, paging...), its function code, or its text. Commit words are
+known in English, German, French, Spanish, Portuguese, Italian and Dutch.
+Safe words are known in English, German, French and Spanish. In another
+logon language, only ids, keys and function codes count as safe, so more
+actions are held. Enter or Space on a focused button counts as pressing
+that button. Typing works only in fields, never on buttons. `/nex`,
+`/nend` and `/i` count as commits, because they close sessions and drop
+unsaved data. Password fields cannot be typed into, and nothing runs on a
+logon screen: log on yourself.
 
-This is a safety net, not a guarantee. A custom button with a neutral name
-can still write, and so can a report started with F8. Use a test system and
+**Execute (F8)** counts as navigate on purpose. It runs reports and lists
+(VA05, ME2N...), which read. A report that updates the database usually
+has a test-run flag and asks before posting, but not always. Put known
+update programs in `SAP_BLOCK_TCODES`.
+
+A slow action can be given more time with `"timeout"` in seconds, up to
+600, for example `{"do":"key","key":8,"timeout":300}` (SAP GUI).
+
+### Confirm mode
+
+With `SAP_WRITE=confirm`, an action that may write is held until you say
+yes. How you are asked depends on your MCP client:
+
+- **The client supports MCP elicitation:** the server asks you in the
+  client itself, with the action, the system, the transaction and the
+  window title. The action runs only if you accept. The agent cannot
+  answer for you.
+- **It does not:** `sap_act` answers with a token, the agent asks you in
+  the chat, then calls `sap_confirm` with the token. This is **advisory**:
+  the server cannot check that you were asked. Treat it as a reminder to
+  the agent, not as a control. If you need a control, use `SAP_WRITE=off`
+  or a client with elicitation.
+
+In both cases the confirmation is bound to what was shown: the session,
+system, client, transaction, window title, the action and what the server
+said it would do. Before running, the server reads the screen again and
+refuses if any of these changed. A token works once and for ten minutes.
+
+This is a safety net, not a guarantee. A custom button whose name is on the
+safe list can still write, and so can a report started with F8. Use a test system and
 a user with the authorisations you want the agent to have.
 
 Other settings:
@@ -195,8 +283,8 @@ Other settings:
     GUI or Fiori.
   - HTML panels inside SAP GUI (such as SE80's object selector) cannot be
     reached by scripting; use `sap_screenshot` to see them.
-- **Browsers:** Chrome is supported; Edge (also Chromium) is likely to
-  work; Firefox and Safari are not.
+- **Browsers:** Chrome is supported; Microsoft Edge (also Chromium) is
+  found the same way and is likely to work; Firefox and Safari are not.
 - **Long lists:** these show the rows on screen, with the total count.
 
 ## Development
@@ -207,7 +295,7 @@ bun run typecheck && bun test && bun run build
 node dist/cli.js doctor
 ```
 
-`scripts/dev-webgui-logon.ts` and `scripts/dev-fiori-logon.ts` log a
+`test/dev/webgui-logon.ts` and `test/dev/fiori-logon.ts` log a
 throwaway Chrome on to a test system for live checks. They read the
 password from a file and never print it.
 
