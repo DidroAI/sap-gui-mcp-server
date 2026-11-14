@@ -432,6 +432,6 @@ export async function chromeDoctor(env: Record<string, string | undefined>): Pro
   const origins = allowedOrigins(env);
   if (origins) out.push({ ok: true, check: "Origins", detail: `only tabs of ${origins.join(", ")} are looked at (SAP_ALLOW_ORIGINS)` });
   const tabs = await chromeTabs(env).catch(() => []);
-  out.push({ ok: true, check: "Chrome tabs", detail: `${tabs.length} web page tab(s) open${origins ? " at these origins" : ""}` });
+  out.push({ ok: true, check: "Chrome tabs", detail: tabs.length ? `${tabs.length} web page tab(s) open${origins ? " at these origins" : ""}` : "no web page open yet (Chrome's own pages, such as chrome://inspect, are not counted)" });
   return out;
 }

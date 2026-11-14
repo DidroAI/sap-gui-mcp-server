@@ -64,6 +64,6 @@ export async function doctorReport(surfaces: Surface[], version: string, platfor
     out.push("");
   }
   if (platform !== "win32" && !areas.has(AREAS.sapgui ?? "")) out.push("SAP GUI for Windows", "  – not checked: it runs only on Windows. On this machine, use Web GUI or Fiori in Chrome.", "");
-  out.push(ok ? "Ready. Add the server to your agent (sap-gui-mcp-server setup), then ask it to look at your SAP screen." : "Not ready yet: fix the ✗ above, then run doctor again.");
+  out.push(ok ? "Ready. Open an SAP screen and ask your agent to look at it. (Agent does not list the sap-gui tools? Run sap-gui-mcp-server setup, then restart the agent.)" : "Not ready yet: fix the ✗ above, then run doctor again.");
   return { text: out.join("\n"), ok };
 }
