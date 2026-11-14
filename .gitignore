@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.tgz
+coverage/
+*.log
+.env
+.env.*
+# Screens hold business data: captures stay out of the repository.
+captures/
+*.png
