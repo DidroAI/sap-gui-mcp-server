@@ -29,6 +29,8 @@ Environment:
                                         that allows remote debugging (chrome://inspect/#remote-debugging). A Chrome
                                         started with --remote-debugging-port is used only when named here; Chrome 136+
                                         opens that port only together with --user-data-dir.
+  SAP_VIEW=diff|full                    what an action answers with: only what changed when the screen is the same (default),
+                                        or always the whole screen
   SAP_FIORI_WAIT=busy                   faster Fiori waits (busy indicators only, skips UI5 RecordReplay)`;
 
 async function main(argv: string[]): Promise<number> {

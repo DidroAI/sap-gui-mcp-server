@@ -1,12 +1,13 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { disconnectChrome } from "./browser/chrome.js";
 import { policyFromEnv } from "./core/guard.js";
+import { viewModeFromEnv } from "./core/views.js";
 import { createServer } from "./server.js";
 import { surfacesFromEnv } from "./surfaces.js";
 
 /** Runs the server on stdio until the client closes it. */
 export async function serveStdio(env: Record<string, string | undefined> = process.env): Promise<void> {
-  const { server, registry } = createServer({ policy: policyFromEnv(env), surfaces: surfacesFromEnv(env) });
+  const { server, registry } = createServer({ policy: policyFromEnv(env), surfaces: surfacesFromEnv(env), view: viewModeFromEnv(env) });
   const close = async () => {
     await registry.closeAll();
     await disconnectChrome().catch(() => {});
