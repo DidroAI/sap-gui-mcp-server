@@ -35,6 +35,14 @@ const MAX_GRID_ROWS = 50;
 const MAX_TREE_NODES = 300;
 /** How long a screen read may serve the step that follows it (assess, then act). */
 const FRESH_MS = 1500;
+/**
+ * How long to wait for the request of a step that always sends one (a
+ * function key, a button, a command). The wait ends when the request
+ * starts, so this costs nothing when the browser is quick; when it is slow
+ * (a busy machine), 1.5 s was not enough once in a soak run, and the answer
+ * showed the screen from before the step.
+ */
+const SURE_START_MS = 5000;
 
 /** Reads an HTML viewer and the frames inside it, numbering controls across them. */
 async function readViewer(fr: Frame): Promise<{
@@ -381,11 +389,12 @@ async function typeInto(
  * Web GUI posts that field's value and type-ahead and draws again, and the
  * control under the pointer is no longer the one the mouse went down on.
  * When no request with a step left, the click is made once more; the focus
- * is on the control by then. It is repeated only in such a tab, and only
+ * is on the control by then. `sure` says that the control always sends a
+ * request (a button): its request is then waited for longer. It is repeated only in such a tab, and only
  * while the control is still there: a click that did work has taken its
  * popup or screen away.
  */
-async function clickForRoundtrip(session: WebGuiSession, sid: string): Promise<void> {
+async function clickForRoundtrip(session: WebGuiSession, sid: string, sure = true): Promise<void> {
   for (let attempt = 0; attempt < 2; attempt++) {
     const f = await lsFrame(session);
     const r = await f.evaluate(markControl, sid);
@@ -393,7 +402,7 @@ async function clickForRoundtrip(session: WebGuiSession, sid: string): Promise<v
       if (attempt === 0) throw new ActionError(`No control "${sid}" on this screen. Use an id from the screen you are on (it may have changed since your last look).`);
       return;
     }
-    await session.roundtrip(() => f.locator("[data-sap-act]").first().click(), 1200);
+    await session.roundtrip(() => f.locator("[data-sap-act]").first().click(), sure ? SURE_START_MS : 1200);
     if (session.started || !session.slow) return;
     await session.closeSuggestions();
   }
@@ -539,7 +548,9 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
         // does nothing else), so the key reaches it and not the screen behind.
         if (top > 0) await f.locator(".urPWTitleText").filter({ visible: true }).last().click({ timeout: 3000 }).catch(() => {});
       }
-      await session.roundtrip(() => session.pressKey(k));
+      // An SAP function key always sends a request: it is waited for, also when the browser is slow to
+      // hand the key on. Keys that only move in the page (Tab, arrows) send none.
+      await session.roundtrip(() => session.pressKey(k), n !== undefined || /^((Shift|Control|Alt)\+)*(Enter|Escape|F\d{1,2})$/i.test(k) ? SURE_START_MS : 800);
       return `key ${k}`;
     }
     case "scroll": {
@@ -608,7 +619,8 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       }
       const { loc, c } = await locate(session, id);
       // A tab sends a request, and choosing it twice is choosing it once: a lost click is made again.
-      if (c.type === "GuiTab") await clickForRoundtrip(session, c.sid);
+      // (Not `sure`: a tab strip that switches in the page sends nothing.)
+      if (c.type === "GuiTab") await clickForRoundtrip(session, c.sid, false);
       else await session.roundtrip(() => loc.click(), 1200);
       return `selected ${c.sid}`;
     }
