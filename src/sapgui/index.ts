@@ -86,7 +86,8 @@ function explain(e: unknown): Error {
     case "BUSY":
       return new ActionError('SAP GUI is still busy with the last step. Look again in a moment (sap_look); a long step can be given more time with "timeout" (seconds).');
     case "NOT_FOUND":
-      return new ActionError(`${e.message}. Use an id from the screen you are on (it may have changed since your last look).`);
+      // A row the grid does not have, or a control that went away between the read and the action.
+      return new ActionError(/^row \d+:/.test(e.message) ? `${e.message}.` : `${e.message}. Use an id from the screen you are on (it may have changed since your last look).`);
     case "NO_SCROLL":
       return new ActionError(`${e.message}: "scroll" works on a grid, a table control, a tree or a list.`);
     default:
