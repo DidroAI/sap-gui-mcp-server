@@ -1,5 +1,5 @@
 /** Fakes for the server and registry tests: a surface with sessions in memory, no SAP and no browser. */
-import type { Action, Assessment, Driver, SessionInfo, Surface, SurfaceName } from "../src/core/types.js";
+import type { Action, Assessment, Driver, LookOptions, SessionInfo, Surface, SurfaceName } from "../src/core/types.js";
 
 export interface FakeSession {
   info: SessionInfo;
@@ -11,6 +11,10 @@ export interface FakeSession {
   valid?: boolean;
   /** Set to make `refresh` fail. */
   broken?: string;
+  /** The compact view `look` answers with; default: one line naming the transaction. */
+  view?: string;
+  /** What `act` throws, to play an action that cannot run. */
+  failAct?: Error;
 }
 
 export class FakeSurface implements Surface {
@@ -19,7 +23,7 @@ export class FakeSurface implements Surface {
   discovered = 0;
   failWith: string | undefined;
   /** Every call the drivers received, in order. */
-  log: { op: "assess" | "act" | "look" | "screenshot"; action?: Action }[] = [];
+  log: { op: "assess" | "act" | "look" | "screenshot"; action?: Action; options?: LookOptions }[] = [];
 
   constructor(readonly name: SurfaceName) {}
 
@@ -48,9 +52,12 @@ export class FakeSurface implements Surface {
         return { ...s.info };
       },
       valid: async () => s.valid !== false && this.sessions.includes(s),
-      look: async () => {
-        log.push({ op: "look" });
-        return `SCREEN ${s.info.transaction ?? ""}`;
+      look: async (options) => {
+        // The plain compact look is what every test before the look options counted: it stays without options.
+        log.push(options.compact && !options.id ? { op: "look" } : { op: "look", options });
+        if (options.id) return `ONE ${options.id}${options.rows ? ` rows ${options.rows.from}-${options.rows.to}` : ""}`;
+        if (!options.compact) return `FULL ${s.view ?? s.info.transaction ?? ""}`;
+        return s.view ?? `SCREEN ${s.info.transaction ?? ""}`;
       },
       assess: async (a) => {
         log.push({ op: "assess", action: a });
@@ -58,6 +65,7 @@ export class FakeSurface implements Surface {
       },
       act: async (a) => {
         log.push({ op: "act", action: a });
+        if (s.failAct) throw s.failAct;
         s.onAct?.(a, s);
         return `did ${a.do}`;
       },
