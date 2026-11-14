@@ -592,7 +592,13 @@ function Op-Area($req) {
   foreach ($w in (Session-Windows ([long]$req['session']))) {
     $a = Screen-Area ([IntPtr]$w.hwnd)
     $r = if ($a -ne [IntPtr]::Zero) { [SapScreen]::Rect($a) } else { $null }
-    [void]$list.Add(@{ hwnd = $w.hwnd; kind = $w.kind; title = $w.title; area = $r; foreground = ($w.hwnd -eq [long][SapScreen]::GetForegroundWindow()) })
+    # SAP GUI's controls that are real windows (grids, trees, text editors), with their rects.
+    $ctl = New-List
+    foreach ($c in [SapScreen]::Descendants([IntPtr]$w.hwnd)) {
+      $cls = [SapScreen]::Class($c)
+      if (($cls -eq 'SAPALVGrid' -or $cls -eq 'SAPTreeList' -or $cls -eq 'SAP TextEditBody') -and [SapScreen]::IsWindowVisible($c)) { [void]$ctl.Add(@{ cls = $cls; rect = [SapScreen]::Rect($c) }) }
+    }
+    [void]$list.Add(@{ hwnd = $w.hwnd; kind = $w.kind; title = $w.title; area = $r; controls = $ctl; foreground = ($w.hwnd -eq [long][SapScreen]::GetForegroundWindow()) })
   }
   @{ windows = $list }
 }
@@ -659,6 +665,8 @@ function Op-Act($req) {
     [SapScreen]::Key(0x0D, $false, $false, $false)
   }
   elseif ($do -eq 'key') { Send-VKey ([int]$a['key']) }
+  elseif ($do -eq 'top') { [SapScreen]::Key(0x24, $true, $false, $false) }  # Ctrl+Home: first cell of a grid
+  elseif ($do -eq 'down') { for ($i = 0; $i -lt [int]$a['count']; $i++) { [SapScreen]::Key(0x28, $false, $false, $false) } }
   elseif ($do -eq 'press') {
     # A toolbar button by its name: a posted BM_CLICK, no mouse.
     $name = [string]$a['name']
