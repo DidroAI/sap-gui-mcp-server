@@ -114,13 +114,18 @@ export function extractLook(limits: {
     return on;
   };
   const scrollInfo = (domId: string) => {
-    const sb = document.querySelector(
-      `[ct='SCB'][data-ls*="6:'${domId.replace(/#/g, "\\x23")}'"]`,
-    );
+    const sb = Array.from(
+      document.querySelectorAll(
+        `[ct='SCB'][data-ls*="6:'${domId.replace(/#/g, "\\x23")}'"]`,
+      ),
+    ).find((e) => !/5:'HORIZONTAL'/.test(e.getAttribute("data-ls") ?? ""));
     const ls = sb?.getAttribute("data-ls") ?? "";
+    // Key 0 is the first row shown, counted from 1.
+    const pos = Number(/[{,]0:(\d+)/.exec(ls)?.[1] ?? NaN);
     return {
       total: Number(/[{,]10:(\d+)/.exec(ls)?.[1] ?? NaN),
       visible: Number(/[{,]3:(\d+)/.exec(ls)?.[1] ?? NaN),
+      first: Number.isNaN(pos) ? 0 : Math.max(0, pos - 1),
     };
   };
 
@@ -310,7 +315,7 @@ export function extractLook(limits: {
         }
         out(
           modal,
-          `${sid}  dropdown  ${lab} = "${key}" ${text}${opts.length ? `  options: ${opts.slice(0, 30).join(", ")}` : ""}`,
+          `${sid}  dropdown  ${lab} = "${key}" ${text}${opts.length ? `  ${opts.length} options: ${opts.slice(0, 30).join(", ")}${opts.length > 30 ? ", ..." : ""}` : ""}`,
         );
         break;
       }
@@ -387,7 +392,7 @@ export function extractLook(limits: {
           : "";
         out(
           modal,
-          `${sid}  table  rows ${Number.isNaN(s.total) ? "?" : s.total} (visible ${Number.isNaN(s.visible) ? "?" : s.visible})${cap ? ` "${cap}"` : ""}; columns: ${cols.map((c) => byName.get(c) ?? "").join(" | ")}`,
+          `${sid}  table  rows ${Number.isNaN(s.total) ? "?" : s.total} (visible ${Number.isNaN(s.visible) ? "?" : s.visible}${s.first ? `, first ${s.first}` : ""})${cap ? ` "${cap}"` : ""}; columns: ${cols.map((c) => byName.get(c) ?? "").join(" | ")}`,
         );
         // Cells come after, as their own controls (inputs, checkboxes; display cells here).
         const box = el.getBoundingClientRect();
@@ -445,7 +450,9 @@ export function extractLook(limits: {
         if (rest > 0)
           out(
             modal,
-            `  ... ${rest} more rows (shown: ${first - 1} to ${first - 2 + Math.min(shown.length, limits.grid)})`,
+            shown.length
+              ? `  ... ${rest} more rows (shown: ${first - 1} to ${first - 2 + Math.min(shown.length, limits.grid)}; scroll for the others)`
+              : `  ... ${rest} rows, none drawn yet`,
           );
         break;
       }
@@ -487,9 +494,49 @@ export function extractLook(limits: {
         }
         out(
           modal,
-          `${sid}  tree  ${nodes.length} nodes shown${heads.length ? `; columns: ${heads.join(" | ")}` : ""}`,
+          `${sid}  tree  ${nodes.length} nodes shown${(() => {
+            // A tree longer than its frame: the scrollbar counts its lines.
+            const sc = scrollInfo(el.id);
+            return !Number.isNaN(sc.total) && sc.total > nodes.length
+              ? ` of ${sc.total} (first ${sc.first}; scroll for the others)`
+              : "";
+          })()}${heads.length ? `; columns: ${heads.join(" | ")}` : ""}`,
         );
         for (const n of nodes.slice(0, limits.tree)) out(modal, n);
+        break;
+      }
+      case "ABAPLIST": {
+        // A classic list: its cells follow, named by column and row like SAP GUI's (lbl[col,row]).
+        const sc = scrollInfo(el.id);
+        // The lines above the part that scrolls (titles, column heads) stay: the screen shows them and `visible` more.
+        let lastLine = -1;
+        for (const c of Array.from(el.querySelectorAll("[data-ls*='SID:']"))) {
+          const m = /\/usr\/[a-z]+\[\d+,(\d+)\]/.exec(c.getAttribute("data-ls") ?? "");
+          if (m) lastLine = Math.max(lastLine, Number(m[1]));
+        }
+        const fixed = Number.isNaN(sc.visible) ? 0 : Math.max(0, lastLine + 1 - sc.visible);
+        out(
+          modal,
+          `${sid}  list  ${Number.isNaN(sc.total) ? "all rows shown" : `${sc.total} rows (visible ${Number.isNaN(sc.visible) ? "?" : sc.visible}${sc.first ? `, first ${sc.first}` : ""}${fixed ? `, below ${fixed} title rows` : ""}; scroll for the others)`}`,
+        );
+        break;
+      }
+      case "ABAPLISTTEXT": {
+        if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
+          const i = el as HTMLInputElement;
+          const val = i.type === "password" ? (i.value ? "***" : "") : norm(i.value);
+          out(
+            modal,
+            `${sid}  field  ${tip} = "${val}"  (${i.readOnly || i.disabled ? "read-only" : "edit"})`,
+          );
+          break;
+        }
+        const t = norm(h.innerText);
+        if (t) out(modal, `${sid}  label  ${t}`);
+        break;
+      }
+      case "ABAPLISTCHECKBOX": {
+        out(modal, `${sid}  checkbox  [${checkedOf(el) ? "x" : " "}] ${tip}`);
         break;
       }
       case "GuiSearchHelpPage": {
@@ -844,11 +891,10 @@ export function markRow(a: { sid: string; row?: number | undefined; node?: strin
   const want = a.sid;
   const root =
     roots.find((el) => sidOf(el) === want) ??
-    roots.find((el) =>
-      sidOf(el).endsWith(`/${want.slice(want.lastIndexOf("/") + 1)}`),
-    ) ??
-    (roots.length === 1 ? roots[0] : undefined);
-  if (!root) return `no tree or grid named ${want}`;
+    // Without an id, the only tree or grid of the screen. An id that names none is not guessed:
+    // it may come from an earlier screen, and the one grid here is then another control.
+    (want === "" && roots.length === 1 ? roots[0] : undefined);
+  if (!root) return `no tree or grid named ${want || "(no id given)"} on this screen`;
   const tds = Array.from(
     root.querySelectorAll("td[lsmatrixrowindex][lsmatrixcolindex]"),
   ).filter((td) => td.getAttribute("subct") !== "SC");
@@ -882,8 +928,14 @@ export function markRow(a: { sid: string; row?: number | undefined; node?: strin
     if (!tr) return `no node ${a.node}`;
     rowIdx = Number(tr.getAttribute("iidx")) + 1;
   } else rowIdx = Number(a.row ?? 0) + 1;
+  // Only rows that are drawn: Web GUI keeps rows it scrolled away from in the page, without a size.
+  const box = root.getBoundingClientRect();
+  const drawn = (td: Element) => {
+    const r = td.getBoundingClientRect();
+    return r.height > 0 && r.bottom > box.top + 2 && r.top < box.bottom - 2;
+  };
   const inRow = tds.filter(
-    (td) => Number(td.getAttribute("lsmatrixrowindex")) === rowIdx,
+    (td) => Number(td.getAttribute("lsmatrixrowindex")) === rowIdx && drawn(td),
   );
   if (!inRow.length) return `row ${a.row ?? a.node} is not on screen`;
   let cell: Element | undefined;
@@ -1141,4 +1193,133 @@ export function viewerFocus(): { pressable: boolean; text: string; inner: boolea
   const i = ae as HTMLInputElement;
   const text = ae.tagName === "INPUT" ? (pressable ? norm(i.value) : "") : norm((ae as HTMLElement).innerText);
   return { pressable, text: text || norm(ae.getAttribute("title")) || norm(ae.getAttribute("aria-label")), inner: false };
+}
+
+export interface Scrolled {
+  /** Scripting id of the control that was scrolled. */
+  sid: string;
+  /** First row shown before and after, counted from 0. */
+  from: number;
+  first: number;
+  visible: number;
+  total: number;
+  /** False when this Web GUI gives no access to its scrollbar object: the caller then clicks the scrollbar. */
+  moved: boolean;
+  /** DOM id of the scrollbar, for the caller's fallback. */
+  bar: string;
+}
+
+/**
+ * Scrolls a grid, a table control, a tree, a value-help list or a classic
+ * list to a row. Web GUI draws only the rows in view and asks the server for
+ * others when its scrollbar moves, so the scrollbar object is what is moved:
+ * its own `scrollToPosition`, which sends that request. The object is not
+ * reachable by id; it is caught from the event it handles.
+ *
+ * `to`: a row counted from 0, or "next", "prev", "first", "last"; "here"
+ * moves nothing and says where the control is.
+ * Answers a text when there is nothing to scroll.
+ */
+export function scrollControl(a: { sid: string; to: number | string }): Scrolled | string {
+  const sidOf = (el: Element) => {
+    const ls = el.getAttribute("data-ls") ?? "";
+    return (/OrigID:'((?:[^'\\]|\\.)*)'/.exec(ls)?.[1] ?? /SID:'((?:[^'\\]|\\.)*)'/.exec(ls)?.[1] ?? "").replace(/\\\\/g, "\\");
+  };
+  const KINDS = /Type:'(GuiTableControl|GuiGridView|GuiTree|GuiSearchHelpResult|ABAPLIST)'/;
+  const roots = Array.from(document.querySelectorAll("[data-ls*='SID:']")).filter((el) => KINDS.test(el.getAttribute("data-ls") ?? "") && el.getBoundingClientRect().width > 0);
+  const root = roots.find((el) => sidOf(el) === a.sid);
+  if (!root) return `no grid, table, tree or list named ${a.sid}`;
+  const bar = Array.from(document.querySelectorAll(`[ct='SCB'][data-ls*="6:'${root.id.replace(/#/g, "\\x23")}'"]`)).find(
+    (e) => !/5:'HORIZONTAL'/.test(e.getAttribute("data-ls") ?? "") && (e as HTMLElement).offsetHeight > 0,
+  );
+  if (!bar) return `all rows of ${a.sid} are on screen: nothing to scroll`;
+  // The scrollbar's object, from the event it handles: it knows where the list is now. The element's
+  // lsdata only says where it was when the server last drew it; a grid that scrolls in the page moves on.
+  interface Bar {
+    scrollToPosition?: (n: number) => void;
+    iGetFirstVisibleItem?: () => number;
+    iGetMaxScrollTo?: () => number;
+  }
+  const w = window as unknown as { UCF_Scrollbar?: { prototype: Record<string, unknown> } };
+  const proto = w.UCF_Scrollbar?.prototype;
+  let control: Bar | undefined;
+  if (proto && typeof proto.onmouseup === "function" && typeof proto.scrollToPosition === "function") {
+    const original = proto.onmouseup;
+    proto.onmouseup = function (this: Bar) {
+      control = this;
+    };
+    try {
+      bar.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    } finally {
+      proto.onmouseup = original;
+    }
+  }
+  const live = control as Bar | undefined;
+  const ls = bar.getAttribute("lsdata") ?? "";
+  const num = (k: number) => Number(new RegExp(`[{,]"?${k}"?:(-?\\d+)`).exec(ls)?.[1] ?? NaN);
+  const asNumber = (f: (() => number) | undefined) => {
+    try {
+      const v = f?.call(live);
+      return typeof v === "number" && v >= 1 ? v : NaN;
+    } catch {
+      return NaN;
+    }
+  };
+  const livePos = asNumber(live?.iGetFirstVisibleItem);
+  const liveMax = asNumber(live?.iGetMaxScrollTo);
+  const pos = Number.isNaN(livePos) ? num(0) : livePos;
+  const max = Number.isNaN(liveMax) ? num(1) : liveMax;
+  const visible = num(3);
+  const total = num(10);
+  if ([pos, max, visible].some((x) => Number.isNaN(x))) return `the scrollbar of ${a.sid} could not be read`;
+  let want: number;
+  if (typeof a.to === "number") want = a.to + 1;
+  else if (a.to === "next") want = pos + visible;
+  else if (a.to === "prev") want = pos - visible;
+  else if (a.to === "first") want = 1;
+  else if (a.to === "last") want = max;
+  else if (a.to === "here") want = pos;
+  else return `scroll "to" is a row number, "next", "prev", "first" or "last"`;
+  want = Math.min(Math.max(1, want), Math.max(1, max));
+  const res: Scrolled = { sid: a.sid, from: pos - 1, first: want - 1, visible, total: Number.isNaN(total) ? max + visible - 1 : total, moved: true, bar: bar.id };
+  if (want === pos) return res;
+  if (!live?.scrollToPosition) return { ...res, first: pos - 1, moved: false };
+  live.scrollToPosition(want);
+  return res;
+}
+
+/**
+ * Every entry of a dropdown the page holds, as key and text: [] when Web GUI
+ * has not loaded its list yet (it loads some only when the list opens).
+ * A text when the id names no dropdown.
+ */
+export function comboEntries(sid: string): { key: string; text: string }[] | string {
+  const unesc = (s: string) =>
+    s
+      .replace(/\\x([0-9a-fA-F]{2})/g, (_m, h) => String.fromCharCode(parseInt(h, 16)))
+      .replace(/\\u([0-9a-fA-F]{4})/g, (_m, h) => String.fromCharCode(parseInt(h, 16)))
+      .replace(/\\(.)/g, "$1");
+  const prop = (ls: string, key: number): string => {
+    const m = new RegExp(`(?:^|[{,])${key}:'((?:[^'\\\\]|\\\\.)*)'`).exec(ls);
+    return m ? unesc(m[1] ?? "") : "";
+  };
+  const norm = (t: string | null | undefined) => (t ?? "").replace(/[\s\u00a0]+/g, " ").replace(/^ | $/g, "");
+  const el = Array.from(document.querySelectorAll("input[data-ls*=\"Type:'GuiComboBox'\"]")).find((e) => {
+    const ls = e.getAttribute("data-ls") ?? "";
+    const raw = /OrigID:'((?:[^'\\]|\\.)*)'/.exec(ls)?.[1] ?? /SID:'((?:[^'\\]|\\.)*)'/.exec(ls)?.[1] ?? "";
+    return raw.replace(/\\\\/g, "\\") === sid && (e as HTMLElement).offsetWidth > 0;
+  });
+  if (!el) return `${sid} is not a dropdown on this screen`;
+  const ls = el.getAttribute("data-ls") ?? "";
+  // S/4HANA 2025 names the list box in aria-controls; ECC in key 2.
+  const s4 = /^[A-Z0-9_/]+-[A-Z0-9_]+/.test(prop(ls, 3));
+  const lb = document.getElementById(s4 ? (el.getAttribute("aria-controls") ?? "") : prop(ls, 2));
+  const out: { key: string; text: string }[] = [];
+  for (const it of Array.from(lb?.querySelectorAll("[ct='LIB_I'],[data-itemkey]") ?? [])) {
+    const ils = it.getAttribute("data-ls") ?? "";
+    const key = it.getAttribute("data-itemkey") ?? (prop(ils, 3) || prop(ils, 1));
+    const text = prop(ils, 4) || norm((it as HTMLElement).innerText);
+    if (key || text) out.push({ key, text });
+  }
+  return out;
 }

@@ -16,6 +16,7 @@
  * The words and codes are tables in core/words.ts, shared with the other
  * surfaces. To cover a new case, add a word or a code there.
  */
+import { resolveId } from "../core/ids.js";
 import type { Action, Assessment } from "../core/types.js";
 import { CLOSES_SESSIONS, commitCode, commitWord, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
 import type { MenuEntry } from "./page.js";
@@ -111,6 +112,12 @@ export function programOf(view: string): string {
 export function findControl(windows: ViewWindow[], ident: string): ViewControl | undefined {
   const all = windows.flatMap((w) => w.controls);
   let want = ident.replace(/^ +| +$/g, "");
+  // A handle of the compact view (core/ids.ts), as the reader resolves it.
+  const named = resolveId(
+    all.map((c) => c.id),
+    want,
+  );
+  if ("id" in named) return all.find((c) => c.id === named.id);
   let hits = all.filter((c) => c.id === want);
   if (!hits.length && want.startsWith("wnd[")) want = want.slice(want.lastIndexOf("/") + 1);
   if (!hits.length) hits = all.filter((c) => c.id.endsWith(`/${want}`));
@@ -324,6 +331,8 @@ export function assessAction(action: Action, view: string, menus: MenuEntry[], c
     case "combo":
     case "f4":
     case "focus": {
+      // A dropdown asked for its entries: nothing is chosen.
+      if (action.do === "combo" && action.key === undefined && action.value === undefined) return READ;
       if (action.do === "dblclick" && (action.node !== undefined || action.row !== undefined)) return NAVIGATE;
       const acts = ["press", "select", "click", "dblclick"].includes(action.do);
       if (/\/mbar\/menu\[/.test(id) || /^menu\[/.test(id)) {
@@ -351,7 +360,7 @@ export function assessAction(action: Action, view: string, menus: MenuEntry[], c
       return assessFunction(FUNCTION_KINDS.has(control.kind) ? (control.kind === "menu" ? "menu entry" : control.kind) : control.kind, control.text, control, windows, ctx);
     }
     case "scroll":
-      // Not a Web GUI action: it fails on its own.
+      // Moves a list; nothing is chosen or changed.
       return READ;
     default:
       return commit(`action "${action.do}" is not one the Web GUI surface knows`);
