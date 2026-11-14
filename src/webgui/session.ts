@@ -345,7 +345,8 @@ export class WebGuiSession {
       await ok.fill("").catch(() => {});
       throw new ActionError(`The command field took "${typed}" instead of "${command}", so nothing was sent. Look at the screen and try again.`);
     }
-    await this.roundtrip(() => ok.press("Enter"));
+    // A command always sends a request: waited for also when the browser is slow to hand Enter on.
+    await this.roundtrip(() => ok.press("Enter"), 5000);
   }
 
   /**
