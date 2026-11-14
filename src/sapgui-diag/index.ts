@@ -50,6 +50,7 @@ interface WindowFacts {
   kind: "session" | "popup";
   title: string;
   area?: [number, number, number, number] | null;
+  controls?: { cls: string; rect: [number, number, number, number] }[];
   foreground?: boolean;
 }
 
@@ -152,7 +153,7 @@ export function assessDiag(s: DiagScreen, action: Action, target?: Target): Asse
       if (target?.kind === "key") return assessKey(target.key.vkey, `button "${clean(target.key.text)}"`);
       if (target?.kind === "tab") return { risk: "navigate", reason: `tab "${target.text}"` };
       if (target?.kind === "element" && target.element.kind === "button") return assessButton(target.element, "button ");
-      if (target?.kind === "element" || target?.kind === "cell" || target?.kind === "list") {
+      if (target?.kind === "element" || target?.kind === "cell" || target?.kind === "list" || target?.kind === "gridrow" || target?.kind === "node") {
         // A click on a field or a line only moves the cursor; a double-click on a list line chooses it.
         if (action.do === "dblclick" && commitQuestion(s)) return commit("a double-click on a popup that asks to save");
         return { risk: "navigate", reason: `${action.do} on ${target.what}` };
@@ -170,7 +171,9 @@ export type Target =
   | { kind: "cell"; window: DiagWindow; row: number; col: number; width: number; input: boolean; what: string }
   | { kind: "list"; window: DiagWindow; row: number; col: number; what: string }
   | { kind: "tab"; window: DiagWindow; row: number; col: number; text: string; what: string }
-  | { kind: "key"; key: DiagKey; what: string };
+  | { kind: "key"; key: DiagKey; what: string }
+  | { kind: "gridrow"; window: DiagWindow; row: number; col: number; index: number; what: string }
+  | { kind: "node"; window: DiagWindow; row: number; col: number; line: number; depth: number; header: boolean; what: string };
 
 export function resolveTarget(s: DiagScreen, action: Action): Target | undefined {
   const w = active(s);
@@ -193,10 +196,40 @@ export function resolveTarget(s: DiagScreen, action: Action): Target | undefined
     if (b) return { kind: "element", element: b, window: w, row: b.row, col: b.col, what: `button "${clean(b.text || b.tooltip)}"` };
     const k = [...w.toolbar, ...w.keys].find((x) => x.fcode === fc);
     if (k) return { kind: "key", key: k, what: `button "${clean(k.text)}"` };
+    // a tree node by its key: its line among the nodes on show (those whose parents are all open)
+    for (const c of w.controls) {
+      if (!c.tree || !c.area) continue;
+      const byKey = new Map(c.tree.nodes.map((x) => [x.key, x]));
+      const shown = c.tree.nodes.filter((x) => {
+        if (x.hidden) return false;
+        for (let p = byKey.get(x.parent); p; p = byKey.get(p.parent)) if (!p.expanded) return false;
+        return true;
+      });
+      const line = shown.findIndex((x) => x.key === fc);
+      if (line >= 0) {
+        const node = shown[line] as (typeof shown)[number];
+        return { kind: "node", window: w, row: c.area.row, col: c.area.col, line, depth: node.depth, header: c.tree.headers.length > 1, what: `tree node "${clean(node.text)}"` };
+      }
+    }
     return undefined;
   }
   const cell = /^(.+)\[(\d+)\]$/.exec(raw);
   if (cell) {
+    // a grid row: the grid's container name and the row number of the view
+    const grid = w.controls.find((c) => c.grid && (c.container === cell[1] || String(c.id) === cell[1] || (!c.area && cell[1] === "value-help")));
+    if (grid?.grid && !grid.area) {
+      // a value help's hit list: a control without a place on the dynpro; it opens with its first row selected
+      const index = Number(cell[2]);
+      if (index >= grid.grid.totalRows) return undefined;
+      const r = grid.grid.rows.find((x) => x.index === index);
+      return { kind: "gridrow", window: w, row: -1, col: -1, index, what: `row ${index} of the hit list${r ? ` (${r.cells.slice(0, 3).join(" | ")})` : ""}` };
+    }
+    if (grid?.area && grid.grid) {
+      const index = Number(cell[2]);
+      if (index >= grid.grid.totalRows) return undefined;
+      const r = grid.grid.rows.find((x) => x.index === index);
+      return { kind: "gridrow", window: w, row: grid.area.row, col: grid.area.col, index, what: `row ${index} of ${cell[1]}${r ? ` (${r.cells.slice(0, 4).join(" | ")})` : ""}` };
+    }
     for (const t of w.tables) {
       const c = t.columns.find((x) => x.name === cell[1]);
       const r = t.rows[Number(cell[2])];
@@ -335,6 +368,52 @@ class DiagDriver implements Driver {
         if (t.kind === "key") {
           await send({ do: "key", key: t.key.vkey });
           note = `pressed ${t.what}`;
+          break;
+        }
+        if (t.kind === "node") {
+          // Trees are SAP GUI controls: lines of a fixed height from the top of the tree's window, indented by depth.
+          const host = (main ? wins[0] : wins[t.window.index]) ?? top;
+          const [cx, cy] = at({ row: t.row, col: t.col, window: t.window });
+          const g = host.controls?.find((c) => c.cls === "SAPTreeList" && cx >= c.rect[0] - 8 && cx <= c.rect[0] + c.rect[2] && cy >= c.rect[1] - 30 && cy <= c.rect[1] + c.rect[3]);
+          if (!g) throw new ActionError("The tree's window was not found on the screen.");
+          const pitch = Math.max(16, Math.floor((host.area?.[3] ?? 571) / ((t.window.size.rows || 20) + 1)) - 3);
+          // a column tree draws its header in a window of its own: the tree window starts at the first line
+          const y = g.rect[1] + pitch * t.line + Math.floor(pitch / 2);
+          if (y > g.rect[1] + g.rect[3] - 4) throw new ActionError(`${t.what} is below the visible part of the tree.`);
+          await send({ do: action.do === "dblclick" ? "dblclick" : "click", x: g.rect[0] + 44 + 18 * t.depth, y, settle: 150 });
+          note = `${action.do} on ${t.what}`;
+          goes = action.do === "dblclick";
+          break;
+        }
+        if (t.kind === "gridrow" && t.row < 0) {
+          if (t.index > 0) await send({ do: "down", count: t.index, settle: 150 });
+          if (action.do === "dblclick" || action.do === "press") {
+            await send({ do: "key", key: 0 });
+            note = `chose ${t.what}`;
+          } else {
+            note = `selected ${t.what}`;
+            goes = false;
+          }
+          break;
+        }
+        if (t.kind === "gridrow") {
+          // Grids are SAP GUI controls drawn on their own: click the first row, move down with the arrow key
+          // (it scrolls), and choose with F2, as a double-click does in an ALV list.
+          const host = (main ? wins[0] : wins[t.window.index]) ?? top;
+          const [gx, gy] = at({ row: t.row, col: t.col, window: t.window });
+          const g = host.controls?.find((c) => c.cls === "SAPALVGrid" && gx >= c.rect[0] - 8 && gx <= c.rect[0] + c.rect[2] && gy >= c.rect[1] - 30 && gy <= c.rect[1] + c.rect[3]);
+          if (!g) throw new ActionError("The grid's window was not found on the screen.");
+          const pitch = Math.max(16, Math.floor((host.area?.[3] ?? 571) / ((t.window.size.rows || 20) + 1)) - 1);
+          await send({ do: "click", x: g.rect[0] + 60, y: g.rect[1] + pitch + Math.floor(pitch / 2), settle: 150 });
+          await send({ do: "top", settle: 100 });
+          if (t.index > 0) await send({ do: "down", count: t.index, settle: 150 });
+          if (action.do === "dblclick" || action.do === "press") {
+            await send({ do: "key", key: 2 });
+            note = `chose ${t.what}`;
+          } else {
+            note = `selected ${t.what}`;
+            goes = false;
+          }
           break;
         }
         if (t.kind === "tab" && action.do !== "focus") {
