@@ -467,6 +467,97 @@ describe("DiagDecoder: controls", () => {
     expect(screens[1]?.windows[0]?.controls.find((c) => c.kind === "tree")?.tree?.nodes.length).toBe(7);
   });
 
+  /** The control-based value help: a control of its own class tied to an empty popup dynpro. */
+  function valueHelp(handle: string | number): Buffer[] {
+    const make = new Queue();
+    const gui = make.object("2-");
+    make.verb(gui, "CreateControl", "C", [115, "SAP.TABControl.1", 0, 11], true);
+    const fill = new Queue();
+    fill.verb(fill.object(7), "LinkControl", "C", [115, "ZHELP", 100]);
+    const help = fill.object(handle);
+    fill.verb(help, "createTab", "C", ["Order Type (1)", 1]);
+    const provider = fill.object("2-");
+    fill.table(
+      "SAPR3://COLS",
+      [
+        { name: "FIELDNAME", length: 30, type: "C" },
+        { name: "SCRTEXT", length: 40, type: "C" },
+      ],
+      [
+        ["F0001", "Type"],
+        ["F0002", "Description"],
+      ],
+    );
+    fill.verb(provider, "SetDataFromUrl", "C", ["APPLICATION", "X-R3TABLE", "SAPR3://COLS"]);
+    fill.verb(help, "setResultTableCols", "C", [{ at: fill.object("") }]);
+    fill.table(
+      "SAPR3://HITS",
+      [
+        { name: "F0001", length: 16, type: "C" },
+        { name: "F0002", length: 80, type: "C" },
+      ],
+      [
+        ["AA", "Standard order"],
+        ["AB", "Rush order"],
+        ["AC", "Returns"],
+      ],
+    );
+    fill.verb(provider, "SetDataFromUrl", "C", ["APPLICATION", "X-R3TABLE", "SAPR3://HITS"]);
+    fill.verb(help, "createResultDialog", "C", [{ at: fill.object("") }, 0, "", 0]);
+    return [make.build(), fill.build()];
+  }
+  const dummyPopup = [ses({ index: 1, row: 1, col: 1, rows: 5, cols: 5 }), areaSize(5, 5), r3info(0x0d, "ZHELP".padEnd(40)), r3info(0x0e, "0100"), title("MCX_DUMMY_POPUP"), EOM];
+  const answer = (handles: Record<number, string>): [0, Buffer] => [0, message([rfcItem(1, queueAnswer(handles)), EOM], { info: 0 })];
+
+  test("the control-based value help: a hit list tied to an empty popup dynpro, with its caption as the title", () => {
+    const [make, fill] = valueHelp(8) as [Buffer, Buffer];
+    const { screens } = run(message([...screenHead(), EOM]), [0, message([EOM], { info: 0 })], message([rfcItem(0, make), EOM]), answer({ 2: "8" }), message([rfcItem(0, fill), EOM]), answer({}), message([...screenHead(), ...dummyPopup]));
+    const popup = screens[1]?.windows[1];
+    expect(popup).toMatchObject({ index: 1, modal: true, title: "Order Type (1)", dynproTitle: "MCX_DUMMY_POPUP", program: "ZHELP", dynpro: "0100" });
+    expect(popup?.controls).toEqual([
+      {
+        id: 115,
+        kind: "grid",
+        type: "SAP.TABControl.1",
+        parent: 11,
+        dynpro: { program: "ZHELP", number: 100 },
+        title: "Order Type (1)",
+        grid: {
+          columns: [
+            { name: "F0001", title: "Type", titles: ["Type"], tooltip: "", width: 0, position: 0 },
+            { name: "F0002", title: "Description", titles: ["Description"], tooltip: "", width: 0, position: 1 },
+          ],
+          rows: [
+            { index: 0, cells: ["AA", "Standard order"] },
+            { index: 1, cells: ["AB", "Rush order"] },
+            { index: 2, cells: ["AC", "Returns"] },
+          ],
+          totalRows: 3,
+        },
+      },
+    ]);
+    // The main window has no such control.
+    expect(screens[1]?.windows[0]?.controls).toEqual([]);
+  });
+
+  test("the value help is found without SAP GUI's answer too (only the server's side was seen)", () => {
+    const [make, fill] = valueHelp(8) as [Buffer, Buffer];
+    const { screens } = run(message([rfcItem(0, make), EOM]), message([rfcItem(0, fill), EOM]), message([...screenHead(), ...dummyPopup]));
+    expect(screens[0]?.windows[1]?.title).toBe("Order Type (1)");
+    expect(screens[0]?.windows[1]?.controls[0]?.grid?.rows.length).toBe(3);
+  });
+
+  test("a closed value help is gone: the same popup dynpro later starts empty", () => {
+    const [make, fill] = valueHelp(8) as [Buffer, Buffer];
+    const user: [0, Buffer] = [0, message([EOM], { info: 0 })];
+    const { screens, decoder } = run(message([rfcItem(0, make), EOM]), answer({ 2: "8" }), message([rfcItem(0, fill), EOM]), answer({}), message([...screenHead(), ...dummyPopup]), user, message([...screenHead({ title: "Closed" }), EOM]), user, message([...screenHead(), ...dummyPopup]));
+    expect(screens.map((s) => s.windows.length)).toEqual([2, 1, 2]);
+    expect(screens[0]?.windows[1]?.controls.length).toBe(1);
+    expect(screens[1]?.windows[0]?.controls).toEqual([]);
+    expect(screens[2]?.windows[1]).toMatchObject({ title: "MCX_DUMMY_POPUP", controls: [] });
+    expect(decoder.screen()?.windows[1]?.dynproTitle).toBeUndefined();
+  });
+
   test("a control whose container is not on the screen is not on the screen", () => {
     const { screens } = run(message([rfcItem(0, treeQueue().build()), EOM]), [0, message([rfcItem(1, TREE_ANSWER), EOM], { info: 0 })], message([...screenHead(), ...custom("OTHER", 3), EOM]));
     expect(screens[0]?.windows[0]?.controls).toEqual([]);

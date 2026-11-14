@@ -177,6 +177,8 @@ export class DiagDecoder {
 
   private emit(number: number, mode: Mode): void {
     mode.step++;
+    const onShow = (program: string, dynpro: number): boolean => mode.classic.windows.some((w) => w.program === program && Number(w.dynpro) === dynpro);
+    mode.controls.dropClosed(onShow);
     const controls = mode.controls.snapshot();
     const windows: DiagWindow[] = mode.classic.windows.map((w) => {
       const elements = w.elements.map((e) => ({ ...e }));
@@ -186,7 +188,14 @@ export class DiagDecoder {
         const area = w.containers.find((k) => k.name === c.container);
         if (area) mine.push({ ...c, area: { row: area.row, col: area.col, width: area.width, height: area.height } });
       }
-      return { ...w, elements, controls: mine };
+      // A control tied to the dynpro itself draws the whole popup: its caption is the title the user sees.
+      let caption: string | undefined;
+      for (const c of controls) {
+        if (!c.dynpro || c.dynpro.program !== w.program || c.dynpro.number !== Number(w.dynpro)) continue;
+        mine.push(c);
+        caption ??= c.title;
+      }
+      return { ...w, elements, controls: mine, ...(caption ? { title: caption, dynproTitle: w.title } : {}) };
     });
     // Controls without a container on any window (docked beside the screen) go to the window on top while they are fresh.
     const placed = new Set(windows.flatMap((w) => w.controls.map((c) => c.id)));

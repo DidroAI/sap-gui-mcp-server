@@ -123,13 +123,13 @@ function listLines(list: DiagList, maxRows: number): string[] {
 
 function controlLines(c: DiagControl, maxRows: number): string[] {
   const where = `${c.area ? `r${c.area.row}  ` : ""}`;
-  const id = `${c.container ?? ""} (shell ${c.id})`.trim();
+  const id = `${c.container ?? (c.dynpro ? "value-help" : "")} (shell ${c.id})`.trim();
   if (c.grid) {
     const g = c.grid;
     const out = [`${where}grid ${id}  ${g.totalRows} rows, ${g.columns.length} columns: ${g.columns.map((col) => `${col.name}=${[col.title, ...col.titles.filter((t) => t !== col.title)].map(one).join(" / ")}`).join(" | ")}`];
     for (const r of g.rows.slice(0, maxRows)) out.push(`  row ${r.index}: ${r.cells.map(one).join(" | ")}`);
     const rest = g.totalRows - Math.min(g.rows.length, maxRows);
-    if (rest > 0) out.push(`  ... ${rest} more rows${g.rows.length < g.totalRows ? ` (${g.rows.length} sent so far; the grid loads the others when scrolled)` : ""}`);
+    if (rest > 0) out.push(`  ... ${rest} more rows${g.rows.length < g.totalRows ? ` (${g.rows.length} sent so far; the grid loads the others when scrolled)` : " (all sent; a higher maxRows shows them)"}`);
     return out;
   }
   if (c.tree) {

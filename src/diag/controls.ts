@@ -20,12 +20,24 @@
  * name). The object a later verb acts on is the variable that held the
  * result of the verb that made it; in a later call it is a handle ("O15"),
  * which SAP GUI gave in its answer to the call that made the control.
+ *
+ * A control can also belong to a dynpro instead of a container:
+ * LinkControl(shell id, program, screen number). The control-based value
+ * help (F4) does that: the server opens a popup with an empty dynpro
+ * (title "MCX_DUMMY_POPUP") and makes one control of class SAP.TABControl.1
+ * that draws the whole dialog itself. Its caption comes with
+ * createTab(caption, page), its columns with setResultTableCols (a table of
+ * FIELDNAME and SCRTEXT) and all its hits at once with createResultDialog (a
+ * table with one field per column). It is read as a grid.
  */
 import { parseRfc, type RfcCall, type RfcTable } from "./rfc.js";
 import type { DiagControl, DiagControlKind, DiagGridColumn, DiagTreeNode } from "./screen.js";
 import { clean, decode } from "./text.js";
 
 const QUEUE_HEAD = 68;
+
+/** Verbs of the value help control that carry what it shows. */
+const HIT_LIST = new Set(["createTab", "setResultTableCols", "createResultDialog"]);
 
 /** One row of a data provider table, by field name. */
 type Row = Record<string, string | number>;
@@ -68,6 +80,12 @@ export interface ControlState {
   kind: DiagControlKind;
   parent?: number;
   container?: string;
+  /** The dynpro it belongs to instead of a container (LinkControl). */
+  dynpro?: { program: string; number: number };
+  /** Caption the control shows for itself. */
+  title?: string;
+  /** It was on a screen that was given out: once its dynpro is gone, so is it. */
+  shown?: boolean;
   grid?: GridState;
   tree?: TreeState;
   text?: string;
@@ -78,7 +96,7 @@ export interface ControlState {
 
 function kindOf(type: string): DiagControlKind {
   const t = type.toLowerCase();
-  if (t.includes("gridview")) return "grid";
+  if (t.includes("gridview") || t.includes("tabcontrol")) return "grid";
   if (t.includes("tree")) return "tree";
   if (t.includes("textedit")) return "text";
   if (t.includes("toolbar")) return "toolbar";
@@ -211,6 +229,17 @@ export class Controls {
         if (c) c.container = arg(1);
         return;
       }
+      if (verb.name === "LinkControl") {
+        const c = this.controls.get(Number(arg(0)));
+        if (c) c.dynpro = { program: arg(1).trim(), number: Number(arg(2)) || 0 };
+        return;
+      }
+      if (HIT_LIST.has(verb.name)) {
+        // The value help control: by its handle, else the one there is.
+        const c = resolve(verb) ?? [...this.controls.values()].reverse().find((x) => /tabcontrol/i.test(x.type));
+        if (c?.grid) changed = this.hitList(c, verb.name, arg, tables.get(lastUrl), revision) || changed;
+        return;
+      }
       if (verb.name === "DestroyControl" || verb.name === "DeleteControl") {
         changed = this.controls.delete(Number(arg(0))) || changed;
         return;
@@ -291,6 +320,39 @@ export class Controls {
       if (handle) this.handles.set(handle, shell);
     }
     this.pending = new Map();
+  }
+
+  /** The value help control: caption, columns (FIELDNAME, SCRTEXT) and hits (one field per column, all rows at once). */
+  private hitList(c: ControlState, verb: string, arg: (n: number) => string, t: DataTable | undefined, revision: number): boolean {
+    if (!c.grid) return false;
+    if (verb === "createTab") c.title = arg(0).trim();
+    else if (verb === "setResultTableCols" && t) {
+      c.grid.columns = t.rows.map((r, i) => {
+        const title = str(r.SCRTEXT).trim();
+        return { name: str(r.FIELDNAME).trim(), title, titles: title ? [title] : [], tooltip: "", width: 0, position: i };
+      });
+    } else if (verb === "createResultDialog" && t) {
+      c.grid.cells.clear();
+      // Columns the control was not told about (a hit list without setResultTableCols) are the fields of the table.
+      if (!c.grid.columns.length) c.grid.columns = t.fields.map((name, i) => ({ name, title: name, titles: [name], tooltip: "", width: 0, position: i }));
+      const columns = c.grid.columns;
+      t.rows.forEach((r, i) => {
+        c.grid?.cells.set(i + 1, new Map(columns.map((col) => [col.position + 1, str(r[col.name]).trim()])));
+      });
+      c.grid.totalRows = t.rows.length;
+    } else return false;
+    c.touched = revision;
+    return true;
+  }
+
+  /** Forgets the controls of a dynpro that was on the screen and is not any more (a closed value help). `on` says whether a dynpro is on show. */
+  dropClosed(on: (program: string, number: number) => boolean): void {
+    for (const [id, c] of this.controls) {
+      if (!c.dynpro) continue;
+      const open = on(c.dynpro.program, c.dynpro.number);
+      if (open) c.shown = true;
+      else if (c.shown) this.controls.delete(id);
+    }
   }
 
   /** A packet for a data provider made in an earlier call: more rows of the one grid there is. */
@@ -395,6 +457,8 @@ export class Controls {
       const out: DiagControl = { id: c.id, kind: c.kind, type: c.type, ...(c.parent !== undefined ? { parent: c.parent } : {}) };
       const container = this.containerOf(c);
       if (container) out.container = container;
+      if (c.dynpro) out.dynpro = { ...c.dynpro };
+      if (c.title) out.title = c.title;
       if (c.grid) {
         const columns = [...c.grid.columns].sort((a, b) => a.position - b.position);
         const ids = [...c.grid.cells.keys()].sort((a, b) => a - b);
