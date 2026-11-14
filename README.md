@@ -50,7 +50,7 @@ changed:
 ```
 set wnd[0]/usr/ctxtVBAK-VKORG
 
-CHANGED 1 of 12 lines (same screen; sap_look shows all of it):
+CHANGED 1 of 18 lines (same screen; sap_look shows all of it):
 ~ ctxtVBAK-VKORG  field  Sales Organization = "1000"  (edit)
 ```
 
@@ -206,6 +206,15 @@ is a number from 0 to 99 or a key name (`Enter`, `Escape`, `Shift+Tab`,
 chooses nothing. `scroll` takes a row counted from 0, or `"next"`,
 `"prev"`, `"first"`, `"last"`. Fiori also takes `click`.
 
+The server brings every action to one shape before anything reads it:
+`do` must be one of the verbs above, a key must be a number or a known
+name, and line breaks are removed from ids and values. The guard and the
+surface then work from that same object.
+
+The command field (`okcd`) takes commands through `{"do": "okcode"}` only.
+`set`, `focus` or any other action on the field itself is refused, on
+every surface, so that a command cannot go round the guard.
+
 ### What an answer holds
 
 `sap_act` answers with a line that says what was done, then the screen.
@@ -264,7 +273,7 @@ drawn, and says how many there are:
 
 ```
 cntlGRID1/shell  grid  93 rows; columns: VBELN=Sales Document | AUDAT=Doc. Date | ...
-  row 0: 5004 | 27.01.1997 | ...
+  row 0: 4711 | 02.01.2024 | ...
   ... 68 more rows (shown: 0 to 24; scroll for the others)
 ```
 
@@ -276,19 +285,11 @@ cntlGRID1/shell  grid  93 rows; columns: VBELN=Sales Document | AUDAT=Doc. Date 
 - A `grid` action on a row that is not drawn scrolls to it first. A row
   the list does not have is an error that says so.
 - A table control and a classic list count their rows on the screen: after
-  a scroll the view says which row of the whole list its row 0 is.
+  a scroll the view says where they are scrolled to (`first 60`), and cell
+  ids still count from the first row on screen.
 
 On SAP GUI for Windows, the host and the fake SAP GUI of the tests got the
 scroll code in this version; it has not been run against a real SAP GUI yet.
-
-The server brings every action to one shape before anything reads it:
-`do` must be one of the verbs above, a key must be a number or a known
-name, and line breaks are removed from ids and values. The guard and the
-surface then work from that same object.
-
-The command field (`okcd`) takes commands through `{"do": "okcode"}` only.
-`set`, `focus` or any other action on the field itself is refused, on
-every surface, so that a command cannot go round the guard.
 
 ## Guardrails
 

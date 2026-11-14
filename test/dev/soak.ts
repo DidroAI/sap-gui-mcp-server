@@ -16,6 +16,9 @@
  *   --out FILE         write the numbers as JSON (step names and numbers only, no screen content)
  *   --texts DIR        also write each answer to DIR (screen content: keep it out of Git)
  *
+ * The defaults below are keys of SAP's IDES demo data; set your own for
+ * another system.
+ *
  *   SOAK_SRC       root of the server to test (default: this checkout)
  *   SOAK_ORDER     a sales order that exists (default 4969)
  *   SOAK_ORDER_TO  the end of an order range with a few hundred orders (default 9000)
