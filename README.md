@@ -147,6 +147,24 @@ settings must allow it, and `doctor` checks both:
 Nothing else is installed: the server talks to SAP GUI through Windows
 PowerShell, which comes with Windows.
 
+**SAP GUI without scripting (experimental): `SAP_GUI_METHOD=diag`.** When
+scripting is off, the server can read SAP GUI from the traffic between SAP GUI
+and the SAP system (SAP's DIAG protocol) instead:
+
+1. Set `SAP_GUI_METHOD=diag` in the server's environment. The server then
+   runs a SAProuter on `127.0.0.1:3298` (`SAP_DIAG_PORT` to change it).
+2. In SAP Logon, edit the connection entry: put `/H/127.0.0.1/S/3298` at the
+   start of its SAProuter string (before your company's router, if there is
+   one), and log on again.
+
+The server passes the traffic on unchanged and decodes a copy: the screen as
+SAP sent it, with SAP's field names, every row of tables, grids and lists,
+and tree nodes. Nothing is loaded into SAP GUI. It acts with the keyboard and
+the mouse, at the place SAP gave each field, so SAP GUI's window must be on
+the screen, and a typed value reaches SAP (and the view) with the next Enter
+or function key. It cannot read connections encrypted with SNC. The server
+must be running before you log on, since SAP GUI connects through it.
+
 **Web GUI and Fiori in Chrome.** The server attaches to the Chrome you are
 using, in this order:
 
