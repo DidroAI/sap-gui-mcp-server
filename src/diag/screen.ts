@@ -63,7 +63,10 @@ export interface DiagWindow {
   /** 0 for the main window, 1 and up for modal popups. */
   index: number;
   modal: boolean;
+  /** Title bar. For a popup that a control draws by itself (value help), the control's caption. */
   title: string;
+  /** The dynpro's own title when a control's caption replaced it ("MCX_DUMMY_POPUP"). */
+  dynproTitle?: string;
   /** Program and screen number of the dynpro, GUI status and the program that owns it. */
   program: string;
   dynpro: string;
@@ -338,6 +341,10 @@ export interface DiagControl {
   container?: string;
   /** Area of that container, when it is on the screen. */
   area?: DiagArea;
+  /** The dynpro it belongs to when it has no container: the control-based value help (F4) draws its whole popup itself. */
+  dynpro?: { program: string; number: number };
+  /** Caption the control shows for itself (the value help: "Sales Document Type (1)"). */
+  title?: string;
   grid?: DiagGrid;
   tree?: DiagTree;
   text?: string;

@@ -141,6 +141,31 @@ describe("diagView", () => {
     ]);
   });
 
+  test("a value help drawn by a control: the popup has its caption and its hits", () => {
+    const q = new Queue();
+    q.verb(q.object("2-"), "CreateControl", "C", [115, "SAP.TABControl.1", 0, 11], true);
+    q.verb(q.object(7), "LinkControl", "C", [115, "ZHELP", 100]);
+    const help = q.object(8);
+    q.verb(help, "createTab", "C", ["Order Type (1)", 1]);
+    q.table(
+      "SAPR3://HITS",
+      [
+        { name: "F0001", length: 16, type: "C" },
+        { name: "F0002", length: 80, type: "C" },
+      ],
+      [
+        ["AA", "Standard order"],
+        ["AB", "Rush order"],
+        ["AC", "Returns"],
+      ],
+    );
+    q.verb(q.object("2-"), "SetDataFromUrl", "C", ["A", "B", "SAPR3://HITS"]);
+    q.verb(help, "createResultDialog", "C", [{ at: q.object("") }]);
+    const popup = [ses({ index: 1, row: 1, col: 1, rows: 5, cols: 5 }), areaSize(5, 5), r3info(0x0d, "ZHELP".padEnd(40)), r3info(0x0e, "0100"), title("MCX_DUMMY_POPUP"), EOM];
+    const out = view([message([rfcItem(6, q.build())], { info: 2 }), message([...screenHead(), ...popup])], { chrome: false, maxRows: 2 });
+    expect(out.slice(2)).toEqual(['WINDOW 1 popup  "Order Type (1)"  ZHELP 0100  at r1 c1  area 5x5', "grid value-help (shell 115)  3 rows, 2 columns: F0001=F0001 | F0002=F0002", "  row 0: AA | Standard order", "  row 1: AB | Rush order", "  ... 1 more rows (all sent; a higher maxRows shows them)"]);
+  });
+
   test("controls: a grid with its columns and rows, a tree with the nodes on show, a text editor", () => {
     const q = new Queue();
     const gui = q.object("2-");
