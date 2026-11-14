@@ -1,0 +1,3 @@
+# Golden files and sources keep LF on every OS (Windows checkouts would turn them into CRLF).
+* text=auto eol=lf
+*.png binary
