@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "sap-gui": {
+      "command": "npx",
+      "args": ["-y", "sap-gui-mcp-server"],
+      "env": { "SAP_WRITE": "${SAP_WRITE:-off}" }
+    }
+  }
+}
