@@ -412,3 +412,35 @@ describe("assess: reading the view", () => {
     expect(keyName("CTRL_SHIFT_F9")).toBe("CTRL_SHIFT_F9");
   });
 });
+
+describe("assess: a dialog popup is not a save question", () => {
+  // MM03's view selection: a checkbox named "Create views selected", buttons in the toolbar only.
+  const VIEWS = [
+    "TRANSACTION MM03  PROGRAM SAPLMGMM  SCREEN 60  SYSTEM XYZ (100) host",
+    'WINDOW wnd[0]  "Display Material (Initial Screen)"',
+    "wnd[0]/tbar[0]/okcd  command-field",
+    'WINDOW wnd[1]  "Select View(s)"',
+    "wnd[1]/usr/chkMSICHTAUSW-KZSEL  checkbox  [x] Basic Data 1",
+    "wnd[1]/usr/chkRMMG1_REF-KZCRE  checkbox  [ ] Create views selected",
+    "wnd[1]/usr/lblCREATE  label  Create views selected",
+    "wnd[1]/tbar[0]/btn[0]  button  Continue (Enter)",
+    "wnd[1]/tbar[0]/btn[12]  button  Cancel (F12)",
+  ].join("\n");
+  const SAVE_Q = [
+    "TRANSACTION ZT02  PROGRAM ZPROG  SCREEN 200  SYSTEM XYZ (100) host",
+    'WINDOW wnd[0]  "Change Synthetic Order"',
+    'WINDOW wnd[1]  "Exit Processing"',
+    "wnd[1]/usr/txtSPOP-TEXTLINE1  label  Do you want to save the data first?",
+    "wnd[1]/usr/btnSPOP-OPTION1  button  Yes",
+    "wnd[1]/usr/btnSPOP-OPTION2  button  No",
+  ].join("\n");
+  test("Continue and Enter on MM03's view selection navigate", () => {
+    expect(risk({ do: "press", id: "wnd[1]/tbar[0]/btn[0]" }, VIEWS)).toBe("navigate");
+    expect(risk({ do: "key", key: 0 }, VIEWS)).toBe("navigate");
+  });
+  test("Yes and Enter on a real save question are still commits", () => {
+    expect(risk({ do: "press", id: "wnd[1]/usr/btnSPOP-OPTION1" }, SAVE_Q)).toBe("commit");
+    expect(risk({ do: "key", key: 0 }, SAVE_Q)).toBe("commit");
+    expect(risk({ do: "press", id: "wnd[1]/usr/btnSPOP-OPTION2" }, SAVE_Q)).toBe("navigate");
+  });
+});

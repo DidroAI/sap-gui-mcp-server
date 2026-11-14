@@ -162,7 +162,13 @@ function commitQuestion(windows: ViewWindow[]): string | undefined {
   const usrButton = top.controls.some((c) => c.kind === "button" && c.id.includes("/usr/"));
   const hitList = top.controls.some((c) => /\/lbl\[\d+,\d+\]$/.test(c.id) || c.kind === "grid");
   if (hitList && !usrButton) return undefined;
-  const asked = [top.title, ...top.controls.filter((c) => c.kind === "label").map((c) => c.text)].join(" ");
+  // The title alone can ask ("Save Data"). Otherwise a question is text with answer buttons in the popup body
+  // (Yes / No of POPUP_TO_CONFIRM): a popup whose only buttons sit in its toolbar is a dialog, and a checkbox
+  // label such as MM03's "Create views selected" asks nothing.
+  if (commitWord(top.title)) return top.title;
+  if (!usrButton) return undefined;
+  const choices = new Set(top.controls.filter((c) => c.kind === "checkbox" || c.kind === "radio").map((c) => c.text));
+  const asked = [top.title, ...top.controls.filter((c) => c.kind === "label" && !choices.has(c.text)).map((c) => c.text)].join(" ");
   return commitWord(asked) ? asked : undefined;
 }
 
