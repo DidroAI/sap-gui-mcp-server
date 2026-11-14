@@ -36,7 +36,6 @@ const CASES: [string, Name, Action, Risk][] = [
   ["a button nobody knows ('Sales')", "va01", { do: "press", id: "wnd[0]/tbar[1]/btn[5]" }, "commit"],
   ["a function key with no button", "va01", { do: "key", key: 9 }, "commit"],
   ["okcode of a function key with no button", "va01", { do: "okcode", value: "/9" }, "commit"],
-  ["a control that is not on the screen", "va01", { do: "press", id: "wnd[0]/usr/btnNOPE" }, "commit"],
   ["an action nobody knows", "va01", { do: "fly", id: "ctxtVBAK-AUART" }, "commit"],
   ["Back", "va01", { do: "press", id: "wnd[0]/tbar[0]/btn[3]" }, "navigate"],
   ["Back by its key", "va01", { do: "key", key: 3 }, "navigate"],
@@ -114,6 +113,9 @@ describe("sapgui assess", () => {
       '"Yes" on the popup "Exit Document Data will be lost. Do you want to save the document?"',
     );
     expect(assess(screen("va01"), { do: "key", key: 11 }).reason).toBe("key 11: Save (Ctrl+S)");
+  });
+  test("a control that is not on the screen is named as missing, not as a write", () => {
+    expect(() => assess(screen("va01"), { do: "press", id: "wnd[0]/usr/btnNOPE" })).toThrow('No control "wnd[0]/usr/btnNOPE"');
     expect(assess(screen("va01"), { do: "okcode", value: "/11" }).reason).toBe("okcode /11: Save (Ctrl+S)");
     const s1 = screen("va01");
     expect(assess(s1, { do: "press", id: "wnd[0]/tbar[1]/btn[5]" }, resolve(s1, "wnd[0]/tbar[1]/btn[5]")).reason).toBe('button "Sales" is not known to be safe, so it is treated as a write');
@@ -138,6 +140,8 @@ describe("sapgui assess", () => {
     const en = screen("va03");
     expect(assess(en, { do: "press", id: "btnBT_HEAD" }, resolve(en, "btnBT_HEAD")).risk).toBe("navigate");
     expect(assess(en, { do: "select", id: "x" }, menu("Incompletion log")).risk).toBe("commit");
+    expect(assess(en, { do: "select", id: "x" }, menu("Status")).risk).toBe("navigate"); // System > Status only shows
+    expect(assess(en, { do: "select", id: "x" }, menu("Change Status")).risk).toBe("commit");
   });
 
   test("the popup that asks whether to save: only No and Cancel decline, and only where the words can be read", () => {

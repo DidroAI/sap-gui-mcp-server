@@ -167,8 +167,16 @@ export async function assess(session: WebGuiSession, action: Action): Promise<As
     const menus = await session.frame.evaluate(extractMenus);
     const facts = await session.frame.evaluate(extractFacts);
     const focus = action.do === "key" || action.do === "okcode" ? await focusOf(session) : undefined;
-    return assessAction(action, view, menus, { language: facts.language, focus });
+    const verdict = assessAction(action, view, menus, { language: facts.language, focus });
+    // A control the view does not list may still exist in the page (markControl looks wider).
+    // Only when the page has none either is it "no such control" rather than "may write".
+    if (verdict.risk === "commit" && verdict.reason.includes("not on the screen the server read") && action.id) {
+      const found = await session.frame.evaluate(markControl, String(action.id)).catch(() => "unreadable");
+      if (typeof found === "string") throw new ActionError(`No control "${action.id}" on this screen. Use an id from sap_look (the screen may have changed).`);
+    }
+    return verdict;
   } catch (e) {
+    if (e instanceof ActionError) throw e;
     return { risk: "commit", reason: `the screen could not be read (${(e as Error).message.split("\n")[0]})` };
   }
 }
@@ -314,11 +322,15 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
           for (const bar of [0, 1]) {
             const sid = `wnd[${top}]/tbar[${bar}]/btn[${n}]`;
             const r = await f.evaluate(markControl, sid);
-            if (typeof r === "string") continue;
+            // markControl also matches by last segment: only a button of the popup itself counts.
+            if (typeof r === "string" || r.sid !== sid) continue;
             await f.locator("[data-sap-act]").first().click();
             await session.waitRoundtrip(1200);
             return `key ${k} (pressed ${sid})`;
           }
+        // No such button in the popup: give the popup the keyboard focus (a click on its title bar
+        // does nothing else), so the key reaches it and not the screen behind.
+        if (top > 0) await f.locator(".urPWTitleText").filter({ visible: true }).last().click({ timeout: 3000 }).catch(() => {});
       }
       await session.pressKey(k);
       await session.waitRoundtrip();

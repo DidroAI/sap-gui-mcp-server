@@ -114,7 +114,7 @@ if (real) {
   r = await call("sap_look", { session: "sapgui:/app/con[0]/ses[0]" });
   check("nothing reached SAP GUI after the refusals", r.text.includes("fake: SendVKey 0 on wnd[0] okcode /nVA05"));
   r = await act({ do: "press", id: "btnNOPE" });
-  check("a control that is not on the screen is refused", r.error && r.text.includes("not on the screen the server read"), r.text.split("\n")[0]);
+  check("a control that is not on the screen is named as missing", r.error && r.text.includes("No control"), r.text.split("\n")[0]);
   r = await call("sap_screenshot");
   check("sap_screenshot", !r.error && r.text.includes("image/png"), r.text);
 }

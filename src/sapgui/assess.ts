@@ -16,7 +16,7 @@
  *
  * The tables are in core/words.ts, shared with the other surfaces.
  */
-import type { Action, Assessment } from "../core/types.js";
+import { ActionError, type Action, type Assessment } from "../core/types.js";
 import { CLOSES_SESSIONS, commitCode, commitWord, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
 import type { Control, Screen } from "./facts.js";
 import { vkeyNumber } from "./keys.js";
@@ -197,7 +197,8 @@ export function assess(screen: Screen, action: Action, target?: Control): Assess
       // A tree node or a grid cell: opening it navigates.
       if (action.do === "dblclick" && (action.node !== undefined || action.row !== undefined)) return { risk: "navigate", reason: "open a row" };
       if (menu) return assessMenu(screen, target);
-      if (!target) return commit(`${action.do} on "${action.id ?? ""}", which is not on the screen the server read, so what it does is unknown`);
+      // Nothing to press: the driver could not find it either. Say so instead of "may write".
+      if (!target) throw new ActionError(`No control "${action.id ?? ""}" on this screen. Use an id from sap_look (the screen may have changed).`);
       if (BUTTON_TYPES.has(target.type)) return assessButton(screen, target, "button ");
       if (INERT_TYPES.has(target.type)) return { risk: "navigate", reason: action.do };
       // A shell (grid, tree, HTML viewer): selecting it moves the focus. Anything else is not known.

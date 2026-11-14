@@ -353,7 +353,9 @@ export function sapguiSurface(env: Record<string, string | undefined>, options: 
       for (const con of facts.connections)
         con.sessions.forEach((s, i) => {
           const n = s.sessionNumber || i + 1;
-          out.push(sessionInfo(s, `SAP GUI ${con.description || con.id}, session ${n}`));
+          // A connection opened by connection string has no description: name it by its system.
+          const name = con.description || (s.system ? `${s.system}${s.client ? ` (${s.client})` : ""}` : con.id);
+          out.push(sessionInfo(s, `SAP GUI ${name}, session ${n}`));
         });
       // The session the user is in comes first: the registry makes the first one active.
       const active = PREFIX + facts.active;
