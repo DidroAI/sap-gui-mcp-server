@@ -171,7 +171,22 @@ export function createServer({ policy, surfaces }: ServerOptions) {
 
   /** Runs an action that passed the guard, then checks where it led. */
   async function perform(d: Driver, action: NormalizedAction): Promise<CallToolResult> {
+    // "/oVA03" opens the transaction in a new SAP GUI session: follow it there.
+    const opens = action.do === "okcode" && typeof action.value === "string" && /^\/o\S/i.test(action.value) && d.info.surface === "sapgui";
+    const before = opens ? new Set((await registry.discover()).sessions.map((s) => s.id)) : undefined;
     const note = await d.act(action);
+    if (before) {
+      for (let i = 0; i < 10; i++) {
+        const fresh = (await registry.discover()).sessions.find((s) => s.surface === "sapgui" && !before.has(s.id));
+        if (fresh) {
+          registry.active = fresh.id;
+          const nd = await registry.driver(fresh.id);
+          return text(`${note}\nA new session opened (${fresh.where}); it is now the active one. The previous session is still open (sap_sessions lists both).\n\n${await nd.look({ compact: true })}`);
+        }
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      return text(`${note}\nNo new session appeared within 5 s (SAP allows at most 6 per logon): this is still the previous session.\n\n${await d.look({ compact: true })}`);
+    }
     // A menu entry, a favourite or a tree node can open a transaction no okcode named.
     const after = await d.refresh().catch(() => undefined);
     const landed = after && sessionRefusal(policy, after);

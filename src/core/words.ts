@@ -230,6 +230,17 @@ export const SAFE_WORDS: WordRow<SafeLanguage>[] = [
   { means: "find", words: { en: ["find", "search"], de: ["suchen", "weitersuchen", "finden"], fr: ["rechercher", "chercher"], es: ["buscar"] } },
   { means: "help", words: { en: ["help"], de: ["hilfe"], fr: ["aide"], es: ["ayuda"] } },
   {
+    // Menu entries that only show information (System > Status, Environment > Document flow).
+    // "Change status" and the like are commit words, which are checked first.
+    means: "show information",
+    words: {
+      en: ["status", "overview", "information", "info", "technical information", "document flow", "history", "where-used list", "documentation"],
+      de: ["status", "übersicht", "information", "informationen", "technische information", "belegfluss", "historie", "verwendungsnachweis", "dokumentation"],
+      fr: ["statut", "aperçu", "vue d'ensemble", "information", "informations", "flux de documents", "historique", "cas d'emploi", "documentation"],
+      es: ["status", "estado", "resumen", "información", "flujo de documentos", "historial", "lista de utilización", "documentación"],
+    },
+  },
+  {
     means: "value help",
     words: {
       en: ["value help", "possible entries", "input help"],

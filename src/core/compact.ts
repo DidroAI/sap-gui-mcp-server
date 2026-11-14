@@ -8,8 +8,48 @@
  * - ids are cut to their last segment when that segment is unique on the
  *   screen (actions accept the short id);
  * - a table control's cells become one line per row, with only the cells
- *   that hold a value; checkboxes in tables appear when checked.
+ *   that hold a value; checkboxes in tables appear when checked;
+ * - while a popup is open, the screen behind it keeps only what it shows
+ *   (fields with a value, checked boxes, the selected tab, the status bar):
+ *   buttons, menus, empty fields and list rows there cannot be used until
+ *   the popup is closed. The full view still has them.
  */
+
+/** Is this line of the screen behind a popup worth keeping? */
+function keepBehind(l: string): boolean {
+  if (/\bsbar\b|  status  /.test(l)) return true;
+  if (/= "[^"]+"/.test(l)) return true;
+  if (/\[x\]|\(selected\)/.test(l)) return true;
+  return false;
+}
+
+/** Shortens the main window while a popup (wnd[1] and up, or a browser dialog) is open. */
+function trimBehindPopups(lines: string[]): string[] {
+  const popup = lines.some((l) => /^WINDOW (wnd\[[1-9]\d*\]|browser)(\s|$)/.test(l));
+  if (!popup) return lines;
+  const out: string[] = [];
+  let behind = false;
+  let dropped = 0;
+  const flush = () => {
+    if (dropped) out.push(`  (${dropped} more lines behind the popup: buttons, menus, empty fields, list rows; sap_look full=true shows them)`);
+    dropped = 0;
+  };
+  for (const l of lines) {
+    if (l.startsWith("WINDOW ")) {
+      flush();
+      behind = /^WINDOW wnd\[0\]/.test(l);
+      out.push(l);
+      continue;
+    }
+    if (behind && !keepBehind(l)) {
+      dropped++;
+      continue;
+    }
+    out.push(l);
+  }
+  flush();
+  return out;
+}
 
 const CELL = /^(?<tbl>.*\/tbl[^/[]+)\/(?<ctl>[a-z]+)(?<name>[^[\s]+)\[(?<c>\d+),(?<r>\d+)\]\s+(?<rest>.*)$/;
 
@@ -20,7 +60,7 @@ const lastSegment = (id: string): string => id.slice(id.lastIndexOf("/") + 1);
 type Out = string | { row: string; tbl: string; r: number };
 
 export function compact(full: string): string {
-  const lines = full.split("\n");
+  const lines = trimBehindPopups(full.split("\n"));
   const last = new Map<string, number>();
   for (const l of lines) {
     if (!l.startsWith("wnd[")) continue;

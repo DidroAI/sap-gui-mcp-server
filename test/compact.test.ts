@@ -29,12 +29,15 @@ const FULL = [
   "wnd[1]/tbar[0]/btn[0]  button  Continue (Enter)",
 ].join("\n");
 
+// The same screen without its popup: behind a popup the compact view keeps less (tested below).
+const MAIN = FULL.split("\n").slice(0, -3).join("\n");
+
 describe("compact", () => {
-  const out = compact(FULL).split("\n");
+  const out = compact(MAIN).split("\n");
 
   test("keeps the header, window and row lines as they are", () => {
     expect(out[0]).toBe("TRANSACTION ZT01  PROGRAM ZPROG  SCREEN 100  SYSTEM XYZ (100) host");
-    expect(out).toContain('WINDOW wnd[1]  "Information"');
+    expect(out).toContain('WINDOW wnd[0]  "Synthetic Order: Overview"');
     expect(out).toContain("  row 1: c | d");
   });
 
@@ -43,7 +46,9 @@ describe("compact", () => {
     expect(out).toContain('ctxtZHDR-TYPE  field  Order Type = "AB"  (edit)');
     expect(out).toContain("chkZHDR-DONE  checkbox  [x] Complete");
     expect(out).toContain("sbar  status  S: Ready");
-    expect(out).toContain("txtMESSTXT1  label  Something happened");
+    const popup = compact(FULL).split("\n");
+    expect(popup).toContain("txtMESSTXT1  label  Something happened");
+    expect(popup).toContain("wnd[1]/tbar[0]/btn[0]  button  Continue (Enter)");
   });
 
   test("keeps enough of the id when the last segment is not unique", () => {
@@ -53,7 +58,6 @@ describe("compact", () => {
 
   test("never shortens toolbar buttons, shells and menus", () => {
     expect(out).toContain("wnd[0]/tbar[0]/btn[3]  button  Back (F3)");
-    expect(out).toContain("wnd[1]/tbar[0]/btn[0]  button  Continue (Enter)");
     expect(out).toContain("cntlGRID/shellcont/shell  grid  2 rows; columns: A=Col A | B=Col B");
   });
 
@@ -74,5 +78,32 @@ describe("compact", () => {
   test("is shorter than the full view and leaves a view without ids alone", () => {
     expect(compact(FULL).length).toBeLessThan(FULL.length);
     expect(compact("hello\nworld")).toBe("hello\nworld");
+  });
+});
+
+describe("compact: the screen behind a popup", () => {
+  const full = [
+    "TRANSACTION VA02  PROGRAM SAPMV45A  SCREEN 102  SYSTEM DEM (001)",
+    'WINDOW wnd[0]  "Change Sales Order: Initial Screen"',
+    "wnd[0]/tbar[0]/btn[3]  button  Back (F3)",
+    'wnd[0]/usr/ctxtVBAK-VBELN  field  Order = "10792"  (read-only)',
+    'wnd[0]/usr/ctxtRV45S-KUNNR  field  Sold-To Party = ""  (read-only)',
+    "wnd[0]/sbar  status  W: Consider the subsequent documents",
+    'WINDOW wnd[1]  "Information"',
+    "wnd[1]/usr/txtMESSTXT1  label  Consider the subsequent documents",
+    "wnd[1]/tbar[0]/btn[0]  button  Continue (Enter)",
+  ].join("\n");
+  test("keeps values and the status bar behind, the popup whole", () => {
+    const c = compact(full);
+    expect(c).toContain('ctxtVBAK-VBELN  field  Order = "10792"');
+    expect(c).toContain("status  W: Consider");
+    expect(c).not.toContain("Back (F3)");
+    expect(c).not.toContain("Sold-To Party");
+    expect(c).toContain("2 more lines behind the popup");
+    expect(c).toContain("Continue (Enter)");
+  });
+  test("leaves a screen without popup alone", () => {
+    const one = full.split("\n").slice(0, 6).join("\n");
+    expect(compact(one)).toContain("Back (F3)");
   });
 });
