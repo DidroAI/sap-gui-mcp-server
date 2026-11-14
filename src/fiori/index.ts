@@ -2,10 +2,12 @@
  * The Fiori surface: Chrome tabs where SAPUI5 runs (a Fiori launchpad or a
  * stand-alone UI5 app), read through the UI5 control tree.
  *
- * Which tabs: `sap.ui.getCore` exists in the page, or the URL is a launchpad
- * (`/sap/bc/ui2/flp`, `/ui#`, `cp.portal`, `launchpad`). A tab whose own page
- * is SAP GUI for HTML belongs to the Web GUI surface; a Web GUI app inside a
- * launchpad iframe is read here, in the same view as the shell around it.
+ * Which tabs is decided in one place, browser/classify.ts: SAPUI5 runs in the
+ * page (`sap.ui.getCore`), and the page is SAP's: a launchpad URL under /sap/
+ * (`/sap/bc/ui2/flp`, the FioriLaunchpad.html shell) or `sap.ushell` in the
+ * page. A tab whose own page is SAP GUI for HTML belongs to the Web GUI
+ * surface; a Web GUI app inside a launchpad iframe is read here, in the same
+ * view as the shell around it.
  *
  * Actions, on ids from the view (the compact view's `#tail`, or a full UI5 id):
  *
@@ -35,27 +37,32 @@
  * Environment: SAP_FIORI_WAIT=busy turns RecordReplay.waitForUI5 off (the
  * driver then reads UI5's busy state only, and loads nothing into the page).
  */
-import { chromeDoctor, chromeTabs } from "../browser/chrome.js";
-import type { SessionInfo, Surface } from "../core/types.js";
-import { FioriDriver, isLaunchpadUrl, isWebguiUrl, pageInfo, sessionOf } from "./driver.js";
+import { chromeDoctor, sapTabs, stillOwned } from "../browser/chrome.js";
+import { tabWhere } from "../browser/classify.js";
+import type { Driver, SessionInfo, Surface } from "../core/types.js";
+import { FioriDriver, pageInfo, sessionOf } from "./driver.js";
 
-export { FioriDriver, isLaunchpadUrl, isWebguiUrl, sessionOf, WEBGUI_MARK } from "./driver.js";
+export { isLaunchpadUrl, isWebguiUrl } from "../browser/classify.js";
+export { FioriDriver, sessionOf, WEBGUI_MARK } from "./driver.js";
 export { assessAction, assessControl, RULES } from "./risk.js";
 
 type Env = Record<string, string | undefined>;
 
+/** The session line of a tab, with where it lives named by its title (Chrome gives no tab position). */
+function named(session: SessionInfo): SessionInfo {
+  session.where = tabWhere(session.title, session.url);
+  return session;
+}
+
+/** The Fiori tabs among the open tabs (the classifier's answer), with what each page says about itself. */
 async function fioriTabs(env: Env) {
-  const tabs = await chromeTabs(env);
-  const found = await Promise.all(
-    tabs.map(async (tab, i) => {
-      // A tab whose own page is Web GUI is the Web GUI surface's.
-      if (isWebguiUrl(tab.url)) return undefined;
+  const mine = (await sapTabs(env)).filter((t) => t.owner === "fiori");
+  return Promise.all(
+    mine.map(async ({ tab }) => {
       const info = await pageInfo(tab.page);
-      if (!info.ui5 && !isLaunchpadUrl(tab.url)) return undefined;
-      return { tab, n: i + 1, info, session: sessionOf(tab, i + 1, info) };
+      return { tab, info, session: named(sessionOf(tab, 0, info)) };
     }),
   );
-  return found.filter((x) => x !== undefined);
 }
 
 export function fioriSurface(env: Env): Surface {
@@ -63,10 +70,17 @@ export function fioriSurface(env: Env): Surface {
   return {
     name: "fiori",
     discover: async (): Promise<SessionInfo[]> => (await fioriTabs(env)).map((x) => x.session),
-    open: async (session) => {
+    open: async (session): Promise<Driver> => {
       const hit = (await fioriTabs(env)).find((x) => x.session.id === session.id);
       if (!hit) throw new Error(`The Fiori tab of session ${session.id} is no longer open.`);
-      return new FioriDriver(hit.tab, hit.session, hit.n, options);
+      const driver = new FioriDriver(hit.tab, hit.session, 0, options);
+      // The driver's own refresh names the tab by a number: name it by its title, as discovery does.
+      const refresh = driver.refresh.bind(driver);
+      return Object.assign(driver, {
+        refresh: async () => named(await refresh()),
+        /** The tab is open, its browser connected, and it is still Fiori's (not a Web GUI page of its own now). */
+        valid: () => stillOwned(hit.tab.page, "fiori", env),
+      });
     },
     doctor: async () => {
       const out = await chromeDoctor(env);
@@ -77,8 +91,8 @@ export function fioriSurface(env: Env): Surface {
           ok: true,
           check: "Fiori tabs",
           detail: tabs.length
-            ? tabs.map((t) => `tab ${t.n}: UI5 ${t.info.version ?? "not loaded"}${t.info.launchpad ? ", launchpad" : ""}, system ${t.session.system ?? "?"}/${t.session.client ?? "?"}, user ${t.session.user ?? "?"}`).join("; ")
-            : "no tab runs SAPUI5 now (open the Fiori launchpad or a Fiori app in Chrome)",
+            ? tabs.map((t) => `${t.session.where}: UI5 ${t.info.version ?? "not loaded"}${t.info.launchpad ? ", launchpad" : ""}, system ${t.session.system ?? "?"}/${t.session.client ?? "?"}, user ${t.session.user ?? "?"}`).join("; ")
+            : "no Fiori tab now (open the Fiori launchpad or a Fiori app in Chrome)",
         });
       } catch (e) {
         out.push({ ok: false, check: "Fiori tabs", detail: (e as Error).message });

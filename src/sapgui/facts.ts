@@ -63,6 +63,10 @@ export interface Screen {
   client?: string;
   /** The window that has the focus: the topmost popup, or "wnd[0]". */
   activeWindow?: string;
+  /** Id of the control that has the keyboard focus (the active window's GuiFocus), when SAP GUI gives one. */
+  focus?: string;
+  /** Logon language of the session (Info.Language), e.g. "EN". */
+  language?: string;
   windows: WindowFacts[];
 }
 
@@ -89,6 +93,8 @@ export interface SessionsFacts {
 }
 
 export interface DoctorLocal {
+  /** PowerShell's language mode in the host: "FullLanguage" when nothing restricts it. */
+  languageMode?: string;
   processes: string[];
   settings: Record<string, { value: number; where: string } | null>;
 }

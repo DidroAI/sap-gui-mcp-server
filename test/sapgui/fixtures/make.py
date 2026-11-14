@@ -1,29 +1,27 @@
 """Builds the synthetic SAP GUI world the sapgui tests run on.
 
-    python3 test/sapgui/fixtures/make.py [path/to/sapgui.py]
+    python3 test/sapgui/fixtures/make.py
 
 Writes world.json: a made-up SAP GUI (one connection, a few sessions, each on
 one kind of screen), as the object tree SAP GUI scripting would expose. No
 data from a real system. The fake SAP GUI for Windows tests
 (test/sapgui/fake-sapgui.wsc) serves this file through COM.
 
-With the path of the Python bridge this server was ported from (sapgui.py,
-kept in Didro's monorepo), it also writes expected/<session>.txt: the full
-view that bridge prints for each session, which format.test.ts holds the
-TypeScript formatter to.
+The other fixtures are made from world.json, not by this script:
 
-facts/<session>.json is what the PowerShell host (src/sapgui/ps/host.ps1)
-answers for each session of this world, captured on Windows through the fake
-SAP GUI: see test/sapgui/README.md.
+- facts/<session>.json is what the PowerShell host (src/sapgui/ps/) answers
+  for each session of this world, captured on Windows through the fake SAP
+  GUI;
+- expected/<session>.txt is the full text view of each session, which
+  format.test.ts holds the formatter to.
+
+See test/sapgui/README.md for how to renew them.
 """
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import re
-import sys
-import types
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -252,87 +250,7 @@ def build() -> dict:
     return w
 
 
-# ---- the same world as Python objects, for the bridge's own look() ------------------
-
-class Coll(list):
-    @property
-    def Count(self):
-        return len(self)
-
-    def ElementAt(self, i):
-        return self[i]
-
-    def __call__(self, i):
-        return self[i]
-
-
-class Obj:
-    def __init__(self, **kw):
-        self.__dict__.update(kw)
-
-
-class Ctl:
-    def __init__(self, node: dict, ses_id: str):
-        d = self.__dict__
-        for k, v in node.items():
-            if k not in ("kids", "label", "Entries", "Columns", "grid", "tree", "toolbar", "Id"):
-                d[k] = v
-        d["Id"] = node["Id"].replace(ses_id + "/", "/app/con[0]/ses[0]/")  # the bridge reads session 0 only
-        if "label" in node:
-            d["LeftLabel"] = Obj(Text=node["label"])
-        if "Entries" in node:
-            d["Entries"] = Coll(Obj(Key=k, Value=v) for k, v in node["Entries"])
-        if "Columns" in node:
-            d["Columns"] = Coll(Obj(Title=t) for t in node["Columns"])
-        leaf = node["Type"] in ("GuiTextField", "GuiCTextField", "GuiPasswordField", "GuiLabel", "GuiCheckBox", "GuiRadioButton",
-                                "GuiComboBox", "GuiButton", "GuiOkCodeField", "GuiStatusPane")
-        if not leaf:
-            d["Children"] = Coll(Ctl(k, ses_id) for k in node["kids"])
-        g, t, tb = node.get("grid"), node.get("tree"), node.get("toolbar")
-        if g:
-            d["ColumnOrder"] = [c for c, _ in g["cols"]]
-            d["RowCount"] = len(g["rows"])
-            d["GetDisplayedColumnTitle"] = lambda c: dict(g["cols"])[c]
-            d["GetCellValue"] = lambda r, c: g["rows"][r][[x for x, _ in g["cols"]].index(c)]
-        if t:
-            by = {n["key"]: n for n in t["nodes"]}
-
-            def level(k):
-                return 0 if not by[k]["parent"] else 1 + level(by[k]["parent"])
-
-            d["GetAllNodeKeys"] = lambda: [n["key"] for n in t["nodes"]]
-            d["GetParent"] = lambda k: by[k]["parent"]
-            d["IsFolder"] = lambda k: by[k]["folder"]
-            d["IsFolderExpanded"] = lambda k: by[k].get("expanded", False)
-            d["GetHierarchyLevel"] = level
-            d["GetNodeTextByKey"] = lambda k: by[k]["text"]
-            d["GetColumnNames"] = lambda: [c for c, _ in t["columns"]] if t["columns"] else None
-            d["GetColumnTitleFromName"] = lambda c: dict(t["columns"])[c]
-            d["GetItemText"] = lambda k, c: by[k].get("items", {}).get(c, "")
-        if tb:
-            d["ButtonCount"] = len(tb)
-            d["GetButtonId"] = lambda i: tb[i][0]
-            d["GetButtonText"] = lambda i: tb[i][1]
-            d["GetButtonTooltip"] = lambda i: tb[i][2]
-
-
-def expected(world: dict, bridge: Path) -> None:
-    sys.modules["win32com"] = types.ModuleType("win32com")
-    sys.modules["win32com.client"] = types.ModuleType("win32com.client")
-    spec = importlib.util.spec_from_file_location("sapgui_bridge", bridge)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    out = HERE / "expected"
-    out.mkdir(exist_ok=True)
-    for ses in world["connections"][0]["sessions"]:
-        s = Obj(Info=Obj(**ses["Info"]), Children=Coll(Ctl(w, ses["Id"]) for w in ses["windows"]))
-        mod.session = lambda s=s: s
-        (out / f"{ses['name']}.txt").write_text(mod.look() + "\n", encoding="utf-8")
-
-
 if __name__ == "__main__":
     world = build()
     (HERE / "world.json").write_text(json.dumps(world, indent=1) + "\n")
-    if len(sys.argv) > 1:
-        expected(world, Path(sys.argv[1]))
     print("ok")

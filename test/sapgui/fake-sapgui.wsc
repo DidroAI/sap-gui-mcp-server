@@ -3,10 +3,10 @@
   A stand-in for SAP GUI's scripting object, for tests on Windows without SAP GUI.
 
   It serves test/sapgui/fixtures/world.json (a made-up SAP GUI) as COM objects
-  with the members of SAP GUI scripting that the server uses. The PowerShell
-  host binds it instead of the running SAP GUI when these are set:
+  with the members of SAP GUI scripting that the server uses. The test host
+  (test/sapgui/fake-host.ps1) binds it in place of the running SAP GUI; the
+  shipped host cannot. The world file is named by:
 
-    SAPGUI_MCP_FAKE=script:C:\path\to\fake-sapgui.wsc
     SAPGUI_MCP_FAKE_WORLD=C:\path\to\world.json
 
   Actions change the fake screen a little, so a test can see them: a set

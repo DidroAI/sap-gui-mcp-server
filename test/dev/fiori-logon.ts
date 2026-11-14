@@ -6,7 +6,7 @@
  *   SAP_CHROME_CDP=http://127.0.0.1:9342 \
  *   FIORI_URL='https://localhost:44300/sap/bc/ui2/flp?sap-client=100&sap-language=EN' \
  *   SAP_USER=<user> SAP_PASSWORD_FILE=<file holding the password> \
- *   bun scripts/dev-fiori-logon.ts ['#SalesOrder-manage']
+ *   bun test/dev/fiori-logon.ts ['#SalesOrder-manage']
  *
  * The password is read from the file and typed into the logon page; it is
  * never printed. Uses the first launchpad tab of the browser, or opens one.

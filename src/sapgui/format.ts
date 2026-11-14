@@ -1,11 +1,17 @@
 /**
  * The full text view of an SAP GUI screen, from the host's facts.
  *
- * Same format, line for line, as the Python bridge this was ported from
- * (sapgui.py `look`): a header, a WINDOW line per window, then one line per
- * control: `<scripting id>  <type>  <label and value>  <state>`. ALV grids,
- * trees, text editors and toolbars inside containers follow with their
- * content. core/compact.ts shortens this view.
+ * The format: a header line (transaction, program, screen), a WINDOW line
+ * per window, then one line per control:
+ *
+ *   <scripting id>  <type>  <label and value>  <state>
+ *
+ * with two spaces between the parts. Containers give no line. An ALV grid
+ * gives its columns, then one indented line per row; a tree, one indented
+ * line per node that is on show, with its key as {node <key>}; a text editor
+ * its text; a toolbar inside a container its buttons, each with its function
+ * code as {<code>}. A password field never shows its content. The Web GUI
+ * reader writes the same format, and core/compact.ts shortens both.
  */
 import type { Control, Screen } from "./facts.js";
 

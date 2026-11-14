@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test";
+import { writeFileSync } from "node:fs";
 import { compact } from "../../src/core/compact.js";
 import { controlLines, esc, fullView } from "../../src/sapgui/format.js";
 import { expected, NAMES, screen } from "./fixtures.js";
 
 describe("sapgui full view", () => {
-  // expected/*.txt is what the Python bridge prints for the same screens (fixtures/make.py).
+  // expected/*.txt is the full view of each fixture screen, kept in the repository and read by people:
+  // a change of format shows as a diff there. UPDATE_EXPECTED=1 writes the files again.
   for (const name of NAMES)
-    test(`${name}: same text as the Python bridge`, () => {
+    test(`${name}: the full view is the one in fixtures/expected`, () => {
+      if (process.env.UPDATE_EXPECTED) writeFileSync(new URL(`./fixtures/expected/${name}.txt`, import.meta.url), `${fullView(screen(name))}\n`);
       expect(fullView(screen(name))).toBe(expected(name));
     });
 

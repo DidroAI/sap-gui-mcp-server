@@ -1,94 +1,86 @@
 /**
  * Is an action a read, a navigation or a commit (a write to the database)?
  *
- * The rule is the three tables below, applied to what the action targets on
- * the current screen:
- * - COMMIT_KEYS: function keys that always save;
- * - COMMIT_WORDS: what a button, a menu entry or a toolbar button says
- *   (text or tooltip), in English, German, French and Spanish;
- * - COMMIT_CODES: function codes, for command-field entries and toolbar
- *   buttons of ALV grids and other controls, whose id is their function code.
- * A popup that asks whether to save, post, delete... makes its "Yes" (and
- * Enter) a commit too.
+ * SAP GUI does not say what a button will do, so the rule fails closed: a
+ * button, a menu entry, a function key or a function code is a commit unless
+ * it is known to be safe. "Known safe" is one of:
+ * - its id: a toolbar button `btn[N]` is bound to function key N, and Enter,
+ *   F1 to F4, F12, Shift+F3, find and paging never write (SAFE_VKEYS);
+ * - its function code (SAFE_CODES: Back, Exit, and the standard functions of
+ *   ALV lists such as sort, filter, find, details);
+ * - its text or tooltip, when the session's logon language is covered by the
+ *   word table (SAFE_WORDS: Display, Find, Refresh, Next...).
+ * A text that holds a commit word (COMMIT_WORDS: Save, Post, Delete...) is a
+ * commit even when the rest of it is safe. A popup that asks whether to
+ * save, post, delete... makes every answer but No and Cancel a commit.
  *
- * SAP GUI does not say what a button will do, so this is a reading of
- * labels: it errs towards "commit", and a transaction can still write on a
- * step that says nothing of the kind (Execute on a report that updates).
+ * The tables are in core/words.ts, shared with the other surfaces.
  */
 import type { Action, Assessment } from "../core/types.js";
+import { CLOSES_SESSIONS, commitCode, commitWord, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
 import type { Control, Screen } from "./facts.js";
+import { vkeyNumber } from "./keys.js";
+import { allControls } from "./resolve.js";
 
-export const COMMIT_KEYS: Record<number, string> = { 11: "Save (Ctrl+S)" };
+export { commitCode, commitWord } from "../core/words.js";
 
-export const COMMIT_WORDS: { means: string; words: RegExp }[] = [
-  { means: "save", words: /\b(save|sichern|speichern|sauvegarder|enregistrer|guardar|grabar)\b/ },
-  { means: "post", words: /\b(post|book|buchen|verbuchen|comptabiliser|contabilizar)\b/ },
-  { means: "park or hold", words: /\b(park|hold|vorerfassen|merken)\b/ },
-  { means: "delete", words: /\b(delete|löschen|loeschen|supprimer|borrar|eliminar)\b/ },
-  { means: "release", words: /\b(release|freigeben|libérer|liberar)\b/ },
-  { means: "approve or reject", words: /\b(approve|reject|genehmigen|ablehnen|approuver|rejeter|aprobar|rechazar)\b/ },
-  { means: "reverse", words: /\b(reverse|reversal|storno|stornieren|extourner|anular)\b/ },
-  // "Cancel" alone leaves a screen; "Cancel document", "Cancel billing" reverse something.
-  { means: "cancel a document", words: /\bcancel\s+(?!\()[a-z]/ },
-  { means: "activate", words: /\b(activate|aktivieren|activer|activar)\b/ },
-  { means: "lock or unlock", words: /\b(lock|unlock|sperren|entsperren)\b/ },
-  { means: "send", words: /\b(send|submit|senden|absenden|envoyer|enviar)\b/ },
-];
-
-/** "Do not save", "Nicht sichern": the opposite of the word that follows. */
-const NEGATION = /\b(do not|don'?t|without|not|nicht|ohne|ne pas|sans)\s*$/;
-
-/** Function codes, compared with each part of a code ("&DATA_SAVE" -> DATA, SAVE). */
-export const COMMIT_CODES = new Set([
-  ..."SAVE SICH SICHERN BU BUCH BUCHEN POST UPD UPDA UPDATE DEL DELE DELETE DLT LOE LOES LOESCHEN".split(" "),
-  ..."FREI FREIGABE REL RELE RELEASE APPR APPROVE STOR STORNO ACT ACTI ACTIVATE PARK HOLD SEND".split(" "),
+/** Types that hold input or show something: acting on one changes unsaved input at most. */
+const INERT_TYPES = new Set([
+  "GuiTextField",
+  "GuiCTextField",
+  "GuiPasswordField",
+  "GuiLabel",
+  "GuiCheckBox",
+  "GuiRadioButton",
+  "GuiComboBox",
+  "GuiTab",
+  "GuiBox",
+  "GuiTableControl",
+  "GuiStatusbar",
+  "GuiStatusPane",
+  "GuiOkCodeField",
 ]);
+const BUTTON_TYPES = new Set(["GuiButton"]);
 
-/** Function codes that only move: typed in the command field, they stay a navigation. */
-const SAFE_CODES = new Set("BACK EXIT CANC RW ABBR ENTR ENTE ENTER E ECAN P+ P++ P- P-- PICK".split(" "));
+const clean = (s: string | undefined) => (s ?? "").replace(/\s+/g, " ").trim();
+const shown = (c: Control) => [c.text, c.tip].map(clean).find(Boolean) ?? c.id;
+const short = (s: string) => (s.length > 90 ? `${s.slice(0, 87)}...` : s);
+const commit = (reason: string): Assessment => ({ risk: "commit", reason });
+const notSafe = (what: string) => commit(`${what} is not known to be safe, so it is treated as a write`);
 
-/** Screens where a plain word in the command field is a transaction code, not a function code. */
-const MENU_PROGRAMS = new Set(["SAPLSMTR_NAVIGATION", "SAPMSYST", "MENUSYST"]);
-
-const YES = /^(yes|ja|oui|sí|si)$/;
-const YES_NAMES = new Set(["SPOP-OPTION1", "BUTTON_1"]);
-
-const clean = (s: string | undefined) => (s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
-
-/** What a label means, if it means a commit. */
-export function commitWord(...labels: (string | undefined)[]): string | undefined {
-  for (const label of labels) {
-    const l = clean(label);
-    for (const row of COMMIT_WORDS) {
-      const m = row.words.exec(l);
-      if (m && !NEGATION.test(l.slice(0, m.index))) return row.means;
-    }
-  }
-  return undefined;
+/** The function key a toolbar button is bound to, from its id: `wnd[0]/tbar[1]/btn[8]` -> 8. */
+function buttonKey(id: string): number | undefined {
+  const m = /^wnd\[\d+\]\/tbar\[\d+\]\/btn\[(\d+)\]$/.exec(id);
+  return m ? Number(m[1]) : undefined;
 }
 
-export function commitCode(code: string | undefined): boolean {
-  return (code ?? "")
-    .toUpperCase()
-    .replace(/^[=&%/]+/, "")
-    .split(/[_\-.\s]+/)
-    .some((part) => COMMIT_CODES.has(part));
+/** The function key a button's tooltip names: "Cancel   (F12)" -> 12, "Save   (Ctrl+S)" -> 11. */
+function tooltipKey(b: Control): number | undefined {
+  const m = /\(([^()]+)\)\s*$/.exec(clean(b.tip) || clean(b.text));
+  return m?.[1] ? vkeyNumber(m[1]) : undefined;
 }
 
-const shown = (c: Control) => [c.text, c.tip].map((s) => (s ?? "").replace(/\s+/g, " ").trim()).find(Boolean) ?? c.id;
-
-/** The question of the active popup, when it asks whether to save, post, delete... and offers a Yes. */
+/** The question of the active popup, when it asks whether to save, post, delete... */
 export function commitQuestion(screen: Screen): string | undefined {
   const w = screen.windows.find((x) => x.id === screen.activeWindow);
   if (!w || w.id === "wnd[0]") return undefined;
-  const yes = w.controls.some((c) => c.type === "GuiButton" && (YES_NAMES.has(c.name) || YES.test(clean(c.text))));
-  if (!yes) return undefined;
-  const texts = w.controls.filter((c) => c.type !== "GuiButton" && c.id !== w.id).map((c) => (c.text ?? "").trim());
+  // A value-help hit list (list lines or a grid, no button of its own) is not a question, whatever its entries say.
+  const usrButton = w.controls.some((c) => c.type === "GuiButton" && c.id.includes("/usr/"));
+  const hitList = w.controls.some((c) => /\/lbl\[\d+,\d+\]$/.test(c.id) || (c.type === "GuiShell" && c.sub === "GridView"));
+  if (hitList && !usrButton) return undefined;
+  const texts = w.controls.filter((c) => c.type !== "GuiButton" && c.id !== w.id).map((c) => clean(c.text));
   const question = [w.title, ...texts].filter(Boolean).join(" ").replace(/\s+/g, " ");
   return commitWord(question) ? question : undefined;
 }
 
-const short = (s: string) => (s.length > 90 ? `${s.slice(0, 87)}...` : s);
+/** Does this button of a popup decline what the popup asks? Cancel by its key, or No, Cancel, Back... by its text. */
+function declines(screen: Screen, b: Control): boolean {
+  // Cancel, Back or Exit, by the button's id or by the key its tooltip names ("Cancel   (F12)").
+  const key = buttonKey(b.id) ?? tooltipKey(b);
+  if (key === 12 || key === 3 || key === 15) return true;
+  const means = safeWord(screen.language, clean(b.text).replace(/\([^()]*\)\s*$/, ""), clean(b.tip).replace(/\([^()]*\)\s*$/, ""));
+  return means === "no" || means === "cancel" || means === "back" || means === "exit" || means === "help" || means === "display";
+}
 
 function button(screen: Screen, windowId: string, n: number): Control | undefined {
   const w = screen.windows.find((x) => x.id === windowId);
@@ -96,41 +88,84 @@ function button(screen: Screen, windowId: string, n: number): Control | undefine
 }
 
 function assessButton(screen: Screen, b: Control, how: string): Assessment {
-  if (/(^|\/)tbar\[0\]\/btn\[11\]$/.test(b.id)) return { risk: "commit", reason: `${how}"${shown(b)}" (Save)` };
-  const means = commitWord(b.text, b.tip);
-  if (means) return { risk: "commit", reason: `${how}"${shown(b)}"` };
+  const named = `${how}"${shown(b)}"`;
+  const key = buttonKey(b.id) ?? tooltipKey(b);
+  if (key !== undefined && SAVE_VKEYS.has(key)) return commit(`${named} (Save)`);
+  if (commitWord(b.text, b.tip)) return commit(named);
   const question = commitQuestion(screen);
-  if (question && b.id.startsWith(`${screen.activeWindow}/`) && (YES_NAMES.has(b.name) || YES.test(clean(b.text))))
-    return { risk: "commit", reason: `"${shown(b)}" on the popup "${short(question)}"` };
-  return { risk: "navigate", reason: `${how}"${shown(b)}"` };
+  if (question && b.id.startsWith(`${screen.activeWindow}/`) && !declines(screen, b)) return commit(`"${shown(b)}" on the popup "${short(question)}"`);
+  if (key !== undefined && SAFE_VKEYS.has(key)) return { risk: "navigate", reason: named };
+  if (safeWord(screen.language, b.text, b.tip)) return { risk: "navigate", reason: named };
+  return notSafe(named);
+}
+
+function assessMenu(screen: Screen, m: Control | undefined): Assessment {
+  if (!m) return commit("a menu entry the server could not read");
+  const named = `menu entry "${shown(m)}"`;
+  // A top-level menu ("wnd[0]/mbar/menu[1]") only opens.
+  if (/\/mbar\/menu\[\d+\]$/.test(m.id)) return { risk: "navigate", reason: named };
+  if (commitWord(m.text, m.tip)) return commit(named);
+  if (safeWord(screen.language, m.text, m.tip)) return { risk: "navigate", reason: named };
+  return notSafe(named);
+}
+
+/** Pressing the control that has the focus (Enter does, on a button): what would that do? */
+function assessFocus(screen: Screen, how: string): Assessment | undefined {
+  if (!screen.focus) return undefined;
+  const f = allControls(screen).find((c) => c.id === screen.focus);
+  if (!f) return /\/mbar\//.test(screen.focus) ? commit(`${how} with the focus on a menu entry the server could not read`) : undefined;
+  if (BUTTON_TYPES.has(f.type)) {
+    const a = assessButton(screen, f, `${how} with the focus on the button `);
+    return a.risk === "commit" ? a : undefined;
+  }
+  if (f.type === "GuiMenu") {
+    const a = assessMenu(screen, f);
+    return a.risk === "commit" ? commit(`${how} with the focus on the ${a.reason}`) : undefined;
+  }
+  return undefined;
 }
 
 function assessKey(screen: Screen, windowId: string, n: number, how: string): Assessment {
-  const always = COMMIT_KEYS[n];
-  if (always) return { risk: "commit", reason: `${how}: ${always}` };
+  if (SAVE_VKEYS.has(n)) return commit(`${how}: Save (Ctrl+S)`);
+  if (n === 0) {
+    const pressed = assessFocus(screen, how);
+    if (pressed) return pressed;
+  }
   const b = button(screen, windowId, n);
   if (b) {
     const a = assessButton(screen, b, `${how}: button `);
     if (a.risk === "commit") return a;
   }
   const question = n === 0 && windowId === screen.activeWindow ? commitQuestion(screen) : undefined;
-  if (question) return { risk: "commit", reason: `Enter on the popup "${short(question)}"` };
+  if (question) return commit(`Enter on the popup "${short(question)}"`);
   if (n === 4 || n === 1) return { risk: "read", reason: n === 4 ? "value help" : "help" };
-  return { risk: "navigate", reason: how };
+  if (b || SAFE_VKEYS.has(n)) return { risk: "navigate", reason: how };
+  return commit(`${how} has no button on this screen, so what it does is unknown`);
 }
 
 function assessOkcode(screen: Screen, value: unknown): Assessment {
   const v = String(value ?? "").trim();
-  const u = v.toUpperCase();
   const how = `okcode ${v}`;
-  const key = /^\/(\d+)$/.exec(u);
-  if (key) return assessKey(screen, "wnd[0]", Number(key[1]), how);
-  // /nXXXX, /oXXXX, /*XXXX start a transaction; /i, /nend, /nex close sessions. Unsaved input is dropped, nothing is written.
-  if (u === "" || /^\/[NO*I]/.test(u)) return { risk: "navigate", reason: how };
-  if (commitCode(u)) return { risk: "commit", reason: `${how} (a function code that saves, posts or deletes)` };
-  const code = u.replace(/^=/, "");
-  if (SAFE_CODES.has(code) || /^[%&?]/.test(code) || MENU_PROGRAMS.has(screen.program.toUpperCase())) return { risk: "navigate", reason: how };
-  return { risk: "commit", reason: `${how} (a function code of this screen that the server cannot classify)` };
+  const k = okcodeKind(v);
+  switch (k.kind) {
+    case "empty":
+      return assessKey(screen, "wnd[0]", 0, how);
+    case "key":
+      return assessKey(screen, "wnd[0]", k.key, how);
+    case "transaction":
+      // /nXXXX, /oXXXX, /*XXXX start a transaction: unsaved input is dropped, nothing is written.
+      return { risk: "navigate", reason: how };
+    case "closes":
+      return commit(`${how} ${CLOSES_SESSIONS}`);
+    case "commit":
+      return commit(`${how} (a function code that saves, posts or deletes)`);
+    case "safe":
+      return { risk: "navigate", reason: how };
+    default:
+      // On SAP Easy Access a plain word is a transaction code.
+      if (!k.code.startsWith("/") && /^[A-Z0-9_]+$/.test(k.code) && MENU_PROGRAMS.has(screen.program.toUpperCase())) return { risk: "navigate", reason: how };
+      return commit(`${how} (a command or function code that the server cannot classify)`);
+  }
 }
 
 /**
@@ -138,6 +173,7 @@ function assessOkcode(screen: Screen, value: unknown): Assessment {
  */
 export function assess(screen: Screen, action: Action, target?: Control): Assessment {
   const active = screen.activeWindow ?? "wnd[0]";
+  const menu = target?.type === "GuiMenu" || /\/mbar\/menu\[/.test(target?.id ?? action.id ?? "");
   switch (action.do) {
     case "focus":
       return { risk: "read", reason: "focus" };
@@ -150,31 +186,41 @@ export function assess(screen: Screen, action: Action, target?: Control): Assess
     case "okcode":
       return assessOkcode(screen, action.value);
     case "key": {
-      const n = Number(action.key);
+      const n = vkeyNumber(action.key ?? action.value);
+      if (n === undefined) return commit(`key ${String(action.key ?? action.value)} is not a key SAP GUI has`);
       return assessKey(screen, active, n, `key ${n}`);
     }
     case "press":
-      if (target?.type === "GuiButton") return assessButton(screen, target, "button ");
-      return { risk: "navigate", reason: "press" };
-    case "select": {
-      if (target?.type === "GuiMenu" || /\/mbar\//.test(target?.id ?? action.id ?? "")) {
-        if (!target) return { risk: "commit", reason: "a menu entry the server could not read" };
-        return commitWord(target.text, target.tip)
-          ? { risk: "commit", reason: `menu entry "${shown(target)}"` }
-          : { risk: "navigate", reason: `menu entry "${shown(target)}"` };
-      }
-      return { risk: "navigate", reason: "select" };
+    case "click":
+    case "select":
+    case "dblclick": {
+      // A tree node or a grid cell: opening it navigates.
+      if (action.do === "dblclick" && (action.node !== undefined || action.row !== undefined)) return { risk: "navigate", reason: "open a row" };
+      if (menu) return assessMenu(screen, target);
+      if (!target) return commit(`${action.do} on "${action.id ?? ""}", which is not on the screen the server read, so what it does is unknown`);
+      if (BUTTON_TYPES.has(target.type)) return assessButton(screen, target, "button ");
+      if (INERT_TYPES.has(target.type)) return { risk: "navigate", reason: action.do };
+      // A shell (grid, tree, HTML viewer): selecting it moves the focus. Anything else is not known.
+      if (target.type === "GuiShell" && action.do !== "press" && action.do !== "click") return { risk: "navigate", reason: action.do };
+      return notSafe(`${action.do} on ${target.type} "${shown(target)}"`);
     }
     case "toolbar": {
       const id = String(action.button ?? "");
       const b = target?.buttons?.find((x) => x.id === id);
       const label = b ? [b.text, b.tip].map((s) => s.trim()).find(Boolean) ?? id : id;
-      if (commitWord(b?.text, b?.tip) || commitCode(id)) return { risk: "commit", reason: `toolbar button "${label}" {${id}}` };
-      return { risk: "navigate", reason: `toolbar button "${label}"` };
+      if (safeCode(id)) return { risk: "navigate", reason: `toolbar button "${label}"` };
+      if (commitWord(b?.text, b?.tip) || commitCode(id)) return commit(`toolbar button "${label}" {${id}}`);
+      if (b && safeWord(screen.language, b.text, b.tip)) return { risk: "navigate", reason: `toolbar button "${label}"` };
+      return notSafe(`toolbar button "${label}" {${id}}`);
     }
     case "tree":
       return action.how === "expand" || action.how === "collapse" ? { risk: "read", reason: `${action.how} a tree node` } : { risk: "navigate", reason: "tree node" };
+    case "grid":
+      return { risk: "navigate", reason: "grid cell" };
+    case "scroll":
+      // Not an SAP GUI action: it fails on its own.
+      return { risk: "read", reason: '"scroll" is not an SAP GUI action' };
     default:
-      return { risk: "navigate", reason: action.do };
+      return commit(`action "${action.do}" is not one the SAP GUI surface knows`);
   }
 }

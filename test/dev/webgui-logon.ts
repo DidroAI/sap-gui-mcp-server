@@ -5,7 +5,7 @@
  *   SAP_CHROME_CDP=http://127.0.0.1:9341 \
  *   WEBGUI_URL='http://localhost:8010/sap/bc/gui/sap/its/webgui?sap-client=800' \
  *   SAP_USER=<user> SAP_PASSWORD_FILE=<file holding the password> \
- *   bun scripts/dev-webgui-logon.ts
+ *   bun test/dev/webgui-logon.ts
  *
  * The password is read from the file and typed into the logon page; it is
  * never printed. Opens a new tab unless a Web GUI tab is already logged on.

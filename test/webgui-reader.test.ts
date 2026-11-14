@@ -8,14 +8,15 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { chromium, type Browser, type Page } from "playwright-core";
+import { ActionError } from "../src/core/types.js";
 import { webguiActInFrame, webguiAssessInFrame, webguiLookInFrame } from "../src/webgui/index.js";
-import { extractFacts, extractMenus, markControl, normalizeLsdata } from "../src/webgui/page.js";
+import { extractFacts, extractMenus, focusedControl, markControl, normalizeLsdata } from "../src/webgui/page.js";
 import { vkey } from "../src/webgui/reader.js";
 
 const sid = (id: string, type: string, modal = 0) => `{ModalNo:${modal},SID:'${id}',Type:'${type}'}`;
 
 // A made-up screen. `lsdata` is written as Web GUI of ECC writes it, except one field in the JSON form of S/4HANA 2025.
-const PAGE = `<!doctype html><html><head><title>Synthetic</title></head><body>
+const PAGE = `<!doctype html><html lang="en"><head><title>Synthetic</title></head><body>
 <div id="cuaheader" lsdata="{1:'Change\\x20Synthetic\\x20Order'}">Change Synthetic Order</div>
 <input id="ToolbarOkCode" lsdata="{0:'FREETEXT',20:${sid("wnd[0]/tbar[0]/okcd", "GuiOKCodeField")}}">
 <div title="Save (Ctrl+S)" lsdata="{0:'Save',19:'CTRL_S',28:${sid("wnd[0]/tbar[0]/btn[11]", "GuiButton")}}">Save</div>
@@ -28,7 +29,11 @@ const PAGE = `<!doctype html><html><head><title>Synthetic</title></head><body>
 <span class="lsCheckBox lsCheckBox--checked" lsdata="{4:'Complete',9:${sid("wnd[0]/usr/chkZHDR-DONE", "GuiCheckBox")}}">Complete</span>
 <span aria-selected="true" lsdata="{2:'Sales',9:${sid("wnd[0]/usr/tabsTS/tabpT\\\\01", "GuiTab")}}">Sales</span>
 <span lsdata="{2:'Shipping',9:${sid("wnd[0]/usr/tabsTS/tabpT\\\\02", "GuiTab")}}">Shipping</span>
-<div lsdata="{0:'Delete\\x20item',28:${sid("wnd[0]/usr/btnBT_DEL", "GuiButton")}}">Delete item</div>
+<div id="B1" tabindex="0" onclick="window.pressed=(window.pressed||0)+1" onkeydown="window.keys=(window.keys||'')+event.key" lsdata="{0:'Delete\\x20item',28:${sid("wnd[0]/usr/btnBT_DEL", "GuiButton")}}">Delete item</div>
+<div id="B2" tabindex="0" lsdata="{0:'Display\\x20item',28:${sid("wnd[0]/usr/btnBT_SHOW", "GuiButton")}}">Display item</div>
+<input id="F4" type="password" title="Secret" value="hunter2" lsdata="{0:'x',20:${sid("wnd[0]/usr/pwdZHDR-SECRET", "GuiPasswordField")}}">
+<input id="F5" type="password" title="Token" value="hunter3" lsdata="{0:'x',20:${sid("wnd[0]/usr/txtZHDR-TOKEN", "GuiTextField")}}">
+<iframe id="V1" style="width:300px;height:80px" lsdata="{0:'x',20:${sid("wnd[0]/usr/cntlHTML/shellcont/shell", "GuiHtmlViewer")}}" srcdoc="<input id='p' type='password' title='PIN' value='hunter4'><input id='t' title='Query' value='abc'><button id='go'>Approve all</button><a id='l' href='#x'>Show details</a>"></iframe>
 <div id="msgarea"><span id="wnd[0]/sbar_msg" lsdata="{0:'Order\\x20type\\x20ZZ\\x20is\\x20not\\x20defined',1:'ERROR'}">Order type ZZ is not defined</span><span ct="TV">XYZ (100)</span></div>
 <div class="lsMnu--root"><xmp><table lsdata="{6:${sid("wnd[0]/mbar", "GuiMenu")}}"><tr lsdata="{1:'Order',6:true,18:${sid("wnd[0]/mbar/menu[0]", "GuiMenu")}}"></tr><tr lsdata="{1:'Edit',18:${sid("wnd[0]/mbar/menu[1]", "GuiMenu")}}"></tr></table></xmp>
 <xmp><table lsdata="{6:${sid("wnd[0]/mbar/menu[0]", "GuiMenu")}}"><tr lsdata="{1:'Save',15:'CTRL_S',18:${sid("wnd[0]/mbar/menu[0]/menu[0]", "GuiMenu")}}"></tr><tr lsdata="{1:'Display\\x20log',15:'CTRL_F8',18:${sid("wnd[0]/mbar/menu[0]/menu[1]", "GuiMenu")}}"></tr></table></xmp></div>
@@ -56,6 +61,14 @@ const EXPECTED = [
   "wnd[0]/usr/tabsTS/tabpT\\01  tab  Sales (selected)",
   "wnd[0]/usr/tabsTS/tabpT\\02  tab  Shipping",
   "wnd[0]/usr/btnBT_DEL  button  Delete item",
+  "wnd[0]/usr/btnBT_SHOW  button  Display item",
+  'wnd[0]/usr/pwdZHDR-SECRET  field  Secret = "***"  (edit)',
+  'wnd[0]/usr/txtZHDR-TOKEN  field  Token = "***"  (edit)',
+  "wnd[0]/usr/cntlHTML/shellcont/shell  html-viewer",
+  'wnd[0]/usr/cntlHTML/shellcont/shell/html[1]  field  PIN = "***"  (edit)',
+  'wnd[0]/usr/cntlHTML/shellcont/shell/html[2]  field  Query = "abc"  (edit)',
+  "wnd[0]/usr/cntlHTML/shellcont/shell/html[3]  button  Approve all",
+  "wnd[0]/usr/cntlHTML/shellcont/shell/html[4]  link  Show details",
   "wnd[0]/sbar  status  E: Order type ZZ is not defined",
   "wnd[0]/mbar  menubar  Order {menu[0]}, Edit {menu[1]}",
   'WINDOW wnd[1]  "Exit Order Processing"',
@@ -77,6 +90,13 @@ test("virtual keys map to the keys Web GUI listens to", () => {
 });
 
 const exe = process.env.SAP_TEST_CHROME;
+
+/** The message an action or an assessment is refused with ("" when it is not). Awaited here: `expect(...).rejects` is slow on promises that wait for the browser. */
+const refusal = (p: Promise<unknown>): Promise<string> =>
+  p.then(
+    () => "",
+    (e: unknown) => (e instanceof ActionError ? e.message : `not an ActionError: ${String(e)}`),
+  );
 
 describe.skipIf(!exe)("Web GUI reader in a browser", () => {
   let browser: Browser;
@@ -109,7 +129,18 @@ describe.skipIf(!exe)("Web GUI reader in a browser", () => {
   });
 
   test("session facts come from the system information items", async () => {
-    expect(await page.evaluate(extractFacts)).toEqual({ webgui: true, system: "XYZ", client: "100", user: "TESTER", transaction: "ZT02", title: "Change Synthetic Order" });
+    expect(await page.evaluate(extractFacts)).toEqual({
+      webgui: true,
+      system: "XYZ",
+      client: "100",
+      user: "TESTER",
+      transaction: "ZT02",
+      title: "Change Synthetic Order",
+      program: "ZPROG",
+      language: "en",
+      // A password field inside a Web GUI screen does not make it a logon page.
+      logon: false,
+    });
   });
 
   test("menu entries come with their shortcuts", async () => {
@@ -141,6 +172,121 @@ describe.skipIf(!exe)("Web GUI reader in a browser", () => {
     expect(await page.locator("#F1").inputValue()).toBe("CD");
     expect(webguiActInFrame(f, { do: "set", id: "ZHDR-NETWR", value: "1" })).rejects.toThrow("read-only");
     expect(webguiActInFrame(f, { do: "press", id: "nothing" })).rejects.toThrow("no control named nothing");
+  });
+
+  test("no view shows a password", async () => {
+    for (const compact of [true, false]) {
+      const view = (await webguiLookInFrame(page.mainFrame(), compact)) ?? "";
+      for (const secret of ["hunter2", "hunter3", "hunter4"]) expect(view).not.toContain(secret);
+      expect(view).toContain('Secret = "***"');
+      expect(view).toContain('PIN = "***"');
+    }
+    await page.evaluate(normalizeLsdata);
+    expect(await page.evaluate(markControl, "pwdZHDR-SECRET")).toMatchObject({ type: "GuiPasswordField", inputType: "password" });
+    expect(await page.evaluate(markControl, "ZHDR-TOKEN")).toMatchObject({ type: "GuiTextField", inputType: "password" });
+  });
+
+  test("set never types a password: by the field's type, by the input's type, and in an HTML viewer", async () => {
+    const f = page.mainFrame();
+    for (const id of ["pwdZHDR-SECRET", "txtZHDR-TOKEN", "html[1]"]) expect(await refusal(webguiActInFrame(f, { do: "set", id, value: "new" }))).toContain("password field: this server never types a password");
+    expect(await page.locator("#F4").inputValue()).toBe("hunter2");
+    expect(await page.locator("#F5").inputValue()).toBe("hunter3");
+    expect(await page.frameLocator("#V1").locator("#p").inputValue()).toBe("hunter4");
+    // A plain field of the viewer is still typed into.
+    await webguiActInFrame(f, { do: "set", id: "html[2]", value: "xyz" });
+    expect(await page.frameLocator("#V1").locator("#t").inputValue()).toBe("xyz");
+  });
+
+  test("set, check and combo on a button are refused: the button is not focused, typed on or clicked", async () => {
+    const f = page.mainFrame();
+    await page.evaluate(() => {
+      (window as unknown as { pressed: number; keys: string }).pressed = 0;
+      (window as unknown as { pressed: number; keys: string }).keys = "";
+      (document.activeElement as HTMLElement | null)?.blur();
+    });
+    expect(await refusal(webguiActInFrame(f, { do: "set", id: "btnBT_DEL", value: " " }))).toContain('not a field: "set" types into fields only');
+    expect(await refusal(webguiActInFrame(f, { do: "check", id: "btnBT_DEL", value: true }))).toContain("not a checkbox");
+    expect(await refusal(webguiActInFrame(f, { do: "combo", id: "btnBT_DEL", key: "A" }))).toContain("not a dropdown");
+    expect(await refusal(webguiActInFrame(f, { do: "f4", id: "btnBT_DEL" }))).toContain("value help works on fields");
+    expect(await refusal(webguiActInFrame(f, { do: "set", id: "tabpT\\02", value: "x" }))).toContain("not a field");
+    expect(await refusal(webguiActInFrame(f, { do: "set", id: "html[3]", value: " " }))).toContain("not a field");
+    const w = await page.evaluate(() => {
+      const x = window as unknown as { pressed: number; keys: string };
+      return { pressed: x.pressed, keys: x.keys };
+    });
+    expect(w).toEqual({ pressed: 0, keys: "" });
+    expect(await page.evaluate(() => document.activeElement?.id)).not.toBe("B1");
+  });
+
+  test("Enter and Space are assessed against the control that has the focus", async () => {
+    const f = page.mainFrame();
+    await page.locator("#B1").focus(); // "Delete item"
+    expect(await page.evaluate(focusedControl)).toMatchObject({ sid: "wnd[0]/usr/btnBT_DEL", type: "GuiButton" });
+    for (const key of [0, "Enter", "Space"]) {
+      const a = await webguiAssessInFrame(f, { do: "key", key });
+      expect([key, a.risk]).toEqual([key, "commit"]);
+      expect(a.reason).toContain("Delete item");
+    }
+    await page.locator("#B2").focus(); // "Display item": safe, but the popup asks whether to save, so Enter stays a commit
+    expect((await webguiAssessInFrame(f, { do: "key", key: "Space" })).risk).toBe("navigate");
+    await page.locator("#F1").focus();
+    expect(await page.evaluate(focusedControl)).toMatchObject({ sid: "wnd[0]/usr/ctxtZHDR-TYPE", type: "GuiCTextField" });
+    expect((await webguiAssessInFrame(f, { do: "key", key: "Space" })).risk).toBe("navigate");
+    // Inside the HTML viewer: its button, then its link.
+    await page.frameLocator("#V1").locator("#go").focus();
+    expect(await page.evaluate(focusedControl)).toMatchObject({ sid: "wnd[0]/usr/cntlHTML/shellcont/shell", type: "frame" });
+    expect((await webguiAssessInFrame(f, { do: "key", key: "Space" })).risk).toBe("commit"); // "Approve all"
+    await page.frameLocator("#V1").locator("#l").focus();
+    expect((await webguiAssessInFrame(f, { do: "key", key: "Space" })).risk).toBe("navigate"); // "Show details"
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  });
+
+  test("the logon page: nothing is read out, and every action is refused", async () => {
+    const logon = await browser.newPage();
+    await logon.setContent(
+      `<html lang="en"><head><title>Logon</title></head><body><form name="loginForm"><input id="sap-user" name="sap-user" value="ME"><input id="sap-password" name="sap-password" type="password" value="hunter5"><input type="submit" id="LOGON_BUTTON" value="Log On" onclick="window.sent=1;return false"></form></body></html>`,
+    );
+    const f = logon.mainFrame();
+    expect(await logon.evaluate(extractFacts)).toMatchObject({ webgui: false, logon: true });
+    for (const action of [
+      { do: "set", id: "sap-user", value: "X" },
+      { do: "key", key: 0 },
+      { do: "press", id: "LOGON_BUTTON" },
+      { do: "okcode", value: "/nVA03" },
+    ]) {
+      expect(await refusal(webguiActInFrame(f, action))).toContain("This server never logs on; log on yourself, then ask again");
+      expect(await refusal(webguiAssessInFrame(f, action))).toContain("This server never logs on; log on yourself, then ask again");
+    }
+    expect(await logon.locator("#sap-user").inputValue()).toBe("ME");
+    expect(await logon.evaluate(() => (window as unknown as { sent?: number }).sent)).toBeUndefined();
+    await logon.close();
+  });
+
+  test("the logon screen inside Web GUI (program SAPMSYST) is refused too, and its view holds no field", async () => {
+    const inner = await browser.newPage();
+    await inner.setContent(
+      `<html lang="en"><body><div id="cuaheader" lsdata="{1:'SAP'}">SAP</div><input id="ToolbarOkCode" lsdata="{0:'x',20:${sid("wnd[0]/tbar[0]/okcd", "GuiOKCodeField")}}">
+<input id="U" value="ME" lsdata="{0:'x',20:${sid("wnd[0]/usr/txtRSYST-BNAME", "GuiTextField")}}"><input id="P" type="password" value="hunter6" lsdata="{0:'x',20:${sid("wnd[0]/usr/pwdRSYST-BCODE", "GuiPasswordField")}}">
+<div id="sysInfoAreaMenuItemSAPITS_MBAR_DYNPRO" lsdata="{0:'abc',1:'Screen',13:'SAPMSYST/0020'}"></div></body></html>`,
+    );
+    const f = inner.mainFrame();
+    const view = (await webguiLookInFrame(f, false)) ?? "";
+    expect(view).toContain("NOTE this is the SAP logon screen. This server never logs on");
+    expect(view).not.toContain("hunter6");
+    expect(view).not.toContain("RSYST");
+    expect(await refusal(webguiActInFrame(f, { do: "set", id: "txtRSYST-BNAME", value: "X" }))).toContain("never logs on");
+    expect(await refusal(webguiAssessInFrame(f, { do: "key", key: 0 }))).toContain("never logs on");
+    expect(await inner.locator("#U").inputValue()).toBe("ME");
+    await inner.close();
+  });
+
+  test("the logon language comes from the address, then from the page", async () => {
+    expect((await page.evaluate(extractFacts)).language).toBe("en");
+    const other = await browser.newPage();
+    await other.route("**/*", (r) => r.fulfill({ contentType: "text/html", body: '<html lang="en"><body><input id="ToolbarOkCode" lsdata="{0:\'x\'}"></body></html>' }));
+    await other.goto("http://sap.test/sap/bc/gui/sap/its/webgui?sap-client=100&sap-language=JA");
+    expect((await other.evaluate(extractFacts)).language).toBe("JA");
+    await other.close();
   });
 
   test("a page that is not Web GUI gives null", async () => {

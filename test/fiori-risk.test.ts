@@ -9,6 +9,8 @@ const V2 = "my.app::sap.suite.ui.generic.template.ObjectPage.view.Details::C_Ord
 const dialog = (title: string, text = "", type = "sap.m.Dialog") => ({ dialog: { type, title, text } });
 
 /** control, expected risk, expected rule */
+const EN = { language: "en-US" };
+
 const TABLE: [string, ControlFacts, "read" | "navigate" | "commit", string][] = [
   // ids of Fiori elements standard actions
   ["V4 footer Save", button("Save", { id: `${V4}FooterBar::StandardAction::Save`, buttonType: "Emphasized", inFooter: true }), "commit", "standard action that writes (id)"],
@@ -34,15 +36,45 @@ const TABLE: [string, ControlFacts, "read" | "navigate" | "commit", string][] = 
   ["Display Posting", button("Display Posting Details"), "navigate", "text says it does not write"],
   ["Cancel", button("Cancel", { buttonType: "Emphasized", inFooter: true }), "navigate", "text says it does not write"],
   ["Show Details", button("Show Details"), "navigate", "text says it does not write"],
-  ["a button nobody knows", button("Related Apps"), "navigate", "default"],
+  // a button that is not known to be safe is a commit
+  ["a button nobody knows", button("Related Apps"), "commit", "button that is not known to be safe"],
+  ["Apply", button("Apply"), "commit", "button that is not known to be safe"],
+  ["Remove", button("Remove"), "commit", "text says it writes"],
+  ["Assign", button("Assign"), "commit", "button that is not known to be safe"],
+  ["Cancel Order", button("Cancel Order"), "commit", "text says it writes"],
+  ["Edit by its text only", button("Edit"), "commit", "button that is not known to be safe"],
+  ["Sign Out", { type: "sap.m.StandardListItem", id: "__item7", text: "Sign Out", ...dialog("", "", "sap.m.Popover") }, "commit", "text says it writes"],
+  ["Yes of a question that names no write", button("Yes", { ...dialog("Warning", "Do you want to continue?", "sap.m.MessageBox") }), "commit", "button that is not known to be safe"],
+  ["Yes of a delete question", button("Yes", { ...dialog("Delete", "Delete object 4711?", "sap.m.MessageBox") }), "commit", "agrees to a dialog that writes"],
+  ["an icon with a press handler nobody knows", { type: "sap.ui.core.Icon", id: "__icon4", text: "", icon: "decline", handlers: ["onPress"] }, "commit", "control with a press handler that is not known to be safe"],
+  ["an icon whose handler deletes", { type: "sap.ui.core.Icon", id: "__icon5", text: "", icon: "sys-cancel", handlers: ["onDeleteRow"] }, "commit", "press handler that writes"],
+  // known safe: the words of the shared table, and what only opens or moves
+  ["Back", button("Back"), "navigate", "text says it does not write"],
+  ["Close", button("Close", { buttonType: "Emphasized", ...dialog("Details") }), "navigate", "text says it does not write"],
+  ["Refresh", button("Refresh"), "navigate", "text says it does not write"],
+  ["Next", button("Next"), "navigate", "text says it does not write"],
+  ["Sort", button("Sort"), "navigate", "text says it does not write"],
+  ["Filter", button("Filter"), "navigate", "text says it does not write"],
+  ["Expand All", button("Expand All"), "navigate", "text says it does not write"],
+  ["Go by its text", button("Go"), "navigate", "text says it does not write"],
+  ["Select All", button("Select All"), "navigate", "text says it does not write"],
+  ["Help", button("Help"), "navigate", "text says it does not write"],
+  ["a search icon without a text", button("", { icon: "search" }), "navigate", "icon says it does not write"],
+  ["an icon nobody knows, without a text", button("", { icon: "wrench" }), "commit", "button that is not known to be safe"],
+  ["a link without an address", { type: "sap.m.Link", id: "__link2", text: "Sold-To Party 4711" }, "navigate", "link"],
+  ["a link that says it deletes", { type: "sap.m.Link", id: "__link3", text: "Delete" }, "commit", "text says it writes"],
+  ["a button that opens a menu", { type: "sap.m.MenuButton", id: "__mb1", text: "Actions" }, "navigate", "button that opens a menu"],
+  ["the overflow button of a toolbar", button("", { id: "app--toolbar-overflowButton", icon: "overflow" }), "read", "value help, filter or search (id)"],
+  ["a text with no press handler", { type: "sap.m.Text", id: "__text1", text: "Delete" }, "navigate", "default"],
   // press handler
   ["handler onSave", button("Done", { handlers: ["onSave"] }), "commit", "press handler that writes"],
   // type and place
   ["emphasized footer button", button("Finish", { buttonType: "Emphasized", inFooter: true }), "commit", "emphasized button of a footer toolbar"],
-  ["plain footer button", button("Finish", { inFooter: true }), "navigate", "default"],
+  ["plain footer button", button("Finish", { inFooter: true }), "commit", "button that is not known to be safe"],
   ["emphasized dialog button", button("Assign", { buttonType: "Emphasized", ...dialog("Assign Responsible") }), "commit", "emphasized button of a dialog"],
   ["OK of a delete question", button("OK", { buttonType: "Emphasized", ...dialog("Delete", "Delete object 4711?", "sap.m.MessageBox") }), "commit", "agrees to a dialog that writes"],
-  ["OK of a sign-out question", button("OK", { buttonType: "Emphasized", ...dialog("Sign Out", "Are you sure you want to sign out?", "sap.m.MessageBox") }), "navigate", "agrees to a dialog"],
+  ["OK of a sign-out question", button("OK", { buttonType: "Emphasized", ...dialog("Sign Out", "Are you sure you want to sign out?", "sap.m.MessageBox") }), "commit", "agrees to a dialog that writes"],
+  ["OK of a message", button("OK", { buttonType: "Emphasized", ...dialog("Information", "The list was refreshed.", "sap.m.MessageBox") }), "navigate", "agrees to a dialog"],
   ["OK of a value help", button("OK", { buttonType: "Emphasized", inValueHelp: true, ...dialog("Sold-to Party", "Items (215) Create Date") }), "navigate", "agrees to a dialog"],
   ["a button of a value help", button("Advanced Search", { inValueHelp: true, ...dialog("Sold-to Party") }), "read", "button of a filter bar or value help"],
   ["Save in a filter bar (a view)", button("Save View", { inFilterBar: true }), "commit", "text says it writes"],
@@ -58,12 +90,33 @@ const TABLE: [string, ControlFacts, "read" | "navigate" | "commit", string][] = 
 describe("fiori risk table", () => {
   for (const [name, facts, risk, rule] of TABLE)
     test(name, () => {
-      const a = assessControl(facts);
+      const a = assessControl(facts, EN);
       expect({ risk: a.risk, rule: a.rule }).toEqual({ risk, rule });
     });
 
+  test("in a language the word table does not cover, a button is safe by its id alone", () => {
+    for (const language of ["ja", "pt-BR", "", undefined]) {
+      const ctx = { language };
+      for (const text of ["Back", "Close", "Refresh", "Show Details", "Voltar", "戻る"]) expect([text, assessControl(button(text), ctx).risk]).toEqual([text, "commit"]);
+      expect(assessControl(button("Cancel", { buttonType: "Emphasized", inFooter: true }), ctx).risk).toBe("commit");
+      // By id, by type and by place nothing changes.
+      expect(assessControl(button("キャンセル", { id: `${V4}FooterBar::StandardAction::Cancel`, inFooter: true }), ctx).risk).toBe("navigate");
+      expect(assessControl(button("実行", { id: `${V2}listReportFilter-btnGo`, inFilterBar: true }), ctx).risk).toBe("read");
+      expect(assessControl(button("保存", { id: `${V4}FooterBar::StandardAction::Save` }), ctx).risk).toBe("commit");
+      expect(assessControl({ type: "sap.m.IconTabFilter", id: "x-anchor", text: "明細" }, ctx).risk).toBe("navigate");
+      expect(assessControl({ type: "sap.m.ColumnListItem", id: "x-__clone3", text: "" }, ctx).risk).toBe("navigate");
+      expect(assessControl(button("OK", { ...dialog("情報", "完了", "sap.m.MessageBox") }), ctx).risk).toBe("navigate");
+      // Commit words are read in every language.
+      expect(assessControl(button("Gravar"), ctx).rule).toBe("text says it writes");
+    }
+    expect(assessControl(button("Zurück"), { language: "de-DE" }).risk).toBe("navigate");
+    expect(assessControl(button("Actualiser"), { language: "fr" }).risk).toBe("navigate");
+    expect(assessControl(button("Buscar"), { language: "es-ES" }).risk).toBe("navigate");
+  });
+
   test("the reason names the control", () => {
     expect(assessControl(button("Save")).reason).toBe('button "Save": text says it writes');
+    expect(assessControl(button("Apply"), EN).reason).toBe('button "Apply": button that is not known to be safe');
   });
 });
 
@@ -97,6 +150,25 @@ describe("fiori actions", () => {
     expect(assessAction({ do: "key", key: "Enter" }, undefined, { focused: save }).risk).toBe("commit");
     expect(assessAction({ do: "key", key: 0 }, undefined, { focused: { type: "sap.m.Input", id: "i", text: "" }, dialogDefault: button("Delete", dialog("Delete")) }).risk).toBe("commit");
     expect(assessAction({ do: "key", key: 0 }, undefined, { dialogDefault: button("OK", { inValueHelp: true, ...dialog("Customer") }) }).risk).toBe("navigate");
+  });
+  test("Enter and Space on a focused button that is not known to be safe are commits", () => {
+    const apply = button("Apply");
+    expect(assessAction({ do: "key", key: "Enter" }, undefined, { ...EN, focused: apply }).risk).toBe("commit");
+    expect(assessAction({ do: "key", key: "Space" }, undefined, { ...EN, focused: apply }).risk).toBe("commit");
+    expect(assessAction({ do: "key", key: "Space" }, undefined, { ...EN, focused: save }).reason).toContain("Space would press");
+    expect(assessAction({ do: "key", key: "Space" }, undefined, { ...EN, focused: button("Close") }).risk).toBe("navigate");
+    expect(assessAction({ do: "key", key: "Space" }, undefined, { ...EN, focused: { type: "sap.m.CheckBox", id: "c", text: "Flag" } }).risk).toBe("navigate");
+    // Space does not press a dialog's default button.
+    expect(assessAction({ do: "key", key: "Space" }, undefined, { ...EN, dialogDefault: button("Delete", dialog("Delete")) }).risk).toBe("navigate");
+    // The language decides for the focused button too.
+    expect(assessAction({ do: "key", key: "Enter" }, undefined, { language: "ja", focused: button("Close") }).risk).toBe("commit");
+  });
+  test("pressing an id the screen does not have cannot be ruled safe", () => {
+    for (const d of ["press", "click", "select", "dblclick"]) expect(assessAction({ do: d, id: "ghost" }, undefined, EN).risk).toBe("commit");
+    expect(assessAction({ do: "set", id: "ghost", value: "1" }, undefined, EN).risk).toBe("read");
+  });
+  test("check on a toggle button is a press of that button", () => {
+    expect(assessAction({ do: "check", id: "x" }, { type: "sap.m.ToggleButton", id: "t", text: "Block" }, EN).risk).toBe("commit");
   });
   test("an action the surface does not know cannot be ruled safe", () => {
     expect(assessAction({ do: "drag", id: "x" }, save).risk).toBe("commit");

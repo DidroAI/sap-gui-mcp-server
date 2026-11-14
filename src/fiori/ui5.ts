@@ -110,8 +110,16 @@ export function ui5Look(opts: Ui5LookOptions): string {
       if (typeof v === "string" ? norm(v) !== "" : typeof v === "number" && p !== "value" ? false : v != null && v !== "" && typeof v !== "object")
         o[p] = typeof v === "string" ? norm(v) : v;
     }
-    // A password is never written out.
-    if (o.value !== undefined && all.type && c.getProperty("type") === "Password") o.value = "***";
+    // A password is never written out: by the control's type, or by the input element it renders.
+    if (o.value !== undefined) {
+      let secret = false;
+      try {
+        secret = (!!all.type && c.getProperty("type") === "Password") || !!(c.getDomRef?.() as Element | null)?.querySelector?.("input[type='password']") || (c.getFocusDomRef?.() as HTMLInputElement | null)?.type === "password";
+      } catch {
+        secret = true;
+      }
+      if (secret) o.value = "***";
+    }
     // An empty Text with an empty indicator shows "–" on screen.
     if (o.text === undefined && all.text && c.getEmptyIndicatorMode?.() && c.getEmptyIndicatorMode() !== "Off" && !norm(c.getText?.())) o.text = "–";
     return o;
@@ -274,6 +282,7 @@ export function ui5Look(opts: Ui5LookOptions): string {
       const d = x?.getDomRef?.();
       if (!d) return "";
       const inp = d.matches?.("input") ? d : d.querySelector?.("input");
+      if (inp && (inp as HTMLInputElement).type === "password") return (inp as HTMLInputElement).value ? "***" : "";
       return inp ? norm((inp as HTMLInputElement).value) : shownText(d);
     });
     if (txt.every((t) => !t)) return null;
@@ -491,6 +500,8 @@ export interface ControlFacts {
   dialog?: { type: string; title: string; text: string };
   /** Names of the control's press handlers, where the page shows them. */
   handlers?: string[];
+  /** An input of type Password. */
+  password?: boolean;
 }
 
 export interface ControlRequest {
@@ -513,6 +524,8 @@ export interface ControlResult {
   dialogDefault?: ControlFacts;
   /** fill: finish with Enter instead of Tab (search fields). */
   enter?: boolean;
+  /** With facts: the logon language of the page (`sap.ui.getCore().getConfiguration().getLanguage()`), e.g. "en-US". */
+  language?: string;
 }
 
 export function ui5Control(a: ControlRequest): ControlResult {
@@ -546,6 +559,29 @@ export function ui5Control(a: ControlRequest): ControlResult {
   const controlOf = (el: Element | null): C => {
     for (let e = el; e; e = e.parentElement) if (e.hasAttribute?.("data-sap-ui")) return byId(e.id);
     return null;
+  };
+  /** An input of type Password, by the control's property or by the element it renders. */
+  const isPassword = (c: C): boolean => {
+    try {
+      if (prop(c, "type") === "Password") return true;
+      const d: Element | null = c.getFocusDomRef?.() ?? null;
+      if ((d as HTMLInputElement | null)?.type === "password") return true;
+      return !!(c.getDomRef?.() as Element | null)?.querySelector?.("input[type='password']");
+    } catch {
+      return false;
+    }
+  };
+  const language = (): string => {
+    try {
+      const cfg = sap.ui.getCore().getConfiguration?.();
+      return String(cfg?.getLanguage?.() ?? cfg?.getLanguageTag?.() ?? sap.ui.require?.("sap/base/i18n/Localization")?.getLanguage?.() ?? "");
+    } catch {
+      try {
+        return String(sap.ui.require?.("sap/base/i18n/Localization")?.getLanguage?.() ?? "");
+      } catch {
+        return "";
+      }
+    }
   };
   const factsOf = (c: C): ControlFacts => {
     const f: ControlFacts = {
@@ -584,6 +620,7 @@ export function ui5Control(a: ControlRequest): ControlResult {
       /* handlers are optional */
     }
     if (names.length) f.handlers = names;
+    if (isPassword(c)) f.password = true;
     return f;
   };
   /** The button Enter would most likely press in the open dialog. */
@@ -627,8 +664,9 @@ export function ui5Control(a: ControlRequest): ControlResult {
   }
   if (a.op === "facts") {
     const dd = dialogDefault();
-    if (!c) return { status: h ? "NOTFOUND" : "FACTS", note: h, ...(dd ? { dialogDefault: dd } : {}) };
-    return { status: "FACTS", note: "", facts: factsOf(c), ...(dd ? { dialogDefault: dd } : {}) };
+    const lang = language();
+    if (!c) return { status: h ? "NOTFOUND" : "FACTS", note: h, ...(dd ? { dialogDefault: dd } : {}), ...(lang ? { language: lang } : {}) };
+    return { status: "FACTS", note: "", facts: factsOf(c), ...(dd ? { dialogDefault: dd } : {}), ...(lang ? { language: lang } : {}) };
   }
 
   for (const old of Array.from(document.querySelectorAll(`[${ATTR}]`))) old.removeAttribute(ATTR);
@@ -723,10 +761,13 @@ export function ui5Control(a: ControlRequest): ControlResult {
   };
 
   if (a.op === "fill") {
+    // A password is never typed by this server.
+    if (isPassword(c)) return { status: "NOTFIT", note: `${what} is a password field: this server never types a password. Type it yourself.` };
     if (prop(c, "editable") === false) return { status: "DISABLED", note: `${what} is read-only` };
     let d: Element | null = c.getFocusDomRef?.() ?? null;
     if (!d?.matches?.("input,textarea")) d = (c.getDomRef?.() as Element | null)?.querySelector?.("input:not([type=checkbox]):not([type=radio]),textarea") ?? null;
     if (!d) return { status: "NOTFIT", note: `${what} is not an input field` };
+    if ((d as HTMLInputElement).type === "password") return { status: "NOTFIT", note: `${what} is a password field: this server never types a password. Type it yourself.` };
     const r = mark(d, what);
     if (isA(c, "sap.m.SearchField")) r.enter = true;
     return r;
@@ -949,4 +990,34 @@ export async function ui5Info(): Promise<Ui5Info> {
     }
   }
   return out;
+}
+
+/**
+ * Is this page a logon page? Runs in the top frame, with or without UI5.
+ * A logon page shows a password input and either carries the names SAP's
+ * logon pages use (the ABAP system logon, the Fiori logon, SAP Identity
+ * Authentication, the Java logon), or runs no app at all (no UI5 component,
+ * no launchpad). A password field inside a running app is not a logon page:
+ * the reader masks it and "set" refuses it.
+ */
+export function ui5Logon(): boolean {
+  const shown = (e: Element) => {
+    const r = e.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+  const passwords = Array.from(document.querySelectorAll("input[type='password']")).filter(shown);
+  if (!passwords.length) return false;
+  const known =
+    "#LOGIN_FORM, #LOGIN_MAIN, #LOGIN_SUBMIT_BLOCK, #USERNAME_FIELD-inner, #PASSWORD_FIELD-inner, #LOGIN_LINK, #sap-user, #sap-password, [name='sap-user'], [name='sap-password'], form[name='loginForm'], form[name='logonForm'], #logOnForm, #logOnFormSubmit, [name='j_username'], [name='j_password'], #j_username, #j_password";
+  if (document.querySelector(known)) return true;
+  // biome-ignore lint/suspicious/noExplicitAny: UI5 globals
+  const sap = (window as any).sap;
+  if (!sap?.ui?.getCore) return true;
+  try {
+    if (sap.ui.require?.("sap/ushell/Container") ?? sap.ushell?.Container) return false;
+    const comps = Object.values(sap.ui.require?.("sap/ui/core/Component")?.registry?.all?.() ?? {});
+    return comps.length === 0;
+  } catch {
+    return true;
+  }
 }

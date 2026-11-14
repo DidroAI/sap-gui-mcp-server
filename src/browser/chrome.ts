@@ -6,12 +6,19 @@
  * 2. the running Chrome that allows remote debugging (Chrome 144+, switched on
  *    once at chrome://inspect/#remote-debugging). Chrome then writes its port
  *    and browser path to `DevToolsActivePort` in its user-data directory; we
- *    read that file for the stable and beta channels, as chrome-devtools-mcp's
- *    `--autoConnect` (Puppeteer's `channel` connect) does. In this mode Chrome
- *    serves no http endpoints (`/json/version`), only the WebSocket, and asks
- *    the user to allow each new connection: so we keep one connection;
- * 3. `http://127.0.0.1:9222`, when a DevTools endpoint answers there
- *    (Chrome started with `--remote-debugging-port=9222`).
+ *    read that file for Chrome stable and beta, as chrome-devtools-mcp's
+ *    `--autoConnect` (Puppeteer's `channel` connect) does, then for Microsoft
+ *    Edge. In this mode Chrome serves no http endpoints (`/json/version`),
+ *    only the WebSocket, and asks the user to allow each new connection: so
+ *    we keep one connection.
+ *
+ * Nothing else is tried. In particular the server does not attach to
+ * 127.0.0.1:9222 on its own: a browser listening there may be another tool's
+ * (a test runner's, another agent's), not the user's. A Chrome started with
+ * `--remote-debugging-port` is named with `SAP_CHROME_CDP`.
+ *
+ * Only http and https tabs are listed, and with SAP_ALLOW_ORIGINS only those
+ * of the listed origins.
  *
  * The connection is Playwright's `connectOverCDP` with `noDefaults`, so the
  * user's browser keeps its own settings. We never close the browser: we only
@@ -21,13 +28,16 @@ import { readFile } from "node:fs/promises";
 import { connect } from "node:net";
 import { homedir } from "node:os";
 import { posix, win32 } from "node:path";
-import { chromium, type Browser, type Page } from "playwright-core";
+import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
+import { allowedOrigins, classify, originAllowed, originOf, type TabOwner, type TabSigns, tabSigns } from "./classify.js";
 
 export interface ChromeTab {
   /** The CDP target id, stable for the life of the tab. */
   id: string;
   title: string;
   url: string;
+  /** "https://myhost:44300". */
+  origin: string;
   page: Page;
 }
 
@@ -35,9 +45,10 @@ type Env = Record<string, string | undefined>;
 
 /** Chrome's remote debugging switch at chrome://inspect/#remote-debugging exists since this version. */
 export const MIN_CHROME_AUTO_CONNECT = 144;
-const DEFAULT_PORT_URL = "http://127.0.0.1:9222";
+/** Since Chrome 136, --remote-debugging-port is ignored on the default profile: it needs --user-data-dir with it. */
+export const MIN_CHROME_PORT_NEEDS_DATA_DIR = 136;
 
-const HOW_TO_ALLOW = `In Chrome ${MIN_CHROME_AUTO_CONNECT} or newer, open chrome://inspect/#remote-debugging and tick "Allow remote debugging for this browser instance"; Chrome then asks you to allow the connection. (Or start Chrome with --remote-debugging-port=9222 and a --user-data-dir of its own, or set SAP_CHROME_CDP to a DevTools endpoint.)`;
+const HOW_TO_ALLOW = `In Chrome ${MIN_CHROME_AUTO_CONNECT} or newer, open chrome://inspect/#remote-debugging and tick "Allow remote debugging for this browser instance"; Chrome then asks you to allow the connection. Or start Chrome with --remote-debugging-port=<port> and set SAP_CHROME_CDP=http://127.0.0.1:<port>: since Chrome ${MIN_CHROME_PORT_NEEDS_DATA_DIR} the port only opens together with --user-data-dir=<a directory other than Chrome's default>. The server does not try port 9222 by itself.`;
 
 export type ChromeChannel = "stable" | "beta";
 
@@ -53,6 +64,14 @@ export function chromeUserDataDir(platform: NodeJS.Platform, channel: ChromeChan
     const config = env.CHROME_CONFIG_HOME || env.XDG_CONFIG_HOME || posix.join(home, ".config");
     return posix.join(config, channel === "stable" ? "google-chrome" : "google-chrome-beta");
   }
+  return undefined;
+}
+
+/** Microsoft Edge's default user-data directory (the stable channel). */
+export function edgeUserDataDir(platform: NodeJS.Platform, env: Env, home: string = homedir()): string | undefined {
+  if (platform === "win32") return win32.join(env.LOCALAPPDATA || win32.join(home, "AppData", "Local"), "Microsoft", "Edge", "User Data");
+  if (platform === "darwin") return posix.join(home, "Library", "Application Support", "Microsoft Edge");
+  if (platform === "linux") return posix.join(env.XDG_CONFIG_HOME || posix.join(home, ".config"), "microsoft-edge");
   return undefined;
 }
 
@@ -81,17 +100,6 @@ function portOpen(host: string, port: number, timeoutMs = 400): Promise<boolean>
   });
 }
 
-async function answersDevTools(httpUrl: string, timeoutMs = 600): Promise<boolean> {
-  try {
-    const u = new URL(httpUrl);
-    u.pathname = `${u.pathname.replace(/\/?$/, "")}/json/version`;
-    const r = await fetch(u, { signal: AbortSignal.timeout(timeoutMs) });
-    return r.ok && typeof ((await r.json()) as { webSocketDebuggerUrl?: unknown }).webSocketDebuggerUrl === "string";
-  } catch {
-    return false;
-  }
-}
-
 export interface ChromeEndpoint {
   url: string;
   /** How it was found, for doctor and error messages. */
@@ -107,19 +115,29 @@ function explicitEndpoint(env: Env): ChromeEndpoint | undefined {
 }
 
 /**
- * Running Chromes that allow remote debugging, from the `DevToolsActivePort`
- * file of the stable and beta channels. Reads files and checks that the port
- * listens; connects to nothing. `tried` says what was looked at, for messages.
+ * Running browsers that allow remote debugging, from the `DevToolsActivePort`
+ * file of Chrome stable, Chrome beta and Microsoft Edge, in that order. Reads
+ * files and checks that the port listens; connects to nothing. `tried` says
+ * what was looked at, for messages.
  */
-export async function activePortEndpoints(env: Env, tried: string[] = [], platform: NodeJS.Platform = process.platform): Promise<ChromeEndpoint[]> {
+export async function activePortEndpoints(
+  env: Env,
+  tried: string[] = [],
+  platform: NodeJS.Platform = process.platform,
+  home: string = homedir(),
+): Promise<ChromeEndpoint[]> {
   const found: ChromeEndpoint[] = [];
-  for (const channel of ["stable", "beta"] as const) {
-    const dir = chromeUserDataDir(platform, channel, env);
+  const browsers: { name: string; dir: string | undefined }[] = [
+    { name: "Chrome stable", dir: chromeUserDataDir(platform, "stable", env, home) },
+    { name: "Chrome beta", dir: chromeUserDataDir(platform, "beta", env, home) },
+    { name: "Microsoft Edge", dir: edgeUserDataDir(platform, env, home) },
+  ];
+  for (const { name, dir } of browsers) {
     if (!dir) continue;
     const file = (platform === "win32" ? win32 : posix).join(dir, "DevToolsActivePort");
     const content = await readFile(file, "utf8").catch(() => undefined);
     if (content === undefined) {
-      tried.push(`${file}: not there (Chrome ${channel} is not running, or remote debugging is not allowed)`);
+      tried.push(`${file}: not there (${name} is not running, or remote debugging is not allowed)`);
       continue;
     }
     const url = parseDevToolsActivePort(content);
@@ -127,25 +145,15 @@ export async function activePortEndpoints(env: Env, tried: string[] = [], platfo
       tried.push(`${file}: unreadable content`);
       continue;
     }
-    // A Chrome that crashed leaves the file behind: nothing listens on its port then.
+    // A browser that crashed leaves the file behind: nothing listens on its port then.
     if (!(await portOpen("127.0.0.1", Number(new URL(url).port)))) {
-      tried.push(`${file}: names port ${new URL(url).port}, where nothing listens (left by an earlier Chrome)`);
+      tried.push(`${file}: names port ${new URL(url).port}, where nothing listens (left by an earlier ${name})`);
       continue;
     }
     tried.push(`${file}: port ${new URL(url).port}`);
-    found.push({ url, from: `Chrome ${channel} with remote debugging allowed (${file})` });
+    found.push({ url, from: `${name} with remote debugging allowed (${file})` });
   }
   return found;
-}
-
-/** The classic debugging port, when a DevTools endpoint answers there. */
-async function defaultPortEndpoint(tried: string[]): Promise<ChromeEndpoint | undefined> {
-  if (await answersDevTools(DEFAULT_PORT_URL)) {
-    tried.push(`${DEFAULT_PORT_URL}: answers`);
-    return { url: DEFAULT_PORT_URL, from: `the debugging port at ${DEFAULT_PORT_URL}` };
-  }
-  tried.push(`${DEFAULT_PORT_URL}: no DevTools endpoint`);
-  return undefined;
 }
 
 interface Connection {
@@ -157,6 +165,20 @@ let connection: Connection | undefined;
 let connecting: { key: string; promise: Promise<Connection> } | undefined;
 const targetIds = new WeakMap<Page, string>();
 
+/**
+ * Playwright dismisses JavaScript dialogs (alert, confirm, "Leave site?") when nobody listens.
+ * This is the user's browser: with a listener that does nothing, their dialogs stay for them to answer.
+ * Called for every context each time tabs are listed, so a context that appears later is covered too.
+ */
+const quietContexts = new WeakSet<BrowserContext>();
+function keepDialogs(browser: Browser): void {
+  for (const context of browser.contexts()) {
+    if (quietContexts.has(context)) continue;
+    quietContexts.add(context);
+    context.on("dialog", () => {});
+  }
+}
+
 /** The time the user has to answer Chrome's "Allow remote debugging?" prompt. */
 const CONNECT_TIMEOUT_MS = 45_000;
 
@@ -166,9 +188,7 @@ async function open(env: Env, key: string): Promise<Connection> {
   const attach = async (endpoint: ChromeEndpoint): Promise<Connection | undefined> => {
     try {
       const browser = await chromium.connectOverCDP(endpoint.url, { noDefaults: true, isLocal: true, timeout: CONNECT_TIMEOUT_MS });
-      // Playwright dismisses JavaScript dialogs (alert, confirm, "Leave site?") when nobody listens.
-      // This is the user's browser: with a listener that does nothing, their dialogs stay for them to answer.
-      for (const context of browser.contexts()) context.on("dialog", () => {});
+      keepDialogs(browser);
       const c: Connection = { browser, endpoint, key };
       browser.on("disconnected", () => {
         if (connection === c) connection = undefined;
@@ -191,10 +211,6 @@ async function open(env: Env, key: string): Promise<Connection> {
     const c = await attach(endpoint);
     if (c) return c;
   }
-  // 3. The classic debugging port.
-  const fallback = await defaultPortEndpoint(tried);
-  const c = fallback && (await attach(fallback));
-  if (c) return c;
   throw new Error(
     errors.length
       ? `Chrome was found but the connection failed (${errors.join("; ")}). If Chrome asks "Allow remote debugging?", click Allow, then try again.`
@@ -240,32 +256,100 @@ async function targetId(page: Page): Promise<string | undefined> {
   }
 }
 
+/** A tab Chrome has frozen or discarded never answers: its title is "" after this long. */
+const TITLE_TIMEOUT_MS = 800;
+
 /** The tab's title; "" for a tab Chrome has frozen or discarded, which never answers. */
 function titleOf(page: Page): Promise<string> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<string>((resolve) => {
-    timer = setTimeout(() => resolve(""), 1500);
+    timer = setTimeout(() => resolve(""), TITLE_TIMEOUT_MS);
   });
   return Promise.race([page.title().catch(() => ""), late]).finally(() => clearTimeout(timer));
 }
 
-/** Pages that are the browser's own (settings, DevTools, extensions, the new-tab page) are not tabs to read. */
-const INTERNAL = /^(chrome|chrome-untrusted|devtools|chrome-extension|chrome-search|edge|about):/;
-
-/** The tabs open in the user's Chrome, in the browser's order. Throws, with the step to take, when no Chrome can be reached. */
+/**
+ * The tabs the server may look at, in the order the connection reports them:
+ * http and https pages only (never chrome://, DevTools, extensions or the
+ * new-tab page), and with SAP_ALLOW_ORIGINS only those origins. Ids and titles
+ * are asked from all tabs at once. Throws, with the step to take, when no
+ * Chrome can be reached.
+ */
 export async function chromeTabs(env: Record<string, string | undefined>): Promise<ChromeTab[]> {
+  const allowed = allowedOrigins(env);
   const { browser } = await chrome(env);
-  const tabs: ChromeTab[] = [];
-  for (const context of browser.contexts())
-    for (const page of context.pages()) {
-      if (page.isClosed()) continue;
+  keepDialogs(browser);
+  const pages = browser
+    .contexts()
+    .flatMap((context) => context.pages())
+    .filter((page) => !page.isClosed() && originAllowed(page.url(), allowed));
+  const tabs = await Promise.all(
+    pages.map(async (page): Promise<ChromeTab | undefined> => {
+      const [id, title] = await Promise.all([targetId(page), titleOf(page)]);
       const url = page.url();
-      if (!url || INTERNAL.test(url)) continue;
-      const id = await targetId(page);
-      if (!id) continue;
-      tabs.push({ id, title: await titleOf(page), url, page });
-    }
-  return tabs;
+      const origin = originOf(url);
+      // The tab may have closed or moved to another address while we asked.
+      if (!id || !origin || !originAllowed(url, allowed)) return undefined;
+      return { id, title, url, origin, page };
+    }),
+  );
+  return tabs.filter((t) => t !== undefined);
+}
+
+export interface SapTab {
+  tab: ChromeTab;
+  owner: Exclude<TabOwner, null>;
+  signs: TabSigns;
+}
+
+/**
+ * Key presses reach a page only while it has focus. Playwright's defaults turn
+ * on focus emulation, but `noDefaults` (which keeps the user's viewport and
+ * settings as they are) leaves it off, so Enter on a popup in a background or
+ * headless tab went nowhere while clicks worked. Focus emulation changes
+ * nothing the user sees; it lasts as long as this CDP session.
+ */
+const focused = new WeakSet<Page>();
+async function emulateFocus(page: Page): Promise<void> {
+  if (focused.has(page)) return;
+  try {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true });
+    focused.add(page);
+  } catch {
+    // A page that cannot take a CDP session still works for reading and clicking.
+  }
+}
+
+/** The tabs that are SAP's, each with the one surface that owns it (see classify.ts). */
+export async function sapTabs(env: Record<string, string | undefined>): Promise<SapTab[]> {
+  const tabs = await chromeTabs(env);
+  const found = await Promise.all(
+    tabs.map(async (tab): Promise<SapTab | undefined> => {
+      const signs = await tabSigns(tab.page);
+      const owner = classify(tab.page.url(), signs);
+      if (owner) await emulateFocus(tab.page);
+      return owner ? { tab, owner, signs } : undefined;
+    }),
+  );
+  return found.filter((t) => t !== undefined);
+}
+
+/**
+ * Is this page still what a driver was opened for: open, on a live browser
+ * connection, at an allowed origin, and owned by the same surface? A Web GUI
+ * tab that went to the launchpad is the Fiori surface's from then on.
+ */
+export async function stillOwned(page: Page, owner: Exclude<TabOwner, null>, env: Record<string, string | undefined>): Promise<boolean> {
+  try {
+    if (page.isClosed()) return false;
+    const browser = page.context().browser();
+    if (browser && !browser.isConnected()) return false;
+    if (!originAllowed(page.url(), allowedOrigins(env))) return false;
+    return classify(page.url(), await tabSigns(page)) === owner;
+  } catch {
+    return false;
+  }
 }
 
 /** Drops the connection. The browser and its tabs stay as they are. */
@@ -292,9 +376,17 @@ export async function chromeDoctor(env: Record<string, string | undefined>): Pro
     out.push({
       ok: true,
       check: "Chrome version",
-      detail: `Chrome ${major} is older than ${MIN_CHROME_AUTO_CONNECT}: it cannot allow remote debugging from chrome://inspect, so it must be started with --remote-debugging-port (as it is now).`,
+      detail: `Chrome ${major} is older than ${MIN_CHROME_AUTO_CONNECT}: it cannot allow remote debugging from chrome://inspect, so it must be started with --remote-debugging-port (as it is now)${major >= MIN_CHROME_PORT_NEEDS_DATA_DIR ? "" : `; from Chrome ${MIN_CHROME_PORT_NEEDS_DATA_DIR} on, that switch also needs --user-data-dir`}.`,
     });
+  if (/^https?:\/\//.test(c.endpoint.url) || c.endpoint.from === "SAP_CHROME_CDP")
+    out.push({
+      ok: true,
+      check: "Chrome debugging port",
+      detail: `Chrome ${MIN_CHROME_PORT_NEEDS_DATA_DIR} and later open --remote-debugging-port only together with --user-data-dir=<a directory other than Chrome's default>; keep both when you restart this Chrome.`,
+    });
+  const origins = allowedOrigins(env);
+  if (origins) out.push({ ok: true, check: "Origins", detail: `only tabs of ${origins.join(", ")} are looked at (SAP_ALLOW_ORIGINS)` });
   const tabs = await chromeTabs(env).catch(() => []);
-  out.push({ ok: true, check: "Chrome tabs", detail: `${tabs.length} tab(s) open` });
+  out.push({ ok: true, check: "Chrome tabs", detail: `${tabs.length} web page tab(s) open${origins ? " at these origins" : ""}` });
   return out;
 }

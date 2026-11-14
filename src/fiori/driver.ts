@@ -15,8 +15,9 @@ import type { Frame, Page } from "playwright-core";
 import type { ChromeTab } from "../browser/chrome.js";
 import { type Action, ActionError, type Assessment, type Driver, type LookOptions, type SessionInfo } from "../core/types.js";
 import { webguiActInFrame, webguiAssessInFrame, webguiLookInFrame } from "../webgui/index.js";
+import { LOGON_REFUSAL } from "../core/words.js";
 import { assessAction, keyOf } from "./risk.js";
-import { type ControlRequest, type ControlResult, TARGET_ATTR, ui5Control, ui5Idle, ui5Info, type Ui5Info, ui5Look } from "./ui5.js";
+import { type ControlRequest, type ControlResult, TARGET_ATTR, ui5Control, ui5Idle, ui5Info, type Ui5Info, ui5Logon, ui5Look } from "./ui5.js";
 
 export const WEBGUI_MARK = "WEBGUI FRAME";
 const WEBGUI_URL = /\/sap\/bc\/gui\/sap\/its\//i;
@@ -216,23 +217,38 @@ export class FioriDriver implements Driver {
     return popup ? undefined : frame;
   }
 
+  /** Is the tab on a logon page? Every frame is asked: a launchpad can show the logon of another system in a frame. A frame that does not answer in time is not one. */
+  private async onLogon(): Promise<boolean> {
+    for (const f of this.page.frames()) {
+      if (f.isDetached()) continue;
+      if (await within(f.evaluate(ui5Logon), 3000, false)) return true;
+    }
+    return false;
+  }
+
+  /** This server never acts on a logon page: not a key, not a click. */
+  private async refuseLogon(): Promise<void> {
+    if (await this.onLogon()) throw new ActionError(LOGON_REFUSAL);
+  }
+
   async assess(action: Action): Promise<Assessment> {
+    await this.refuseLogon();
     const { ui5, webgui: wf } = await this.frames();
     const frame = await this.toWebgui(action, ui5, wf);
     if (frame) return webguiAssessInFrame(frame, action);
     if (WEBGUI_ONLY.has(action.do)) return { risk: "read", reason: `"${action.do}" needs a Web GUI screen, and none is open in this tab` };
-    if (action.do === "key") {
-      const r = (await this.control({ handle: "", op: "facts" }, ui5))?.result;
-      return assessAction(action, undefined, { focused: r?.facts, dialogDefault: r?.dialogDefault });
-    }
-    if (!action.id) return assessAction(action, undefined);
+    // The focused control and the open dialog's default button (Enter and Space press them), and the page's language.
+    const here = (await this.control({ handle: "", op: "facts" }, ui5))?.result;
+    const ctx = { focused: here?.facts, dialogDefault: here?.dialogDefault, language: here?.language };
+    if (action.do === "key" || !action.id) return assessAction(action, undefined, ctx);
     const hit = await this.control({ handle: action.id, op: "facts" }, ui5);
-    return assessAction(action, hit?.result.facts);
+    return assessAction(action, hit?.result.facts, { ...ctx, language: hit?.result.language ?? ctx.language });
   }
 
   // ---- act
 
   async act(action: Action): Promise<string> {
+    await this.refuseLogon();
     const { ui5, webgui: wf } = await this.frames();
     const frame = await this.toWebgui(action, ui5, wf);
     if (frame) {
@@ -307,7 +323,14 @@ export class FioriDriver implements Driver {
   }
 
   async screenshot(): Promise<Buffer> {
-    return this.page.screenshot({ type: "png" });
+    const shot = () => this.page.screenshot({ type: "png", timeout: 8000 });
+    try {
+      return await shot();
+    } catch {
+      // Chrome does not paint a tab in the background: bring it to the front and try once more.
+      await this.page.bringToFront();
+      return shot();
+    }
   }
 
   /** Nothing to release: the tab and the browser are the user's. */
