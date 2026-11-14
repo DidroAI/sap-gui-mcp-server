@@ -58,6 +58,16 @@ describe("normalizeAction", () => {
       (a as { key: unknown }).key = 11;
     }).toThrow();
   });
+  test("scroll: a row counted from 0, or a direction in one spelling", () => {
+    expect(normalizeAction({ do: "scroll", id: "g", to: 120 })).toEqual({ do: "scroll", id: "g", to: 120 });
+    expect(normalizeAction({ do: "scroll", id: "g", to: " 120 " })).toEqual({ do: "scroll", id: "g", to: 120 });
+    expect(normalizeAction({ do: "scroll", id: "g", to: "Next" })).toEqual({ do: "scroll", id: "g", to: "next" });
+    // Fiori's words for the same.
+    expect(normalizeAction({ do: "scroll", to: "down" })).toEqual({ do: "scroll", to: "next" });
+    expect(normalizeAction({ do: "scroll", to: "bottom" })).toEqual({ do: "scroll", to: "last" });
+    expect(normalizeAction({ do: "scroll", how: "down" })).toEqual({ do: "scroll", how: "down" });
+    for (const bad of [-1, 1.5, "sideways", true]) expect(() => normalizeAction({ do: "scroll", id: "g", to: bad })).toThrow('scroll "to" is a row number');
+  });
   test("actionText does not depend on property order", () => {
     expect(actionText(normalizeAction({ do: "set", value: "1", id: "x" }))).toBe(actionText(normalizeAction({ id: "x", do: "set", value: "1" })));
   });
