@@ -4,3 +4,7 @@ export { normalizeAction, VERBS, type NormalizedAction, type Verb } from "./core
 export { Registry } from "./core/registry.js";
 export * from "./core/types.js";
 export { surfacesFromEnv } from "./surfaces.js";
+export { Recorder, type RecorderOptions, recorderOptionsFromEnv } from "./record/recorder.js";
+export { replay, replayAll, resultText, junit, type ReplayOptions, type ReplayResult, type StepResult } from "./record/replay.js";
+export { FORMAT, parseTest, serializeTest, type SapTest, type Step, type Check, type Capture } from "./record/format.js";
+export { exportTest, TARGET_NAMES, type Target } from "./record/export/index.js";
