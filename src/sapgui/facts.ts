@@ -25,13 +25,19 @@ export interface Control {
   /** Table control. */
   rowCount?: number | null;
   visibleRowCount?: number | null;
+  /** Table control: the row its first line shows (its scrollbar's position). */
+  firstRow?: number;
   columns?: string[];
+  /** User area that scrolls (a classic list): its vertical scrollbar. */
+  scroll?: { position: number; maximum: number; pageSize: number };
   /** Menu bar: the menus' names. */
   menus?: string[];
   /** GuiShell: GridView, Tree, TextEdit, Toolbar, HTMLViewer, ... */
   sub?: string;
-  grid?: { cols: string[]; titles: string[]; rowCount: number; rows: string[][] };
-  tree?: { shown: number; headers: string[]; nodes: TreeNode[] };
+  /** `rows` are the rows from `first` on (the first row the grid shows; 0 when absent). */
+  grid?: { cols: string[]; titles: string[]; rowCount: number; rows: string[][]; first?: number };
+  /** `nodes` are the nodes on show from the `first` one on (0 when absent), up to the host's limit. */
+  tree?: { shown: number; headers: string[]; nodes: TreeNode[]; first?: number };
   buttons?: { id: string; text: string; tip: string }[];
   /** A shell that could not be read. */
   error?: string;

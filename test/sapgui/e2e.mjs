@@ -98,6 +98,14 @@ if (real) {
   check("tree expand shows the hidden node", r.text.includes("Hidden under a closed folder  {node 5}"));
   r = await act({ do: "grid", id: "wnd[0]/usr/cntlGRID1/shellcont/shell", row: 2, col: "VBELN", how: "double" }, "VA05");
   check("grid double-click", r.text.includes("fake: DoubleClickCurrentCell 2,VBELN in"));
+  r = await act({ do: "scroll", id: "cntlGRID1/shell", to: 30 }, "VA05");
+  check("scroll a grid to a row", r.text.includes("rows 30 to 49 of 52") && r.text.includes("row 30:"), r.text.split("\n")[0]);
+  r = await act({ do: "grid", id: "cntlGRID1/shell", row: 99, col: "VBELN" }, "VA05");
+  check("a row the grid does not have is named as missing", r.error && r.text.includes("the grid has 52 rows"), r.text.split("\n")[0]);
+  r = await act({ do: "combo", id: "cmbVBAK-LIFSK" });
+  check("a dropdown lists its entries without a key", r.text.includes("has 3 entries") && r.text.includes("02:Political reasons"), r.text.split("\n")[0]);
+  r = await call("sap_look", { id: "cntlGRID1/shell", rows: "40-51", session: "VA05" });
+  check("a range of rows", r.text.includes("row 40:") && r.text.includes("row 51:") && !r.text.includes("row 39:"), r.text.split("\n").at(-1));
   r = await act({ do: "f4", id: "ctxtVBAK-AUART" }, "sapgui:/app/con[0]/ses[5]");
   check("F4 on a field", r.text.includes("fake: SendVKey 4 on wnd[1] focus wnd[0]/usr/ctxtVBAK-AUART"));
   r = await act({ do: "dblclick", id: "wnd[1]/usr/lbl[1,3]" }, "sapgui:/app/con[0]/ses[5]");

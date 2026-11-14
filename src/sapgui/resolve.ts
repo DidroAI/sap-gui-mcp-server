@@ -3,9 +3,12 @@
  * 1. a full scripting id ("wnd[0]/usr/ctxtVBAK-AUART");
  * 2. a full id that does not exist: its last segment (models rebuild ids and get the path wrong);
  * 3. the SAP field name ("VBAK-AUART") on the active window;
- * 4. a short id from the compact view: the end of a full id ("ctxtVBAK-AUART", "tblX/ctxtY[1,0]").
- * When several controls match, one the user can change wins, and a field wins over its label.
+ * 4. a short id from the compact view: the end of a full id ("ctxtVBAK-AUART", "tblX/ctxtY[1,0]");
+ * 5. a handle of the compact view (core/ids.ts): `cntlGRID1/shell`, `shellcont[1]/shell`.
+ * When several controls match by name, one the user can change wins, and a field wins over its label.
+ * A handle that names several controls is not guessed: `resolveStrict` says which they are.
  */
+import { resolveId } from "../core/ids.js";
 import type { Control, Screen } from "./facts.js";
 
 /** Controls of all windows; the content of a GuiShell (its inner containers) is left out of name matching. */
@@ -44,4 +47,31 @@ export function resolve(screen: Screen, ident: string): Control | undefined {
   if (!found.length) return undefined;
   const rank = (c: Control) => (c.changeable ? 0 : 2) + (c.type === "GuiLabel" ? 1 : 0);
   return [...found].sort((a, b) => rank(a) - rank(b))[0];
+}
+
+/**
+ * The same, for actions: a handle that names several controls (two shells,
+ * the same button number in two toolbars) is answered with the list of them
+ * instead of the first one.
+ */
+export function resolveStrict(screen: Screen, ident: string): { control: Control } | { several: string[] } | { none: true } {
+  const found = resolve(screen, ident);
+  const id = relativeId(ident);
+  const all = allControls(screen);
+  // By handle: the last segment and any earlier ones, in order.
+  const named = resolveId(
+    all.map((c) => c.id),
+    id,
+  );
+  if ("id" in named) {
+    const control = all.find((c) => c.id === named.id);
+    if (control) return { control };
+  }
+  if ("several" in named) {
+    // A field and its label, or a field in two subscreens, share a name: the rules above choose (a changeable field first).
+    const kinds = new Set(named.several.map((x) => all.find((c) => c.id === x)?.type));
+    const generic = /(^|\/)(shell(\[\d+\])?|btn\[\d+\]|menu\[\d+\])$/.test(id);
+    if (generic || (kinds.size === 1 && kinds.has("GuiShell"))) return { several: named.several };
+  }
+  return found ? { control: found } : { none: true };
 }

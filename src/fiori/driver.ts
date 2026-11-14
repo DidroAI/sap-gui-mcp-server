@@ -272,7 +272,10 @@ export class FioriDriver implements Driver {
     const id = action.id ?? "";
     if (!id && op !== "scroll") throw new ActionError(`"${action.do}" needs the id of a control from sap_look.`);
     const value = op === "combo" || (op === "select" && action.value == null) ? (action.key ?? action.value) : action.value;
-    const req: ControlRequest = { handle: id, op, ...(value !== undefined ? { value } : {}), ...(action.how ? { how: action.how } : {}) };
+    // "to" is the shared word for where a scroll goes (SAP GUI, Web GUI); here it means the same as "how".
+    const TO: Record<string, string> = { next: "down", prev: "up", first: "top", last: "bottom" };
+    const how = action.how ?? (op === "scroll" && typeof action.to === "string" ? TO[action.to] : undefined);
+    const req: ControlRequest = { handle: id, op, ...(value !== undefined ? { value } : {}), ...(how ? { how } : {}) };
     const hit = await this.control(req, ui5);
     if (!hit) throw new ActionError(`No control "${id}" on this screen. Take the id from sap_look (the text after # in the compact view).`);
     const { frame: f, result: r } = hit;

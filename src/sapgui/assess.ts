@@ -179,9 +179,12 @@ export function assess(screen: Screen, action: Action, target?: Control): Assess
       return { risk: "read", reason: "focus" };
     case "f4":
       return { risk: "read", reason: "value help" };
+    case "combo":
+      // A dropdown asked for its entries: nothing is chosen.
+      if (action.key === undefined && action.value === undefined) return { risk: "read", reason: "lists a dropdown's entries" };
+      return { risk: "navigate", reason: "changes input, not saved" };
     case "set":
     case "check":
-    case "combo":
       return { risk: "navigate", reason: "changes input, not saved" };
     case "okcode":
       return assessOkcode(screen, action.value);
@@ -219,8 +222,8 @@ export function assess(screen: Screen, action: Action, target?: Control): Assess
     case "grid":
       return { risk: "navigate", reason: "grid cell" };
     case "scroll":
-      // Not an SAP GUI action: it fails on its own.
-      return { risk: "read", reason: '"scroll" is not an SAP GUI action' };
+      // Moves a list; nothing is chosen or changed.
+      return { risk: "read", reason: "scroll" };
     default:
       return commit(`action "${action.do}" is not one the SAP GUI surface knows`);
   }

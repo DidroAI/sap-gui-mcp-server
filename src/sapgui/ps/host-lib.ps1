@@ -11,6 +11,7 @@
 #   on failure                                       -> {"id":3,"ok":false,"error":"CODE: text"}
 #
 # Ops: ping, sessions, info, screen, describe, act, screenshot, doctor-local, doctor-engine.
+# An act answers {done:true}; a scroll adds where the control was and is (from, first, visible, total).
 # The host returns raw facts (ids, types, texts, state, grids, trees); the text
 # view is formatted in TypeScript (src/sapgui/format.ts).
 #
@@ -260,15 +261,21 @@ function Shell-Facts($o, $n) {
         try { [void]$titles.Add([string](G $o 'GetDisplayedColumnTitle' @($c))) } catch { [void]$titles.Add($c) }
       }
       $rc = [int](G $o 'RowCount')
+      # The rows are read from the first one the grid shows: {"do":"scroll"} moves it.
+      # Near the end the window moves back, so that it is as long as it can be.
+      $first = 0
+      $fv = T $o 'FirstVisibleRow'
+      if ($null -ne $fv) { $first = [int]$fv }
+      $first = [Math]::Max(0, [Math]::Min($first, $rc - $script:maxGridRows))
       $rows = New-List
-      for ($r = 0; $r -lt [Math]::Min($rc, $script:maxGridRows); $r++) {
+      for ($r = $first; $r -lt [Math]::Min($rc, $first + $script:maxGridRows); $r++) {
         $cells = New-List
         foreach ($c in $cols) {
           try { [void]$cells.Add([string](G $o 'GetCellValue' @($r, $c))) } catch { [void]$cells.Add('') }
         }
         [void]$rows.Add($cells)
       }
-      $n.grid = @{ cols = $cols; titles = $titles; rowCount = $rc; rows = $rows }
+      $n.grid = @{ cols = $cols; titles = $titles; rowCount = $rc; rows = $rows; first = $first }
     }
     elseif ($sub -eq 'Tree') {
       $all = Strings (G $o 'GetAllNodeKeys')
@@ -284,7 +291,14 @@ function Shell-Facts($o, $n) {
       }
       $nodes = New-List
       $count = 0
+      # A tree longer than the limit is read from the node {"do":"scroll"} asked for.
+      $from = 0
+      if ($null -ne $script:treeFrom -and $script:treeFrom.ContainsKey([string]$n.id)) { $from = [int]$script:treeFrom[[string]$n.id] }
+      $from = [Math]::Max(0, [Math]::Min($from, $keys.Count - 1))
+      $at = -1
       foreach ($k in $keys) {
+        $at++
+        if ($at -lt $from) { continue }
         if ($count -ge $script:maxTreeNodes) { break }
         $count++
         $nd = @{ key = $k }
@@ -303,7 +317,7 @@ function Shell-Facts($o, $n) {
         } catch { }
         [void]$nodes.Add($nd)
       }
-      $n.tree = @{ shown = $keys.Count; headers = $heads; nodes = $nodes }
+      $n.tree = @{ shown = $keys.Count; headers = $heads; nodes = $nodes; first = $from }
     }
     elseif ($sub -eq 'TextEdit') {
       $n.text = [string](T $o 'Text')
@@ -329,6 +343,16 @@ function Walk($o, $list) {
   $n = @{ id = (Rel ([string](T $o 'Id'))); type = $t; name = [string](T $o 'Name') }
   [void]$list.Add($n)
   if ($t -eq 'GuiShell') { Shell-Facts $o $n }
+  elseif ($t -eq 'GuiUserArea') {
+    # A classic list scrolls with the user area's scrollbar.
+    $sb = T $o 'VerticalScrollbar'
+    if ($null -ne $sb) {
+      $max = T $sb 'Maximum'
+      if ($null -ne $max -and [int]$max -gt 0) {
+        $n.scroll = @{ position = [int](T $sb 'Position'); maximum = [int]$max; pageSize = [int](T $sb 'PageSize') }
+      }
+    }
+  }
   elseif ($SKIP.ContainsKey($t)) { }
   elseif ($t -eq 'GuiTextField' -or $t -eq 'GuiCTextField' -or $t -eq 'GuiPasswordField') {
     # A password field's content is never read.
@@ -369,6 +393,8 @@ function Walk($o, $list) {
   elseif ($t -eq 'GuiTableControl') {
     $n.rowCount = T $o 'RowCount'
     $n.visibleRowCount = T $o 'VisibleRowCount'
+    $sb = T $o 'VerticalScrollbar'
+    if ($null -ne $sb) { $p = T $sb 'Position'; if ($null -ne $p) { $n.firstRow = [int]$p } }
     $titles = New-List
     try {
       foreach ($c in (Items (G $o 'Columns'))) { [void]$titles.Add([string](T $c 'Title')) }
@@ -400,6 +426,8 @@ function Op-Screen($req) {
   $script:maxTreeNodes = 300
   if ($req.ContainsKey('gridRows')) { $script:maxGridRows = [int]$req['gridRows'] }
   if ($req.ContainsKey('treeNodes')) { $script:maxTreeNodes = [int]$req['treeNodes'] }
+  $script:treeFrom = $null
+  if ($req.ContainsKey('treeFrom')) { $script:treeFrom = $req['treeFrom'] }
   $script:prefix = [string](T $ses 'Id') + '/'
   $info = T $ses 'Info'
   $res = @{
@@ -443,6 +471,21 @@ function Op-Describe($req) {
 }
 
 # ---- act --------------------------------------------------------------------------
+
+# Where a scroll goes: a row counted from 0, or next, prev, first, last; kept between 0 and $max.
+function Scroll-Target($to, [int]$pos, [int]$page, [int]$max) {
+  $t = $pos
+  if ($to -is [string]) {
+    if ($to -eq 'next') { $t = $pos + $page }
+    elseif ($to -eq 'prev') { $t = $pos - $page }
+    elseif ($to -eq 'first') { $t = 0 }
+    elseif ($to -eq 'last') { $t = $max }
+    else { $t = [int]$to }
+  }
+  elseif ($null -ne $to) { $t = [int]$to }
+  else { $t = $pos + $page }
+  [Math]::Max(0, [Math]::Min($t, $max))
+}
 
 function Op-Act($req) {
   $ses = Get-Session (Get-Engine) ([string]$req['session'])
@@ -496,8 +539,43 @@ function Op-Act($req) {
     elseif ($a.ContainsKey('col') -and [string]$a['col']) { M $o 'DoubleClickItem' @($node, [string]$a['col']) }
     else { M $o 'DoubleClickNode' @($node) }
   }
+  elseif ($do -eq 'scroll') {
+    # A grid moves by its first visible row; a table control and a list by their scrollbar.
+    $res = @{ done = $true }
+    if ([string](T $o 'Type') -eq 'GuiShell') {
+      if ([string](T $o 'SubType') -ne 'GridView') { throw "NO_SCROLL: $id does not scroll" }
+      $rc = [int](G $o 'RowCount')
+      $page = 1
+      $v = T $o 'VisibleRowCount'
+      if ($null -ne $v -and [int]$v -gt 0) { $page = [int]$v }
+      $pos = 0
+      $fv = T $o 'FirstVisibleRow'
+      if ($null -ne $fv) { $pos = [int]$fv }
+      $target = Scroll-Target $a['to'] $pos $page ([Math]::Max(0, $rc - $page))
+      if ($target -ne $pos) { S $o 'FirstVisibleRow' $target }
+      $res.from = $pos; $res.first = $target; $res.visible = $page; $res.total = $rc
+    }
+    else {
+      $sb = T $o 'VerticalScrollbar'
+      if ($null -eq $sb) { throw "NO_SCROLL: $id does not scroll" }
+      $pos = [int](T $sb 'Position')
+      $max = [int](T $sb 'Maximum')
+      $page = [int](T $sb 'PageSize')
+      if ($page -lt 1) { $page = 1 }
+      $target = Scroll-Target $a['to'] $pos $page $max
+      if ($target -ne $pos) { S $sb 'Position' $target }
+      $res.from = $pos; $res.first = $target; $res.visible = $page; $res.total = $max + $page
+    }
+    return $res
+  }
   elseif ($do -eq 'grid') {
     $row = [int]$a['row']
+    $rc = [int](G $o 'RowCount')
+    if ($row -ge $rc) { throw "NOT_FOUND: row $row: the grid has $rc rows (0 to $($rc - 1))" }
+    # A row that is not on screen is scrolled to first: SAP GUI loads rows as they come into view.
+    $fv = T $o 'FirstVisibleRow'
+    $v = T $o 'VisibleRowCount'
+    if ($null -ne $fv -and $null -ne $v -and [int]$v -gt 0 -and ($row -lt [int]$fv -or $row -ge ([int]$fv + [int]$v))) { S $o 'FirstVisibleRow' $row }
     M $o 'SetCurrentCell' @($row, [string]$a['col'])
     if ([string]$a['how'] -eq 'select') { S $o 'SelectedRows' ([string]$row) }
     else { M $o 'DoubleClickCurrentCell' $null }

@@ -14,7 +14,7 @@ wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01  tab  Sales
 wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/chkVBAK-AUTLF  checkbox  [x] Complete dlv.
 wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/radRV45A-DEMO1  radio  [ ] Gross
 wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/radRV45A-DEMO2  radio  [x] Net
-wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/cmbVBAK-LIFSK  dropdown  Delivery block = "" No block  options: :No block, 01:Credit limit, 02:Political reasons
+wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/cmbVBAK-LIFSK  dropdown  Delivery block = "" No block  3 options: :No block, 01:Credit limit, 02:Political reasons
 wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG  table  rows 3 (visible 3); columns: Item | Material | Order Quantity | Rej
 wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/txtVBAP-POSNR[0,0]  field   = "10"  (read-only)
 wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/ctxtRV45A-MABNR[1,0]  field   = "M-01"  (read-only)

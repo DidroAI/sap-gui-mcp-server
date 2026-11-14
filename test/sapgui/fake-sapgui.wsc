@@ -42,6 +42,11 @@ function control(node, ses, index) {
     for (k = 0; k < node.Columns.length; k++) cs.push({ Title: node.Columns[k] });
     o.Columns = coll(cs);
   }
+  if (o.Type == "GuiTableControl") {
+    // A table control scrolls with its scrollbar; the fake keeps the position and shows the same cells.
+    var vis = o.VisibleRowCount || 1, max = (o.RowCount || 0) - vis;
+    o.VerticalScrollbar = { Position: 0, Maximum: max > 0 ? max : 0, PageSize: vis };
+  }
   if (!LEAF[o.Type]) {
     var kids = [];
     for (k = 0; k < node.kids.length; k++) kids.push(control(node.kids[k], ses, index));
@@ -75,6 +80,9 @@ function control(node, ses, index) {
     o.ColumnOrder = coll(ids);
     o.RowCount = g.rows.length;
     o.SelectedRows = "";
+    // Scrolling: the grid shows twenty rows from the first visible one.
+    o.FirstVisibleRow = 0;
+    o.VisibleRowCount = 20;
     o.GetDisplayedColumnTitle = function (c) { return titles[c]; };
     o.GetCellValue = function (r, c) { return g.rows[r][pos[c]]; };
     o.SetCurrentCell = function (r, c) { o.cell = r + "," + c; };
