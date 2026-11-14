@@ -121,6 +121,18 @@ function explicitEndpoint(env: Env): ChromeEndpoint | undefined {
  * files and checks that the port listens; connects to nothing. `tried` says
  * what was looked at, for messages.
  */
+/** DevToolsActivePort files that exist but that this app may not read (macOS privacy protection). */
+export const blockedFiles: string[] = [];
+
+/** The name of the process listening on a local port (macOS and Linux, through lsof), if it can be told. */
+export async function portOwner(port: number, platform: NodeJS.Platform = process.platform): Promise<string | undefined> {
+  if (platform === "win32") return undefined;
+  const { spawnSync } = await import("node:child_process");
+  const r = spawnSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-Fc"], { encoding: "utf8", timeout: 3000 });
+  const name = /^c(.+)$/m.exec(r.stdout ?? "")?.[1];
+  return name || undefined;
+}
+
 export async function activePortEndpoints(
   env: Env,
   tried: string[] = [],
@@ -136,8 +148,22 @@ export async function activePortEndpoints(
   for (const { name, dir } of browsers) {
     if (!dir) continue;
     const file = (platform === "win32" ? win32 : posix).join(dir, "DevToolsActivePort");
-    const content = await readFile(file, "utf8").catch(() => undefined);
-    if (content === undefined) {
+    let content: string | undefined;
+    try {
+      content = await readFile(file, "utf8");
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code === "EPERM" || code === "EACCES") {
+        // macOS privacy protection: the file is there, but this app may not read another app's data.
+        // Chrome's remote debugging listens on 9222 by default: use it when Chrome's own process holds that port.
+        blockedFiles.push(file);
+        const owner = await portOwner(9222, platform);
+        if (owner && /chrome|google|edge/i.test(owner)) {
+          tried.push(`${file}: macOS does not let this app read it; ${owner} listens on 127.0.0.1:9222`);
+          found.push({ url: "http://127.0.0.1:9222", from: `${name} with remote debugging allowed (port 9222; ${file} could not be read)` });
+        } else tried.push(`${file}: macOS does not let this app read it`);
+        continue;
+      }
       tried.push(`${file}: not there (${name} is not running, or remote debugging is not allowed)`);
       continue;
     }
@@ -371,6 +397,15 @@ export async function chromeDoctor(env: Record<string, string | undefined>): Pro
     const message = (e as Error).message;
     if (env.SAP_CHROME_CDP)
       return [{ ok: false, check, detail: message.split(/(?<=\.) /)[0] ?? message, fix: "Check that this Chrome runs with --remote-debugging-port and --user-data-dir, or unset SAP_CHROME_CDP to use your everyday Chrome." }];
+    if (blockedFiles.length)
+      return [
+        {
+          ok: false,
+          check,
+          detail: `Chrome allows remote debugging, but macOS does not let this app read Chrome's DevToolsActivePort file (privacy protection), and Chrome did not answer on port 9222 without it`,
+          fix: `Give the app that runs the server (Terminal or iTerm for doctor; Claude, Codex or your editor for the MCP server) access in System Settings > Privacy & Security > Full Disk Access, restart that app, then run doctor again.`,
+        },
+      ];
     const busy = await portOpen("127.0.0.1", 9222);
     return [
       {
