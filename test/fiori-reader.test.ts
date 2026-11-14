@@ -1,0 +1,125 @@
+import { afterAll, beforeEach, describe, expect, test } from "bun:test";
+import { ui5Control, ui5Look } from "../src/fiori/ui5.js";
+import { FakeControl, installPage, item, marked, removePage } from "./fiori-fixtures.js";
+
+const VIEW = "app.demo::ObjectPage--";
+let controls: FakeControl[];
+let select: FakeControl;
+
+beforeEach(() => {
+  const page = new FakeControl({ type: "sap.m.Page", id: `${VIEW}page` });
+  const footer = new FakeControl({ type: "sap.m.OverflowToolbar", id: `${VIEW}fe::FooterBar`, parent: page, aggregation: "footer" });
+  const items = [item("A", "Alpha"), item("B", "Beta"), item("C", "Gamma Ray")];
+  let selected = items[0];
+  select = new FakeControl({
+    type: "sap.m.Select",
+    id: `${VIEW}fe::Field::Status`,
+    props: { enabled: true, editable: true },
+    methods: {
+      getItems: () => items,
+      getSelectedItem: () => selected,
+      setSelectedItem: ((it: (typeof items)[0]) => {
+        selected = it;
+      }) as never,
+    },
+  });
+  controls = [
+    page,
+    new FakeControl({ type: "sap.m.Title", id: `${VIEW}title`, props: { text: "Demo Object 1" } }),
+    new FakeControl({ type: "sap.m.Label", id: `${VIEW}fe::Field::Name-label`, isA: ["sap.m.Label"], props: { text: "Name" }, methods: { getLabelFor: () => `${VIEW}fe::Field::Name` } }),
+    new FakeControl({ type: "sap.m.Input", id: `${VIEW}fe::Field::Name`, isA: ["sap.m.InputBase"], props: { value: "Widget", editable: true, required: true } }),
+    new FakeControl({ type: "sap.m.Input", id: `${VIEW}fe::Field::Secret`, isA: ["sap.m.InputBase"], props: { value: "hunter2", type: "Password" } }),
+    new FakeControl({ type: "sap.m.CheckBox", id: `${VIEW}fe::Field::Approved`, props: { text: "Approved", selected: true, enabled: true } }),
+    select,
+    new FakeControl({ type: "sap.m.Button", id: `${VIEW}fe::Field::Locked`, isA: ["sap.m.Button"], props: { text: "Unlock", enabled: false } }),
+    // Two controls whose last id segment is the same: neither short tail is unique.
+    new FakeControl({ type: "sap.m.Button", id: "app.demo::List--table::Add", isA: ["sap.m.Button"], props: { text: "Add" } }),
+    new FakeControl({ type: "sap.m.Button", id: "app.demo::Other--table::Add", isA: ["sap.m.Button"], props: { text: "Add" }, hidden: true }),
+    footer,
+    new FakeControl({
+      type: "sap.m.Button",
+      id: `${VIEW}fe::FooterBar::StandardAction::Save`,
+      isA: ["sap.m.Button"],
+      props: { text: "Save", type: "Emphasized" },
+      parent: footer,
+      handlers: { press: ["bound _saveDocument"] },
+    }),
+  ];
+  installPage(controls, { title: "Demo Object", hash: "#Demo-display" });
+});
+afterAll(removePage);
+
+describe("ui5Look", () => {
+  test("compact: one line per control, shortest unique id tail, label on the field's line", () => {
+    const lines = ui5Look({ compact: true }).split("\n");
+    expect(lines[0]).toBe("PAGE Demo Object (#Demo-display)");
+    expect(lines).toContain('Title #title "Demo Object 1"');
+    expect(lines).toContain('Input #Name "Name": "Widget" (required)');
+    expect(lines).toContain('CheckBox #Approved "Approved" [x] checked');
+    expect(lines).toContain('Select #Status = "Alpha"');
+    expect(lines).toContain('Button #Locked "Unlock" (disabled)');
+    expect(lines).toContain('Button #Save "Save"');
+    // the label has no line of its own, the layout-only page neither
+    expect(lines.some((l) => l.includes("Name-label"))).toBe(false);
+    expect(lines.some((l) => l.startsWith("Page "))).toBe(false);
+  });
+  test("compact: an id tail shared with another control grows until it is unique", () => {
+    expect(ui5Look({ compact: true })).toContain('Button #List--table::Add "Add"');
+  });
+  test("a password is never written out", () => {
+    for (const compact of [true, false]) {
+      const view = ui5Look({ compact });
+      expect(view).not.toContain("hunter2");
+      expect(view).toContain("***");
+    }
+  });
+  test("full: every control with its type and full id", () => {
+    const view = ui5Look({ compact: false });
+    expect(view).toContain(`sap.m.Page id=${VIEW}page`);
+    expect(view).toContain(`sap.m.Input id=${VIEW}fe::Field::Name "Name": value="Widget" (required)`);
+    expect(view).toContain(`sap.m.Label id=${VIEW}fe::Field::Name-label text="Name"`);
+  });
+});
+
+describe("ui5Control", () => {
+  test("finds a control by its compact tail, with or without #, and by its full id", () => {
+    for (const handle of ["#Save", "Save", "StandardAction::Save", `${VIEW}fe::FooterBar::StandardAction::Save`]) {
+      const r = ui5Control({ handle, op: "click" });
+      expect(r.status).toBe("TARGET");
+      expect(marked(controls)).toBe(`${VIEW}fe::FooterBar::StandardAction::Save`);
+    }
+    expect(ui5Control({ handle: "Nope", op: "click" }).status).toBe("NOTFOUND");
+  });
+  test("an ambiguous tail goes to the control that is on screen", () => {
+    expect(ui5Control({ handle: "Add", op: "click" }).status).toBe("TARGET");
+    expect(marked(controls)).toBe("app.demo::List--table::Add");
+  });
+  test("facts for the risk rule: footer, button type, handler names", () => {
+    const f = ui5Control({ handle: "Save", op: "facts" }).facts;
+    expect(f).toMatchObject({ type: "sap.m.Button", text: "Save", buttonType: "Emphasized", inFooter: true, handlers: ["_saveDocument"] });
+    expect(marked(controls)).toBeUndefined();
+  });
+  test("a dropdown entry is chosen through the control's API, by key or text", () => {
+    expect(ui5Control({ handle: "Status", op: "combo", value: "B" })).toMatchObject({ status: "DONE", note: expect.stringContaining('"Beta"') });
+    expect(select.fired).toEqual(["change:Beta"]);
+    expect(ui5Control({ handle: "Status", op: "combo", value: "gamma" }).status).toBe("DONE");
+    expect(ui5Look({ compact: true })).toContain('Select #Status = "Gamma Ray"');
+  });
+  test("an unknown dropdown entry answers with the entries", () => {
+    const r = ui5Control({ handle: "Status", op: "combo", value: "Zeta" });
+    expect(r.status).toBe("NOITEM");
+    expect(r.note).toContain("A:Alpha, B:Beta, C:Gamma Ray");
+  });
+  test("check clicks only when the state has to change", () => {
+    expect(ui5Control({ handle: "Approved", op: "check", value: true })).toMatchObject({ status: "DONE", note: expect.stringContaining("already checked") });
+    expect(ui5Control({ handle: "Approved", op: "check", value: false }).status).toBe("TARGET");
+    expect(ui5Control({ handle: "Approved", op: "check" }).status).toBe("TARGET");
+    expect(ui5Control({ handle: "Name", op: "check" }).status).toBe("NOTFIT");
+  });
+  test("fill marks the input; a disabled control is refused", () => {
+    expect(ui5Control({ handle: "Name", op: "fill", value: "x" }).status).toBe("TARGET");
+    expect(marked(controls)).toBe(`${VIEW}fe::Field::Name`);
+    expect(ui5Control({ handle: "Locked", op: "click" }).status).toBe("DISABLED");
+    expect(ui5Control({ handle: "Approved", op: "fill", value: "x" }).status).toBe("NOTFIT");
+  });
+});

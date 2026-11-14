@@ -1,0 +1,238 @@
+{
+ "activeWindow": "wnd[1]",
+ "client": "100",
+ "program": "SAPLSDH4",
+ "screen": "120",
+ "system": "DEM",
+ "transaction": "VA01",
+ "windows": [
+  {
+   "controls": [
+    {
+     "changeable": false,
+     "id": "wnd[0]",
+     "name": "wnd[0]",
+     "text": "Create Sales Order: Initial Screen",
+     "tip": "",
+     "type": "GuiMainWindow"
+    },
+    {
+     "id": "wnd[0]/mbar",
+     "menus": [
+      "Menu",
+      "Edit",
+      "Goto",
+      "System",
+      "Help"
+     ],
+     "name": "mbar",
+     "type": "GuiMenubar"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/tbar[0]",
+     "name": "tbar[0]",
+     "text": "",
+     "tip": "",
+     "type": "GuiToolbar"
+    },
+    {
+     "id": "wnd[0]/tbar[0]/okcd",
+     "name": "okcd",
+     "type": "GuiOkCodeField"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[0]",
+     "name": "btn[0]",
+     "text": "",
+     "tip": "Enter   (Enter)",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[11]",
+     "name": "btn[11]",
+     "text": "",
+     "tip": "Save   (Ctrl+S)",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[3]",
+     "name": "btn[3]",
+     "text": "",
+     "tip": "Back   (F3)",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[15]",
+     "name": "btn[15]",
+     "text": "",
+     "tip": "Exit   (Shift+F3)",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[12]",
+     "name": "btn[12]",
+     "text": "",
+     "tip": "Cancel   (F12)",
+     "type": "GuiButton"
+    },
+    {
+     "id": "wnd[0]/titl",
+     "name": "titl",
+     "type": "GuiTitlebar"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/tbar[1]",
+     "name": "tbar[1]",
+     "text": "",
+     "tip": "",
+     "type": "GuiToolbar"
+    },
+    {
+     "id": "wnd[0]/usr",
+     "name": "usr",
+     "type": "GuiUserArea"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/usr/ctxtVBAK-AUART",
+     "label": "Order Type",
+     "name": "VBAK-AUART",
+     "text": "",
+     "tip": "Sales Document Type",
+     "type": "GuiCTextField"
+    },
+    {
+     "id": "wnd[0]/sbar",
+     "messageType": "",
+     "name": "sbar",
+     "text": "",
+     "type": "GuiStatusbar"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/sbar/pane[0]",
+     "name": "pane[0]",
+     "text": "",
+     "tip": "",
+     "type": "GuiStatusPane"
+    }
+   ],
+   "id": "wnd[0]",
+   "title": "Create Sales Order: Initial Screen"
+  },
+  {
+   "controls": [
+    {
+     "changeable": false,
+     "id": "wnd[1]",
+     "name": "wnd[1]",
+     "text": "Sales Document Type (1) 3 Entries found",
+     "tip": "",
+     "type": "GuiModalWindow"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[1]/tbar[0]",
+     "name": "tbar[0]",
+     "text": "",
+     "tip": "",
+     "type": "GuiToolbar"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[1]/tbar[0]/btn[0]",
+     "name": "btn[0]",
+     "text": "",
+     "tip": "Copy   (Enter)",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[1]/tbar[0]/btn[12]",
+     "name": "btn[12]",
+     "text": "",
+     "tip": "Cancel   (F12)",
+     "type": "GuiButton"
+    },
+    {
+     "id": "wnd[1]/usr",
+     "name": "usr",
+     "type": "GuiUserArea"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[1]/usr/lbl[1,1]",
+     "name": "[1,1]",
+     "text": "SaTy",
+     "tip": "",
+     "type": "GuiLabel"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[1]/usr/lbl[6,1]",
+     "name": "[6,1]",
+     "text": "Description",
+     "tip": "",
+     "type": "GuiLabel"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[1]/usr/lbl[1,3]",
+     "name": "[1,3]",
+     "text": "CS",
+     "tip": "",
+     "type": "GuiLabel"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[1]/usr/lbl[6,3]",
+     "name": "[6,3]",
+     "text": "Cash Sale",
+     "tip": "",
+     "type": "GuiLabel"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[1]/usr/lbl[1,4]",
+     "name": "[1,4]",
+     "text": "OR",
+     "tip": "",
+     "type": "GuiLabel"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[1]/usr/lbl[6,4]",
+     "name": "[6,4]",
+     "text": "Standard Order",
+     "tip": "",
+     "type": "GuiLabel"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[1]/usr/lbl[1,5]",
+     "name": "[1,5]",
+     "text": "RE",
+     "tip": "",
+     "type": "GuiLabel"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[1]/usr/lbl[6,5]",
+     "name": "[6,5]",
+     "text": "Returns",
+     "tip": "",
+     "type": "GuiLabel"
+    }
+   ],
+   "id": "wnd[1]",
+   "title": "Sales Document Type (1) 3 Entries found"
+  }
+ ]
+}

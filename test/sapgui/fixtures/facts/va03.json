@@ -1,0 +1,341 @@
+{
+ "activeWindow": "wnd[0]",
+ "client": "100",
+ "program": "SAPMV45A",
+ "screen": "4001",
+ "system": "DEM",
+ "transaction": "VA03",
+ "windows": [
+  {
+   "controls": [
+    {
+     "changeable": false,
+     "id": "wnd[0]",
+     "name": "wnd[0]",
+     "text": "Display Standard Order 4711: Overview",
+     "tip": "",
+     "type": "GuiMainWindow"
+    },
+    {
+     "id": "wnd[0]/mbar",
+     "menus": [
+      "Menu",
+      "Edit",
+      "Goto",
+      "System",
+      "Help"
+     ],
+     "name": "mbar",
+     "type": "GuiMenubar"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/tbar[0]",
+     "name": "tbar[0]",
+     "text": "",
+     "tip": "",
+     "type": "GuiToolbar"
+    },
+    {
+     "id": "wnd[0]/tbar[0]/okcd",
+     "name": "okcd",
+     "type": "GuiOkCodeField"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[0]",
+     "name": "btn[0]",
+     "text": "",
+     "tip": "Enter   (Enter)",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[11]",
+     "name": "btn[11]",
+     "text": "",
+     "tip": "Save   (Ctrl+S)",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[3]",
+     "name": "btn[3]",
+     "text": "",
+     "tip": "Back   (F3)",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[15]",
+     "name": "btn[15]",
+     "text": "",
+     "tip": "Exit   (Shift+F3)",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[12]",
+     "name": "btn[12]",
+     "text": "",
+     "tip": "Cancel   (F12)",
+     "type": "GuiButton"
+    },
+    {
+     "id": "wnd[0]/titl",
+     "name": "titl",
+     "type": "GuiTitlebar"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/tbar[1]",
+     "name": "tbar[1]",
+     "text": "",
+     "tip": "",
+     "type": "GuiToolbar"
+    },
+    {
+     "id": "wnd[0]/usr",
+     "name": "usr",
+     "type": "GuiUserArea"
+    },
+    {
+     "id": "wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021",
+     "name": "SUBSCREEN_HEADER:SAPMV45A:4021",
+     "type": "GuiSimpleContainer"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021/txtVBAK-VBELN",
+     "label": "Standard Order",
+     "name": "VBAK-VBELN",
+     "text": "4711",
+     "tip": "",
+     "type": "GuiTextField"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021/btnBT_HEAD",
+     "name": "BT_HEAD",
+     "text": "",
+     "tip": "Display document header details",
+     "type": "GuiButton"
+    },
+    {
+     "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW",
+     "name": "TAXI_TABSTRIP_OVERVIEW",
+     "type": "GuiTabStrip"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01",
+     "name": "T\\01",
+     "text": "Sales",
+     "tip": "",
+     "type": "GuiTab"
+    },
+    {
+     "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400",
+     "name": "SUBSCREEN_BODY:SAPMV45A:4400",
+     "type": "GuiScrollContainer"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/chkVBAK-AUTLF",
+     "name": "VBAK-AUTLF",
+     "selected": true,
+     "text": "Complete dlv.",
+     "tip": "",
+     "type": "GuiCheckBox"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/radRV45A-DEMO1",
+     "name": "RV45A-DEMO1",
+     "selected": false,
+     "text": "Gross",
+     "tip": "",
+     "type": "GuiRadioButton"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/radRV45A-DEMO2",
+     "name": "RV45A-DEMO2",
+     "selected": true,
+     "text": "Net",
+     "tip": "",
+     "type": "GuiRadioButton"
+    },
+    {
+     "changeable": true,
+     "entries": [
+      [
+       " ",
+       "No block"
+      ],
+      [
+       "01",
+       "Credit limit"
+      ],
+      [
+       "02",
+       "Political reasons"
+      ]
+     ],
+     "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/cmbVBAK-LIFSK",
+     "key": " ",
+     "label": "Delivery block",
+     "name": "VBAK-LIFSK",
+     "text": "No block",
+     "tip": "",
+     "type": "GuiComboBox"
+    },
+    {
+     "columns": [
+      "Item",
+      "Material",
+      "Order Quantity",
+      "Rej"
+     ],
+     "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG",
+     "name": "SAPMV45ATCTRL_U_ERF_AUFTRAG",
+     "rowCount": 3,
+     "type": "GuiTableControl",
+     "visibleRowCount": 3
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/txtVBAP-POSNR[0,0]",
+     "name": "VBAP-POSNR",
+     "text": "10",
+     "tip": "",
+     "type": "GuiTextField"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/ctxtRV45A-MABNR[1,0]",
+     "name": "RV45A-MABNR",
+     "text": "M-01",
+     "tip": "",
+     "type": "GuiCTextField"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/txtRV45A-KWMENG[2,0]",
+     "name": "RV45A-KWMENG",
+     "text": "5",
+     "tip": "",
+     "type": "GuiTextField"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/chkVBAP-ABGRU[3,0]",
+     "name": "VBAP-ABGRU",
+     "selected": false,
+     "text": "",
+     "tip": "Rejected",
+     "type": "GuiCheckBox"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/txtVBAP-POSNR[0,1]",
+     "name": "VBAP-POSNR",
+     "text": "20",
+     "tip": "",
+     "type": "GuiTextField"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/ctxtRV45A-MABNR[1,1]",
+     "name": "RV45A-MABNR",
+     "text": "M-02",
+     "tip": "",
+     "type": "GuiCTextField"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/txtRV45A-KWMENG[2,1]",
+     "name": "RV45A-KWMENG",
+     "text": "1",
+     "tip": "",
+     "type": "GuiTextField"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/chkVBAP-ABGRU[3,1]",
+     "name": "VBAP-ABGRU",
+     "selected": true,
+     "text": "",
+     "tip": "Rejected",
+     "type": "GuiCheckBox"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/txtVBAP-POSNR[0,2]",
+     "name": "VBAP-POSNR",
+     "text": "",
+     "tip": "",
+     "type": "GuiTextField"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/ctxtRV45A-MABNR[1,2]",
+     "name": "RV45A-MABNR",
+     "text": "",
+     "tip": "",
+     "type": "GuiCTextField"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/txtRV45A-KWMENG[2,2]",
+     "name": "RV45A-KWMENG",
+     "text": "",
+     "tip": "",
+     "type": "GuiTextField"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/chkVBAP-ABGRU[3,2]",
+     "name": "VBAP-ABGRU",
+     "selected": false,
+     "text": "",
+     "tip": "Rejected",
+     "type": "GuiCheckBox"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\02",
+     "name": "T\\02",
+     "text": "Item overview",
+     "tip": "",
+     "type": "GuiTab"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\03",
+     "name": "T\\03",
+     "text": "Ordering party",
+     "tip": "",
+     "type": "GuiTab"
+    },
+    {
+     "id": "wnd[0]/sbar",
+     "messageType": "S",
+     "name": "sbar",
+     "text": "Standard Order 4711 is displayed",
+     "type": "GuiStatusbar"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/sbar/pane[0]",
+     "name": "pane[0]",
+     "text": "Standard Order 4711 is displayed",
+     "tip": "",
+     "type": "GuiStatusPane"
+    }
+   ],
+   "id": "wnd[0]",
+   "title": "Display Standard Order 4711: Overview"
+  }
+ ]
+}

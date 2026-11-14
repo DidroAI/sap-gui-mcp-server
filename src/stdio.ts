@@ -1,4 +1,5 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { disconnectChrome } from "./browser/chrome.js";
 import { policyFromEnv } from "./core/guard.js";
 import { createServer } from "./server.js";
 import { surfacesFromEnv } from "./surfaces.js";
@@ -8,6 +9,7 @@ export async function serveStdio(env: Record<string, string | undefined> = proce
   const { server, registry } = createServer({ policy: policyFromEnv(env), surfaces: surfacesFromEnv(env) });
   const close = async () => {
     await registry.closeAll();
+    await disconnectChrome().catch(() => {});
     process.exit(0);
   };
   process.on("SIGINT", close);

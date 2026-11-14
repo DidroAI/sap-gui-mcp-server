@@ -1,0 +1,23 @@
+TRANSACTION VA01  PROGRAM SAPLSDH4  SCREEN 120
+WINDOW wnd[0]  "Create Sales Order: Initial Screen"
+wnd[0]  mainwindow  Create Sales Order: Initial Screen
+wnd[0]/mbar  menubar  Menu {menu[0]}, Edit {menu[1]}, Goto {menu[2]}, System {menu[3]}, Help {menu[4]}
+wnd[0]/tbar[0]/okcd  command-field
+wnd[0]/tbar[0]/btn[0]  button  Enter   (Enter)
+wnd[0]/tbar[0]/btn[11]  button  Save   (Ctrl+S)
+wnd[0]/tbar[0]/btn[3]  button  Back   (F3)
+wnd[0]/tbar[0]/btn[15]  button  Exit   (Shift+F3)
+wnd[0]/tbar[0]/btn[12]  button  Cancel   (F12)
+wnd[0]/usr/ctxtVBAK-AUART  field  Order Type = ""  (edit)
+WINDOW wnd[1]  "Sales Document Type (1) 3 Entries found"
+wnd[1]  modalwindow  Sales Document Type (1) 3 Entries found
+wnd[1]/tbar[0]/btn[0]  button  Copy   (Enter)
+wnd[1]/tbar[0]/btn[12]  button  Cancel   (F12)
+wnd[1]/usr/lbl[1,1]  label  SaTy
+wnd[1]/usr/lbl[6,1]  label  Description
+wnd[1]/usr/lbl[1,3]  label  CS
+wnd[1]/usr/lbl[6,3]  label  Cash Sale
+wnd[1]/usr/lbl[1,4]  label  OR
+wnd[1]/usr/lbl[6,4]  label  Standard Order
+wnd[1]/usr/lbl[1,5]  label  RE
+wnd[1]/usr/lbl[6,5]  label  Returns

@@ -1,0 +1,11 @@
+TRANSACTION SESSION_MANAGER  PROGRAM SAPLSMTR_NAVIGATION  SCREEN 100
+WINDOW wnd[0]  "SAP Easy Access"
+wnd[0]  mainwindow  SAP Easy Access
+wnd[0]/mbar  menubar  Menu {menu[0]}, Edit {menu[1]}, Goto {menu[2]}, System {menu[3]}, Help {menu[4]}
+wnd[0]/tbar[0]/okcd  command-field
+wnd[0]/tbar[0]/btn[0]  button  Enter   (Enter)
+wnd[0]/tbar[0]/btn[11]  button  Save   (Ctrl+S)
+wnd[0]/tbar[0]/btn[3]  button  Back   (F3)
+wnd[0]/tbar[0]/btn[15]  button  Exit   (Shift+F3)
+wnd[0]/tbar[0]/btn[12]  button  Cancel   (F12)
+wnd[0]/usr/cntlIMAGE_CONTAINER/shellcont/shell  shell Picture

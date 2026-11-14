@@ -1,0 +1,214 @@
+{
+ "activeWindow": "wnd[1]",
+ "client": "100",
+ "program": "SAPLSPO1",
+ "screen": "100",
+ "system": "DEM",
+ "transaction": "VA02",
+ "windows": [
+  {
+   "controls": [
+    {
+     "changeable": false,
+     "id": "wnd[0]",
+     "name": "wnd[0]",
+     "text": "Change Standard Order 4711: Overview",
+     "tip": "",
+     "type": "GuiMainWindow"
+    },
+    {
+     "id": "wnd[0]/mbar",
+     "menus": [
+      "Menu",
+      "Edit",
+      "Goto",
+      "System",
+      "Help"
+     ],
+     "name": "mbar",
+     "type": "GuiMenubar"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/tbar[0]",
+     "name": "tbar[0]",
+     "text": "",
+     "tip": "",
+     "type": "GuiToolbar"
+    },
+    {
+     "id": "wnd[0]/tbar[0]/okcd",
+     "name": "okcd",
+     "type": "GuiOkCodeField"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[0]",
+     "name": "btn[0]",
+     "text": "",
+     "tip": "Enter   (Enter)",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[11]",
+     "name": "btn[11]",
+     "text": "",
+     "tip": "Save   (Ctrl+S)",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[3]",
+     "name": "btn[3]",
+     "text": "",
+     "tip": "Back   (F3)",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[15]",
+     "name": "btn[15]",
+     "text": "",
+     "tip": "Exit   (Shift+F3)",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[12]",
+     "name": "btn[12]",
+     "text": "",
+     "tip": "Cancel   (F12)",
+     "type": "GuiButton"
+    },
+    {
+     "id": "wnd[0]/titl",
+     "name": "titl",
+     "type": "GuiTitlebar"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/tbar[1]",
+     "name": "tbar[1]",
+     "text": "",
+     "tip": "",
+     "type": "GuiToolbar"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[1]/btn[14]",
+     "name": "btn[14]",
+     "text": "",
+     "tip": "Delete   (Shift+F2)",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[1]/btn[20]",
+     "name": "btn[20]",
+     "text": "Reject document",
+     "tip": "Reject document",
+     "type": "GuiButton"
+    },
+    {
+     "id": "wnd[0]/usr",
+     "name": "usr",
+     "type": "GuiUserArea"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/usr/txtVBAK-BSTNK",
+     "label": "PO Number",
+     "name": "VBAK-BSTNK",
+     "text": "PO-1",
+     "tip": "",
+     "type": "GuiTextField"
+    },
+    {
+     "id": "wnd[0]/sbar",
+     "messageType": "",
+     "name": "sbar",
+     "text": "",
+     "type": "GuiStatusbar"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/sbar/pane[0]",
+     "name": "pane[0]",
+     "text": "",
+     "tip": "",
+     "type": "GuiStatusPane"
+    }
+   ],
+   "id": "wnd[0]",
+   "title": "Change Standard Order 4711: Overview"
+  },
+  {
+   "controls": [
+    {
+     "changeable": false,
+     "id": "wnd[1]",
+     "name": "wnd[1]",
+     "text": "Exit Document",
+     "tip": "",
+     "type": "GuiModalWindow"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[1]/tbar[0]",
+     "name": "tbar[0]",
+     "text": "",
+     "tip": "",
+     "type": "GuiToolbar"
+    },
+    {
+     "id": "wnd[1]/usr",
+     "name": "usr",
+     "type": "GuiUserArea"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[1]/usr/txtSPOP-TEXTLINE1",
+     "name": "SPOP-TEXTLINE1",
+     "text": "Data will be lost.",
+     "tip": "",
+     "type": "GuiTextField"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[1]/usr/txtSPOP-TEXTLINE2",
+     "name": "SPOP-TEXTLINE2",
+     "text": "Do you want to save the document?",
+     "tip": "",
+     "type": "GuiTextField"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[1]/usr/btnSPOP-OPTION1",
+     "name": "SPOP-OPTION1",
+     "text": "Yes",
+     "tip": "",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[1]/usr/btnSPOP-OPTION2",
+     "name": "SPOP-OPTION2",
+     "text": "No",
+     "tip": "",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[1]/usr/btnSPOP-OPTION_CAN",
+     "name": "SPOP-OPTION_CAN",
+     "text": "Cancel",
+     "tip": "Cancel   (F12)",
+     "type": "GuiButton"
+    }
+   ],
+   "id": "wnd[1]",
+   "title": "Exit Document"
+  }
+ ]
+}

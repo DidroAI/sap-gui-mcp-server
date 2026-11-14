@@ -106,7 +106,7 @@ export function createServer({ policy, surfaces }: ServerOptions) {
     "sap_look",
     {
       title: "Look at the SAP screen",
-      description: "The current SAP screen as text: header (transaction, program, screen, system), then one line per control with its id, type, label, value and state; tables as rows, popups as their own windows. full=true gives every id and column (larger).",
+      description: "The current SAP screen as text: header (where you are: transaction or app, screen, and the system when known), then one line per control with its id, type, label, value and state; tables as rows, popups as their own windows. full=true gives every id and column (larger).",
       inputSchema: { session, full: z.boolean().optional().describe("full view instead of compact") },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -148,7 +148,8 @@ export function createServer({ policy, surfaces }: ServerOptions) {
   {"do":"dblclick","id":"..."}                      list entry or label
   {"do":"tree","id":"...","node":"<key>","how":"double|select|expand"}
   {"do":"grid","id":"...","row":0,"col":"VBELN","how":"double|select"}
-  {"do":"toolbar","id":"...","button":"<id>"}`,
+  {"do":"toolbar","id":"...","button":"<id>"}
+  {"do":"scroll","id":"..."}                        Fiori: scroll a table or page when the view ends with SCROLL`,
       inputSchema: { action: actionSchema, session },
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
     },

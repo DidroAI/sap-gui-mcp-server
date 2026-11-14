@@ -1,0 +1,203 @@
+{
+ "activeWindow": "wnd[0]",
+ "client": "100",
+ "program": "SAPLSEOD",
+ "screen": "1000",
+ "system": "DEM",
+ "transaction": "SE80",
+ "windows": [
+  {
+   "controls": [
+    {
+     "changeable": false,
+     "id": "wnd[0]",
+     "name": "wnd[0]",
+     "text": "Object Navigator",
+     "tip": "",
+     "type": "GuiMainWindow"
+    },
+    {
+     "id": "wnd[0]/mbar",
+     "menus": [
+      "Menu",
+      "Edit",
+      "Goto",
+      "System",
+      "Help"
+     ],
+     "name": "mbar",
+     "type": "GuiMenubar"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/tbar[0]",
+     "name": "tbar[0]",
+     "text": "",
+     "tip": "",
+     "type": "GuiToolbar"
+    },
+    {
+     "id": "wnd[0]/tbar[0]/okcd",
+     "name": "okcd",
+     "type": "GuiOkCodeField"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[0]",
+     "name": "btn[0]",
+     "text": "",
+     "tip": "Enter   (Enter)",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[11]",
+     "name": "btn[11]",
+     "text": "",
+     "tip": "Save   (Ctrl+S)",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[3]",
+     "name": "btn[3]",
+     "text": "",
+     "tip": "Back   (F3)",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[15]",
+     "name": "btn[15]",
+     "text": "",
+     "tip": "Exit   (Shift+F3)",
+     "type": "GuiButton"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[0]/btn[12]",
+     "name": "btn[12]",
+     "text": "",
+     "tip": "Cancel   (F12)",
+     "type": "GuiButton"
+    },
+    {
+     "id": "wnd[0]/titl",
+     "name": "titl",
+     "type": "GuiTitlebar"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/tbar[1]",
+     "name": "tbar[1]",
+     "text": "",
+     "tip": "",
+     "type": "GuiToolbar"
+    },
+    {
+     "changeable": true,
+     "id": "wnd[0]/tbar[1]/btn[27]",
+     "name": "btn[27]",
+     "text": "",
+     "tip": "Activate   (Ctrl+F3)",
+     "type": "GuiButton"
+    },
+    {
+     "id": "wnd[0]/usr",
+     "name": "usr",
+     "type": "GuiUserArea"
+    },
+    {
+     "id": "wnd[0]/usr/cntlDOCK",
+     "name": "DOCK",
+     "type": "GuiCustomControl"
+    },
+    {
+     "id": "wnd[0]/usr/cntlDOCK/shellcont",
+     "name": "shellcont",
+     "type": "GuiContainerShell"
+    },
+    {
+     "id": "wnd[0]/usr/cntlDOCK/shellcont/shell",
+     "name": "shell",
+     "sub": "HTMLViewer",
+     "type": "GuiShell"
+    },
+    {
+     "id": "wnd[0]/usr/cntlDOCK/shellcont/shell[1]",
+     "name": "shell[1]",
+     "sub": "Tree",
+     "tree": {
+      "headers": [
+       "Object Name",
+       "Description"
+      ],
+      "nodes": [
+       {
+        "depth": 0,
+        "expanded": true,
+        "folder": true,
+        "items": [
+         "ZDEMO",
+         "Demo package"
+        ],
+        "key": "ROOT",
+        "text": ""
+       },
+       {
+        "depth": 1,
+        "expanded": true,
+        "folder": true,
+        "items": [
+         "Programs",
+         ""
+        ],
+        "key": "N1",
+        "text": ""
+       },
+       {
+        "depth": 2,
+        "items": [
+         "ZDEMO_REPORT",
+         "Demo report"
+        ],
+        "key": "N2",
+        "text": ""
+       },
+       {
+        "depth": 1,
+        "expanded": false,
+        "folder": true,
+        "items": [
+         "Classes",
+         ""
+        ],
+        "key": "N3",
+        "text": ""
+       }
+      ],
+      "shown": 4
+     },
+     "type": "GuiShell"
+    },
+    {
+     "id": "wnd[0]/sbar",
+     "messageType": "",
+     "name": "sbar",
+     "text": "",
+     "type": "GuiStatusbar"
+    },
+    {
+     "changeable": false,
+     "id": "wnd[0]/sbar/pane[0]",
+     "name": "pane[0]",
+     "text": "",
+     "tip": "",
+     "type": "GuiStatusPane"
+    }
+   ],
+   "id": "wnd[0]",
+   "title": "Object Navigator"
+  }
+ ]
+}

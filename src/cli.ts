@@ -23,7 +23,8 @@ Environment:
   SAP_ALLOW_SYSTEMS=ABA/800,S4H only these systems (and clients)
   SAP_ALLOW_TCODES / SAP_BLOCK_TCODES   transactions the agent may / may not open
   SAP_SURFACES=sapgui,webgui,fiori      which kinds of session to look for
-  SAP_CHROME_CDP=http://127.0.0.1:9222  a Chrome DevTools endpoint to attach to`;
+  SAP_CHROME_CDP=http://127.0.0.1:9222  a Chrome DevTools endpoint to attach to (default: find Chrome)
+  SAP_FIORI_WAIT=busy                   faster Fiori waits (busy indicators only, skips UI5 RecordReplay)`;
 
 async function main(argv: string[]): Promise<number> {
   const cmd = argv[0];

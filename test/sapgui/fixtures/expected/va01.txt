@@ -1,0 +1,20 @@
+TRANSACTION VA01  PROGRAM SAPMV45A  SCREEN 101
+WINDOW wnd[0]  "Create Sales Order: Initial Screen"
+wnd[0]  mainwindow  Create Sales Order: Initial Screen
+wnd[0]/mbar  menubar  Menu {menu[0]}, Edit {menu[1]}, Goto {menu[2]}, System {menu[3]}, Help {menu[4]}
+wnd[0]/tbar[0]/okcd  command-field
+wnd[0]/tbar[0]/btn[0]  button  Enter   (Enter)
+wnd[0]/tbar[0]/btn[11]  button  Save   (Ctrl+S)
+wnd[0]/tbar[0]/btn[3]  button  Back   (F3)
+wnd[0]/tbar[0]/btn[15]  button  Exit   (Shift+F3)
+wnd[0]/tbar[0]/btn[12]  button  Cancel   (F12)
+wnd[0]/tbar[1]/btn[8]  button  Create with Reference  (Create with Reference   (F8))
+wnd[0]/tbar[1]/btn[5]  button  Sales
+wnd[0]/usr/lblVBAK-AUART  label  Order Type
+wnd[0]/usr/ctxtVBAK-AUART  field  Order Type = "OR"  (edit)
+wnd[0]/usr/txtTVAKT-BEZEI  field   = "Standard Order"  (read-only)
+wnd[0]/usr/boxORG  group  Organizational Data
+wnd[0]/usr/lblVBAK-VKORG  label  Sales Organization
+wnd[0]/usr/ctxtVBAK-VKORG  field  Sales Organization = ""  (edit)
+wnd[0]/usr/ctxtVBAK-VTWEG  field  Distribution Channel = ""  (edit)
+wnd[0]/usr/pwdDEMO-SECRET  field  Secret = ""  (edit)

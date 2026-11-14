@@ -1,0 +1,34 @@
+TRANSACTION VA03  PROGRAM SAPMV45A  SCREEN 4001
+WINDOW wnd[0]  "Display Standard Order 4711: Overview"
+wnd[0]  mainwindow  Display Standard Order 4711: Overview
+wnd[0]/mbar  menubar  Menu {menu[0]}, Edit {menu[1]}, Goto {menu[2]}, System {menu[3]}, Help {menu[4]}
+wnd[0]/tbar[0]/okcd  command-field
+wnd[0]/tbar[0]/btn[0]  button  Enter   (Enter)
+wnd[0]/tbar[0]/btn[11]  button  Save   (Ctrl+S)
+wnd[0]/tbar[0]/btn[3]  button  Back   (F3)
+wnd[0]/tbar[0]/btn[15]  button  Exit   (Shift+F3)
+wnd[0]/tbar[0]/btn[12]  button  Cancel   (F12)
+wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021/txtVBAK-VBELN  field  Standard Order = "4711"  (read-only)
+wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021/btnBT_HEAD  button  Display document header details
+wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01  tab  Sales
+wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/chkVBAK-AUTLF  checkbox  [x] Complete dlv.
+wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/radRV45A-DEMO1  radio  [ ] Gross
+wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/radRV45A-DEMO2  radio  [x] Net
+wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/cmbVBAK-LIFSK  dropdown  Delivery block = "" No block  options: :No block, 01:Credit limit, 02:Political reasons
+wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG  table  rows 3 (visible 3); columns: Item | Material | Order Quantity | Rej
+wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/txtVBAP-POSNR[0,0]  field   = "10"  (read-only)
+wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/ctxtRV45A-MABNR[1,0]  field   = "M-01"  (read-only)
+wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/txtRV45A-KWMENG[2,0]  field   = "5"  (read-only)
+wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/chkVBAP-ABGRU[3,0]  checkbox  [ ] Rejected
+wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/txtVBAP-POSNR[0,1]  field   = "20"  (read-only)
+wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/ctxtRV45A-MABNR[1,1]  field   = "M-02"  (read-only)
+wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/txtRV45A-KWMENG[2,1]  field   = "1"  (read-only)
+wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/chkVBAP-ABGRU[3,1]  checkbox  [x] Rejected
+wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/txtVBAP-POSNR[0,2]  field   = ""  (read-only)
+wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/ctxtRV45A-MABNR[1,2]  field   = ""  (read-only)
+wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/txtRV45A-KWMENG[2,2]  field   = ""  (read-only)
+wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/chkVBAP-ABGRU[3,2]  checkbox  [ ] Rejected
+wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\02  tab  Item overview
+wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\03  tab  Ordering party
+wnd[0]/sbar  status  S: Standard Order 4711 is displayed
+wnd[0]/sbar/pane[0]  statuspane  Standard Order 4711 is displayed
