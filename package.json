@@ -1,0 +1,40 @@
+{
+  "name": "sap-gui-mcp-server",
+  "version": "0.1.0",
+  "description": "MCP server that lets an agent see and drive SAP screens: SAP GUI for Windows, SAP GUI for HTML (Web GUI) and SAP Fiori, in a compact, complete text view",
+  "license": "MIT",
+  "author": "Didro",
+  "keywords": ["mcp", "model-context-protocol", "mcp-server", "sap", "sap-gui", "sap-gui-scripting", "webgui", "fiori", "ui5", "agent", "claude", "codex"],
+  "homepage": "https://github.com/DidroAI/sap-gui-mcp-server#readme",
+  "bugs": { "url": "https://github.com/DidroAI/sap-gui-mcp-server/issues" },
+  "repository": { "type": "git", "url": "git+https://github.com/DidroAI/sap-gui-mcp-server.git" },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./package.json": "./package.json"
+  },
+  "bin": { "sap-gui-mcp-server": "dist/cli.js" },
+  "files": ["dist", "!dist/**/*.map", "README.md", "CHANGELOG.md", "LICENSE"],
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "bun run clean && tsc -p tsconfig.build.json && node scripts/copy-assets.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test test",
+    "start": "node dist/cli.js",
+    "prepublishOnly": "bun run typecheck && bun run test && bun run build"
+  },
+  "publishConfig": { "access": "public", "provenance": true },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "playwright-core": "1.65.0",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2"
+  }
+}
