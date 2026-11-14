@@ -31,6 +31,8 @@ control:
 TRANSACTION VA01  PROGRAM SAPMV45A  SCREEN 101  SYSTEM ABA (800)
 WINDOW wnd[0]  "Create Sales Order: Initial Screen"
 okcd  command-field
+btn[3]  button  Back (F3)
+btn[8]  button  Create with Reference (F8)
 ctxtVBAK-AUART  field  Order Type = "OR"  (edit)
 boxTEXT  group  Organizational Data
 ctxtVBAK-VKORG  field  Sales Organization = ""  (edit)
@@ -39,11 +41,18 @@ ctxtVBAK-SPART  field  Division = ""  (edit)
 mbar  menubar  Sales document {menu[0]}, Edit {menu[1]}, Goto {menu[2]}, ...
 ```
 
-(Web GUI, transaction VA01; SAP's messages appear as a `wnd[0]/sbar  status`
-line.)
+(Web GUI, transaction VA01; SAP's messages appear as a `sbar  status` line.)
 
 The agent acts on those ids with one small set of JSON actions, the same on
-every surface.
+every surface. After an action on the same screen it gets only what
+changed:
+
+```
+set wnd[0]/usr/ctxtVBAK-VKORG
+
+CHANGED 1 of 12 lines (same screen; sap_look shows all of it):
+~ ctxtVBAK-VKORG  field  Sales Organization = "1000"  (edit)
+```
 
 First measurements, from our own probe: SAP demo systems, ten screens per
 surface, one model-chosen action per test, one run. The method and scripts
@@ -60,6 +69,15 @@ Playwright MCP paired 66% of labels with their values on Web GUI and showed
 no checkbox state. These numbers come from a small internal probe, not a
 benchmark yet. A public, repeatable benchmark is on the way, with whole
 tasks, held-out screens, and Claude's and Codex's own computer-use tools.
+
+Over a run, an agent pays for every answer. On Web GUI of an ECC demo
+system, a read-only flow of 51 steps (VA01 without saving, VA03, VA05,
+SE16N, SE16, MM03; `test/dev/soak.ts`, one run, tokens counted with the
+Anthropic `count_tokens` API) cost 58k tokens of answers. With
+`SAP_VIEW=full`, where every action answers with the whole screen, the
+same flow cost 73k. Typing into a field answers with about 50 tokens
+instead of the screen (540 on the VA01 initial screen, 2,900 on its
+overview).
 
 ## Quick start
 
@@ -159,8 +177,8 @@ title. Closing the server never closes your browser.
 | --- | --- |
 | `sap_sessions` | lists the SAP sessions open on this machine; `*` marks the active one |
 | `sap_use` | makes another session the active one: by number, id, system, transaction, or surface (`fiori`, `webgui`, `sapgui`) |
-| `sap_look` | the screen as compact text; `full: true` for every id and column |
-| `sap_act` | one action, then the new screen |
+| `sap_look` | the screen as compact text; `full: true` for every id and column; `diff: true` for what changed since the last view; `id` for one control whole; `id` and `rows` for a range of rows of a long list |
+| `sap_act` | one action, then the new screen, or only what changed when the screen is the same one |
 | `sap_confirm` | runs an action held for your confirmation, when your client cannot ask you itself (see below) |
 | `sap_screenshot` | a PNG of the window or tab, for charts and visual checks |
 
@@ -173,16 +191,95 @@ Actions (`sap_act`):
 {"do": "select", "id": "tabpT\\08"}
 {"do": "check", "id": "chkFLAG", "value": true}
 {"do": "combo", "id": "cmbTYPE", "key": "PROG"}
+{"do": "combo", "id": "cmbTYPE"}
 {"do": "okcode", "value": "/nVA03"}
 {"do": "f4", "id": "ctxtVBAK-VKORG"}
 {"do": "dblclick", "id": "lbl[1,13]"}
 {"do": "tree", "id": "shell", "node": "  4", "how": "double"}
-{"do": "grid", "id": "cntlGRID1/shellcont/shell", "row": 0, "col": "VBELN", "how": "double"}
+{"do": "grid", "id": "cntlGRID1/shell", "row": 120, "col": "VBELN", "how": "double"}
+{"do": "scroll", "id": "cntlGRID1/shell", "to": 120}
 ```
 
 For `key`, 0 is Enter, 3 Back, 4 F4, 8 F8, 11 Save and 12 Cancel; a key
 is a number from 0 to 99 or a key name (`Enter`, `Escape`, `Shift+Tab`,
-`Control+S`). Fiori also takes `click` and `scroll`.
+`Control+S`). `combo` without a key lists the dropdown's entries and
+chooses nothing. `scroll` takes a row counted from 0, or `"next"`,
+`"prev"`, `"first"`, `"last"`. Fiori also takes `click`.
+
+### What an answer holds
+
+`sap_act` answers with a line that says what was done, then the screen.
+When the action left the session on the same screen (same transaction,
+program, screen number and windows) and the changes are clearly shorter
+than the screen, the answer holds the changes only:
+
+| Mark | Line |
+| --- | --- |
+| `~` | a line whose content changed, as it is now |
+| `+` | a new line |
+| `-` | a line that is gone |
+| `=` | an unchanged line, for context: the control whose rows follow |
+
+A control whose rows changed for the most part (a list that was scrolled)
+is given whole. The whole screen is always sent on a new transaction, a
+new screen or a new popup, and when the changes are not much shorter than
+it. After a popup closes, the changes are counted from the view the agent
+got before the popup, and the header says so. `sap_look` always shows the
+whole screen; `"full": true` on `sap_act` does so for one action, and
+`SAP_VIEW=full` for all of them.
+
+### Ids and handles
+
+The compact view shortens each scripting id to a handle: the last segment
+when it is unique on the screen (`ctxtVBAK-AUART`), else the last segment
+with as few earlier ones as make it unique (`cntlGRID1/shell`,
+`cntlSPLITTER_CONTAINER/shellcont[1]/shell`, `tbar[1]/btn[3]`). A toolbar
+button is `btn[N]`, and N is its function key: `btn[8]` is F8. Every
+action takes a handle, a full id, or a field's SAP name (`VBAK-AUART`).
+
+- An id that names several controls is refused with the list of them. The
+  server does not pick one.
+- An id that is not on the screen is refused. If the screen is not the one
+  the agent saw last, the answer holds the screen it is on.
+
+### What the compact view folds, and how to get it
+
+Nothing the screen shows is left out without a way to get it:
+
+| In the compact view | To get the rest |
+| --- | --- |
+| Buttons that differ only by their field (`Multiple selection` on a selection screen) share a line: `btn%_S{VBELN,AUART}_%_APP_%-VALU_PUSH` | one id per name in braces: `btn%_SVBELN_%_APP_%-VALU_PUSH` |
+| A dropdown shows its current entry and the number of entries: `(31 options)` | `{"do":"combo","id":...}` without a key, or `sap_look` with the dropdown's `id` |
+| A table control shows one line per row, with the cells that hold a value | `full: true` gives every cell with its id |
+| A classic list shows one line per row, each cell with its column | cells are `lbl[col,row]`; `full: true` gives one line per cell |
+| A grid names the columns that are empty in every row shown once, with their titles | `full: true` gives every cell |
+| Behind a popup, the main window keeps values, checked boxes, the selected tab and the status bar | `full: true`; buttons and menus there cannot be used until the popup closes |
+| A view longer than 20,000 characters cuts the rows of its longest controls, and says how many | `sap_look` with the control's `id`, or with `id` and `rows` |
+| The menu bar is one line with the menus' names | Web GUI: `sap_look` with `id: "mbar"` lists every entry with its id |
+
+### Long lists
+
+A grid, a table control, a tree or a classic list shows the rows SAP has
+drawn, and says how many there are:
+
+```
+cntlGRID1/shell  grid  93 rows; columns: VBELN=Sales Document | AUDAT=Doc. Date | ...
+  row 0: 5004 | 27.01.1997 | ...
+  ... 68 more rows (shown: 0 to 24; scroll for the others)
+```
+
+- `{"do":"scroll","id":"cntlGRID1/shell","to":60}` moves the list to a row
+  (counted from 0), or by a page with `"next"` and `"prev"`, or to
+  `"first"` and `"last"`. The answer says which rows are shown.
+- `sap_look` with `"id": "cntlGRID1/shell", "rows": "30-59"` reads those
+  rows, scrolling as far as needed (200 rows at most per call).
+- A `grid` action on a row that is not drawn scrolls to it first. A row
+  the list does not have is an error that says so.
+- A table control and a classic list count their rows on the screen: after
+  a scroll the view says which row of the whole list its row 0 is.
+
+On SAP GUI for Windows, the host and the fake SAP GUI of the tests got the
+scroll code in this version; it has not been run against a real SAP GUI yet.
 
 The server brings every action to one shape before anything reads it:
 `do` must be one of the verbs above, a key must be a number or a known
@@ -221,7 +318,8 @@ checked by its transaction code.
 
 Each surface classifies an action before it runs:
 
-- **read:** value help, expanding a tree node;
+- **read:** value help, expanding a tree node, scrolling a list, listing a
+  dropdown's entries;
 - **navigate:** typing, Enter, tabs, Back, Execute (F8);
 - **commit:** anything that may save, and anything not known to be safe.
 
@@ -243,7 +341,8 @@ has a test-run flag and asks before posting, but not always. Put known
 update programs in `SAP_BLOCK_TCODES`.
 
 A slow action can be given more time with `"timeout"` in seconds, up to
-600, for example `{"do":"key","key":8,"timeout":300}` (SAP GUI).
+600, for example `{"do":"key","key":8,"timeout":300}` (SAP GUI and Web
+GUI). Without it an action waits 180 seconds for SAP.
 
 ### Confirm mode
 
@@ -274,6 +373,7 @@ Other settings:
 | Setting | Effect |
 | --- | --- |
 | `SAP_SURFACES=sapgui,webgui,fiori` | which kinds of session to look for |
+| `SAP_VIEW=full` | every action answers with the whole screen (default `diff`: only what changed when the screen is the same) |
 | `SAP_FIORI_WAIT=busy` | faster Fiori waits (busy indicators only) |
 
 ## Limits
@@ -285,7 +385,21 @@ Other settings:
     reached by scripting; use `sap_screenshot` to see them.
 - **Browsers:** Chrome is supported; Microsoft Edge (also Chromium) is
   found the same way and is likely to work; Firefox and Safari are not.
-- **Long lists:** these show the rows on screen, with the total count.
+- **Long lists:**
+  - The view shows the rows on screen with the total; `scroll` and
+    `sap_look` with `rows` reach the others (see "Long lists").
+  - Lists scroll down and up, not sideways: a grid wider than the screen
+    shows the columns SAP has drawn.
+  - Web GUI draws only the tree nodes in view; a node further down is
+    reached by scrolling the tree first.
+- **Web GUI in a background tab:** Chrome draws a tab that is not in front
+  about once a second, and hands it clicks and keys just as slowly. The
+  server notices and waits longer (two to three seconds per action instead
+  of one). It works, but a tab in front, or a window of its own, is faster.
+- **When SAP does not answer:** an action waits up to 180 seconds (or its
+  `timeout`), then says that SAP is still working. If the connection to SAP
+  drops, the action says that the request failed; the page then needs a
+  reload. A session that timed out shows as a `WINDOW browser` with a note.
 
 ## Development
 
@@ -298,6 +412,17 @@ node dist/cli.js doctor
 `test/dev/webgui-logon.ts` and `test/dev/fiori-logon.ts` log a
 throwaway Chrome on to a test system for live checks. They read the
 password from a file and never print it.
+
+`test/dev/soak.ts` walks a logged-on Web GUI session through about sixty
+read-only steps (VA01 without saving, VA03, VA05, SE16N, SE16, MM03) and
+reports failures, time and tokens per step. `test/dev/measure.ts` counts
+what each rule of the compact view saves on a set of screens. Both count
+tokens with the Anthropic `count_tokens` API when `ANTHROPIC_API_KEY` is
+set, and write screen content only where you tell them to: keep that out
+of Git.
+
+The browser tests run on synthetic pages and need a Chrome:
+`SAP_TEST_CHROME=/path/to/chrome bun test`.
 
 ## Licence
 

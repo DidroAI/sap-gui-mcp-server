@@ -15,7 +15,9 @@ do by hand, under their authorisations.
    the header: transaction, program, screen and system tell you where you are.
 2. One `sap_act` per step, on ids from the view. Each action answers with
    the new screen: read it before the next step instead of calling
-   `sap_look` again.
+   `sap_look` again. When the screen is still the same one, the answer
+   holds only what changed (`~` changed, `+` new, `-` gone, `=` context);
+   the rest is as you last saw it.
 3. After every action, read the **status bar** line (`sbar  status  E: ...`
    in SAP GUI and Web GUI; message toasts and popovers in Fiori). SAP
    reports errors (`E`), warnings (`W`) and successes (`S`) there; an error
@@ -38,6 +40,13 @@ do by hand, under their authorisations.
 - **Lists:** ALV grids show rows with a column header once; open an entry
   with `{"do":"grid","id":...,"row":N,"col":"<column>","how":"double"}`.
   Trees: `{"do":"tree","id":...,"node":"<key>","how":"double"}`.
+- **Long lists** show the rows on screen and the total. Move them with
+  `{"do":"scroll","id":...,"to":N}` (or `"next"`, `"prev"`, `"first"`,
+  `"last"`); read a range with `sap_look` and `"id"`, `"rows": "100-150"`.
+  Do not conclude from the rows on screen that an entry is missing.
+- **Dropdowns** show their current entry and how many they have.
+  `{"do":"combo","id":...}` without a key lists the entries; with
+  `"key"` it chooses one.
 - **Back without saving:** F3 (`key 3`) goes back, F12 (`key 12`) cancels.
   If SAP asks whether to save, answer **No** unless the user asked you to
   save.
