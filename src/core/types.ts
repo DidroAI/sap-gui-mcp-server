@@ -36,13 +36,14 @@ export interface SessionInfo {
  *   {"do": "key", "key": 0}                                 virtual key: 0 Enter, 3 Back, 4 F4, 8 F8, 11 Save, 12 Cancel
  *   {"do": "select", "id": "tabpT\\08"}                     tab, radio button, menu entry
  *   {"do": "check", "id": "...", "value": true}             checkbox
- *   {"do": "combo", "id": "...", "key": "PROG"}             dropdown entry (key or shown text)
+ *   {"do": "combo", "id": "...", "key": "PROG"}             dropdown entry (key or shown text); without a key: lists the entries
  *   {"do": "okcode", "value": "/nVA03"}                     command field
  *   {"do": "f4", "id": "..."}                               value help on a field
  *   {"do": "dblclick", "id": "..."}                         list entry or label
  *   {"do": "tree", "id": "...", "node": "<key>", "how": "double|select|expand"}
  *   {"do": "grid", "id": "...", "row": 0, "col": "VBELN", "how": "double|select"}
  *   {"do": "toolbar", "id": "...", "button": "<button id>"}
+ *   {"do": "scroll", "id": "...", "to": 120}                grid, table control, tree or list: to a row (from 0), "next", "prev", "first" or "last"
  *   {"do": "click", "id": "..."}                            Fiori: any control by UI5 id tail
  */
 export interface Action {
@@ -55,6 +56,8 @@ export interface Action {
   row?: number;
   col?: string;
   button?: string;
+  /** scroll: a row counted from 0, or "next", "prev", "first", "last". */
+  to?: number | string;
   [k: string]: unknown;
 }
 
@@ -76,6 +79,18 @@ export interface Assessment {
 export interface LookOptions {
   /** Compact view (default) or the full view with every id and column. */
   compact: boolean;
+  /**
+   * Only this control, whole: every row the reader holds and every entry of
+   * a dropdown, whatever the compact view leaves out. `id` is an id or a
+   * handle from the view.
+   */
+  id?: string;
+  /**
+   * With `id`, for a grid, a table control, a tree or a list: these rows
+   * (first and last, counted from 0), read by scrolling the control. The
+   * control stays scrolled to the last rows read.
+   */
+  rows?: { from: number; to: number };
 }
 
 /** A live connection to one session. */
