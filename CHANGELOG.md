@@ -21,3 +21,7 @@
   screen holds; the server no longer picks the nearest match.
 - Web GUI waits: a lost connection and a step that is still running are
   reported; a tab in the background is driven at its own pace.
+- Record, replay and export (prototype): `sap_record` keeps a run as a test
+  file, `sap_replay` and `sap-gui-mcp-server replay` run it again with no
+  model, `export` writes a Cloud ALM manual test case, a SAP GUI script, a
+  Playwright spec or a Gherkin feature. See `docs/record.md`.

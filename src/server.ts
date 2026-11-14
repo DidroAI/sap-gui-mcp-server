@@ -1,5 +1,6 @@
 /**
- * The MCP server: six tools over the registry of open SAP sessions.
+ * The MCP server: six tools over the registry of open SAP sessions, and two
+ * that turn a session into a repeatable test (record/tools.ts).
  *
  *   sap_sessions    list the SAP sessions open on this machine
  *   sap_use         make one the active session
@@ -17,6 +18,8 @@ import { commandFieldRefusal, decide, leavesTransaction, type Policy, sessionRef
 import { Registry } from "./core/registry.js";
 import { ActionError, type Assessment, type Driver, type LookOptions, type SessionInfo, type Surface } from "./core/types.js";
 import { type ViewMode, Views } from "./core/views.js";
+import { Recorder, type RecorderOptions, recorderOptionsFromEnv } from "./record/recorder.js";
+import { registerRecordTools } from "./record/tools.js";
 
 export const SERVER_NAME = "sap-gui";
 export const SERVER_VERSION = "0.1.0";
@@ -26,7 +29,8 @@ Start with sap_look (or sap_sessions when several are open). The view has one li
 When an action leaves you on the same screen, the answer holds only what changed since your last view: "~" a changed line, "+" a new one, "-" one that is gone, "=" an unchanged line for context; everything else is as you saw it. A new transaction, screen or popup is always shown whole, and sap_look shows the whole screen at any time.
 Long lists show the rows on screen and the total: {"do":"scroll"} moves them, sap_look with id and rows reads a range. A dropdown shows its current entry and how many it has: {"do":"combo","id":...} without a key lists them.
 Actions that may write to SAP (save, post, delete, release...) follow the user's write setting: refused, held for the user's confirmation, or run. When held, the user is asked in the client itself where the client can do that; otherwise sap_act answers with a token for sap_confirm, to call only after the user said yes to that exact action.
-Commands go through {"do":"okcode"} only; the command field itself cannot be typed into.`;
+Commands go through {"do":"okcode"} only; the command field itself cannot be typed into.
+To keep a run as a repeatable test, use sap_record (start, then act as usual, mark checks with assert, stop); sap_replay runs it again without a model.`;
 
 function text(t: string): CallToolResult {
   return { content: [{ type: "text", text: t }] };
@@ -118,6 +122,8 @@ export interface ServerOptions {
   surfaces: Surface[];
   /** What sap_act answers with: the changes when that is shorter ("diff", the default), or always the whole screen ("full"). */
   view?: ViewMode;
+  /** Where recordings go and whether every session is recorded; default: from SAP_RECORD_DIR and SAP_RECORD. */
+  record?: RecorderOptions;
 }
 
 /** "120-180" or "120": the first and last row, counted from 0. */
@@ -133,9 +139,10 @@ export function parseRows(rows: string): { from: number; to: number } {
 /** The most rows one sap_look reads by scrolling. */
 const MAX_ROWS = 200;
 
-export function createServer({ policy, surfaces, view = "diff" }: ServerOptions) {
+export function createServer({ policy, surfaces, view = "diff", record }: ServerOptions) {
   const registry = new Registry(surfaces, policy);
   const views = new Views(view);
+  const recorder = new Recorder(record ?? recorderOptionsFromEnv(process.env, `${SERVER_NAME}-mcp-server ${SERVER_VERSION}`));
   const pending = new Map<string, { shown: Shown; at: number }>();
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, { instructions: INSTRUCTIONS });
   const session = z.string().optional().describe("session from sap_sessions (number, id, system, transaction, or a surface: sapgui, webgui, fiori); default: the active one");
@@ -216,12 +223,13 @@ export function createServer({ policy, surfaces, view = "diff" }: ServerOptions)
   const canElicit = () => !!server.server.getClientCapabilities()?.elicitation?.form;
 
   /** Runs an action that passed the guard, then checks where it led. */
-  async function perform(d: Driver, action: NormalizedAction, whole = false): Promise<CallToolResult> {
+  async function perform(d: Driver, action: NormalizedAction, whole = false, risk?: string): Promise<CallToolResult> {
     const session = d.info.id;
     // "/oVA03" opens the transaction in a new SAP GUI session: follow it there.
     const opens = action.do === "okcode" && typeof action.value === "string" && /^\/o\S/i.test(action.value) && d.info.surface === "sapgui";
     const before = opens ? new Set((await registry.discover()).sessions.map((s) => s.id)) : undefined;
-    const note = await d.act(action);
+    // While a recording is on, an action that works becomes a step of it.
+    const note = await recorder.act(d, action, risk, () => d.act(action));
     if (before) {
       for (let i = 0; i < 10; i++) {
         const fresh = (await registry.discover()).sessions.find((s) => s.surface === "sapgui" && !before.has(s.id));
@@ -272,7 +280,7 @@ export function createServer({ policy, surfaces, view = "diff" }: ServerOptions)
     if (!j.verdict.run && "refused" in j.verdict) return fail(`Refused: ${j.verdict.refused}`);
     const changed = changedSince(shown, shownOf(j.info, shown.action, j.assessment));
     if (changed.length) return fail(`Not run: the screen changed since the confirmation was asked (${changed.join("; ")}). Look at the screen and call sap_act again.`);
-    return perform(j.driver, shown.action, whole);
+    return perform(j.driver, shown.action, whole, j.assessment.risk);
   }
 
   /**
@@ -310,7 +318,7 @@ export function createServer({ policy, surfaces, view = "diff" }: ServerOptions)
     }
     if ("refused" in j) return fail(`Refused: ${j.refused}`);
     const { driver, info, assessment, verdict } = j;
-    if (verdict.run) return perform(driver, action, whole).catch((e: unknown) => failedOn(ref, e));
+    if (verdict.run) return perform(driver, action, whole, assessment.risk).catch((e: unknown) => failedOn(ref, e));
     if ("refused" in verdict) return fail(`Refused: ${verdict.refused}`);
     const shown = shownOf(info, action, assessment);
     const what = `${verdict.confirm}, on ${place(info)}`;
@@ -402,5 +410,7 @@ An action that may write to SAP is refused, run, or held for the user's yes, as 
       }),
   );
 
-  return { server, registry };
+  registerRecordTools(server, registry, policy, recorder);
+
+  return { server, registry, recorder };
 }

@@ -10,6 +10,7 @@ import { doctorReport } from "./cli/doctor.js";
 import { setup } from "./cli/setup.js";
 import { policyFromEnv } from "./core/guard.js";
 import { Registry } from "./core/registry.js";
+import { exportCommand, RECORD_HELP, replayCommand } from "./record/cli.js";
 import { SERVER_VERSION, sessionLine } from "./server.js";
 import { serveStdio } from "./stdio.js";
 import { surfacesFromEnv } from "./surfaces.js";
@@ -22,6 +23,7 @@ Usage:
                                 add the server to the MCP clients found on this machine
   sap-gui-mcp-server doctor     check SAP GUI scripting and Chrome access on this machine
   sap-gui-mcp-server sessions   list the SAP sessions found now
+${RECORD_HELP}
   sap-gui-mcp-server --version | --help
 
 Environment:
@@ -36,13 +38,16 @@ Environment:
                                         opens that port only together with --user-data-dir.
   SAP_VIEW=diff|full                    what an action answers with: only what changed when the screen is the same (default),
                                         or always the whole screen
-  SAP_FIORI_WAIT=busy                   faster Fiori waits (busy indicators only, skips UI5 RecordReplay)`;
+  SAP_FIORI_WAIT=busy                   faster Fiori waits (busy indicators only, skips UI5 RecordReplay)
+  SAP_RECORD_DIR=./sap-tests            where sap_record writes recordings and exports (default: sap-tests in the working directory)
+  SAP_RECORD=on                         record every session from its first action, without sap_record start`;
 
 async function main(argv: string[]): Promise<number> {
   const cmd = argv[0];
   if (cmd === "--version" || cmd === "-v") return console.log(SERVER_VERSION), 0;
   if (cmd === "--help" || cmd === "-h" || cmd === "help") return console.log(HELP), 0;
   if (!cmd) return await serveStdio(), -1;
+  if (cmd === "export") return exportCommand(argv.slice(1));
   const surfaces = surfacesFromEnv();
   if (cmd === "doctor") {
     if (surfaces.some((s) => s.name !== "sapgui")) console.error("Checking… (if Chrome asks whether to allow remote debugging, click Allow)\n");
@@ -67,6 +72,13 @@ async function main(argv: string[]): Promise<number> {
     await disconnectChrome().catch(() => {});
     // Every surface failed: that is a setup problem, not "nothing open".
     return allFailed ? 1 : 0;
+  }
+  if (cmd === "replay") {
+    try {
+      return await replayCommand(argv.slice(1), surfaces, policyFromEnv());
+    } finally {
+      await disconnectChrome().catch(() => {});
+    }
   }
   console.error(`Unknown command "${cmd}".\n\n${HELP}`);
   return 2;

@@ -197,6 +197,8 @@ title. Closing the server never closes your browser.
 | `sap_act` | one action, then the new screen, or only what changed when the screen is the same one |
 | `sap_confirm` | runs an action held for your confirmation, when your client cannot ask you itself (see below) |
 | `sap_screenshot` | a PNG of the window or tab, for charts and visual checks |
+| `sap_record` | records the run as a test: start, stop, checks, variables, export |
+| `sap_replay` | runs a recorded test again, with no model |
 
 Actions (`sap_act`):
 
@@ -307,6 +309,35 @@ cntlGRID1/shell  grid  93 rows; columns: VBELN=Sales Document | AUDAT=Doc. Date 
 On SAP GUI for Windows, the host and the fake SAP GUI of the tests got the
 scroll code in this version; it has not been run against a real SAP GUI yet.
 
+## Record a run as a test
+
+An agent's run can be kept as a test and run again with no model:
+
+```
+sap_record {"op":"start","name":"VA03 display order"}
+sap_act    {"action":{"do":"okcode","value":"/nVA03"}}       ... act as usual
+sap_record {"op":"assert","check":"field","id":"txtVBAK-NETWR","equals":"2.500,00"}
+sap_record {"op":"variable","name":"order","value":"19097"}
+sap_record {"op":"stop"}
+```
+
+```sh
+sap-gui-mcp-server replay sap-tests/va03-display-order.saptest.json --var order=4711
+sap-gui-mcp-server export sap-tests/va03-display-order.saptest.json --to calm   # or vbs, playwright, playwright-sap, gherkin
+```
+
+- The recording is one JSON file: each action, the screen it led to, the
+  status bar, the checks you marked, and variables for values that change.
+- `replay` runs it on a session you have open, under the same guardrails as
+  `sap_act`, and reports pass or fail per step with the screen at the
+  failure. `sap_replay` does the same from the agent.
+- `export` writes a SAP Cloud ALM manual test case, a SAP GUI script (VBS), a
+  Playwright spec for Web GUI, or a Gherkin step list.
+
+Recordings go to `SAP_RECORD_DIR` (default `./sap-tests`) and hold the values
+that were typed. Design, file format and limits: [docs/record.md](docs/record.md).
+Prototype: checked on Web GUI; not yet run on SAP GUI for Windows or Fiori.
+
 ## Guardrails
 
 The server enforces these whatever the agent decides:
@@ -392,6 +423,8 @@ Other settings:
 | `SAP_SURFACES=sapgui,webgui,fiori` | which kinds of session to look for |
 | `SAP_VIEW=full` | every action answers with the whole screen (default `diff`: only what changed when the screen is the same) |
 | `SAP_FIORI_WAIT=busy` | faster Fiori waits (busy indicators only) |
+| `SAP_RECORD_DIR=./sap-tests` | where recordings and exports are written |
+| `SAP_RECORD=on` | record every session from its first action |
 
 ## Limits
 
