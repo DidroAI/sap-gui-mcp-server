@@ -13,7 +13,7 @@ import { isWebguiUrl, tabWhere, WEBGUI_PATH } from "../browser/classify.js";
 import { compact } from "../core/compact.js";
 import type { Action, Assessment, Driver, LookOptions, SessionInfo, Surface } from "../core/types.js";
 import { extractFacts, type PageFacts } from "./page.js";
-import { act, assess, look } from "./reader.js";
+import { act, assess, look, view } from "./reader.js";
 import { WebGuiSession } from "./session.js";
 
 export { assessAction } from "./assess.js";
@@ -128,9 +128,8 @@ class WebGuiDriver implements Driver {
     return this.info;
   }
 
-  async look(options: LookOptions): Promise<string> {
-    const full = await look(sessionOf(this.frame));
-    return options.compact ? compact(full) : full;
+  look(options: LookOptions): Promise<string> {
+    return view(sessionOf(this.frame), options);
   }
 
   assess(action: Action): Promise<Assessment> {

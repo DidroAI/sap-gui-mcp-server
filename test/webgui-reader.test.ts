@@ -123,9 +123,13 @@ describe.skipIf(!exe)("Web GUI reader in a browser", () => {
   test("the compact view shortens the ids", async () => {
     const lines = (await webguiLookInFrame(page.mainFrame(), true))?.split("\n") ?? [];
     expect(lines).toContain('ctxtZHDR-TYPE  field  Order Type = "AB"  (edit)');
-    expect(lines).toContain("tabpT\\02  tab  Shipping");
-    expect(lines).toContain("wnd[0]/tbar[0]/btn[11]  button  Save (Ctrl+S)");
-    expect(lines).toHaveLength(EXPECTED.length);
+    // A popup is open: behind it the view keeps what the screen shows (the selected tab), not what cannot be used (the other tabs).
+    expect(lines).toContain("tabpT\\01  tab  Sales (selected)");
+    expect(lines).not.toContain("tabpT\\02  tab  Shipping");
+    // Buttons of the screen behind cannot be pressed while the popup is open: the full view has them.
+    expect(lines.some((l) => l.includes("Save"))).toBe(false);
+    expect(lines).toContain("  (10 more lines behind the popup: buttons, menus, empty fields, list rows; sap_look full=true shows them)");
+    expect(lines.length).toBeLessThan(EXPECTED.length);
   });
 
   test("session facts come from the system information items", async () => {
@@ -170,8 +174,8 @@ describe.skipIf(!exe)("Web GUI reader in a browser", () => {
     const f = page.mainFrame();
     expect(await webguiActInFrame(f, { do: "set", id: "ZHDR-TYPE", value: "CD" })).toBe("set wnd[0]/usr/ctxtZHDR-TYPE");
     expect(await page.locator("#F1").inputValue()).toBe("CD");
-    expect(webguiActInFrame(f, { do: "set", id: "ZHDR-NETWR", value: "1" })).rejects.toThrow("read-only");
-    expect(webguiActInFrame(f, { do: "press", id: "nothing" })).rejects.toThrow("no control named nothing");
+    expect(await refusal(webguiActInFrame(f, { do: "set", id: "ZHDR-NETWR", value: "1" }))).toContain("read-only");
+    expect(await refusal(webguiActInFrame(f, { do: "press", id: "nothing" }))).toContain('No control "nothing" on this screen');
   });
 
   test("no view shows a password", async () => {

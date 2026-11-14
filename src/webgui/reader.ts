@@ -21,15 +21,20 @@
  *   {"do":"toolbar","id":"shell","button":"&FIND"}
  */
 import type { Frame, Locator } from "playwright-core";
-import { ActionError, type Action, type Assessment } from "../core/types.js";
+import { compact, controlBlock } from "../core/compact.js";
+import { resolveId, severalText, shortIds } from "../core/ids.js";
+import { readRows } from "../core/rows.js";
+import { ActionError, type Action, type Assessment, type LookOptions } from "../core/types.js";
 import { LOGON_PROGRAM, LOGON_REFUSAL } from "../core/words.js";
 import { assessAction, type FocusFacts } from "./assess.js";
-import type { MarkedControl } from "./page.js";
-import { extractFacts, extractLook, extractMenus, extractViewer, focusedControl, markControl, markRow, normalizeLsdata, viewerFocus } from "./page.js";
-import type { WebGuiSession } from "./session.js";
+import type { MarkedControl, Scrolled } from "./page.js";
+import { comboEntries, extractFacts, extractLook, extractMenus, extractViewer, focusedControl, markControl, markRow, normalizeLsdata, scrollControl, viewerFocus } from "./page.js";
+import { IDLE_TIMEOUT_MS, MAX_IDLE_TIMEOUT_MS, type WebGuiSession } from "./session.js";
 
 const MAX_GRID_ROWS = 50;
 const MAX_TREE_NODES = 300;
+/** How long a screen read may serve the step that follows it (assess, then act). */
+const FRESH_MS = 1500;
 
 /** Reads an HTML viewer and the frames inside it, numbering controls across them. */
 async function readViewer(fr: Frame): Promise<{
@@ -167,7 +172,9 @@ export async function assess(session: WebGuiSession, action: Action): Promise<As
     const menus = await session.frame.evaluate(extractMenus);
     const facts = await session.frame.evaluate(extractFacts);
     const focus = action.do === "key" || action.do === "okcode" ? await focusOf(session) : undefined;
-    const verdict = assessAction(action, view, menus, { language: facts.language, focus });
+    // The control the action will act on, resolved as `act` resolves it: the guard judges that one.
+    const resolved = action.id ? { ...action, id: resolveIn(view, String(action.id)) } : action;
+    const verdict = assessAction(resolved, view, menus, { language: facts.language, focus });
     // A control the view does not list may still exist in the page (markControl looks wider).
     // Only when the page has none either is it "no such control" rather than "may write".
     if (verdict.risk === "commit" && verdict.reason.includes("not on the screen the server read") && action.id) {
@@ -181,7 +188,115 @@ export async function assess(session: WebGuiSession, action: Action): Promise<As
   }
 }
 
+/** The id of a control line: everything before the first two spaces. */
+const idOf = (line: string): string => line.split("  ", 1)[0] ?? "";
+const idsOf = (view: string): string[] =>
+  view
+    .split("\n")
+    .filter((l) => l.startsWith("wnd["))
+    .map(idOf);
+
+/**
+ * The full id an id or a handle means on the screen `view` shows. A handle
+ * that names several controls is refused with the list of them. An id the
+ * view does not hold comes back as it is: the page may still know it (a
+ * field's SAP name, a menu entry).
+ */
+export function resolveIn(view: string, ident: string): string {
+  const ids = idsOf(view);
+  const r = resolveId(ids, ident);
+  if ("id" in r) return r.id;
+  if ("several" in r) throw new ActionError(severalText(ident, r.several, shortIds(ids)));
+  return ident.trim();
+}
+
+/** The full view, read again unless one was read a moment ago. */
+async function freshView(session: WebGuiSession): Promise<string> {
+  const v = session.view;
+  if (v && Date.now() - v.at < FRESH_MS) return v.text;
+  return look(session);
+}
+
+/** A read fails while Web GUI replaces the page under it: wait for the new screen and read once more. */
 export async function look(session: WebGuiSession): Promise<string> {
+  let text: string;
+  try {
+    text = await read(session);
+  } catch (e) {
+    if (!/context was destroyed|navigat|detached|Target closed/i.test((e as Error).message) || session.page.isClosed()) throw e;
+    await session.waitIdle().catch(() => {});
+    text = await read(session);
+  }
+  // A grid that was just scrolled far fetches its rows after the scroll: for a moment it has rows and draws none.
+  for (let i = 0; i < 20 && text.includes(NONE_DRAWN); i++) {
+    await session.page.waitForTimeout(250);
+    text = await read(session);
+  }
+  session.view = { at: Date.now(), text };
+  return text;
+}
+
+const NONE_DRAWN = " rows, none drawn yet";
+
+/** Every menu entry of the menu bar, with its id and its shortcut: what the view names as one `menubar` line. */
+async function menuLines(session: WebGuiSession): Promise<string> {
+  const menus = await session.frame.evaluate(extractMenus);
+  if (!menus.length) return "mbar  menubar  (this screen has no menu bar the server can read)";
+  const path = (sid: string) => (sid.match(/menu\[(\d+)\]/g) ?? []).map((x) => Number(x.slice(5, -1)));
+  const sorted = [...menus].sort((a, b) => {
+    const x = path(a.sid);
+    const y = path(b.sid);
+    for (let i = 0; i < Math.min(x.length, y.length); i++) if (x[i] !== y[i]) return (x[i] ?? 0) - (y[i] ?? 0);
+    return x.length - y.length;
+  });
+  const out = ['mbar  menubar  every entry; choose one with {"do":"select","id":"<id>"}'];
+  for (const m of sorted) {
+    const id = m.sid.replace(/^wnd\[0\]\/mbar\//, "");
+    if (!id.startsWith("menu[")) continue;
+    out.push(`  ${"  ".repeat(path(m.sid).length - 1)}${m.text}${m.key ? ` (${m.key.replace(/_/g, "+")})` : ""}  {${id}}`);
+  }
+  return out.join("\n");
+}
+
+/** The screen, or one control of it, as the tools show it. */
+export async function view(session: WebGuiSession, options: LookOptions): Promise<string> {
+  if (!options.id) {
+    const full = await look(session);
+    return options.compact ? compact(full) : full;
+  }
+  if (/^(wnd\[0\]\/)?mbar$/.test(options.id.trim())) return menuLines(session);
+  const full = await look(session);
+  const sid = resolveIn(full, options.id);
+  const missing = () => new ActionError(`No control "${options.id}" on this screen. Use an id from sap_look (the screen may have changed).`);
+  if (options.rows) {
+    if (!controlBlock(full, sid)) throw missing();
+    return readRows(
+      {
+        scrollTo: async (row) => {
+          await scrollTo(session, sid, row);
+        },
+        block: async () => {
+          const screen = await look(session);
+          const block = controlBlock(screen, sid);
+          return block === undefined ? undefined : { block, screen };
+        },
+      },
+      options.id,
+      options.rows.from,
+      options.rows.to,
+    );
+  }
+  let block = controlBlock(full, sid);
+  if (!block) throw missing();
+  if (/ {2}dropdown {2}/.test(block.split("\n").at(-1) ?? "")) {
+    // Every entry, also those the view cuts and those Web GUI loads only when the list opens.
+    const entries = await entriesOf(session, sid);
+    block = `${block.replace(/ {2}(\d+ )?options: .*$/, "")}  ${entries.length} options: ${entries.map((e) => `${e.key}:${e.text}`).join(", ")}`;
+  }
+  return options.compact ? compact(block, { dropdowns: false, maxChars: 0, screen: full }) : block;
+}
+
+async function read(session: WebGuiSession): Promise<string> {
   if (await onLogon(session)) {
     const facts = await session.frame.evaluate(extractFacts);
     // The logon screen is not read out: nothing on it is for the agent.
@@ -238,7 +353,7 @@ export function vkey(k: unknown): string {
 async function locate(session: WebGuiSession, id: string) {
   const f = await lsFrame(session);
   const r = await f.evaluate(markControl, id);
-  if (typeof r === "string") throw new ActionError(r);
+  if (typeof r === "string") throw new ActionError(r.startsWith("no control named") ? `No control "${id}" on this screen. Use an id from the screen you are on (it may have changed since your last look).` : r);
   return { f, c: r, loc: f.locator("[data-sap-act]").first() };
 }
 
@@ -257,6 +372,31 @@ async function typeInto(
   if (value) await loc.pressSequentially(value, { delay: 15 });
   await session.waitIdle();
   await session.closeSuggestions();
+}
+
+/**
+ * Clicks a control whose click sends a request (a button, a tab) and waits
+ * for the round trip. In a tab Chrome draws only once a second the click
+ * can be lost: it first takes the focus from the field typed into before,
+ * Web GUI posts that field's value and type-ahead and draws again, and the
+ * control under the pointer is no longer the one the mouse went down on.
+ * When no request with a step left, the click is made once more; the focus
+ * is on the control by then. It is repeated only in such a tab, and only
+ * while the control is still there: a click that did work has taken its
+ * popup or screen away.
+ */
+async function clickForRoundtrip(session: WebGuiSession, sid: string): Promise<void> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const f = await lsFrame(session);
+    const r = await f.evaluate(markControl, sid);
+    if (typeof r === "string" || r.sid !== sid) {
+      if (attempt === 0) throw new ActionError(`No control "${sid}" on this screen. Use an id from the screen you are on (it may have changed since your last look).`);
+      return;
+    }
+    await session.roundtrip(() => f.locator("[data-sap-act]").first().click(), 1200);
+    if (session.started || !session.slow) return;
+    await session.closeSuggestions();
+  }
 }
 
 /** Controls a value can be typed into. A password field is not one: this server never types a password. */
@@ -279,11 +419,79 @@ export function setRefusal(c: MarkedControl): string | undefined {
 /** One action. Returns a one-line note of what was done; throws ActionError when it cannot. */
 export async function act(session: WebGuiSession, a: Action): Promise<string> {
   await refuseLogon(session);
+  await session.wake();
+  // A long step (a report started with F8) can be given more time: "timeout" in seconds.
+  const t = Number(a.timeout);
+  session.idleTimeoutMs = Number.isFinite(t) && t > 0 ? Math.min(Math.round(t * 1000), MAX_IDLE_TIMEOUT_MS) : IDLE_TIMEOUT_MS;
+  session.unsettled = false;
+  // A type-ahead list left open by the field typed into before covers what is below it.
+  if (a.do !== "set") await session.closeSuggestions().catch(() => {});
   try {
-    return await run(session, a);
+    // The id as the screen holds it now: a handle becomes its full id, one that names several controls is refused.
+    const named = a.id !== undefined && String(a.id).trim() && !isMenuPath(String(a.id));
+    const note = await run(session, named ? { ...a, id: resolveIn(await freshView(session), String(a.id)) } : a);
+    return session.unsettled ? `${note}\n(Web GUI still showed its loading sign when the server stopped waiting: the step may not be over. If the screen below is not what the step should lead to, look again in a moment.)` : note;
   } catch (e) {
     throw tidy(e);
+  } finally {
+    session.view = undefined;
+    session.idleTimeoutMs = IDLE_TIMEOUT_MS;
   }
+}
+
+const isMenuPath = (id: string) => /\/mbar\/menu\[/.test(id) || /^menu\[/.test(id);
+
+/** Moves a grid, table control, tree or list to a row and waits for the rows. */
+async function scrollTo(session: WebGuiSession, sid: string, to: number | string): Promise<Scrolled | string> {
+  const f = await lsFrame(session);
+  let r: Scrolled | string = "";
+  await session.roundtrip(async () => {
+    r = await f.evaluate(scrollControl, { sid, to });
+    if (typeof r !== "string" && !r.moved) {
+      // No access to the scrollbar object in this Web GUI: its page areas still take a click.
+      if (to !== "next" && to !== "prev") throw new ActionError(`This Web GUI does not let the server move ${sid} to a row: scroll with "to":"next" or "prev".`);
+      await f.locator(`[id="${r.bar}-${to === "next" ? "bar" : "spc"}"]`).click({ position: { x: 5, y: 5 }, timeout: 5000 });
+    }
+  }, 600);
+  const done = r as Scrolled | string;
+  if (typeof done === "string") {
+    if (done.startsWith("all rows")) return done;
+    throw new ActionError(done);
+  }
+  // Where it is now: the end of the list stops a scroll short of the row asked for.
+  const now = await (await lsFrame(session)).evaluate(scrollControl, { sid, to: "here" }).catch(() => "");
+  return typeof now === "string" ? done : { ...done, first: now.from };
+}
+
+/** The controls of the screen that scroll, for a `scroll` without an id. */
+function scrollables(view: string): string[] {
+  return view
+    .split("\n")
+    .filter((l) => l.startsWith("wnd[") && / {2}(grid|table|tree|list) {2}/.test(l))
+    .map(idOf);
+}
+
+/** Every entry of a dropdown: from the page when it holds them, else by opening the list and closing it again. */
+async function entriesOf(session: WebGuiSession, sid: string): Promise<{ key: string; text: string }[]> {
+  const f = await lsFrame(session);
+  const held = await f.evaluate(comboEntries, sid);
+  if (typeof held === "string") throw new ActionError(held);
+  if (held.length) return held;
+  const { loc } = await locate(session, sid);
+  await loc.click();
+  await session.page.waitForTimeout(400);
+  const items = f.locator("[ct='LIB_I'],[role='option']").filter({ visible: true });
+  const n = await items.count();
+  const out: { key: string; text: string }[] = [];
+  for (let i = 0; i < n; i++)
+    out.push({
+      key: (await items.nth(i).getAttribute("data-itemkey")) ?? "",
+      text: ((await items.nth(i).innerText()) || "").replace(/\s+/g, " ").replace(/^ | $/g, ""),
+    });
+  // Escape closes the open list; with no list open it would be Cancel (F12), so it is sent only to a list.
+  if (n > 0) await session.page.keyboard.press("Escape");
+  await session.page.waitForTimeout(150);
+  return out;
 }
 
 /** Playwright's errors carry a long call log: keep the first line, and say what blocks when a popup covers the control. */
@@ -324,39 +532,59 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
             const r = await f.evaluate(markControl, sid);
             // markControl also matches by last segment: only a button of the popup itself counts.
             if (typeof r === "string" || r.sid !== sid) continue;
-            await f.locator("[data-sap-act]").first().click();
-            await session.waitRoundtrip(1200);
+            await clickForRoundtrip(session, sid);
             return `key ${k} (pressed ${sid})`;
           }
         // No such button in the popup: give the popup the keyboard focus (a click on its title bar
         // does nothing else), so the key reaches it and not the screen behind.
         if (top > 0) await f.locator(".urPWTitleText").filter({ visible: true }).last().click({ timeout: 3000 }).catch(() => {});
       }
-      await session.pressKey(k);
-      await session.waitRoundtrip();
+      await session.roundtrip(() => session.pressKey(k));
       return `key ${k}`;
+    }
+    case "scroll": {
+      let sid = id;
+      if (!sid) {
+        const all = scrollables(await freshView(session));
+        if (all.length !== 1) throw new ActionError(all.length ? `scroll needs "id": one of ${all.map((x) => shortIds(all).get(x) ?? x).join(", ")}.` : "Nothing on this screen scrolls: no grid, table, tree or list.");
+        sid = all[0] as string;
+      }
+      const r = await scrollTo(session, sid, (a.to ?? "next") as number | string);
+      if (typeof r === "string") return r;
+      const last = Math.min(r.first + r.visible, r.total) - 1;
+      return r.first === r.from ? `${r.sid} is already there: rows ${r.first} to ${last} of ${r.total}` : `scrolled ${r.sid}: rows ${r.first} to ${last} of ${r.total}`;
     }
     case "tree":
     case "grid": {
-      const f = await lsFrame(session);
-      const r = await f.evaluate(markRow, {
-        sid: id,
-        row: a.row,
-        node: a.node,
-        col: a.col,
-      });
-      if (r !== "ok") throw new ActionError(r);
+      let f = await lsFrame(session);
+      const target = { sid: id, row: a.row, node: a.node, col: a.col };
+      let r = await f.evaluate(markRow, target);
+      let scrolled = "";
+      if (/ is not on screen$/.test(r) && a.row !== undefined && a.node === undefined) {
+        // A row past the end is said so before anything moves.
+        const here = await f.evaluate(scrollControl, { sid: id, to: "here" }).catch(() => "");
+        if (typeof here !== "string" && a.row >= here.total) throw new ActionError(`row ${a.row}: the list has ${here.total} rows (0 to ${here.total - 1}).`);
+        // The row is not drawn: scroll it into view first, as a person would.
+        const sc = await scrollTo(session, id, a.row);
+        if (typeof sc !== "string") {
+          scrolled = ` (scrolled to it: rows ${sc.first} to ${Math.min(sc.first + sc.visible, sc.total) - 1} of ${sc.total} are shown)`;
+          f = await lsFrame(session);
+          r = await f.evaluate(markRow, target);
+        }
+      }
+      if (r !== "ok") throw new ActionError(/ is not on screen$/.test(r) ? `${r}: the list does not have it, or it is not drawn. {"do":"scroll","id":"${id}","to":<row>} shows where the list ends.` : r);
       const how = a.how ?? "double";
       const cell = f.locator("[data-sap-act='cell']").first();
       await cell.scrollIntoViewIfNeeded().catch(() => {});
-      if (how === "expand") {
-        const exp = f.locator("[data-sap-act='expander']");
-        if (await exp.count()) await exp.first().click();
+      await session.roundtrip(async () => {
+        if (how === "expand") {
+          const exp = f.locator("[data-sap-act='expander']");
+          if (await exp.count()) await exp.first().click();
+          else await cell.click();
+        } else if (how === "double") await cell.dblclick();
         else await cell.click();
-      } else if (how === "double") await cell.dblclick();
-      else await cell.click();
-      await session.waitRoundtrip(1200);
-      return `${a.do} ${how} ${a.node ?? `row ${a.row}`}`;
+      }, 1200);
+      return `${a.do} ${how} ${a.node ?? `row ${a.row}`}${scrolled}`;
     }
     case "select": {
       if (/\/mbar\/menu\[/.test(id) || /^menu\[/.test(id)) {
@@ -379,16 +607,16 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
         return `menu ${full}`;
       }
       const { loc, c } = await locate(session, id);
-      await loc.click();
-      await session.waitRoundtrip(1200);
+      // A tab sends a request, and choosing it twice is choosing it once: a lost click is made again.
+      if (c.type === "GuiTab") await clickForRoundtrip(session, c.sid);
+      else await session.roundtrip(() => loc.click(), 1200);
       return `selected ${c.sid}`;
     }
     case "toolbar": {
       const { loc, c } = await locate(session, `${id}/${a.button}`).catch(() =>
         locate(session, String(a.button)),
       );
-      await loc.click();
-      await session.waitRoundtrip(1200);
+      await session.roundtrip(() => loc.click(), 1200);
       return `pressed ${c.sid}`;
     }
     case "dblclick":
@@ -415,21 +643,19 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       return `set ${c.sid}`;
     }
     case "press":
-      await loc.click();
-      await session.waitRoundtrip(1200);
+      if (c.type === "GuiButton") await clickForRoundtrip(session, c.sid);
+      else await session.roundtrip(() => loc.click(), 1200);
       return `pressed ${c.sid}`;
     case "focus":
       await loc.focus();
       return `focus ${c.sid}`;
     case "dblclick":
-      await loc.dblclick();
-      await session.waitRoundtrip(1200);
+      await session.roundtrip(() => loc.dblclick(), 1200);
       return `double-clicked ${c.sid}`;
     case "f4":
       if (!FIELD_TYPES.has(c.type) && c.type !== "GuiComboBox") throw new ActionError(`${c.sid} is a ${typeName(c.type)}: value help works on fields.`);
       await loc.focus();
-      await page.keyboard.press("F4");
-      await session.waitRoundtrip();
+      await session.roundtrip(() => page.keyboard.press("F4"));
       return `value help on ${c.sid}`;
     case "check": {
       if (c.type !== "GuiCheckBox" && c.type !== "GuiRadioButton") throw new ActionError(`${c.sid} is a ${typeName(c.type)}, not a checkbox: use "press" for a button, "select" for a tab.`);
@@ -438,13 +664,24 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
           ? true
           : /^(x|true|1|on|yes)$/i.test(String(a.value));
       if (c.checked !== on) {
-        await loc.click();
-        await session.waitRoundtrip(800);
+        await session.roundtrip(() => loc.click(), 800);
+        // A click that was lost (see clickForRoundtrip) left the box as it was: made once more, by the box's own state.
+        const now = await (await lsFrame(session)).evaluate(markControl, c.sid);
+        if (typeof now !== "string" && now.sid === c.sid && now.checked !== on) {
+          await session.closeSuggestions();
+          await session.roundtrip(() => session.frame.locator("[data-sap-act]").first().click(), 800);
+        }
       }
       return `${c.sid} ${on ? "checked" : "unchecked"}`;
     }
     case "combo": {
       if (c.type !== "GuiComboBox") throw new ActionError(`${c.sid} is a ${typeName(c.type)}, not a dropdown.`);
+      if (a.key === undefined && a.value === undefined) {
+        // No key: the entries, and nothing is chosen.
+        const entries = await entriesOf(session, c.sid);
+        return entries.length ? `${c.sid} has ${entries.length} entries: ${entries.map((e) => `${e.key}:${e.text}`).join(", ")}` : `${c.sid} has no entries`;
+      }
+      if (c.readonly) throw new ActionError(`${c.sid} is read-only`);
       const want = String(a.key ?? a.value ?? "").toLowerCase();
       const f = await lsFrame(session);
       await loc.click();
@@ -472,11 +709,11 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
         idx = texts.findIndex((t) => t === want || t.startsWith(`${want} `));
       if (idx < 0) idx = texts.findIndex((t) => t.includes(want));
       if (idx < 0) {
-        await page.keyboard.press("Escape");
+        // Escape closes the open list; with no list open it would be Cancel (F12).
+        if (n > 0) await page.keyboard.press("Escape");
         throw new ActionError(`no entry ${want} in ${c.sid}: ${texts.join(" | ")}`);
       }
-      await items.nth(idx).click();
-      await session.waitRoundtrip(800);
+      await session.roundtrip(() => items.nth(idx).click(), 800);
       return `${c.sid} = ${texts[idx]}`;
     }
     default:

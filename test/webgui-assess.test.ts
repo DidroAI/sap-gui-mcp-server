@@ -387,6 +387,21 @@ describe("assess: popups", () => {
   });
 });
 
+describe("assess: reads that change nothing", () => {
+  test("scrolling a list, and listing a dropdown's entries, are reads", () => {
+    expect(assessAction({ do: "scroll", id: "cntlGRID/shell", to: 40 }, EDIT, MENUS, { language: "EN" }).risk).toBe("read");
+    expect(assessAction({ do: "combo", id: "cmbZHDR-BLOCK" }, EDIT, MENUS, { language: "EN" }).risk).toBe("read");
+    // Choosing an entry changes unsaved input.
+    expect(assessAction({ do: "combo", id: "cmbZHDR-BLOCK", key: "01" }, EDIT, MENUS, { language: "EN" }).risk).toBe("navigate");
+  });
+  test("a handle of the compact view is judged as the control it names", () => {
+    const windows = parseView(EDIT);
+    expect(findControl(windows, "cntlGRID/shell")?.id).toBe("wnd[0]/usr/cntlGRID/shellcont/shell");
+    expect(findControl(windows, "tbar[0]/btn[11]")?.id).toBe("wnd[0]/tbar[0]/btn[11]");
+    expect(assessAction({ do: "press", id: "tbar[0]/btn[11]" }, EDIT, MENUS, { language: "EN" }).risk).toBe("commit");
+  });
+});
+
 describe("assess: reading the view", () => {
   test("parseView groups control lines by window and skips rows", () => {
     const w = parseView(SAVE_POPUP);

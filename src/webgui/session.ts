@@ -18,13 +18,23 @@ export const WEBGUI_PATH = "/sap/bc/gui/sap/its/webgui";
  */
 const BUSY = "#progressText,.lsMessageBar__icon--L,[class*='lsBusyIndicator'],[class*='urBusy'],#ur-loading";
 
-const IDLE_TIMEOUT_MS = 180_000;
+/** How long a round trip may take before the action gives up waiting; an action's own "timeout" replaces it. */
+export const IDLE_TIMEOUT_MS = 180_000;
+export const MAX_IDLE_TIMEOUT_MS = 600_000;
+const QUIET_MS = 300;
+/** A background tab gets its input about once a second: the quiet period, and the wait for a request to start, must be longer. */
+const QUIET_SLOW_MS = 1300;
+const START_SLOW_MS = 2500;
+/** How long a click, a focus or a key may wait for its control. */
+const ACTION_TIMEOUT_MS = 10_000;
 
 interface Traffic {
   inflight: number;
   /** POST requests started so far: each Web GUI round trip is one POST. */
   posts: number;
   lastChange: number;
+  /** The last round trip that failed on the network (the connection to SAP dropped), and when. */
+  failed: { at: number; error: string } | undefined;
 }
 const trafficOf = new WeakMap<Page, Traffic>();
 
@@ -40,6 +50,43 @@ function fromWebGui(r: Request): boolean {
 }
 
 /**
+ * Does this request carry a step (a key, a button, a command), or only what
+ * Web GUI sends on the side? A request is a list of posts. Posts marked
+ * `"logic":"ignore"`, and a field's value or the focus on their own, do
+ * nothing in SAP: Web GUI sends them when the focus leaves a field that was
+ * typed into (its value, its type-ahead). In a tab in front they leave with
+ * the step's request; in a background tab they left a second before it, or
+ * instead of it, and the wait took them for the round trip.
+ *   [{"post":"focus/wnd[1]/usr/ctxtX","logic":"ignore"},{"post":"typeahead/..."}]   on the side
+ *   [{"content":"1000","post":"value/wnd[1]/usr/ctxtX"},{"post":"action/304/..."}]  a step
+ * A body that cannot be read counts as a step.
+ */
+export function carriesStep(body: string | null | undefined): boolean {
+  if (!body) return true;
+  let posts: unknown;
+  try {
+    posts = JSON.parse(body);
+  } catch {
+    return true;
+  }
+  if (!Array.isArray(posts)) return true;
+  return posts.some((p) => {
+    const post = (p as { post?: unknown } | null)?.post;
+    if (typeof post !== "string") return false;
+    if ((p as { logic?: unknown }).logic === "ignore") return false;
+    return !/^(value\/|focus\/|typea)/.test(post);
+  });
+}
+
+function valueOnly(r: Request): boolean {
+  try {
+    return !carriesStep(r.postData());
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Counts the page's Web GUI requests, from the first use on. Other frames are
  * left out: a Fiori launchpad around Web GUI keeps a connection open and is
  * never quiet.
@@ -47,12 +94,12 @@ function fromWebGui(r: Request): boolean {
 function watch(page: Page): Traffic {
   let t = trafficOf.get(page);
   if (t) return t;
-  const traffic: Traffic = { inflight: 0, posts: 0, lastChange: Date.now() };
+  const traffic: Traffic = { inflight: 0, posts: 0, lastChange: Date.now(), failed: undefined };
   t = traffic;
   page.on("request", (r) => {
     if (!fromWebGui(r)) return;
     traffic.inflight++;
-    if (r.method() === "POST") traffic.posts++;
+    if (r.method() === "POST" && !valueOnly(r)) traffic.posts++;
     traffic.lastChange = Date.now();
   });
   const done = (r: Request) => {
@@ -61,18 +108,85 @@ function watch(page: Page): Traffic {
     traffic.lastChange = Date.now();
   };
   page.on("requestfinished", done);
-  page.on("requestfailed", done);
+  page.on("requestfailed", (r) => {
+    done(r);
+    // A round trip (a POST) that got no answer: the connection is down. A request the page itself
+    // cancelled (a navigation) is not a failure.
+    const error = r.failure()?.errorText ?? "";
+    if (fromWebGui(r) && r.method() === "POST" && error && !/ERR_ABORTED/.test(error)) traffic.failed = { at: Date.now(), error };
+  });
   trafficOf.set(page, t);
   return t;
+}
+
+/** Pages whose focus emulation was asked for, and how that went. */
+const awake = new WeakMap<Page, Promise<boolean>>();
+
+/**
+ * Makes a tab behave as the visible, focused one while the server drives it.
+ *
+ * Chrome gives a tab in the background no animation frames and slows its
+ * timers. Web GUI draws and sends on those, so in a background tab a typed
+ * command stayed in the command field, a click waited for a page that never
+ * settled, and keys did not reach popups; the answer then showed the old
+ * screen as if the step had run. Chrome's focus emulation (DevTools:
+ * "Emulate a focused page") lifts this for the tab the server is attached
+ * to, without bringing it to the front: the user's own tab stays where it is.
+ * It ends when the server disconnects.
+ */
+export function keepAwake(page: Page): Promise<boolean> {
+  let p = awake.get(page);
+  if (!p) {
+    p = (async () => {
+      try {
+        const cdp = await page.context().newCDPSession(page);
+        await cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true });
+        return true;
+      } catch {
+        // Not Chromium, or the browser refuses: the server works as before, in a tab that is in front.
+        return false;
+      }
+    })();
+    awake.set(page, p);
+  }
+  return p;
+}
+
+/** Is the page hidden from Chrome's point of view (a background tab, a minimised window)? */
+export async function hidden(frame: Frame): Promise<boolean> {
+  return frame.evaluate(() => document.visibilityState === "hidden").catch(() => false);
 }
 
 export class WebGuiSession {
   readonly page: Page;
   private readonly traffic: Traffic;
+  /** How long the current action waits for Web GUI to be idle. */
+  idleTimeoutMs = IDLE_TIMEOUT_MS;
+  /**
+   * Set when a wait ended while Web GUI still showed its "loading" sign with
+   * no request under way: the step may not be over. The action's answer says so.
+   */
+  unsettled = false;
+  /**
+   * How long Web GUI must send nothing before a step counts as over. One
+   * step can be two round trips with a timer between them (a field's check,
+   * then the button's function): 300 ms bridges that in a tab in front, and
+   * `wake` raises it for a tab Chrome draws only once a second.
+   */
+  quietMs = QUIET_MS;
+  /** The tab is in the background: input reaches it late (see `framesSlow`). */
+  slow = false;
+  /** Did the last `waitRoundtrip` see a request that carries a function leave for SAP? */
+  started = false;
+  /** The last full view read, for the step that follows it (assess, then act). */
+  view: { at: number; text: string } | undefined;
 
   constructor(readonly frame: Frame) {
     this.page = frame.page();
     this.traffic = watch(this.page);
+    // A click on a control that is covered or gone fails after this long, not after Playwright's 30 s:
+    // the agent gets the reason and the screen while it can still use them.
+    this.page.setDefaultTimeout(ACTION_TIMEOUT_MS);
   }
 
   private async busyShown(): Promise<boolean> {
@@ -92,29 +206,125 @@ export class WebGuiSession {
    * First calls on a fresh system can take long (ABAP loads compile), hence
    * the generous idle timeout.
    */
-  async waitRoundtrip(startMs = 1500): Promise<void> {
-    const before = this.traffic.posts;
+  async waitRoundtrip(startMs = 1500, before = this.traffic.posts): Promise<void> {
     const t0 = Date.now();
+    if (this.slow) startMs = Math.max(startMs, START_SLOW_MS);
     while (Date.now() - t0 < startMs) {
       if (this.traffic.posts > before || (await this.busyShown())) break;
       await this.page.waitForTimeout(50);
     }
     await this.waitIdle();
+    this.started = this.traffic.posts > before;
+    const failed = this.traffic.failed;
+    if (failed && failed.at >= t0 - 50) {
+      this.traffic.failed = undefined;
+      throw new ActionError(
+        `SAP did not answer: the request failed (${failed.error}). The connection to the SAP system is down or was interrupted, and the step may not have run. The page may show the old screen and take no input until it is reloaded: ask the user to check the connection and reload the tab.`,
+      );
+    }
   }
 
-  /** Waits until no request has been in flight for a quiet period and no busy indicator shows. */
-  async waitIdle(quietMs = 300): Promise<void> {
-    const deadline = Date.now() + IDLE_TIMEOUT_MS;
+  /**
+   * Runs what causes the round trip, then waits for it. The count of POSTs
+   * is taken before the click: a round trip that starts while the click is
+   * still being awaited is then seen at once, where counting afterwards
+   * waited the whole `startMs` for a POST that had already gone.
+   */
+  async roundtrip<T>(cause: () => Promise<T>, startMs = 1500): Promise<T> {
+    const before = this.traffic.posts;
+    const result = await cause();
+    await this.waitRoundtrip(startMs, before);
+    return result;
+  }
+
+  /**
+   * Does Chrome draw this tab only now and then? It gives a tab in the
+   * background about one frame a second, focus emulation or not, and hands
+   * clicks and keys to the page with a frame. A click then reaches Web GUI
+   * up to a second late: its request started after the server had stopped
+   * waiting, and the answer showed the screen from before the step
+   * (measured: a button's request 1.0 s after the click in a background
+   * tab, at once in the tab in front).
+   */
+  async framesSlow(): Promise<boolean> {
+    const drawn = this.frame.evaluate(() => new Promise<boolean>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))).catch(() => true);
+    const late = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 200));
+    return !(await Promise.race([drawn, late]));
+  }
+
+  /**
+   * Is Web GUI in the middle of a round trip? It locks its page from the
+   * request to the end of drawing the answer (`oLS.bLocked()`; measured on
+   * ECC: false when idle, also with a popup open). Undefined when this Web
+   * GUI does not say.
+   */
+  async locked(): Promise<boolean | undefined> {
+    return this.frame
+      .evaluate(() => {
+        const ls = (window as unknown as { oLS?: { bLocked?: () => unknown } }).oLS;
+        if (typeof ls?.bLocked !== "function") return undefined;
+        try {
+          return ls.bLocked() === true;
+        } catch {
+          return undefined;
+        }
+      })
+      .catch(() => undefined);
+  }
+
+  /**
+   * Waits until no request has been in flight for a quiet period and Web GUI
+   * is done with the answer: its page is unlocked, or, where it does not say,
+   * its loading sign is gone.
+   */
+  async waitIdle(quietMs = this.quietMs): Promise<void> {
+    const start = Date.now();
+    const deadline = start + this.idleTimeoutMs;
     await this.page.waitForTimeout(100);
     while (Date.now() < deadline) {
+      // A round trip that failed on the network never ends: the caller reports it.
+      if (this.traffic.failed && this.traffic.failed.at >= start) return;
       const quiet = this.traffic.inflight === 0 && Date.now() - this.traffic.lastChange >= quietMs;
-      if (quiet && (!(await this.busyShown()) || Date.now() - this.traffic.lastChange > 5000)) {
-        await this.frame.waitForLoadState("domcontentloaded").catch(() => {});
-        return;
+      if (quiet) {
+        const locked = await this.locked();
+        if (locked === false) {
+          await this.frame.waitForLoadState("domcontentloaded").catch(() => {});
+          return;
+        }
+        if (locked === undefined) {
+          const busy = await this.busyShown();
+          // The loading sign can outlast its round trip; after 5 s without traffic the wait ends, and says so.
+          if (!busy || Date.now() - this.traffic.lastChange > 5000) {
+            if (busy) this.unsettled = true;
+            await this.frame.waitForLoadState("domcontentloaded").catch(() => {});
+            return;
+          }
+        }
       }
       await this.page.waitForTimeout(100);
     }
-    throw new Error("Web GUI did not become idle in time");
+    throw new ActionError(
+      `SAP was still working after ${Math.round(this.idleTimeoutMs / 1000)} s. The step may still finish: look at the screen again in a moment (sap_look), or give a long step more time with "timeout" (seconds, up to ${MAX_IDLE_TIMEOUT_MS / 1000}).`,
+    );
+  }
+
+  /**
+   * Before an action: the tab must draw and take input even when it is not
+   * the one in front. When Chrome cannot be told so, the tab is brought to
+   * the front, which is the one way left that works.
+   */
+  async wake(): Promise<void> {
+    if (!(await keepAwake(this.page)) || (await hidden(this.frame))) {
+      if (await hidden(this.frame)) await this.page.bringToFront().catch(() => {});
+    }
+    this.slow = await this.framesSlow();
+    this.quietMs = this.slow ? QUIET_SLOW_MS : QUIET_MS;
+    // The step before may still be running (it was given up on, or the user started one): input would be lost.
+    for (let i = 0; i < 100 && (await this.locked()) === true; i++) await this.page.waitForTimeout(100);
+    if ((await this.locked()) === true)
+      throw new ActionError(
+        "SAP is still working on the step before this one, so nothing was done. Look at the screen again in a moment (sap_look). If it stays like this, the page has lost its connection to SAP: ask the user to reload the tab.",
+      );
   }
 
   /** Types a command into the command field and sends it. */
@@ -129,8 +339,13 @@ export class WebGuiSession {
     await ok.click();
     await ok.fill("");
     await ok.pressSequentially(command, { delay: 20 });
-    await ok.press("Enter");
-    await this.waitRoundtrip();
+    // What the field holds is what Enter sends: a command that did not arrive whole must not run as another one.
+    const typed = await ok.inputValue().catch(() => command);
+    if (typed.trim().toLowerCase() !== command.trim().toLowerCase()) {
+      await ok.fill("").catch(() => {});
+      throw new ActionError(`The command field took "${typed}" instead of "${command}", so nothing was sent. Look at the screen and try again.`);
+    }
+    await this.roundtrip(() => ok.press("Enter"));
   }
 
   /**
