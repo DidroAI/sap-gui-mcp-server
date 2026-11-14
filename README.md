@@ -79,6 +79,13 @@ same flow cost 73k. Typing into a field answers with about 50 tokens
 instead of the screen (540 on the VA01 initial screen, 2,900 on its
 overview).
 
+## Set up with your agent
+
+The easiest way: paste the prompt in [docs/setup-prompt.md](docs/setup-prompt.md)
+into Claude Code or Codex. The agent installs the server, adds it to your MCP
+clients (`setup`), runs `doctor` and walks you through each setting, then
+looks at your SAP screen to prove it works.
+
 ## Quick start
 
 Requires Node 22 or later.
@@ -102,6 +109,15 @@ Claude Desktop, Cursor and other clients take the same command:
 Then open SAP and ask: *"Look at my SAP screen and tell me which fields are
 required"*, or *"In VA03, open order 19097 and tell me its delivery
 status"*.
+
+Or let the server add itself to every MCP client it finds (Claude Code,
+Codex, Claude Desktop); it never overwrites an existing entry and keeps a
+`.bak` of any file it changes:
+
+```sh
+npx -y sap-gui-mcp-server setup --dry-run   # what it would change
+npx -y sap-gui-mcp-server setup
+```
 
 Check your setup at any time:
 

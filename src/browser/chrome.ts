@@ -30,6 +30,7 @@ import { homedir } from "node:os";
 import { posix, win32 } from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { allowedOrigins, classify, originAllowed, originOf, type TabOwner, type TabSigns, tabSigns } from "./classify.js";
+import type { DoctorCheck } from "../core/types.js";
 
 export interface ChromeTab {
   /** The CDP target id, stable for the life of the tab. */
@@ -120,6 +121,18 @@ function explicitEndpoint(env: Env): ChromeEndpoint | undefined {
  * files and checks that the port listens; connects to nothing. `tried` says
  * what was looked at, for messages.
  */
+/** DevToolsActivePort files that exist but that this app may not read (macOS privacy protection). */
+export const blockedFiles: string[] = [];
+
+/** The name of the process listening on a local port (macOS and Linux, through lsof), if it can be told. */
+export async function portOwner(port: number, platform: NodeJS.Platform = process.platform): Promise<string | undefined> {
+  if (platform === "win32") return undefined;
+  const { spawnSync } = await import("node:child_process");
+  const r = spawnSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-Fc"], { encoding: "utf8", timeout: 3000 });
+  const name = /^c(.+)$/m.exec(r.stdout ?? "")?.[1];
+  return name || undefined;
+}
+
 export async function activePortEndpoints(
   env: Env,
   tried: string[] = [],
@@ -135,8 +148,22 @@ export async function activePortEndpoints(
   for (const { name, dir } of browsers) {
     if (!dir) continue;
     const file = (platform === "win32" ? win32 : posix).join(dir, "DevToolsActivePort");
-    const content = await readFile(file, "utf8").catch(() => undefined);
-    if (content === undefined) {
+    let content: string | undefined;
+    try {
+      content = await readFile(file, "utf8");
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code === "EPERM" || code === "EACCES") {
+        // macOS privacy protection: the file is there, but this app may not read another app's data.
+        // Chrome's remote debugging listens on 9222 by default: use it when Chrome's own process holds that port.
+        blockedFiles.push(file);
+        const owner = await portOwner(9222, platform);
+        if (owner && /chrome|google|edge/i.test(owner)) {
+          tried.push(`${file}: macOS does not let this app read it; ${owner} listens on 127.0.0.1:9222`);
+          found.push({ url: "http://127.0.0.1:9222", from: `${name} with remote debugging allowed (port 9222; ${file} could not be read)` });
+        } else tried.push(`${file}: macOS does not let this app read it`);
+        continue;
+      }
       tried.push(`${file}: not there (${name} is not running, or remote debugging is not allowed)`);
       continue;
     }
@@ -361,13 +388,37 @@ export async function disconnectChrome(): Promise<void> {
 }
 
 /** Setup checks: is there a Chrome we can attach to, which version, how many tabs; when not, the one step to take. */
-export async function chromeDoctor(env: Record<string, string | undefined>): Promise<{ ok: boolean; check: string; detail: string }[]> {
+export async function chromeDoctor(env: Record<string, string | undefined>): Promise<DoctorCheck[]> {
   const check = "Chrome";
   let c: Connection;
   try {
     c = await chrome(env);
   } catch (e) {
-    return [{ ok: false, check, detail: (e as Error).message }];
+    const message = (e as Error).message;
+    if (env.SAP_CHROME_CDP)
+      return [{ ok: false, check, detail: message.split(/(?<=\.) /)[0] ?? message, fix: "Check that this Chrome runs with --remote-debugging-port and --user-data-dir, or unset SAP_CHROME_CDP to use your everyday Chrome." }];
+    if (blockedFiles.length)
+      return [
+        {
+          ok: false,
+          check,
+          detail: `Chrome allows remote debugging, but macOS does not let this app read Chrome's DevToolsActivePort file (privacy protection), and Chrome did not answer on port 9222 without it`,
+          fix: `Give the app that runs the server (Terminal or iTerm for doctor; Claude, Codex or your editor for the MCP server) access in System Settings > Privacy & Security > Full Disk Access, restart that app, then run doctor again.`,
+        },
+      ];
+    const busy = await portOpen("127.0.0.1", 9222);
+    return [
+      {
+        ok: false,
+        check,
+        detail: busy
+          ? "something listens on 127.0.0.1:9222, but no Chrome has written its DevToolsActivePort file, so the server cannot tell it is your Chrome"
+          : "no Chrome with remote debugging allowed is running (looked for Chrome, Chrome Beta and Edge)",
+        fix: busy
+          ? `If it is your Chrome: quit Chrome completely and open it again, then run doctor again. If it is a Chrome you started for testing: set SAP_CHROME_CDP=http://127.0.0.1:9222.`
+          : `In Chrome ${MIN_CHROME_AUTO_CONNECT} or later, open chrome://inspect/#remote-debugging and tick "Allow remote debugging for this browser instance". Then run doctor again and click Allow when Chrome asks.`,
+      },
+    ];
   }
   const version = c.browser.version();
   const out = [{ ok: true, check, detail: `attached to Chrome ${version} through ${c.endpoint.from}` }];
@@ -378,15 +429,9 @@ export async function chromeDoctor(env: Record<string, string | undefined>): Pro
       check: "Chrome version",
       detail: `Chrome ${major} is older than ${MIN_CHROME_AUTO_CONNECT}: it cannot allow remote debugging from chrome://inspect, so it must be started with --remote-debugging-port (as it is now)${major >= MIN_CHROME_PORT_NEEDS_DATA_DIR ? "" : `; from Chrome ${MIN_CHROME_PORT_NEEDS_DATA_DIR} on, that switch also needs --user-data-dir`}.`,
     });
-  if (/^https?:\/\//.test(c.endpoint.url) || c.endpoint.from === "SAP_CHROME_CDP")
-    out.push({
-      ok: true,
-      check: "Chrome debugging port",
-      detail: `Chrome ${MIN_CHROME_PORT_NEEDS_DATA_DIR} and later open --remote-debugging-port only together with --user-data-dir=<a directory other than Chrome's default>; keep both when you restart this Chrome.`,
-    });
   const origins = allowedOrigins(env);
   if (origins) out.push({ ok: true, check: "Origins", detail: `only tabs of ${origins.join(", ")} are looked at (SAP_ALLOW_ORIGINS)` });
   const tabs = await chromeTabs(env).catch(() => []);
-  out.push({ ok: true, check: "Chrome tabs", detail: `${tabs.length} web page tab(s) open${origins ? " at these origins" : ""}` });
+  out.push({ ok: true, check: "Chrome tabs", detail: tabs.length ? `${tabs.length} web page tab(s) open${origins ? " at these origins" : ""}` : "no web page open yet (Chrome's own pages, such as chrome://inspect, are not counted)" });
   return out;
 }
