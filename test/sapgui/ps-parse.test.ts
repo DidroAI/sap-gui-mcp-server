@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 
-const dirs = ["src/sapgui/ps"];
+const dirs = ["src/sapgui/ps", "src/sapgui-diag/ps"];
 const scripts = dirs.flatMap((d) => readdirSync(d).filter((f) => f.endsWith(".ps1")).map((f) => join(d, f)));
 const onWindows = process.platform === "win32";
 
