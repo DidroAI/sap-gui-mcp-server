@@ -2,27 +2,30 @@
  * replay.ts [capture] [ranges.json] [outdir]: replays a relay log through
  * DiagDecoder and writes, for each screen of ranges.json, the view
  * (<outdir>/diag/<screen>/view.txt) and the model (<outdir>/json/<screen>.json)
- * as they stand at the end of the screen's byte range. The outdir is an
- * "obsdir" for the no-scripting probe's score.py.
+ * as they stand at the end of the screen's byte range, to compare the decoder's
+ * output with what SAP GUI showed.
  *
  * The relay log: records of direction (1 byte: 0 SAP GUI to server, 1 server
  * to SAP GUI), time (float64 LE), length (uint32 LE), bytes. ranges.json:
  * { "<screen>": [startOffset, endOffset] } in bytes of the log. Captures hold
  * real SAP data: they stay out of Git, and so does what this writes.
  *
- *   bun scripts/diag-dev/replay.ts ~/didro-work/testing/no-scripting/diag/cap-1.bin \
- *     ~/didro-work/testing/no-scripting/diag/ranges-all.json /tmp/obs
- *   python score.py <refdir> /tmp/obs/diag
+ * A capture comes from the server run with SAP_DIAG_CAPTURE=<folder>.
  *
- * Without arguments: that capture and those ranges, into the temp directory.
+ *   bun scripts/diag-dev/replay.ts <capture.bin> <ranges.json> [outdir]
+ *
+ * outdir defaults to diag-obs in the temp directory.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DiagDecoder, diagView } from "../../src/diag/index.js";
 
-const base = join(homedir(), "didro-work/testing/no-scripting/diag");
-const [capture = join(base, "cap-1.bin"), rangesFile = join(base, "ranges-all.json"), outdir = join(tmpdir(), "diag-obs")] = process.argv.slice(2);
+const [capture, rangesFile, outdir = join(tmpdir(), "diag-obs")] = process.argv.slice(2);
+if (!capture || !rangesFile) {
+  console.error("usage: bun scripts/diag-dev/replay.ts <capture.bin> <ranges.json> [outdir]");
+  process.exit(2);
+}
 const data = readFileSync(capture);
 const ranges = JSON.parse(readFileSync(rangesFile, "utf8")) as Record<string, [number, number]>;
 
