@@ -283,13 +283,16 @@ Actions (`sap_act`):
 {"do": "tree", "id": "shell", "node": "  4", "how": "double"}
 {"do": "grid", "id": "cntlGRID1/shell", "row": 120, "col": "VBELN", "how": "double"}
 {"do": "scroll", "id": "cntlGRID1/shell", "to": 120}
+{"do": "toolbar", "id": "cntlGRID1/shell", "button": "&MB_FILTER"}
+{"do": "focus", "id": "ctxtVBAK-VKORG"}
 ```
 
 For `key`, 0 is Enter, 3 Back, 4 F4, 8 F8, 11 Save and 12 Cancel; a key
 is a number from 0 to 99 or a key name (`Enter`, `Escape`, `Shift+Tab`,
 `Control+S`). `combo` without a key lists the dropdown's entries and
 chooses nothing. `scroll` takes a row counted from 0, or `"next"`,
-`"prev"`, `"first"`, `"last"`. Fiori also takes `click`.
+`"prev"`, `"first"`, `"last"`. `toolbar` presses a button of a control's
+own toolbar (an ALV grid's, for example). Fiori also takes `click`.
 
 The server brings every action to one shape before anything reads it:
 `do` must be one of the verbs above, a key must be a number or a known
