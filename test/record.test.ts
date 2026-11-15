@@ -11,7 +11,7 @@ import { tsString } from "../src/record/export/playwright.js";
 import { vbsString, vkeyNumber } from "../src/record/export/vbs.js";
 import { fill, FORMAT, inputsOf, parseTest, type SapTest, slug, withVariable } from "../src/record/format.js";
 import { hints, recorderOptionsFromEnv } from "../src/record/recorder.js";
-import { junit, replay, replayAll, resultText } from "../src/record/replay.js";
+import { detour, junit, replay, replayAll, resultText } from "../src/record/replay.js";
 import { locate, parseScreen } from "../src/record/screen.js";
 import { createServer } from "../src/server.js";
 import { FakeSap } from "./record-fakes.js";
@@ -393,6 +393,139 @@ describe("replay", () => {
   });
 });
 
+// ---- windows the recording does not have ---------------------------------------
+
+/** Records "display order 5000" (no popup) and returns the test, with order as a variable. */
+async function recordDisplay() {
+  const s = await setup();
+  await s.rec("start", { name: "display" });
+  await s.act({ do: "okcode", value: "/nZA03" });
+  await s.act({ do: "set", id: "ctxtZORD-VBELN", value: "5000" });
+  await s.act({ do: "key", key: 0 });
+  await s.rec("variable", { name: "order", value: "5000" });
+  await s.act({ do: "key", key: 3 });
+  await s.rec("stop");
+  return { ...s, test: await s.file("display.saptest.json") };
+}
+
+describe("replay: windows the recording does not have", () => {
+  const info = { title: "Information", text: "Consider the subsequent documents" };
+  const question = { title: "Exit display", text: "Do you wish to save your data first?", question: true };
+
+  test("Information popups SAP shows for other data are confirmed and noted", async () => {
+    const { test: t, sap, policy } = await recordDisplay();
+    sap.orders.set("4990", { customer: "1000", quantity: "1", rush: false });
+    sap.popupsFor.set("4990", [info, { ...info, text: "Order is blocked for delivery" }]);
+    sap.acts = [];
+    const r = await replay(sap.driver(), policy, t, { variables: { order: "4990" } });
+    expect(resultText(r)).toContain("PASS");
+    expect(r.steps[2]?.warnings).toEqual([
+      'SAP showed a popup "Information" (Consider the subsequent documents) that the recording does not have: the replay pressed Continue (Enter)',
+      'SAP showed a popup "Information" (Order is blocked for delivery) that the recording does not have: the replay pressed Continue (Enter)',
+    ]);
+    expect(sap.acts.filter((a) => a.id === "wnd[1]/tbar[0]/btn[0]").length).toBe(2);
+  });
+
+  test("a popup that asks a question is not answered: the step fails and says why", async () => {
+    const { test: t, sap, policy } = await recordDisplay();
+    sap.orders.set("4990", { customer: "1000", quantity: "1", rush: false });
+    sap.popupsFor.set("4990", [question]);
+    sap.acts = [];
+    const r = await replay(sap.driver(), policy, t, { variables: { order: "4990" }, leaveOnFailure: false });
+    expect(r.passed).toBe(false);
+    expect(r.steps[2]?.failures[0]).toStartWith('SAP showed a popup "Exit display" (Do you wish to save your data first?) that the recording does not have here.');
+    expect(sap.acts.some((a) => /SPOP-OPTION/.test(String(a.id)))).toBe(false);
+  });
+
+  test("detour: an Information popup passes; a question, a choice or an input stops", () => {
+    const pop = (lines: string[]) =>
+      parseScreen(["TRANSACTION VA02  PROGRAM SAPMV45A  SCREEN 102", 'WINDOW wnd[0]  "Change Order"', 'WINDOW wnd[1]  "Information"', ...lines].join("\n"));
+    const go = "wnd[1]/tbar[0]/btn[0]  button  Continue (Enter)";
+    expect(detour(pop(["wnd[1]/usr/txtMESSTXT1  label  Consider the subsequent documents", go]))?.kind).toBe("pass");
+    expect(detour(pop(["wnd[1]/usr/txtMESSTXT1  label  Save first?", go]))?.kind).toBe("stop");
+    expect(detour(pop(["wnd[1]/usr/btnSPOP-OPTION1  button  Yes", go]))?.kind).toBe("stop");
+    expect(detour(pop(['wnd[1]/usr/ctxtX-PLANT  field  Plant = ""  (edit)', go]))?.kind).toBe("stop");
+    expect(detour(pop(["wnd[1]/usr/tblX  table  rows 3 (visible 3)", go]))?.kind).toBe("stop");
+    expect(detour(pop(["wnd[1]/usr/txtMESSTXT1  label  No Continue button"]))?.kind).toBe("stop");
+    expect(detour(parseScreen('TRANSACTION VA03  PROGRAM SAPMV45A  SCREEN 4001\nWINDOW wnd[0]  "Display Order"'))).toBeUndefined();
+  });
+
+  test("the availability control screen is passed with Continue", async () => {
+    const s = await setup({ SAP_WRITE: "on" });
+    await s.rec("start", { name: "create" });
+    await s.act({ do: "okcode", value: "/nZA01" });
+    await s.act({ do: "set", id: "ctxtZORD-KUNNR", value: "2200" });
+    await s.act({ do: "set", id: "txtZORD-MENGE", value: "7" });
+    await s.rec("variable", { name: "qty", value: "7" });
+    await s.act({ do: "key", key: 0 });
+    await s.act({ do: "key", key: 11 });
+    await s.rec("assert", { check: "status", contains: "has been saved" });
+    await s.rec("stop");
+    const t = await s.file("create.saptest.json");
+    s.sap.available = 100;
+    const r = await replay(s.sap.driver(), s.policy, t, { variables: { qty: "500" } });
+    expect(r.passed).toBe(true);
+    expect(r.steps[3]?.warnings[0]).toBe('SAP showed a availability control screen "Create Order: Availability Control" that the recording does not have: the replay pressed Continue (Enter)');
+  });
+
+  test("a popup the recording confirmed but SAP does not show this time: the step is skipped", async () => {
+    const s = await setup();
+    s.sap.popupsFor.set("5000", [info]);
+    await s.rec("start", { name: "with popup" });
+    await s.act({ do: "okcode", value: "/nZA03" });
+    await s.act({ do: "set", id: "ctxtZORD-VBELN", value: "5000" });
+    await s.act({ do: "key", key: 0 });
+    await s.act({ do: "press", id: "wnd[1]/tbar[0]/btn[0]" });
+    await s.rec("stop");
+    const t = await s.file("with-popup.saptest.json");
+    s.sap.popupsFor.clear();
+    const r = await replay(s.sap.driver(), s.policy, t);
+    expect(r.passed).toBe(true);
+    expect(r.steps[3]?.warnings[0]).toContain("that SAP did not show this time: step skipped");
+  });
+
+  test("a replay can start with a popup open: an Information popup is confirmed, a question cancelled", async () => {
+    const { test: t, sap, policy } = await recordDisplay();
+    sap.popups = [info];
+    const a = await replay(sap.driver(), policy, t);
+    expect(a.passed).toBe(true);
+    expect(resultText(a)).toContain('Before step 1: popup "Information" (Consider the subsequent documents) was open: pressed Continue (Enter).');
+    sap.popups = [question];
+    sap.acts = [];
+    const b = await replay(sap.driver(), policy, t);
+    expect(b.passed).toBe(true);
+    expect(sap.acts[0]).toEqual({ do: "key", key: 12 });
+    expect(b.before?.[0]).toContain("cancelled it (key 12)");
+  });
+
+  test("an error after Enter fails the step, also when the recording ended on another error", async () => {
+    const { test: t, sap, policy } = await recordDisplay();
+    const r = await replay(sap.driver(), policy, t, { variables: { order: "999" }, leaveOnFailure: false });
+    expect(r.steps[2]?.failures[0]).toBe("SAP reported an error in the status bar: Order 999 does not exist");
+    // Recorded on an error: the same error (variables filled in) passes, another one fails.
+    t.steps[2]!.after!.status = { type: "E", text: "Order ${order} does not exist" };
+    t.steps[2]!.after!.screen = "100";
+    t.steps[2]!.after!.title = "Display Order: Initial Screen";
+    const same = await replay(sap.driver(), policy, { ...t, steps: t.steps.slice(0, 3) }, { variables: { order: "998" } });
+    expect(same.passed).toBe(true);
+    t.steps[2]!.after!.status = { type: "E", text: "Enter an order number" };
+    const other = await replay(sap.driver(), policy, { ...t, steps: t.steps.slice(0, 3) }, { variables: { order: "998" } });
+    expect(other.steps[2]?.failures[0]).toBe("SAP reported an error in the status bar: Order 998 does not exist");
+  });
+
+  test("the report: values not captured in this run, unknown variables, an empty recording", async () => {
+    const { test: t, sap, policy } = await recordCreateAndDisplay();
+    const r = await replay(sap.driver(), policy, t, { variables: { customer: "" } });
+    expect(r.passed).toBe(false);
+    expect(resultText(r)).toContain('${order} not captured in this run (recorded "5001")');
+    const bad = await replay(sap.driver(), policy, t, { variables: { foo: "1" } });
+    expect(bad.variables.foo).toBeUndefined();
+    expect(resultText(bad)).not.toContain("${foo} =");
+    const empty = await replay(sap.driver(), policy, { ...t, steps: [] });
+    expect([empty.passed, empty.aborted]).toEqual([false, "the recording has no steps"]);
+  });
+});
+
 // ---- exports ------------------------------------------------------------------
 
 describe("exports", () => {
@@ -409,7 +542,7 @@ describe("exports", () => {
       evidence: true,
     });
     expect(c.activities[0]?.steps[0]?.description).toContain("- <customer> = 2200 (a customer of sales area 1000)");
-    // The shape and limits of cloud-alm-mcp-server's tool: title 250, step title 500, texts 1 to 4000, 1 to 50 steps, 1 to 30 activities.
+    // The shape and limits of a Cloud ALM MCP server's calm_create_test_case tool: title 250, step title 500, texts 1 to 4000, 1 to 50 steps, 1 to 30 activities.
     expect(c.activities.length).toBeLessThanOrEqual(30);
     for (const a of c.activities) {
       expect(a.title.length).toBeGreaterThan(0);

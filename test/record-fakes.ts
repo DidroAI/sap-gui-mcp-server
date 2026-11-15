@@ -10,6 +10,12 @@
 import type { Action, Assessment, Driver, SessionInfo, Surface, SurfaceName } from "../src/core/types.js";
 import { ActionError } from "../src/core/types.js";
 
+export interface Popup {
+  title: string;
+  text: string;
+  question?: boolean;
+}
+
 interface Order {
   customer: string;
   quantity: string;
@@ -31,6 +37,12 @@ export class FakeSap implements Surface {
   /** Set to wrap the order screen's fields in another subscreen, as a changed screen would. */
   moved = false;
   acts: Action[] = [];
+  /** Popups SAP shows after Enter on an order in ZA03, by order: an Information popup is text and Continue, a question has Yes and No. */
+  popupsFor = new Map<string, Popup[]>();
+  /** The popups open now, the one in front first. */
+  popups: Popup[] = [];
+  /** ZA01: a quantity above this shows the availability control screen after Enter. */
+  available = Number.POSITIVE_INFINITY;
 
   constructor(name: SurfaceName = "webgui", system = "ABA") {
     this.name = name;
@@ -38,22 +50,33 @@ export class FakeSap implements Surface {
   }
 
   private program(): string {
+    if (this.popups[0]) return this.popups[0].question ? "SAPLSPO1" : `SAPMZ${this.transaction.slice(1)}`;
+    if (this.screen === "500") return "SAPLATP4";
     return this.transaction === "SMEN" ? "SAPLSMTR_NAVIGATION" : `SAPMZ${this.transaction.slice(1)}`;
+  }
+
+  private screenNo(): string {
+    if (this.popups[0]) return this.popups[0].question ? "0500" : "102";
+    return this.screen;
   }
 
   private title(): string {
     if (this.transaction === "SMEN") return "SAP Easy Access";
-    if (this.transaction === "ZA01") return this.screen === "100" ? "Create Order: Initial Screen" : "Create Order: Overview";
+    if (this.transaction === "ZA01") return this.screen === "100" ? "Create Order: Initial Screen" : this.screen === "500" ? "Create Order: Availability Control" : "Create Order: Overview";
     return this.screen === "100" ? "Display Order: Initial Screen" : `Display Order ${this.shown}: Overview`;
   }
 
   view(): string {
-    const out = [`TRANSACTION ${this.transaction}  PROGRAM ${this.program()}  SCREEN ${this.screen}  SYSTEM ${this.info.system} (800)`, `WINDOW wnd[0]  "${this.title()}"`, "wnd[0]/tbar[0]/okcd  command-field", "wnd[0]/tbar[0]/btn[3]  button  Back (F3)"];
+    const out = [`TRANSACTION ${this.transaction}  PROGRAM ${this.program()}  SCREEN ${this.screenNo()}  SYSTEM ${this.info.system} (800)`, `WINDOW wnd[0]  "${this.title()}"`, "wnd[0]/tbar[0]/okcd  command-field", "wnd[0]/tbar[0]/btn[3]  button  Back (F3)"];
     const f = (id: string, label: string, edit = true) => out.push(`wnd[0]/usr/${id}  field  ${label} = "${this.fields[id.slice(id.lastIndexOf("/") + 1)] ?? ""}"  (${edit ? "edit" : "read-only"})`);
     if (this.transaction === "ZA01" && this.screen === "100") {
       f("ctxtZORD-KUNNR", "Customer");
       f("txtZORD-MENGE", "Quantity");
       out.push(`wnd[0]/usr/chkZORD-RUSH  checkbox  [${this.rush ? "x" : " "}] Rush order`);
+    } else if (this.transaction === "ZA01" && this.screen === "500") {
+      out.push("wnd[0]/tbar[1]/btn[7]  button  Delivery proposal (F7)");
+      out.push("wnd[0]/tbar[1]/btn[0]  button  Continue (Enter)");
+      out.push(`wnd[0]/usr/txtZORD-MENGE  field  Order quantity = "${this.fields["txtZORD-MENGE"] ?? ""}"  (read-only)`);
     } else if (this.transaction === "ZA01") {
       f("ctxtZORD-KUNNR", "Customer", false);
       out.push("wnd[0]/tbar[0]/btn[11]  button  Save (Ctrl+S)");
@@ -73,6 +96,12 @@ export class FakeSap implements Surface {
       }
     }
     if (this.status) out.push(`wnd[0]/sbar  status  ${this.status}`);
+    const p = this.popups[0];
+    if (p) {
+      out.push(`WINDOW wnd[1]  "${p.title}"`, `wnd[1]/usr/txtMESSTXT1  label  ${p.text}`);
+      if (p.question) out.push("wnd[1]/usr/btnSPOP-OPTION1  button  Yes", "wnd[1]/usr/btnSPOP-OPTION2  button  No");
+      else out.push("wnd[1]/tbar[0]/btn[0]  button  Continue (Enter)");
+    }
     return out.join("\n");
   }
 
@@ -87,6 +116,20 @@ export class FakeSap implements Surface {
 
   private run(a: Action): string {
     this.acts.push(a);
+    const p = this.popups[0];
+    if (p) {
+      // A popup takes the keys and its own buttons; everything else waits behind it.
+      if (a.do === "okcode") throw new ActionError("A popup window is open and blocks the command field: answer or close the popup first.");
+      if (a.do === "key" && a.key === 12) {
+        this.popups = [];
+        return "key Escape";
+      }
+      if ((a.do === "key" && a.key === 0 && !p.question) || (a.do === "press" && a.id === "wnd[1]/tbar[0]/btn[0]" && !p.question) || (a.do === "press" && /SPOP-OPTION/.test(String(a.id)) && p.question)) {
+        this.popups.shift();
+        return `pressed ${a.id ?? "Enter"}`;
+      }
+      throw new ActionError(`cannot ${a.do} ${a.id ?? ""} while the popup "${p.title}" is open`);
+    }
     this.status = "";
     if (a.do === "okcode") {
       const t = /^\/n(\S*)$/i.exec(String(a.value))?.[1]?.toUpperCase();
@@ -102,15 +145,18 @@ export class FakeSap implements Surface {
       this.tab = "T\\01";
       return `okcode ${a.value}`;
     }
-    if (a.do === "key" && a.key === 0) {
-      if (this.transaction === "ZA01" && this.screen === "100") {
+    if ((a.do === "key" && a.key === 0) || (a.do === "press" && a.id === "wnd[0]/tbar[1]/btn[0]" && this.screen === "500")) {
+      if (this.transaction === "ZA01" && this.screen === "500") this.screen = "200";
+      else if (this.transaction === "ZA01" && this.screen === "100") {
         if (!this.fields["ctxtZORD-KUNNR"]) this.status = "E: Fill in all required fields";
+        else if (Number(this.fields["txtZORD-MENGE"] ?? 0) > this.available) this.screen = "500";
         else this.screen = "200";
       } else if (this.transaction === "ZA03" && this.screen === "100") {
         const n = this.fields["ctxtZORD-VBELN"] ?? "";
         if (this.orders.has(n)) {
           this.shown = n;
           this.screen = "300";
+          this.popups = [...(this.popupsFor.get(n) ?? [])];
         } else this.status = `E: Order ${n} does not exist`;
       }
       return "key Enter";
