@@ -28,8 +28,10 @@ const START_SLOW_MS = 2500;
 /**
  * After the page has handled a key or a click (two frames drawn), how long
  * its request may still take to leave before the action counts as one that
- * sends nothing. Measured on ECC Web GUI in a tab in front: see the timing
- * bench of 2026-11-15 (requests left within ... ms of the second frame).
+ * sends nothing. Web GUI starts its request in the key or click handler or
+ * on a short timer after it; a page that is slow to draw is waited for by
+ * the frames themselves, up to the caller's `startMs`. Not yet tuned on a
+ * live system: "timing":true on an action shows the "start" part.
  */
 export const LEAVE_MS = 250;
 /** A step still running when an action comes, for this long or more, makes the action stop: the screen it was chosen on is gone. */
@@ -357,6 +359,12 @@ export class WebGuiSession {
     }
   }
 
+  /**
+   * Runs what causes the round trip, then waits for it. The count of POSTs
+   * is taken before the click: a round trip that starts while the click is
+   * still being awaited is then seen at once, where counting afterwards
+   * waited the whole `startMs` for a POST that had already gone.
+   */
   async roundtrip<T>(cause: () => Promise<T>, startMs = 1500): Promise<T> {
     const before = this.traffic.posts;
     const result = await cause();
