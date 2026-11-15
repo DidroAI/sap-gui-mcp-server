@@ -1,0 +1,33 @@
+name: Feature request
+description: Something the server should do, or a screen it should read better
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What you want to do
+      description: The task in SAP, and where the server stops you today.
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      multiple: true
+      options:
+        - SAP GUI for Windows
+        - Web GUI (SAP GUI for HTML)
+        - Fiori
+        - Record and replay
+        - Command line (setup, doctor)
+        - Other
+  - type: textarea
+    id: idea
+    attributes:
+      label: How it could work
+      description: An action, a setting, a change to the view. Optional.
+  - type: textarea
+    id: safety
+    attributes:
+      label: Effect on the write guard
+      description: Could this let an action write to SAP? How should SAP_WRITE treat it?
