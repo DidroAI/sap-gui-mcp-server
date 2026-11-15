@@ -275,11 +275,11 @@ pure function from the recording to a text file.
 **Manual test cases.** Cloud ALM's test management API creates a manual test
 case with `POST calm-testmanagement/v1/ManualTestCases`: a title, activities
 (`toActivities`) and, in each, actions (`toActions`) with a title, a
-description, an expected result and an evidence flag. Our
-`cloud-alm-mcp-server` wraps this as the tool `calm_create_test_case`
+description, an expected result and an evidence flag. A Cloud ALM MCP
+server can wrap this as a tool `calm_create_test_case`
 (`title`, `activities[].title`, `activities[].steps[]` with `title`,
-`description`, `expected`, `evidence`), adds the project and scope, refuses a
-duplicate title and asks the user before writing.
+`description`, `expected`, `evidence`), add the project and scope, refuse a
+duplicate title and ask the user before writing.
 
 The export is that tool's input, as
 `{"tool":"calm_create_test_case","arguments":{...}}`. An agent with both
