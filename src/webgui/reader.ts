@@ -29,7 +29,7 @@ import { LOGON_PROGRAM, LOGON_REFUSAL } from "../core/words.js";
 import { assessAction, type FocusFacts } from "./assess.js";
 import type { MarkedControl, Scrolled } from "./page.js";
 import { comboEntries, extractFacts, extractLook, extractMenus, extractViewer, focusedControl, markControl, markRow, normalizeLsdata, scrollControl, viewerFocus } from "./page.js";
-import { IDLE_TIMEOUT_MS, MAX_IDLE_TIMEOUT_MS, type WebGuiSession } from "./session.js";
+import { IDLE_TIMEOUT_MS, MAX_IDLE_TIMEOUT_MS, noTiming, timingText, type WebGuiSession } from "./session.js";
 
 const MAX_GRID_ROWS = 50;
 const MAX_TREE_NODES = 300;
@@ -427,8 +427,21 @@ export function setRefusal(c: MarkedControl): string | undefined {
 
 /** One action. Returns a one-line note of what was done; throws ActionError when it cannot. */
 export async function act(session: WebGuiSession, a: Action): Promise<string> {
+  const t0 = Date.now();
+  session.timing = noTiming();
+  session.timingText = undefined;
+  try {
+    return await actTimed(session, a);
+  } finally {
+    session.timingText = timingText(session.timing, Date.now() - t0);
+  }
+}
+
+async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
   await refuseLogon(session);
+  const w0 = Date.now();
   await session.wake();
+  session.timing.wake = Date.now() - w0;
   // A long step (a report started with F8) can be given more time: "timeout" in seconds.
   const t = Number(a.timeout);
   session.idleTimeoutMs = Number.isFinite(t) && t > 0 ? Math.min(Math.round(t * 1000), MAX_IDLE_TIMEOUT_MS) : IDLE_TIMEOUT_MS;

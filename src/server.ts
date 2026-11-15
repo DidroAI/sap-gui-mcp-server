@@ -222,25 +222,43 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
   /** Can the client ask the user itself (MCP elicitation, form mode)? Then no token is needed. */
   const canElicit = () => !!server.server.getClientCapabilities()?.elicitation?.form;
 
+  /**
+   * Where the time of an action went, when asked for (SAP_TIMINGS=on, or "timing":true in the action):
+   * a line after the note. `marks` are the times the phases ended, from the start of the call.
+   */
+  const timingsOn = /^(on|true|1)$/i.test(process.env.SAP_TIMINGS ?? "");
+  function timed(note: string, d: Driver, wanted: boolean, t0: number, phases: [string, number][]): string {
+    if (!wanted) return note;
+    const total = Date.now() - t0;
+    const driver = d.timing?.();
+    return `${note}\n(timing: ${total} ms in the server: ${phases.map(([k, v]) => `${k} ${v}`).join(", ")}${driver ? `; the action ${driver}` : ""})`;
+  }
+
   /** Runs an action that passed the guard, then checks where it led. */
-  async function perform(d: Driver, action: NormalizedAction, whole = false, risk?: string): Promise<CallToolResult> {
+  async function perform(d: Driver, action: NormalizedAction, whole = false, risk?: string, clock?: { t0: number; judged: number; wanted: boolean }): Promise<CallToolResult> {
     const session = d.info.id;
+    const a0 = Date.now();
     // "/oVA03" opens the transaction in a new SAP GUI session: follow it there.
     const opens = action.do === "okcode" && typeof action.value === "string" && /^\/o\S/i.test(action.value) && d.info.surface === "sapgui";
     const before = opens ? new Set((await registry.discover()).sessions.map((s) => s.id)) : undefined;
     // While a recording is on, an action that works becomes a step of it.
-    const note = await recorder.act(d, action, risk, () => d.act(action));
+    const done = await recorder.act(d, action, risk, () => d.act(action));
+    const acted = Date.now();
+    const note = (screen: () => Promise<string>) =>
+      screen().then((v) => ({ v, n: clock ? timed(done, d, clock.wanted, clock.t0, [["judge", clock.judged], ["act", acted - a0], ["answer", Date.now() - acted]]) : done }));
     if (before) {
       for (let i = 0; i < 10; i++) {
         const fresh = (await registry.discover()).sessions.find((s) => s.surface === "sapgui" && !before.has(s.id));
         if (fresh) {
           registry.active = fresh.id;
           const nd = await registry.driver(fresh.id);
-          return text(`${note}\nA new session opened (${fresh.where}); it is now the active one. The previous session is still open (sap_sessions lists both).\n\n${views.present(fresh.id, await nd.look({ compact: true }), true)}`);
+          const { v, n } = await note(() => nd.look({ compact: true }));
+          return text(`${n}\nA new session opened (${fresh.where}); it is now the active one. The previous session is still open (sap_sessions lists both).\n\n${views.present(fresh.id, v, true)}`);
         }
         await new Promise((r) => setTimeout(r, 500));
       }
-      return text(`${note}\nNo new session appeared within 5 s (SAP allows at most 6 per logon): this is still the previous session.\n\n${views.present(session, await d.look({ compact: true }), whole)}`);
+      const { v, n } = await note(() => d.look({ compact: true }));
+      return text(`${n}\nNo new session appeared within 5 s (SAP allows at most 6 per logon): this is still the previous session.\n\n${views.present(session, v, whole)}`);
     }
     // A menu entry, a favourite or a tree node can open a transaction no okcode named.
     const after = await d.refresh().catch(() => undefined);
@@ -257,9 +275,10 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
         .look({ compact: true })
         .then((v) => views.present(session, v, true))
         .catch((e: Error) => `(the screen could not be read: ${e.message.split("\n")[0]})`);
-      return fail(`${note}\nThis led to a transaction the agent may not work in: ${landed}. ${left}\n\n${screen}`);
+      return fail(`${done}\nThis led to a transaction the agent may not work in: ${landed}. ${left}\n\n${screen}`);
     }
-    return text(`${note}\n\n${views.present(session, await d.look({ compact: true }), whole)}`);
+    const { v, n } = await note(() => d.look({ compact: true }));
+    return text(`${n}\n\n${views.present(session, v, whole)}`);
   }
 
   /** The session as it is now, and what the guard says about this action on it. */
@@ -305,7 +324,16 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
     }
   }
 
-  async function run(ref: string | undefined, raw: unknown, whole = false): Promise<CallToolResult> {
+  async function run(ref: string | undefined, input: unknown, whole = false): Promise<CallToolResult> {
+    const t0 = Date.now();
+    // "timing" asks for where the time went; it is not part of the action.
+    let raw = input;
+    let wanted = timingsOn;
+    if (raw && typeof raw === "object" && !Array.isArray(raw) && "timing" in raw) {
+      const { timing, ...rest } = raw as Record<string, unknown>;
+      wanted = timing === true || timingsOn;
+      raw = rest;
+    }
     // One normalised action for the guard, for assess and for act.
     const action = normalizeAction(raw);
     const field = commandFieldRefusal(action);
@@ -318,7 +346,7 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
     }
     if ("refused" in j) return fail(`Refused: ${j.refused}`);
     const { driver, info, assessment, verdict } = j;
-    if (verdict.run) return perform(driver, action, whole, assessment.risk).catch((e: unknown) => failedOn(ref, e));
+    if (verdict.run) return perform(driver, action, whole, assessment.risk, { t0, judged: Date.now() - t0, wanted }).catch((e: unknown) => failedOn(ref, e));
     if ("refused" in verdict) return fail(`Refused: ${verdict.refused}`);
     const shown = shownOf(info, action, assessment);
     const what = `${verdict.confirm}, on ${place(info)}`;
