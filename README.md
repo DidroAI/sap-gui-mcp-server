@@ -1,31 +1,27 @@
 # sap-gui-mcp-server
 
 An [MCP](https://modelcontextprotocol.io) server that lets an agent (Claude,
-Codex, Cursor…) **see and drive the SAP screens you already have open**:
+Codex, Cursor and other MCP clients) **see and drive the SAP screens you
+already have open**:
 
-- **SAP GUI for Windows**, through SAP GUI scripting;
+- **SAP GUI for Windows**, through SAP GUI scripting (or, experimental,
+  without scripting, by reading SAP GUI's network traffic);
 - **SAP GUI for HTML (Web GUI)** in Chrome;
-- **SAP Fiori** in Chrome, including Web GUI apps opened inside the launchpad.
+- **SAP Fiori** in Chrome, including Web GUI apps opened inside the
+  launchpad.
 
-It finds your sessions by itself and works in them as you, under your
-authorisations. It never logs on and never stores a password.
+It finds your open sessions by itself and works in them as you, under your
+SAP authorisations. It never logs on and never stores a password. Actions
+that may write to SAP are refused unless you allow them.
 
-> Status: in development, not on npm yet. MIT licence.
+> Status: 0.1.0, the first public version. It works on real systems, but
+> parts are young: see [Limits](#limits). MIT licence.
 
-## Why another SAP GUI server
+## What the agent sees
 
-Generic browser tools and screenshots were not built for SAP screens:
-
-- they miss checkbox states and SAP's own ids;
-- they lose the label next to each field;
-- they spend most of their tokens on layout tables.
-
-The existing SAP GUI MCP servers use scripting, but drop most of the
-screen: tree nodes, ALV grid cells, table controls, and popups with what is
-behind them.
-
-This server reads the screen the way SAP models it and prints one line per
-control:
+The server reads the screen the way SAP models it and prints one line per
+control, with SAP's own ids, the label next to each field, its value and
+whether it can be edited:
 
 ```
 TRANSACTION VA01  PROGRAM SAPMV45A  SCREEN 101  SYSTEM ABA (800)
@@ -41,11 +37,13 @@ ctxtVBAK-SPART  field  Division = ""  (edit)
 mbar  menubar  Sales document {menu[0]}, Edit {menu[1]}, Goto {menu[2]}, ...
 ```
 
-(Web GUI, transaction VA01; SAP's messages appear as a `sbar  status` line.)
+(Web GUI, transaction VA01; SAP's messages appear as a `sbar  status`
+line.) Checkbox states, tree nodes, ALV grid cells, table controls and
+popups, with what is behind them, are all part of the view.
 
 The agent acts on those ids with one small set of JSON actions, the same on
-every surface. After an action on the same screen it gets only what
-changed:
+every surface. After an action that leaves it on the same screen, it gets
+only what changed:
 
 ```
 set wnd[0]/usr/ctxtVBAK-VKORG
@@ -54,92 +52,141 @@ CHANGED 1 of 18 lines (same screen; sap_look shows all of it):
 ~ ctxtVBAK-VKORG  field  Sales Organization = "1000"  (edit)
 ```
 
-First measurements, from our own probe: SAP demo systems, ten screens per
-surface, one model-chosen action per test, one run. The method and scripts
-will be published with the benchmark. The compact view saw:
+On one read-only flow of 51 steps on Web GUI (VA01 without saving, VA03,
+VA05, SE16N, SE16, MM03; `test/dev/soak.ts`, one run, tokens counted with
+the Anthropic `count_tokens` API), the answers cost 58k tokens in all, and
+73k with `SAP_VIEW=full`, where every action answers with the whole screen.
+Typing into a field answers with about 50 tokens instead of the screen.
 
-| Surface | Screen content seen | Tokens, ten screens | Actions that worked |
-| --- | --- | --- | --- |
-| Web GUI | 100% (Playwright MCP: 100%) | 20k (Playwright MCP: 203k) | 6 of 6 |
-| SAP GUI for Windows | 99% (best other SAP GUI MCP: 53%) | 24k | 5 of 5 that scripting can reach |
-| Fiori (S/4HANA launchpad) | 99% | 35k (Playwright MCP: 101k) | 6 of 7 |
+## Requirements
 
-The other servers' labels and checkbox states were the weak point:
-Playwright MCP paired 66% of labels with their values on Web GUI and showed
-no checkbox state. These numbers come from a small internal probe, not a
-benchmark yet. A public, repeatable benchmark is on the way, with whole
-tasks, held-out screens, and Claude's and Codex's own computer-use tools.
+- **Node.js 22 or later** on the machine where your MCP client runs.
+- At least one of these, depending on how you use SAP:
 
-Over a run, an agent pays for every answer. On Web GUI of an ECC demo
-system, a read-only flow of 51 steps (VA01 without saving, VA03, VA05,
-SE16N, SE16, MM03; `test/dev/soak.ts`, one run, tokens counted with the
-Anthropic `count_tokens` API) cost 58k tokens of answers. With
-`SAP_VIEW=full`, where every action answers with the whole screen, the
-same flow cost 73k. Typing into a field answers with about 50 tokens
-instead of the screen (540 on the VA01 initial screen, 2,900 on its
-overview).
+| Surface | You need |
+| --- | --- |
+| SAP GUI for Windows | Windows, SAP GUI for Windows, scripting enabled in SAP GUI **and** allowed on the SAP system ([details](#sap-gui-for-windows)) |
+| SAP GUI for Windows without scripting (experimental) | Windows, SAP GUI for Windows, a connection entry you can edit in SAP Logon, no SNC encryption ([details](#sap-gui-without-scripting-experimental)) |
+| Web GUI | Chrome 144 or later (or Edge) with remote debugging allowed, and a Web GUI tab open and logged on: its address contains `/sap/bc/gui/sap/its/webgui` ([details](#web-gui-and-fiori-in-chrome)) |
+| Fiori | The same Chrome, and a Fiori launchpad tab open and logged on (for example `/sap/bc/ui2/flp`) |
 
-## Set up with your agent
+Web GUI and Fiori work from Windows, macOS and Linux. SAP GUI for Java
+(macOS, Linux) has no scripting and is not supported.
 
-The easiest way: paste the prompt in [docs/setup-prompt.md](docs/setup-prompt.md)
-into Claude Code or Codex. The agent installs the server, adds it to your MCP
-clients (`setup`), runs `doctor` and walks you through each setting, then
-looks at your SAP screen to prove it works.
+## Install
 
-## Quick start
+Most MCP clients start the server with `npx`, so nothing needs installing
+first:
 
-Requires Node 22 or later.
+```sh
+npx -y sap-gui-mcp-server --help
+```
+
+Or install it once and use the `sap-gui-mcp-server` command:
+
+```sh
+npm i -g sap-gui-mcp-server
+```
+
+### Let the server configure your clients
+
+`setup` adds the server to every MCP client it finds (Claude Code, Codex,
+Claude Desktop). It never overwrites an existing `sap-gui` entry and keeps a
+`.bak` of any file it changes:
+
+```sh
+npx -y sap-gui-mcp-server setup --dry-run   # what it would change
+npx -y sap-gui-mcp-server setup             # or: setup claude-code | codex | claude-desktop
+npx -y sap-gui-mcp-server doctor            # what the server can reach, and what to change
+npx -y sap-gui-mcp-server sessions          # the SAP sessions it finds right now
+```
+
+You can also paste the prompt in [docs/setup-prompt.md](docs/setup-prompt.md)
+into Claude Code or Codex: the agent runs these commands, walks you through
+each setting `doctor` asks for, then looks at your SAP screen to prove it
+works.
+
+### Or configure them by hand
+
+Each snippet starts the server with writes off. Add settings from
+[Configuration](#configuration) as environment variables.
+
+**Claude Code**
 
 ```sh
 claude mcp add sap-gui --scope user -- npx -y sap-gui-mcp-server
+# with a setting:
+claude mcp add sap-gui --scope user -e SAP_WRITE=confirm -- npx -y sap-gui-mcp-server
 ```
 
-Codex (`~/.codex/config.toml`):
+Or install it as a Claude Code plugin, which also brings the
+[`sap-gui-drive` skill](skills/sap-gui-drive/SKILL.md):
+
+```
+/plugin install sap-gui --marketplace DidroAI/sap-gui-mcp-server
+```
+
+**Claude Desktop** (`claude_desktop_config.json`: Settings → Developer →
+Edit Config):
+
+```json
+{
+  "mcpServers": {
+    "sap-gui": {
+      "command": "npx",
+      "args": ["-y", "sap-gui-mcp-server"],
+      "env": { "SAP_WRITE": "off" }
+    }
+  }
+}
+```
+
+**Codex** (`~/.codex/config.toml`):
 
 ```toml
 [mcp_servers.sap-gui]
 command = "npx"
 args = ["-y", "sap-gui-mcp-server"]
+
+[mcp_servers.sap-gui.env]
+SAP_WRITE = "off"
 ```
 
-Claude Desktop, Cursor and other clients take the same command:
-`npx -y sap-gui-mcp-server`. On Windows, some clients need it as
-`cmd /c npx -y sap-gui-mcp-server`.
+**Cursor** (`~/.cursor/mcp.json`, or `.cursor/mcp.json` in a project):
 
-Then open SAP and ask: *"Look at my SAP screen and tell me which fields are
-required"*, or *"In VA03, open order 19097 and tell me its delivery
-status"*.
-
-Or let the server add itself to every MCP client it finds (Claude Code,
-Codex, Claude Desktop); it never overwrites an existing entry and keeps a
-`.bak` of any file it changes:
-
-```sh
-npx -y sap-gui-mcp-server setup --dry-run   # what it would change
-npx -y sap-gui-mcp-server setup
+```json
+{
+  "mcpServers": {
+    "sap-gui": {
+      "command": "npx",
+      "args": ["-y", "sap-gui-mcp-server"],
+      "env": { "SAP_WRITE": "off" }
+    }
+  }
+}
 ```
 
-Check your setup at any time:
+On Windows, some clients cannot start `npx` directly: use
+`"command": "cmd", "args": ["/c", "npx", "-y", "sap-gui-mcp-server"]`
+(`setup` does this for you).
 
-```sh
-npx -y sap-gui-mcp-server doctor     # what the server can reach, and what to change
-npx -y sap-gui-mcp-server sessions   # the SAP sessions it finds right now
-```
-
-> Not on npm yet. Until it is, build from a checkout (`bun install && bun
-> run build && npm link`) and use `sap-gui-mcp-server` instead of
-> `npx -y sap-gui-mcp-server`.
+Then open SAP and ask, for example: *"Look at my SAP screen and tell me
+which fields are required"*, or *"In VA03, open order 19097 and tell me its
+delivery status"*.
 
 ## How it finds your sessions
 
-**SAP GUI for Windows** (when the server runs on Windows). SAP GUI scripting
-lists every open connection and session, with system, client, user and
-transaction. The server uses the active one; the agent can switch. Two
-settings must allow it, and `doctor` checks both:
+### SAP GUI for Windows
+
+When the server runs on Windows, SAP GUI scripting lists every open
+connection and session, with system, client, user and transaction. The
+server uses the active one; the agent can switch. Two settings must allow
+it, and `doctor` checks both:
 
 - **Scripting on in SAP GUI:** SAP GUI options → Accessibility & Scripting →
   Scripting → *Enable scripting*. Untick *Notify when a script attaches to
-  SAP GUI*, or SAP GUI asks you each time.
+  SAP GUI* and *Notify when a script opens a connection*, or SAP GUI asks
+  you each time.
 - **Scripting allowed on the SAP system:** profile parameter
   `sapgui/user_scripting = TRUE`, set by your SAP basis team. Test and QA
   systems often allow it; production systems often do not.
@@ -147,9 +194,10 @@ settings must allow it, and `doctor` checks both:
 Nothing else is installed: the server talks to SAP GUI through Windows
 PowerShell, which comes with Windows.
 
-**SAP GUI without scripting (experimental): `SAP_GUI_METHOD=diag`.** When
-scripting is off, the server can read SAP GUI from the traffic between SAP GUI
-and the SAP system (SAP's DIAG protocol) instead:
+### SAP GUI without scripting (experimental)
+
+When scripting is off, the server can read SAP GUI from the traffic between
+SAP GUI and the SAP system (SAP's DIAG protocol) instead:
 
 1. Set `SAP_GUI_METHOD=diag` in the server's environment. The server then
    runs a SAProuter on `127.0.0.1:3298` (`SAP_DIAG_PORT` to change it).
@@ -165,8 +213,9 @@ the screen, and a typed value reaches SAP (and the view) with the next Enter
 or function key. It cannot read connections encrypted with SNC. The server
 must be running before you log on, since SAP GUI connects through it.
 
-**Web GUI and Fiori in Chrome.** The server attaches to the Chrome you are
-using, in this order:
+### Web GUI and Fiori in Chrome
+
+The server attaches to the Chrome you are using, in this order:
 
 1. `SAP_CHROME_CDP`, if you set it, e.g. `http://127.0.0.1:9222`. Nothing
    else is tried then;
@@ -199,8 +248,8 @@ Each tab has one owner, decided in one place:
 
 Remote debugging gives the server (and so the agent using it) access to
 every tab of that browser, not only SAP tabs. The server only reads tabs it
-recognises as SAP, but consider a separate Chrome profile for SAP work.
-Set `SAP_ALLOW_ORIGINS` to look only at your SAP hosts. The server reads
+recognises as SAP, but consider a separate Chrome profile for SAP work, and
+set `SAP_ALLOW_ORIGINS` to look only at your SAP hosts. The server reads
 system, client and user from the page, and `sap_sessions` shows each tab's
 origin. Chrome does not tell a tab's position, so tabs are named by their
 title. Closing the server never closes your browser.
@@ -213,7 +262,7 @@ title. Closing the server never closes your browser.
 | `sap_use` | makes another session the active one: by number, id, system, transaction, or surface (`fiori`, `webgui`, `sapgui`) |
 | `sap_look` | the screen as compact text; `full: true` for every id and column; `diff: true` for what changed since the last view; `id` for one control whole; `id` and `rows` for a range of rows of a long list |
 | `sap_act` | one action, then the new screen, or only what changed when the screen is the same one |
-| `sap_confirm` | runs an action held for your confirmation, when your client cannot ask you itself (see below) |
+| `sap_confirm` | runs an action held for your confirmation, when your client cannot ask you itself (see [Confirm mode](#confirm-mode)) |
 | `sap_screenshot` | a PNG of the window or tab, for charts and visual checks |
 | `sap_record` | records the run as a test: start, stop, checks, variables, export |
 | `sap_replay` | runs a recorded test again, with no model |
@@ -324,51 +373,23 @@ cntlGRID1/shell  grid  93 rows; columns: VBELN=Sales Document | AUDAT=Doc. Date 
   a scroll the view says where they are scrolled to (`first 60`), and cell
   ids still count from the first row on screen.
 
-On SAP GUI for Windows, the host and the fake SAP GUI of the tests got the
-scroll code in this version; it has not been run against a real SAP GUI yet.
+## Safety model
 
-## Record a run as a test
-
-An agent's run can be kept as a test and run again with no model:
-
-```
-sap_record {"op":"start","name":"VA03 display order"}
-sap_act    {"action":{"do":"okcode","value":"/nVA03"}}       ... act as usual
-sap_record {"op":"assert","check":"field","id":"txtVBAK-NETWR","equals":"2.500,00"}
-sap_record {"op":"variable","name":"order","value":"19097"}
-sap_record {"op":"stop"}
-```
-
-```sh
-sap-gui-mcp-server replay sap-tests/va03-display-order.saptest.json --var order=4711
-sap-gui-mcp-server export sap-tests/va03-display-order.saptest.json --to calm   # or vbs, playwright, playwright-sap, gherkin
-```
-
-- The recording is one JSON file: each action, the screen it led to, the
-  status bar, the checks you marked, and variables for values that change.
-- `replay` runs it on a session you have open, under the same guardrails as
-  `sap_act`, and reports pass or fail per step with the screen at the
-  failure. `sap_replay` does the same from the agent.
-- `export` writes a SAP Cloud ALM manual test case, a SAP GUI script (VBS), a
-  Playwright spec for Web GUI, or a Gherkin step list.
-
-Recordings go to `SAP_RECORD_DIR` (default `./sap-tests`) and hold the values
-that were typed. Design, file format and limits: [docs/record.md](docs/record.md).
-Prototype: checked on Web GUI; not yet run on SAP GUI for Windows or Fiori.
-
-## Guardrails
-
-The server enforces these whatever the agent decides:
+The server enforces these rules whatever the agent decides. They are a
+safety net for an agent that makes mistakes, not a security boundary: see
+[SECURITY.md](SECURITY.md) for what they do not protect against.
 
 | Setting | Effect |
 | --- | --- |
 | `SAP_WRITE=off` (default) | actions that may write to SAP are refused: Save, Post, Delete, Release, Approve, "Yes" on a save popup |
-| `SAP_WRITE=confirm` | such actions are held for your yes (see "Confirm mode") |
+| `SAP_WRITE=confirm` | such actions are held for your yes (see [Confirm mode](#confirm-mode)) |
 | `SAP_WRITE=on` | such actions run |
 | `SAP_ALLOW_SYSTEMS=ABA/800,S4H` | only these systems, optionally with a client, are visible and usable. Checked on every tool, each time: a session that moves to another system is refused from then on |
-| `SAP_ALLOW_ORIGINS=https://myhost:44300` | only browser tabs of these origins are looked at (comma list) |
+| `SAP_ALLOW_ORIGINS=https://myhost:44300` | only browser tabs of these origins are looked at |
 | `SAP_ALLOW_TCODES=VA03,MM03` | the agent may open and work in only these transactions |
 | `SAP_BLOCK_TCODES=SE38,SM30` | the agent may not open or work in these transactions |
+
+Lists are separated by commas (or spaces) and are not case-sensitive.
 
 The transaction lists apply to commands (`/nSE38`, `/oSE38`, `/*SE38`) and
 to the transaction the session is in. A menu entry, a favourite or a
@@ -401,6 +422,10 @@ that button. Typing works only in fields, never on buttons. `/nex`,
 unsaved data. Password fields cannot be typed into, and nothing runs on a
 logon screen: log on yourself.
 
+Failing closed has a cost: with `SAP_WRITE=off`, some harmless buttons are
+refused too (for example "Continue" on a popup whose text the server does
+not know as safe). The agent is told why, and can tell you.
+
 **Execute (F8)** counts as navigate on purpose. It runs reports and lists
 (VA05, ME2N...), which read. A report that updates the database usually
 has a test-run flag and asks before posting, but not always. Put known
@@ -431,31 +456,82 @@ said it would do. Before running, the server reads the screen again and
 refuses if any of these changed. A token works once and for ten minutes.
 
 This is a safety net, not a guarantee. A custom button whose name is on the
-safe list can still write, and so can a report started with F8. Use a test system and
-a user with the authorisations you want the agent to have.
+safe list can still write, and so can a report started with F8. Use a test
+system and a user with the authorisations you want the agent to have.
 
-Other settings:
+## Record a run as a test
 
-| Setting | Effect |
-| --- | --- |
-| `SAP_SURFACES=sapgui,webgui,fiori` | which kinds of session to look for |
-| `SAP_VIEW=full` | every action answers with the whole screen (default `diff`: only what changed when the screen is the same) |
-| `SAP_FIORI_WAIT=busy` | faster Fiori waits (busy indicators only) |
-| `SAP_RECORD_DIR=./sap-tests` | where recordings and exports are written |
-| `SAP_RECORD=on` | record every session from its first action |
+An agent's run can be kept as a test and run again with no model:
+
+```
+sap_record {"op":"start","name":"VA03 display order"}
+sap_act    {"action":{"do":"okcode","value":"/nVA03"}}       ... act as usual
+sap_record {"op":"assert","check":"field","id":"txtVBAK-NETWR","equals":"2.500,00"}
+sap_record {"op":"variable","name":"order","value":"19097"}
+sap_record {"op":"stop"}
+```
+
+```sh
+sap-gui-mcp-server replay sap-tests/va03-display-order.saptest.json --var order=4711
+sap-gui-mcp-server export sap-tests/va03-display-order.saptest.json --to calm   # or vbs, playwright, playwright-sap, gherkin
+```
+
+- The recording is one JSON file: each action, the screen it led to, the
+  status bar, the checks you marked, and variables for values that change.
+- `replay` runs it on a session you have open, under the same guardrails as
+  `sap_act`, and reports pass or fail per step with the screen at the
+  failure. `sap_replay` does the same from the agent. A step that may write
+  needs `SAP_WRITE=on`: a replay cannot ask for each step.
+- `export` writes a SAP Cloud ALM manual test case, a SAP GUI script (VBS), a
+  Playwright spec for Web GUI or Fiori, or a Gherkin feature. The Playwright
+  spec logs on by itself from `SAP_WEBGUI_URL` (or `SAP_FIORI_URL`),
+  `SAP_USER` and `SAP_PASSWORD`, and reads variables from `SAP_VAR_<NAME>`.
+
+Recordings go to `SAP_RECORD_DIR` (default `./sap-tests`) and hold the values
+that were typed: treat them like the system's data. Design, file format and
+limits: [docs/record.md](docs/record.md). Record and replay have been run on
+Web GUI; not yet on SAP GUI for Windows or Fiori.
+
+## Configuration
+
+Every setting is an environment variable of the server process.
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `SAP_WRITE` | `off` | `off`, `confirm` or `on`: what happens to actions that may write ([Safety model](#safety-model)) |
+| `SAP_ALLOW_SYSTEMS` | all | systems, optionally with a client, the server may see and use: `ABA/800,S4H` |
+| `SAP_ALLOW_TCODES` | all | the only transactions the agent may open or work in |
+| `SAP_BLOCK_TCODES` | none | transactions the agent may not open or work in |
+| `SAP_ALLOW_ORIGINS` | all | browser origins the server looks at: `https://myhost:44300` |
+| `SAP_SURFACES` | `sapgui,webgui,fiori` on Windows, `webgui,fiori` elsewhere | which kinds of session to look for |
+| `SAP_GUI_METHOD` | scripting | `diag` reads SAP GUI from its traffic instead of scripting (experimental) |
+| `SAP_DIAG_PORT` | `3298` | port of the local SAProuter for `SAP_GUI_METHOD=diag` |
+| `SAP_DIAG_CAPTURE` | off | a folder where the `diag` method keeps the raw traffic, to debug the decoder. It holds everything SAP GUI sent and received, your logon included: keep it local and delete it after use |
+| `SAP_CHROME_CDP` | the running Chrome, Chrome beta or Edge | a Chrome DevTools endpoint to attach to, e.g. `http://127.0.0.1:9333` |
+| `SAP_VIEW` | `diff` | `full`: every action answers with the whole screen |
+| `SAP_FIORI_WAIT` | full waits | `busy`: faster Fiori waits (busy indicators only, without UI5's RecordReplay) |
+| `SAP_RECORD_DIR` | `./sap-tests` | where recordings and exports are written |
+| `SAP_RECORD` | `off` | `on`: record every session from its first action |
+
+`sap-gui-mcp-server --help` lists the commands and the main settings.
 
 ## Limits
 
-- **SAP GUI:**
+- **SAP GUI for Windows:**
   - SAP GUI for Java (macOS, Linux) has no scripting: on a Mac, use Web
     GUI or Fiori.
   - HTML panels inside SAP GUI (such as SE80's object selector) cannot be
     reached by scripting; use `sap_screenshot` to see them.
+  - Scrolling long lists is covered by tests against a fake SAP GUI, but
+    has not been run against a real SAP GUI yet.
+  - The `diag` method is experimental: it needs the window on screen,
+    cannot read SNC-encrypted connections, and acts with the keyboard and
+    mouse.
 - **Browsers:** Chrome is supported; Microsoft Edge (also Chromium) is
   found the same way and is likely to work; Firefox and Safari are not.
 - **Long lists:**
   - The view shows the rows on screen with the total; `scroll` and
-    `sap_look` with `rows` reach the others (see "Long lists").
+    `sap_look` with `rows` reach the others (see [Long lists](#long-lists)).
   - Lists scroll down and up, not sideways: a grid wider than the screen
     shows the columns SAP has drawn.
   - Web GUI draws only the tree nodes in view; a node further down is
@@ -468,31 +544,38 @@ Other settings:
   `timeout`), then says that SAP is still working. If the connection to SAP
   drops, the action says that the request failed; the page then needs a
   reload. A session that timed out shows as a `WINDOW browser` with a note.
+- **Safe and commit words** are known in a handful of logon languages (see
+  [Safety model](#safety-model)); in others more actions are held.
+- **Record and replay** are a prototype ([docs/record.md](docs/record.md)).
 
-## Development
+## Skill
 
-```sh
-bun install
-bun run typecheck && bun test && bun run build
-node dist/cli.js doctor
-```
+[`skills/sap-gui-drive`](skills/sap-gui-drive/SKILL.md) teaches an agent how
+SAP screens behave (fields take effect on Enter, popups first, value help
+instead of guessed codes, never work around the write setting). The Claude
+Code plugin installs it; for other agents, copy the folder into their skills
+directory (for Claude Code without the plugin: `~/.claude/skills/`). It also
+ships in the npm package, under `skills/`.
 
-`test/dev/webgui-logon.ts` and `test/dev/fiori-logon.ts` log a
-throwaway Chrome on to a test system for live checks. They read the
-password from a file and never print it.
+## Benchmark
 
-`test/dev/soak.ts` walks a logged-on Web GUI session through about sixty
-read-only steps (VA01 without saving, VA03, VA05, SE16N, SE16, MM03) and
-reports failures, time and tokens per step. `test/dev/measure.ts` counts
-what each rule of the compact view saves on a set of screens. Both count
-tokens with the Anthropic `count_tokens` API when `ANTHROPIC_API_KEY` is
-set, and write screen content only where you tell them to: keep that out
-of Git.
+[`bench/`](bench/README.md) holds a benchmark harness: 72 whole tasks on SAP
+GUI for Windows, Web GUI and Fiori, checked by reading the SAP database, to
+compare this server with other ways of driving SAP. It needs your own SAP
+demo systems. No full run has been made yet, so there are no results to
+quote. It is not part of the npm package.
 
-The browser tests run on synthetic pages and need a Chrome:
-`SAP_TEST_CHROME=/path/to/chrome bun test`.
+## Contributing
 
-## Licence
+See [CONTRIBUTING.md](CONTRIBUTING.md): the tests run without an SAP system.
+Report security issues as described in [SECURITY.md](SECURITY.md).
 
-MIT. SAP, SAP GUI, SAP Fiori and SAPUI5 are trademarks of SAP SE. This
-project is not affiliated with SAP.
+## Licence and trademarks
+
+MIT, see [LICENSE](LICENSE).
+
+This project is not affiliated with, endorsed by or sponsored by SAP SE.
+SAP, SAP GUI, SAP Fiori, SAPUI5, SAP S/4HANA, ABAP and other SAP products
+and services mentioned here are trademarks or registered trademarks of SAP
+SE (or an SAP affiliate company) in Germany and other countries. All other
+names are the property of their owners.
