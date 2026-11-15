@@ -571,7 +571,7 @@ function Op-Act($req) {
   elseif ($do -eq 'grid') {
     $row = [int]$a['row']
     $rc = [int](G $o 'RowCount')
-    if ($row -ge $rc) { throw "NOT_FOUND: row $row: the grid has $rc rows (0 to $($rc - 1))" }
+    if ($row -ge $rc) { throw "NOT_FOUND: row $($row): the grid has $rc rows (0 to $($rc - 1))" }
     # A row that is not on screen is scrolled to first: SAP GUI loads rows as they come into view.
     $fv = T $o 'FirstVisibleRow'
     $v = T $o 'VisibleRowCount'
