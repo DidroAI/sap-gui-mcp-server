@@ -3,7 +3,8 @@
  * - which systems the server may touch (SAP_ALLOW_SYSTEMS);
  * - which transactions it may open or work in (SAP_ALLOW_TCODES / SAP_BLOCK_TCODES);
  * - the command field, which only {"do":"okcode"} may use;
- * - what happens to actions that may write to the database (SAP_WRITE).
+ * - what happens to actions that may write to the database (SAP_WRITE);
+ * - closing the logon or sessions (SAP_ALLOW_LOGOFF).
  */
 import type { Action, Assessment, SessionInfo } from "./types.js";
 
@@ -16,6 +17,12 @@ export interface Policy {
   allowSystems: string[];
   allowTcodes: string[];
   blockTcodes: string[];
+  /**
+   * May the agent end SAP sessions or the logon (/nex, /nend, /i, Log Off)?
+   * Off by default, also with SAP_WRITE=on: it drops the unsaved work of every
+   * session of the user, and nothing more can be done until the user logs on again.
+   */
+  allowLogoff?: boolean;
 }
 
 const list = (v: string | undefined) =>
@@ -27,8 +34,11 @@ const list = (v: string | undefined) =>
 export function policyFromEnv(env: Record<string, string | undefined> = process.env): Policy {
   const w = (env.SAP_WRITE ?? "off").toLowerCase();
   if (w !== "off" && w !== "confirm" && w !== "on") throw new Error(`SAP_WRITE must be off, confirm or on (got "${env.SAP_WRITE}")`);
+  const off = (env.SAP_ALLOW_LOGOFF ?? "off").toLowerCase();
+  if (off !== "off" && off !== "on") throw new Error(`SAP_ALLOW_LOGOFF must be off or on (got "${env.SAP_ALLOW_LOGOFF}")`);
   return {
     write: w,
+    allowLogoff: off === "on",
     allowSystems: list(env.SAP_ALLOW_SYSTEMS),
     allowTcodes: list(env.SAP_ALLOW_TCODES),
     blockTcodes: list(env.SAP_BLOCK_TCODES),
@@ -148,6 +158,15 @@ export function decide(policy: Policy, action: Action, assessment: Assessment): 
   if (field) return { run: false, refused: field };
   const refusal = tcodeRefusal(policy, tcodeOf(action));
   if (refusal) return { run: false, refused: refusal };
+  // Ending the logon is its own risk: not a write, yet it cannot be undone by the agent (every session and
+  // its unsaved input is gone, and only the user can log on again). Refused unless the user allowed it.
+  if (assessment.closes) {
+    if (policy.allowLogoff) return { run: true };
+    return {
+      run: false,
+      refused: `this action ends SAP sessions or the logon (${assessment.reason}): every session of the user and its unsaved data would be gone, and only the user can log on again. To leave a transaction, use {"do":"okcode","value":"/n"}. The user can allow logging off with SAP_ALLOW_LOGOFF=on.`,
+    };
+  }
   if (assessment.risk !== "commit") return { run: true };
   if (policy.write === "on") return { run: true };
   if (policy.write === "confirm") return { run: false, confirm: assessment.reason };

@@ -183,6 +183,11 @@ export const COMMIT_WORDS: WordRow<CommitLanguage>[] = [
     },
   },
   {
+    // Document management: checking an original in or out writes its status ("Check" alone only checks input).
+    means: "check in or out",
+    words: { en: ["check in", "check out", "check-in", "check-out"], de: ["einchecken", "auschecken"] },
+  },
+  {
     means: "complete, publish or load",
     words: {
       en: ["withdraw", "complete", "publish", "upload", "import"],
@@ -293,6 +298,49 @@ export const SAFE_WORDS: WordRow<SafeLanguage>[] = [
   },
   { means: "go", words: { en: ["go"], de: ["los"] } },
   {
+    // Checking input ("Check Screen Data", "Check consistency of entry", "Check Entries") validates it and
+    // writes nothing; saving after a check is a separate function. "Check in" and "check out" are commit words.
+    means: "check input",
+    words: { en: ["check", "consistency check"], de: ["prüfen", "überprüfen", "prüfung"], fr: ["vérifier", "contrôler", "contrôle"], es: ["verificar", "comprobar"] },
+  },
+  {
+    // Selection criteria: multiple selection of a select-option, getting a saved selection variant.
+    // Saving or deleting a variant holds a commit word ("Save as Variant...", "Delete Variant").
+    means: "selection criteria and variants",
+    words: {
+      en: ["selection", "selections", "multiple selection", "variant", "variants"],
+      de: ["selektion", "selektionen", "mehrfachselektion", "variante", "varianten"],
+      fr: ["sélection", "sélections", "sélection multiple", "variante", "variantes"],
+      es: ["selección", "selecciones", "selección múltiple", "variante", "variantes"],
+    },
+  },
+  {
+    // Moving to another object of the same kind ("Other Material", "Other Customer") or to more entries of
+    // the same data ("Other...", "Other communication..."): input of the current object stays unsaved.
+    means: "another object or more entries",
+    words: { en: ["other"], de: ["anderes", "andere", "anderer", "anderen", "weitere"], fr: ["autre", "autres"], es: ["otro", "otra", "otros", "otras"] },
+  },
+  {
+    // The organizational levels (plant, sales organization...) an object is shown or entered for.
+    means: "organizational levels",
+    words: {
+      en: ["organizational levels", "org. levels"],
+      de: ["organisationsebenen", "org.-ebenen", "org.ebenen"],
+      fr: ["niveaux organisationnels", "niveaux d'organisation", "niveaux org."],
+      es: ["niveles organizativos", "niveles org."],
+    },
+  },
+  {
+    // Empty lines to type into (SM30 "New Entries", "New entry" on a warning): nothing is saved before Save.
+    means: "new entries",
+    words: {
+      en: ["new entry", "new entries"],
+      de: ["neuer eintrag", "neue einträge"],
+      fr: ["nouvelle entrée", "nouvelles entrées"],
+      es: ["nueva entrada", "entradas nuevas"],
+    },
+  },
+  {
     means: "SAP Easy Access navigation",
     words: {
       en: ["sap menu", "user menu"],
@@ -364,6 +412,62 @@ export function safeWord(language: string | undefined | null, ...texts: (string 
     }
   }
   return undefined;
+}
+
+// ---- what a popup or a menu is about ----------------------------------------------------
+
+/**
+ * "Data will be lost": the text of SAP's question before input is thrown away
+ * (POPUP_TO_CONFIRM_LOSS_OF_DATA and the like). There "cancel" means "stop
+ * editing", and Yes discards unsaved input: nothing is written.
+ */
+const LOSS_WORDS = [
+  ..."will be lost|are lost|is lost|be discarded".split("|"),
+  ..."geht verloren|gehen verloren|verloren gehen".split("|"),
+  ..."sera perdu|sera perdue|seront perdus|seront perdues".split("|"),
+  ..."se perderá|se perderán".split("|"),
+  ..."será perdido|serão perdidos|serão perdidas".split("|"),
+  ..."andrà perso|andranno persi|verranno persi".split("|"),
+  ..."gaat verloren|gaan verloren".split("|"),
+];
+
+/** Does a popup's text say that unsaved input will be thrown away? */
+export function discardsInput(...texts: (string | undefined)[]): boolean {
+  const re = wholeWords(LOSS_WORDS);
+  return texts.some((t) => {
+    re.lastIndex = 0;
+    return re.test(clean(t));
+  });
+}
+
+const LOG_OFF_RE = wholeWords(Object.values(COMMIT_WORDS.find((r) => r.means === "log off")?.words ?? {}).flat());
+
+/**
+ * Does a text mean logging off (Log Off, Abmelden...)? That ends the user's
+ * SAP sessions: the guard treats it on its own (core/guard.ts, SAP_ALLOW_LOGOFF),
+ * whatever SAP_WRITE says.
+ */
+export function endsLogon(...texts: (string | undefined)[]): boolean {
+  return texts.some((t) => {
+    const c = clean(t);
+    LOG_OFF_RE.lastIndex = 0;
+    for (let m = LOG_OFF_RE.exec(c); m; m = LOG_OFF_RE.exec(c)) if (!NEGATION.test(c.slice(0, m.index))) return true;
+    return false;
+  });
+}
+
+/**
+ * The name of SAP's "Goto" menu. By SAP's menu standard it holds the
+ * functions that move to other screens of the same object (Organizational
+ * Levels, Company Code Data, Next Tab Page, Back): a function found there
+ * navigates. Trusted only in the languages SAFE_WORDS covers.
+ */
+const GOTO_MENUS: Record<SafeLanguage, string[]> = { en: ["goto", "go to"], de: ["springen"], fr: ["saut", "atteindre", "aller à"], es: ["pasar a", "ir a"] };
+
+export function isGotoMenu(language: string | undefined | null, text: string | undefined): boolean {
+  if (!languageCovered(language)) return false;
+  const t = clean(text).toLowerCase().replace(/&/g, "");
+  return Object.values(GOTO_MENUS).some((names) => names.includes(t));
 }
 
 // ---- function keys ------------------------------------------------------------------

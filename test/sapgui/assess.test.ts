@@ -204,3 +204,48 @@ describe("sapgui assess", () => {
     for (const [key, n] of cases) expect([key, vkeyNumber(key)]).toEqual([key, n]);
   });
 });
+
+describe("SAP GUI: the popup rules match Web GUI's", () => {
+  const ctl = (id: string, type: string, text = "", extra: Partial<Control> = {}): Control => ({ id, type, name: id.slice(id.lastIndexOf("/") + 1), text, tip: "", ...extra });
+  const on = (popup: { title: string; controls: Control[] }): Screen => ({
+    transaction: "XD02",
+    program: "SAPMF02D",
+    screen: "7000",
+    language: "EN",
+    activeWindow: "wnd[1]",
+    windows: [
+      { id: "wnd[0]", title: "Change Customer", controls: [ctl("wnd[0]", "GuiMainWindow")] },
+      { id: "wnd[1]", title: popup.title, controls: [ctl("wnd[1]", "GuiModalWindow", popup.title), ...popup.controls] },
+    ],
+  });
+  const ERROR = on({
+    title: "Error",
+    controls: [ctl("wnd[1]/usr/txtMESSTXT1", "GuiTextField", "Specify an account number", { changeable: false }), ctl("wnd[1]/tbar[0]/btn[0]", "GuiButton", "", { tip: "Confirm   (Enter)" })],
+  });
+  const LOSS = on({
+    title: "Cancel Customer",
+    controls: [
+      ctl("wnd[1]/usr/txtSPOP-DIAGNOSE", "GuiTextField", "Data will be lost.", { changeable: false }),
+      ctl("wnd[1]/usr/txtSPOP-TEXTLINE1", "GuiTextField", "Do you want to cancel processing?", { changeable: false }),
+      ctl("wnd[1]/usr/btnSPOP-OPTION1", "GuiButton", "Yes"),
+      ctl("wnd[1]/usr/btnSPOP-OPTION2", "GuiButton", "No"),
+    ],
+  });
+  const LOGOFF = on({
+    title: "Log Off",
+    controls: [ctl("wnd[1]/usr/txtSPOP-TEXTLINE1", "GuiTextField", "Unsaved data will be lost.", { changeable: false }), ctl("wnd[1]/usr/btnSPOP-OPTION1", "GuiButton", "Yes"), ctl("wnd[1]/usr/btnSPOP-OPTION2", "GuiButton", "No")],
+  });
+  const target = (s: Screen, id: string) => s.windows.flatMap((w) => w.controls).find((c) => c.id === id);
+  test("Confirm (Enter) on an error message acknowledges it", () => {
+    expect(assess(ERROR, { do: "press", id: "wnd[1]/tbar[0]/btn[0]" }, target(ERROR, "wnd[1]/tbar[0]/btn[0]")).risk).toBe("navigate");
+    expect(assess(ERROR, { do: "key", key: 0 }).risk).toBe("navigate");
+  });
+  test("Yes on 'Data will be lost' discards input", () => {
+    expect(assess(LOSS, { do: "press", id: "wnd[1]/usr/btnSPOP-OPTION1" }, target(LOSS, "wnd[1]/usr/btnSPOP-OPTION1")).risk).toBe("navigate");
+  });
+  test("logging off is flagged for the guard", () => {
+    expect(assess(LOSS, { do: "okcode", value: "/nex" })).toMatchObject({ risk: "commit", closes: true });
+    expect(assess(LOGOFF, { do: "press", id: "wnd[1]/usr/btnSPOP-OPTION1" }, target(LOGOFF, "wnd[1]/usr/btnSPOP-OPTION1"))).toMatchObject({ risk: "commit", closes: true });
+    expect(assess(LOGOFF, { do: "press", id: "wnd[1]/usr/btnSPOP-OPTION2" }, target(LOGOFF, "wnd[1]/usr/btnSPOP-OPTION2")).risk).toBe("navigate");
+  });
+});

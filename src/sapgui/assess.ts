@@ -13,11 +13,14 @@
  * A text that holds a commit word (COMMIT_WORDS: Save, Post, Delete...) is a
  * commit even when the rest of it is safe. A popup that asks whether to
  * save, post, delete... makes every answer but No and Cancel a commit.
+ * The same popup rules as Web GUI's (webgui/assess.ts): the Enter button of a
+ * message popup only acknowledges it ("Confirm"); a "data will be lost"
+ * question is not a commit question; logging off is flagged `closes`.
  *
  * The tables are in core/words.ts, shared with the other surfaces.
  */
 import { ActionError, type Action, type Assessment } from "../core/types.js";
-import { CLOSES_SESSIONS, commitCode, commitWord, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
+import { CLOSES_SESSIONS, commitCode, commitWord, discardsInput, endsLogon, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
 import type { Control, Screen } from "./facts.js";
 import { vkeyNumber } from "./keys.js";
 import { allControls } from "./resolve.js";
@@ -46,6 +49,9 @@ const clean = (s: string | undefined) => (s ?? "").replace(/\s+/g, " ").trim();
 const shown = (c: Control) => [c.text, c.tip].map(clean).find(Boolean) ?? c.id;
 const short = (s: string) => (s.length > 90 ? `${s.slice(0, 87)}...` : s);
 const commit = (reason: string): Assessment => ({ risk: "commit", reason });
+/** Ending the logon: a commit (unsaved data is lost) that the guard also refuses on its own rule (SAP_ALLOW_LOGOFF). */
+const closes = (reason: string): Assessment => ({ risk: "commit", reason, closes: true });
+const INPUT_TYPES = new Set(["GuiTextField", "GuiCTextField", "GuiPasswordField", "GuiComboBox", "GuiCheckBox", "GuiRadioButton", "GuiTableControl"]);
 const notSafe = (what: string) => commit(`${what} is not known to be safe, so it is treated as a write`);
 
 /** The function key a toolbar button is bound to, from its id: `wnd[0]/tbar[1]/btn[8]` -> 8. */
@@ -71,11 +77,36 @@ export function commitQuestion(screen: Screen): string | undefined {
   // The title alone can ask ("Save Data"). Otherwise a question is text with answer buttons in the popup body
   // (Yes / No of POPUP_TO_CONFIRM): a popup whose only buttons sit in its toolbar is a dialog, and a checkbox
   // such as MM03's "Create views selected" asks nothing.
-  if (commitWord(clean(w.title))) return clean(w.title);
-  if (!usrButton) return undefined;
   const texts = w.controls.filter((c) => c.type !== "GuiButton" && c.type !== "GuiCheckBox" && c.type !== "GuiRadioButton" && c.id !== w.id).map((c) => clean(c.text));
   const question = [w.title, ...texts].filter(Boolean).join(" ").replace(/\s+/g, " ");
-  return commitWord(question) ? question : undefined;
+  const asked = commitWord(clean(w.title)) ? clean(w.title) : usrButton && commitWord(question) ? question : undefined;
+  if (!asked) return undefined;
+  // "Cancel Customer / Data will be lost": "cancel" there means "stop editing", and Yes discards input.
+  if (commitWord(asked) === "cancel a document" && commitWord(question) === "cancel a document" && discardsInput(question)) return undefined;
+  return asked;
+}
+
+/** The active popup asks only whether to throw unsaved input away ("Data will be lost"): no answer writes. */
+function discardQuestion(screen: Screen): boolean {
+  const w = screen.windows.find((x) => x.id === screen.activeWindow);
+  if (!w || w.id === "wnd[0]" || commitQuestion(screen)) return false;
+  if (!w.controls.some((c) => c.type === "GuiButton" && c.id.includes("/usr/"))) return false;
+  return discardsInput(w.title, ...w.controls.filter((c) => c.type === "GuiLabel" || c.type === "GuiTextField").map((c) => clean(c.text)));
+}
+
+/**
+ * A message popup (error, warning, information): message lines, no input
+ * field, no button in its body, no commit word. Its Enter button (btn[0])
+ * only acknowledges the message, also when it says "Confirm".
+ */
+function isMessagePopup(screen: Screen, windowId: string): boolean {
+  const w = screen.windows.find((x) => x.id === windowId);
+  if (!w || w.id === "wnd[0]") return false;
+  // Message lines are read-only text fields or labels; an input field, a grid or a tree, or an answer button in the body is a dialog.
+  const input = (c: Control) => c.type === "GuiShell" || (INPUT_TYPES.has(c.type) && c.changeable !== false) || (c.type === "GuiButton" && c.id.includes("/usr/"));
+  if (w.controls.some(input)) return false;
+  const lines = w.controls.filter((c) => c.type === "GuiLabel" || c.type === "GuiTextField").map((c) => clean(c.text)).filter(Boolean);
+  return lines.length > 0 && !commitWord(clean(w.title), ...lines);
 }
 
 /** Does this button of a popup decline what the popup asks? Cancel by its key, or No, Cancel, Back... by its text. */
@@ -96,11 +127,16 @@ function assessButton(screen: Screen, b: Control, how: string): Assessment {
   const named = `${how}"${shown(b)}"`;
   const key = buttonKey(b.id) ?? tooltipKey(b);
   if (key !== undefined && SAVE_VKEYS.has(key)) return commit(`${named} (Save)`);
+  if (endsLogon(b.text, b.tip)) return closes(named);
+  const win = /^(wnd\[\d+\])\//.exec(b.id)?.[1] ?? "";
+  if (buttonKey(b.id) === 0 && isMessagePopup(screen, win)) return { risk: "navigate", reason: `${named} acknowledges the message` };
   if (commitWord(b.text, b.tip)) return commit(named);
   const question = commitQuestion(screen);
-  if (question && b.id.startsWith(`${screen.activeWindow}/`) && !declines(screen, b)) return commit(`"${shown(b)}" on the popup "${short(question)}"`);
+  if (question && b.id.startsWith(`${screen.activeWindow}/`) && !declines(screen, b))
+    return endsLogon(question) ? closes(`"${shown(b)}" on the popup "${short(question)}"`) : commit(`"${shown(b)}" on the popup "${short(question)}"`);
   if (key !== undefined && SAFE_VKEYS.has(key)) return { risk: "navigate", reason: named };
   if (safeWord(screen.language, b.text, b.tip)) return { risk: "navigate", reason: named };
+  if (b.id.startsWith(`${screen.activeWindow}/`) && discardQuestion(screen)) return { risk: "navigate", reason: `${named} on a popup that asks whether to discard unsaved input` };
   return notSafe(named);
 }
 
@@ -109,6 +145,7 @@ function assessMenu(screen: Screen, m: Control | undefined): Assessment {
   const named = `menu entry "${shown(m)}"`;
   // A top-level menu ("wnd[0]/mbar/menu[1]") only opens.
   if (/\/mbar\/menu\[\d+\]$/.test(m.id)) return { risk: "navigate", reason: named };
+  if (endsLogon(m.text, m.tip)) return closes(named);
   if (commitWord(m.text, m.tip)) return commit(named);
   if (safeWord(screen.language, m.text, m.tip)) return { risk: "navigate", reason: named };
   return notSafe(named);
@@ -142,7 +179,7 @@ function assessKey(screen: Screen, windowId: string, n: number, how: string): As
     if (a.risk === "commit") return a;
   }
   const question = n === 0 && windowId === screen.activeWindow ? commitQuestion(screen) : undefined;
-  if (question) return commit(`Enter on the popup "${short(question)}"`);
+  if (question) return (endsLogon(question) ? closes : commit)(`Enter on the popup "${short(question)}"`);
   if (n === 4 || n === 1) return { risk: "read", reason: n === 4 ? "value help" : "help" };
   if (b || SAFE_VKEYS.has(n)) return { risk: "navigate", reason: how };
   return commit(`${how} has no button on this screen, so what it does is unknown`);
@@ -161,7 +198,7 @@ function assessOkcode(screen: Screen, value: unknown): Assessment {
       // /nXXXX, /oXXXX, /*XXXX start a transaction: unsaved input is dropped, nothing is written.
       return { risk: "navigate", reason: how };
     case "closes":
-      return commit(`${how} ${CLOSES_SESSIONS}`);
+      return closes(`${how} ${CLOSES_SESSIONS}`);
     case "commit":
       return commit(`${how} (a function code that saves, posts or deletes)`);
     case "safe":

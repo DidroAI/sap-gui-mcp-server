@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { commitCode, commitWord, isLogonScreen, languageCode, languageCovered, okcodeKind, safeCode, safeWord } from "../src/core/words.js";
+import { commitCode, commitWord, discardsInput, endsLogon, isGotoMenu, isLogonScreen, languageCode, languageCovered, okcodeKind, safeCode, safeWord } from "../src/core/words.js";
 
 describe("words: commit", () => {
   test("verbs that write, in seven languages", () => {
@@ -132,5 +132,34 @@ describe("words: the logon screen", () => {
     expect(isLogonScreen("SAPMSYST", "0040")).toBe(false);
     expect(isLogonScreen("SAPMV45A", "0020")).toBe(false);
     expect(isLogonScreen(undefined, undefined)).toBe(false);
+  });
+});
+
+describe("words: what a popup or a menu is about", () => {
+  test("a loss-of-data text, in several languages", () => {
+    expect(discardsInput("Data will be lost.")).toBe(true);
+    expect(discardsInput("Daten gehen verloren")).toBe(true);
+    expect(discardsInput("Les données seront perdues")).toBe(true);
+    expect(discardsInput("Do you want to save your data first?")).toBe(false);
+    expect(discardsInput("Lost and found")).toBe(false);
+  });
+  test("logging off, not its negation", () => {
+    expect(endsLogon("Log Off")).toBe(true);
+    expect(endsLogon("Abmelden")).toBe(true);
+    expect(endsLogon("Do you want to log off?")).toBe(true);
+    expect(endsLogon("Do not log off")).toBe(false);
+    expect(endsLogon("Logon data")).toBe(false);
+  });
+  test("the Goto menu, only in a covered language", () => {
+    expect(isGotoMenu("EN", "Goto")).toBe(true);
+    expect(isGotoMenu("D", "Springen")).toBe(true);
+    expect(isGotoMenu("EN", "Extras")).toBe(false);
+    expect(isGotoMenu("JA", "Goto")).toBe(false);
+    expect(isGotoMenu(undefined, "Goto")).toBe(false);
+  });
+  test("navigation words added for master data and selection screens", () => {
+    for (const t of ["Org. Levels (F6)", "Organizational Levels...", "Other Material", "Check Screen Data", "Check consistency of entry", "Multiple selection", "Get Variant...", "New entry (F5)"])
+      expect([t, !!safeWord("EN", t)]).toEqual([t, true]);
+    for (const t of ["Check In", "Check out original", "Save as Variant...", "Delete Variant", "Create Variant"]) expect([t, safeWord("EN", t)]).toEqual([t, undefined]);
   });
 });
