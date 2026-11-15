@@ -1,0 +1,79 @@
+name: Bug report
+description: Something the server did wrong, or a screen it read wrong
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for the report. **Leave real SAP data out**: replace customer names, numbers and texts in views and logs with made-up ones. Security issues go through [SECURITY.md](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/SECURITY.md), not here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you asked the agent, what the server did, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The transaction or app, and the tool calls (`sap_act` actions) if you have them.
+      placeholder: |
+        1. Open VA03 in Web GUI
+        2. sap_act {"do":"set","id":"ctxtVBAK-VBELN","value":"4711"}
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - SAP GUI for Windows (scripting)
+        - SAP GUI for Windows (SAP_GUI_METHOD=diag)
+        - Web GUI (SAP GUI for HTML)
+        - Fiori launchpad
+        - Web GUI app inside the Fiori launchpad
+        - Not specific to a surface
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: sap-gui-mcp-server version
+      description: "`npx -y sap-gui-mcp-server --version`"
+    validations:
+      required: true
+  - type: input
+    id: sap-release
+    attributes:
+      label: SAP system and release
+      description: For example "SAP ERP 6.0 EHP8, NetWeaver 7.50" or "S/4HANA 2023". Logon language too, if not English.
+  - type: input
+    id: gui-version
+    attributes:
+      label: SAP GUI or browser version
+      description: For example "SAP GUI for Windows 8.00 PL 12" or "Chrome 146".
+  - type: input
+    id: client
+    attributes:
+      label: MCP client and OS
+      description: For example "Claude Code 2.1 on Windows 11", "Codex on macOS 15".
+  - type: textarea
+    id: view
+    attributes:
+      label: The view or the answer (made-up data)
+      description: The output of `sap_look` or `sap_act`, with real data replaced.
+      render: text
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of doctor
+      description: "`npx -y sap-gui-mcp-server doctor`, for setup problems."
+      render: text
+  - type: textarea
+    id: settings
+    attributes:
+      label: Settings
+      description: The SAP_* environment variables you set (never a password).
+      render: text
