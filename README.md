@@ -369,6 +369,7 @@ The server enforces these whatever the agent decides:
 | `SAP_ALLOW_ORIGINS=https://myhost:44300` | only browser tabs of these origins are looked at (comma list) |
 | `SAP_ALLOW_TCODES=VA03,MM03` | the agent may open and work in only these transactions |
 | `SAP_BLOCK_TCODES=SE38,SM30` | the agent may not open or work in these transactions |
+| `SAP_ALLOW_LOGOFF=on` | the agent may end SAP sessions or the logon (`/nex`, `/nend`, `/i`, Log Off, Yes on the Log Off popup). Off by default, also with `SAP_WRITE=on`: logging off drops the unsaved work of every session, and only you can log on again |
 
 The transaction lists apply to commands (`/nSE38`, `/oSE38`, `/*SE38`) and
 to the transaction the session is in. A menu entry, a favourite or a
@@ -377,7 +378,7 @@ server reads the transaction before and after each action. If an action
 lands in a transaction the lists refuse, the server says so and leaves it
 with `/n`. If the session is already in one, only a command that leaves it
 is accepted. `/nex`, `/nend` and `/i` close sessions; they are not
-transactions, and the surface's own rules decide on them. On Fiori the
+transactions, and `SAP_ALLOW_LOGOFF` decides on them. On Fiori the
 "transaction" is the app's intent (such as `SalesOrder-display`), and the
 lists compare against that; a Web GUI app inside the launchpad is not
 checked by its transaction code.
