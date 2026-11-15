@@ -25,7 +25,7 @@
  */
 import { resolveId } from "../core/ids.js";
 import type { Action, Assessment } from "../core/types.js";
-import { CLOSES_SESSIONS, commitCode, commitWord, discardsInput, endsLogon, isGotoMenu, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
+import { CLOSES_SESSIONS, commitCode, commitWord, discardsInput, endsLogon, isGotoMenu, languageCovered, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
 import type { MenuEntry } from "./page.js";
 import { vkey } from "./reader.js";
 
@@ -338,9 +338,12 @@ function assessFunction(what: string, text: string, control: ViewControl | undef
   // An answer to "Data will be lost..." (discardQuestion) discards the input or keeps it.
   if (control && control.window > 0 && control.kind === "button" && control.window === topOf(scene.windows)?.number && discardQuestion(scene.windows))
     return navigate(`${named} on a popup that asks whether to discard unsaved input`);
-  // Where the button sits can say it writes nothing (each rule above its function).
-  if (control && isValueHelp(win)) return navigate(`${named} of a value help`);
-  if (control && control.window === 0 && control.id.includes("/usr/") && isSelectionScreen(scene)) return navigate(`${named} of a selection screen`);
+  // Where the button sits can say it writes nothing (each rule above its function). These rules lean on the
+  // commit words to keep "Delete from personal list" or a "Post" pushbutton a commit, so they hold only where
+  // the words are read (a covered logon language).
+  const placed = languageCovered(ctx.language);
+  if (placed && control && isValueHelp(win)) return navigate(`${named} of a value help`);
+  if (placed && control && control.window === 0 && control.id.includes("/usr/") && isSelectionScreen(scene)) return navigate(`${named} of a selection screen`);
   if (control && inGotoMenu(control, text, scene, ctx)) return navigate(`${named} is in the Goto menu`);
   return notSafe(named);
 }
