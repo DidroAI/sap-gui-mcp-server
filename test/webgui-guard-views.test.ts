@@ -262,10 +262,12 @@ describe("guard on saved live views: what may write stays a commit", () => {
       expect([name, judge(action, view, menus).risk]).toEqual([name, "commit"]);
     });
 
-  test("an unknown language trusts no word, no Goto menu and no popup text", () => {
-    const de = { language: "JA" };
-    expect(risk({ do: "press", id: "btn[13]" }, MMH1_BASIC, [], de)).toBe("commit");
-    expect(risk({ do: "press", id: "btn[26]" }, XD03_ADDR, XD03_MENUS, de)).toBe("commit");
+  test("an unknown language trusts no word, no Goto menu and no place", () => {
+    const ja = { language: "JA" };
+    expect(risk({ do: "press", id: "btn[13]" }, MMH1_BASIC, [], ja)).toBe("commit");
+    expect(risk({ do: "press", id: "btn[26]" }, XD03_ADDR, XD03_MENUS, ja)).toBe("commit");
+    expect(risk({ do: "press", id: "btnPRINT" }, F4_SEARCH_HELP, [], ja)).toBe("commit");
+    expect(risk({ do: "press", id: "btnPB_LIU" }, MB5B, [], ja)).toBe("commit");
   });
 
   test("Confirm on a popup that is not a plain message keeps its meaning", () => {
