@@ -1,0 +1,234 @@
+/**
+ * The waits of a Web GUI action on a synthetic page that answers like Web
+ * GUI: a key or a click sends one POST (or none), the page is locked
+ * (`oLS.bLocked()`) until the answer is in. It needs a Chrome to run in:
+ *
+ *   SAP_TEST_CHROME=/path/to/chrome bun test test/webgui-waits.test.ts
+ *
+ * Without SAP_TEST_CHROME the tests are skipped. No SAP data: the page is made up.
+ */
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { chromium, type Browser, type Page } from "playwright-core";
+import { ActionError } from "../src/core/types.js";
+import { STILL_WORKING, webguiView } from "../src/webgui/index.js";
+import { act, nothingSent, vkey } from "../src/webgui/reader.js";
+import { extractEnded, WebGuiSession } from "../src/webgui/session.js";
+
+const exe = process.env.SAP_TEST_CHROME;
+const sid = (id: string, type: string, modal = 0) => `{ModalNo:${modal},SID:'${id}',Type:'${type}'}`;
+const URL_ = "http://sap.test/sap/bc/gui/sap/its/webgui?sap-client=100";
+
+const PAGE = `<!doctype html><html lang="en"><head><title>Synthetic</title></head><body>
+<div id="cuaheader" lsdata="{1:'Synthetic\\x20screen'}">Synthetic screen</div>
+<input id="ToolbarOkCode" lsdata="{0:'FREETEXT',20:${sid("wnd[0]/tbar[0]/okcd", "GuiOKCodeField")}}">
+<div id="CANCEL" title="Cancel (F12)" onclick="post('vkey/12')" lsdata="{0:'Cancel',19:'F12',28:${sid("wnd[0]/tbar[0]/btn[12]", "GuiButton")}}">Cancel</div>
+<label id="L1" lsdata="{1:'F1',3:'Order',19:${sid("wnd[0]/usr/lblZ-ORDER", "GuiLabel")}}">Order</label>
+<input id="F1" value="" lsdata="{0:'x',20:${sid("wnd[0]/usr/ctxtZ-ORDER", "GuiCTextField")}}">
+<div id="sysInfoAreaMenuItemSAPITS_MBAR_TRANSACTION" lsdata="{13:'ZT01'}"></div>
+<div id="sysInfoAreaMenuItemSAPITS_MBAR_DYNPRO" lsdata="{13:'ZPROG/0100'}"></div>
+<div ct="PW" id="P1" style="display:none" lsdata="{0:'x',5:${sid("wnd[1]", "GuiModalWindow", 1)}}"><span class="urPWTitleText">Partner selection</span>
+<div id="ROW" ct="ALT" lsdata="{2:${sid("wnd[1]/usr/lbl[4,5]", "ABAPLISTTEXT", 1)}}">1000 Becker Berlin</div></div>
+<script>
+  window.posted = [];
+  window.oLS = { n: 0, bLocked: function () { return this.n > 0 || window.stuck === true; } };
+  function post(what) {
+    window.oLS.n++;
+    window.posted.push(what);
+    fetch('/sap/bc/gui/sap/its/webgui/post', { method: 'POST', body: JSON.stringify([{ post: what + '/ses[0]' }]) })
+      .then(function () { window.oLS.n--; });
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+      if (window.endOnEnter) {
+        window.stuck = true;
+        document.body.innerHTML = '<p>Goodbye. You have been logged off.</p>';
+        return;
+      }
+      if (window.busyEnter) { var t = Date.now(); while (Date.now() - t < 600) {} }
+      setTimeout(function () { post('vkey/0'); }, 40);
+    }
+    // F2 does nothing on this screen, as on many SAP screens.
+  });
+  // In the popup's list the first double-click only gives the list the cursor; the next one chooses.
+  document.getElementById('ROW').addEventListener('dblclick', function () {
+    if (!window.cursor) { window.cursor = true; return; }
+    post('action/dblclick');
+    document.getElementById('P1').style.display = 'none';
+  });
+</script>
+</body></html>`;
+
+describe.skipIf(!exe)("waits of a Web GUI action", () => {
+  let browser: Browser;
+  let page: Page;
+  let session: WebGuiSession;
+
+  beforeAll(async () => {
+    browser = await chromium.launch({ executablePath: exe as string, headless: true });
+  });
+  afterAll(async () => {
+    await browser?.close();
+  });
+
+  async function open(): Promise<void> {
+    page = await (await browser.newContext()).newPage();
+    await page.route("**/*", async (r) => {
+      if (r.request().method() === "POST") {
+        await new Promise((x) => setTimeout(x, 200));
+        return r.fulfill({ contentType: "text/plain", body: "ok" });
+      }
+      return r.fulfill({ contentType: "text/html", body: PAGE });
+    });
+    await page.goto(URL_);
+    session = new WebGuiSession(page.mainFrame());
+  }
+
+  const timed = async (f: () => Promise<string>) => {
+    const t0 = Date.now();
+    const note = await f();
+    return { note, ms: Date.now() - t0 };
+  };
+
+  test("a key that sends nothing answers at once and says so", async () => {
+    await open();
+    const r = await timed(() => act(session, { do: "key", key: 2 }));
+    expect(r.note).toBe("key F2\nNothing was sent to SAP: this key does nothing on this screen (or the browser kept it). The screen is as it was.");
+    // It waited 5 s before.
+    expect(r.ms).toBeLessThan(1500);
+  });
+
+  test("a key whose request leaves a moment later is waited for, with SAP's part measured", async () => {
+    await open();
+    const r = await timed(() => act(session, { do: "key", key: 0 }));
+    expect(r.note).toBe("key Enter");
+    expect(await page.evaluate(() => (window as unknown as { posted: string[] }).posted)).toEqual(["vkey/0"]);
+    expect(session.timing.posts).toBe(1);
+    expect(session.timing.sap).toBeGreaterThanOrEqual(150);
+    expect(session.timingText).toMatch(/^\d+ ms: sap \d+, start \d+, settle \d+, wake \d+, other \d+ \(1 request\)$/);
+  });
+
+  test("a page busy with the key is waited for: its request leaves after it has drawn again", async () => {
+    await open();
+    await page.evaluate(() => {
+      (window as unknown as { busyEnter: boolean }).busyEnter = true;
+    });
+    const r = await timed(() => act(session, { do: "key", key: 0 }));
+    expect(r.note).toBe("key Enter");
+    expect(session.started).toBe(true);
+  });
+
+  test("a key that moves in the page is cheap and says that nothing went to SAP", async () => {
+    await open();
+    await page.locator("#F1").focus();
+    const r = await timed(() => act(session, { do: "key", key: "Tab" }));
+    expect(r.note).toBe("key Tab\n(A key that moves in the page: nothing was sent to SAP.)");
+    expect(r.ms).toBeLessThan(900);
+  });
+
+  test("Cancel (12, Escape or F12 by name) on the main window is its Cancel button", async () => {
+    await open();
+    for (const key of [12, "Escape", "F12"]) {
+      const note = await act(session, { do: "key", key });
+      expect(note).toBe("key Escape (pressed wnd[0]/tbar[0]/btn[12])");
+    }
+    expect(await page.evaluate(() => (window as unknown as { posted: string[] }).posted)).toEqual(["vkey/12", "vkey/12", "vkey/12"]);
+  });
+
+  test("the first double-click on a popup's list row only moves the cursor: it is made again", async () => {
+    await open();
+    await page.evaluate(() => {
+      (document.getElementById("P1") as HTMLElement).style.display = "block";
+    });
+    const note = await act(session, { do: "dblclick", id: "wnd[1]/usr/lbl[4,5]" });
+    expect(note).toBe("double-clicked wnd[1]/usr/lbl[4,5] (twice: the first double-click only gave the list the cursor)");
+    expect(await page.evaluate(() => (window as unknown as { posted: string[] }).posted)).toEqual(["action/dblclick"]);
+  });
+
+  test("a session that ends during a step is said at once, not after the timeout", async () => {
+    await open();
+    await page.evaluate(() => {
+      (window as unknown as { endOnEnter: boolean }).endOnEnter = true;
+    });
+    const t0 = Date.now();
+    const e = await act(session, { do: "key", key: 0 }).catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(ActionError);
+    expect((e as Error).message).toStartWith('The SAP session in this tab has ended: the page says "Goodbye. You have been logged off."');
+    expect(Date.now() - t0).toBeLessThan(4000);
+    // The next action and a look say so too, at once.
+    expect(((await act(session, { do: "key", key: 0 }).catch((x: unknown) => x)) as Error).message).toContain("has ended");
+    expect(await webguiView(session, { compact: true })).toContain("NOTE The SAP session in this tab has ended");
+  });
+
+  test("a look while a step still runs says the screen is from before it; an action after it waited is not run", async () => {
+    await open();
+    await page.evaluate(() => {
+      (window as unknown as { stuck: boolean }).stuck = true;
+    });
+    expect((await webguiView(session, { compact: true })).split("\n").at(-1)).toBe(STILL_WORKING);
+    // The step ends 1.5 s later: the action that waited for it does nothing and says why.
+    setTimeout(() => {
+      void page.evaluate(() => {
+        (window as unknown as { stuck: boolean }).stuck = false;
+      });
+    }, 1500);
+    const e = await act(session, { do: "key", key: 0 }).catch((x: unknown) => x);
+    expect((e as Error).message).toMatch(/^SAP was still working on the step before this one; it finished \d\.\d s later/);
+    expect(await page.evaluate(() => (window as unknown as { posted: string[] }).posted)).toEqual([]);
+    expect(await webguiView(session, { compact: true })).not.toContain(STILL_WORKING);
+  });
+});
+
+describe("what an action that sends nothing says", () => {
+  test("by kind of action", () => {
+    expect(nothingSent({ do: "set", id: "x", value: "1" })).toBeUndefined();
+    expect(nothingSent({ do: "combo", id: "x" })).toBeUndefined();
+    expect(nothingSent({ do: "key", key: "ArrowDown" })).toContain("moves in the page");
+    expect(nothingSent({ do: "key", key: "Shift+Tab" })).toContain("moves in the page");
+    expect(nothingSent({ do: "key", key: 81 })).toContain("this key does nothing on this screen");
+    expect(nothingSent({ do: "press", id: "btn[8]" })).toContain("Nothing was sent to SAP for this action");
+  });
+  test("F12 by name is Cancel, sent as Escape like key 12", () => {
+    expect([vkey("F12"), vkey("f12"), vkey(12)]).toEqual(["Escape", "Escape", "Escape"]);
+  });
+  test("the page after a logoff is an end; Web GUI and the logon page are not", () => {
+    // extractEnded runs in the page; here it is checked on a stand-in document.
+    const run = (html: string, title = "") => {
+      const doc = new DOMParserStandIn(html, title);
+      return doc.run(extractEnded);
+    };
+    expect(run("<p>Goodbye. You have been logged off.</p>")).toBe("Goodbye. You have been logged off.");
+    expect(run("<p>Logged off</p><input id='ToolbarOkCode'>")).toBe("");
+    expect(run("<p>Log off</p><input type='password'>")).toBe("");
+    expect(run("<p>Order 4990</p>")).toBe("");
+  });
+});
+
+/** Runs a page function against a tiny document stand-in (no browser): querySelector by the few selectors it uses. */
+class DOMParserStandIn {
+  constructor(
+    private html: string,
+    private title: string,
+  ) {}
+  run(f: () => string): string {
+    const html = this.html;
+    const text = html.replace(/<[^>]+>/g, " ");
+    const doc = {
+      title: this.title,
+      body: { innerText: text },
+      querySelector: (sel: string) => {
+        if (sel.includes("ToolbarOkCode") && html.includes("ToolbarOkCode")) return {};
+        if (sel.includes("password") && html.includes("password")) return {};
+        if (sel.includes("wnd[") && html.includes("wnd[")) return {};
+        return null;
+      },
+    };
+    const g = globalThis as unknown as { document?: unknown };
+    const before = g.document;
+    g.document = doc;
+    try {
+      return f();
+    } finally {
+      g.document = before;
+    }
+  }
+}
