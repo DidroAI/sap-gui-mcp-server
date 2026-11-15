@@ -38,7 +38,7 @@ export interface Page {
 
 /** The rows of one control, as the compact view writes them, numbered in the whole list. */
 export function pageOf(block: string, screen?: string): Page {
-  const lines = compact(block, { maxChars: 0, emptyColumns: false, listColumns: false, ...(screen === undefined ? {} : { screen }) }).split("\n");
+  const lines = compact(block, { maxChars: 0, emptyColumns: false, listColumns: false, emptyRuns: false, ...(screen === undefined ? {} : { screen }) }).split("\n");
   const at = lines.findIndex((l, i) => i > 0 && !l.startsWith("WINDOW ") && !l.startsWith(" "));
   const head = lines[at] ?? "";
   const kind = (/ {2}(grid|table|tree|list) {2}/.exec(head)?.[1] ?? "other") as Page["kind"];
@@ -52,12 +52,17 @@ export function pageOf(block: string, screen?: string): Page {
   let i = 0;
   for (const l of lines.slice(at + 1)) {
     if (!l.startsWith("  ") || l.startsWith("  ...") || l.startsWith("  (")) continue;
-    const m = /^ {2}(row) (\d+): /.exec(l);
+    // A table control's column legend: kept with the head.
+    if (kind === "table" && l.startsWith("  columns: ")) {
+      titles.push(l);
+      continue;
+    }
+    const m = /^ {2}(row) (\d+)((?: \(selected\))?): /.exec(l);
     if (kind === "grid" && m) rows.push({ n: Number(m[2]), text: l });
     else if (kind === "list" && m && Number(m[2]) < fixed) titles.push(`  title ${m[2]}: ${l.slice(m[0].length)}`);
     else if ((kind === "table" || kind === "list") && m) {
       const n = first + Number(m[2]) - fixed;
-      rows.push({ n, text: `  ${m[1]} ${n}: ${l.slice(m[0].length)}` });
+      rows.push({ n, text: `  ${m[1]} ${n}${m[3]}: ${l.slice(m[0].length)}` });
     }
     else if (kind === "tree") rows.push({ n: first + i++, text: l });
   }
@@ -67,7 +72,53 @@ export function pageOf(block: string, screen?: string): Page {
 /** The most pages one read scrolls through. */
 const MAX_PAGES = 60;
 
-export async function readRows(source: RowSource, id: string, from: number, to: number): Promise<string> {
+/**
+ * Keeps only some columns of a page of a grid or a table control: `cols`
+ * names them by column id or title (any case). A grid's head names its
+ * columns `ID=Title`; its rows hold one value per column. A table control's
+ * rows name their cells `Title=value`. Other kinds are left as they are.
+ */
+export function onlyColumns(page: Page, cols: string[]): Page {
+  const want = cols.map((c) => c.replace(/^ +| +$/g, "").toLowerCase()).filter(Boolean);
+  if (!want.length) return page;
+  const split = (row: string) => {
+    const m = /^( {2}row \d+(?: \(selected\))?: )(.*)$/.exec(row);
+    return m ? { prefix: m[1] ?? "", body: m[2] ?? "" } : undefined;
+  };
+  if (page.kind === "grid") {
+    const m = /^(.*; columns: )(.*?)(; empty in these rows: .*)?$/.exec(page.head);
+    if (!m) return page;
+    const names = (m[2] ?? "").split(" | ");
+    const keep = names.map((n, i) => ({ n, i })).filter(({ n }) => {
+      const [cid = "", title = ""] = n.split("=");
+      return want.includes(cid.toLowerCase()) || want.includes(title.toLowerCase());
+    });
+    if (!keep.length) throw new ActionError(`none of the columns ${cols.join(", ")} is in this grid: its columns are ${names.join(" | ")}.`);
+    return {
+      ...page,
+      head: `${m[1]}${keep.map(({ n }) => n).join(" | ")}  (${keep.length} of ${names.length} columns)`,
+      rows: page.rows.map((r) => {
+        const p = split(r.text);
+        if (!p) return r;
+        const cells = p.body.split(" | ");
+        return { ...r, text: `${p.prefix}${keep.map(({ i }) => cells[i] ?? "").join(" | ")}` };
+      }),
+    };
+  }
+  if (page.kind === "table")
+    return {
+      ...page,
+      rows: page.rows.map((r) => {
+        const p = split(r.text);
+        if (!p) return r;
+        const cells = p.body.split("; ").filter((c) => want.includes((/^(.*?)(=| \[)/.exec(c)?.[1] ?? c).toLowerCase()));
+        return { ...r, text: `${p.prefix}${cells.join("; ") || "(empty)"}` };
+      }),
+    };
+  return page;
+}
+
+export async function readRows(source: RowSource, id: string, from: number, to: number, cols?: string[]): Promise<string> {
   const got = new Map<number, string>();
   let page: Page | undefined;
   let next = from;
@@ -91,6 +142,12 @@ export async function readRows(source: RowSource, id: string, from: number, to: 
     if (page.total !== undefined && next >= page.total) break;
   }
   if (!page) throw new ActionError(`"${id}" could not be read.`);
+  if (cols?.length) {
+    const only = onlyColumns({ ...page, rows: [...got.entries()].map(([n, text]) => ({ n, text })) }, cols);
+    page = only;
+    got.clear();
+    for (const r of only.rows) got.set(r.n, r.text);
+  }
   const rows = [...got.entries()].sort((a, b) => a[0] - b[0]);
   const total = page.total === undefined ? "" : ` of ${page.total}`;
   const where =

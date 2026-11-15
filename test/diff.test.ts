@@ -55,7 +55,12 @@ describe("diffViews", () => {
   });
   test("a few rows of a control changed: its line for context, then the rows", () => {
     const d = diffViews(view(), view({ rows: ["  row 0: a | b", "  row 1: c | CHANGED", "  row 2: e | f", "  row 3: g | h"] }));
-    expect(d.text.split("\n").slice(1)).toEqual(["= cntlGRID/shell  grid  40 rows; columns: A=Col A | B=Col B", "~   row 1: c | CHANGED"]);
+    // The column list is in the view the agent holds: the context line leaves it out.
+    expect(d.text.split("\n").slice(1)).toEqual(["= cntlGRID/shell  grid  40 rows; columns as before", "~   row 1: c | CHANGED"]);
+  });
+  test("a row that gets selected is a changed row", () => {
+    const d = diffViews(view(), view({ rows: ["  row 0: a | b", "  row 1 (selected): c | d", "  row 2: e | f", "  row 3: g | h"] }));
+    expect(d.text.split("\n").slice(1)).toEqual(["= cntlGRID/shell  grid  40 rows; columns as before", "~   row 1 (selected): c | d"]);
   });
   test("new rows come with the unchanged row before them, to say where they are", () => {
     const tree = (rows: string[]) => ["TRANSACTION Z  PROGRAM Z  SCREEN 1", 'WINDOW wnd[0]  "Tree"', "cntlT/shell  tree  3 nodes shown", ...rows].join("\n");
