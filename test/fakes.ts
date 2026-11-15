@@ -15,6 +15,10 @@ export interface FakeSession {
   view?: string;
   /** What `act` throws, to play an action that cannot run. */
   failAct?: Error;
+  /** How long `act` takes, in milliseconds. */
+  actMs?: number;
+  /** What `timing` answers. */
+  timing?: string;
 }
 
 export class FakeSurface implements Surface {
@@ -23,7 +27,7 @@ export class FakeSurface implements Surface {
   discovered = 0;
   failWith: string | undefined;
   /** Every call the drivers received, in order. */
-  log: { op: "assess" | "act" | "look" | "screenshot"; action?: Action; options?: LookOptions }[] = [];
+  log: { op: "assess" | "act" | "act-end" | "look" | "screenshot"; action?: Action; options?: LookOptions }[] = [];
 
   constructor(readonly name: SurfaceName) {}
 
@@ -65,10 +69,15 @@ export class FakeSurface implements Surface {
       },
       act: async (a) => {
         log.push({ op: "act", action: a });
+        if (s.actMs) {
+          await new Promise((r) => setTimeout(r, s.actMs));
+          log.push({ op: "act-end", action: a });
+        }
         if (s.failAct) throw s.failAct;
         s.onAct?.(a, s);
         return `did ${a.do}`;
       },
+      ...(s.timing ? { timing: () => s.timing } : {}),
       screenshot: async () => {
         log.push({ op: "screenshot" });
         return Buffer.from("png");

@@ -15,6 +15,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { actionText, normalizeAction, type NormalizedAction, VERBS } from "./core/action.js";
 import { commandFieldRefusal, decide, leavesTransaction, type Policy, sessionRefusal } from "./core/guard.js";
+import { type Turn, SessionQueue, waitedLine } from "./core/queue.js";
 import { Registry } from "./core/registry.js";
 import { ActionError, type Assessment, type Driver, type LookOptions, type SessionInfo, type Surface } from "./core/types.js";
 import { type ViewMode, Views } from "./core/views.js";
@@ -62,6 +63,18 @@ export function sessionLine(s: SessionInfo, i: number, active: boolean): string 
 }
 
 const place = (s: SessionInfo) => `${s.system ?? "?"}${s.client ? `/${s.client}` : ""}${s.transaction ? `, ${s.transaction}` : ""}${s.title ? ` ("${s.title}")` : ""}`;
+
+/**
+ * An answer that leaves out the status bar because it did not change still
+ * says it when it is an error, a warning or an abort: an agent that reads
+ * only the last answer must not take a second Enter on the same error for
+ * a step that went through.
+ */
+export function withStatus(shown: string, view: string): string {
+  const status = view.split("\n").find((l) => /^(wnd\[0\]\/)?sbar {2}status {2}[EWA]: /.test(l));
+  if (!status || shown.includes(status)) return shown;
+  return `${shown}\n= ${status}`;
+}
 
 /** What the user was shown when asked to confirm: the action runs only if all of it still holds. */
 interface Shown {
@@ -146,6 +159,31 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
   const pending = new Map<string, { shown: Shown; at: number }>();
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, { instructions: INSTRUCTIONS });
   const session = z.string().optional().describe("session from sap_sessions (number, id, system, transaction, or a surface: sapgui, webgui, fiori); default: the active one");
+  const queue = new SessionQueue();
+
+  /** The queue a call on `ref` waits in: the session's id, found without opening it. */
+  async function laneOf(ref: string | undefined): Promise<string> {
+    const pick = () => (ref ? registry.resolve(ref)?.id : registry.active);
+    let key = pick();
+    if (!key) {
+      await registry.discover().catch(() => {});
+      key = pick();
+    }
+    return key ?? "*";
+  }
+
+  /** The result, with a first line that says how long it waited for the call before it, when it did. */
+  function withTurn(r: CallToolResult, turn: Turn): CallToolResult {
+    const line = waitedLine(turn);
+    const first = r.content[0];
+    if (!line || first?.type !== "text") return r;
+    return { ...r, content: [{ ...first, text: `${line}\n${first.text}` }, ...r.content.slice(1)] };
+  }
+
+  /** Runs `f` when every call before it on the session has ended: one call at a time per session. */
+  async function serial(ref: string | undefined, label: string, f: () => Promise<CallToolResult>): Promise<CallToolResult> {
+    return queue.run(await laneOf(ref), label, async (turn) => withTurn(await f(), turn));
+  }
 
   server.registerTool(
     "sap_sessions",
@@ -175,11 +213,13 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     ({ session: ref }) =>
-      answer(async () => {
-        const { driver, info } = await registry.session(ref);
-        registry.active = info.id;
-        return text(views.present(info.id, await driver.look({ compact: true }), true));
-      }),
+      answer(() =>
+        serial(ref, "sap_use", async () => {
+          const { driver, info } = await registry.session(ref);
+          registry.active = info.id;
+          return text(views.present(info.id, await driver.look({ compact: true }), true));
+        }),
+      ),
   );
 
   server.registerTool(
@@ -201,7 +241,10 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     ({ session: ref, full, diff, id, rows }) =>
-      answer(async () => {
+      answer(() => serial(ref, "sap_look", () => look(ref, full, diff, id, rows))),
+  );
+
+  async function look(ref: string | undefined, full: boolean | undefined, diff: boolean | undefined, id: string | undefined, rows: string | undefined): Promise<CallToolResult> {
         const { driver, info } = await registry.session(ref);
         if (rows !== undefined && !id) throw new ActionError('"rows" needs "id": the grid, table, tree or list to read.');
         if (id) {
@@ -216,8 +259,7 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
           return text(whole);
         }
         return text(views.present(info.id, await driver.look({ compact: true }), !diff));
-      }),
-  );
+  }
 
   /** Can the client ask the user itself (MCP elicitation, form mode)? Then no token is needed. */
   const canElicit = () => !!server.server.getClientCapabilities()?.elicitation?.form;
@@ -278,7 +320,7 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
       return fail(`${done}\nThis led to a transaction the agent may not work in: ${landed}. ${left}\n\n${screen}`);
     }
     const { v, n } = await note(() => d.look({ compact: true }));
-    return text(`${n}\n\n${views.present(session, v, whole)}`);
+    return text(`${n}\n\n${withStatus(views.present(session, v, whole), v)}`);
   }
 
   /** The session as it is now, and what the guard says about this action on it. */
@@ -325,7 +367,6 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
   }
 
   async function run(ref: string | undefined, input: unknown, whole = false): Promise<CallToolResult> {
-    const t0 = Date.now();
     // "timing" asks for where the time went; it is not part of the action.
     let raw = input;
     let wanted = timingsOn;
@@ -338,16 +379,27 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
     const action = normalizeAction(raw);
     const field = commandFieldRefusal(action);
     if (field) return fail(`Refused: ${field}`);
-    let j: Awaited<ReturnType<typeof judge>>;
-    try {
-      j = await judge(ref, action);
-    } catch (e) {
-      return failedOn(ref, e);
-    }
-    if ("refused" in j) return fail(`Refused: ${j.refused}`);
-    const { driver, info, assessment, verdict } = j;
-    if (verdict.run) return perform(driver, action, whole, assessment.risk, { t0, judged: Date.now() - t0, wanted }).catch((e: unknown) => failedOn(ref, e));
-    if ("refused" in verdict) return fail(`Refused: ${verdict.refused}`);
+    // The guard and the action run in the session's turn; asking the user does not hold the session.
+    type Held = { info: SessionInfo; assessment: Assessment; confirm: string };
+    const box: { held?: Held } = {};
+    const done = await queue.run(await laneOf(ref), actionText(action), async (turn): Promise<CallToolResult | undefined> => {
+      const q0 = Date.now();
+      let j: Awaited<ReturnType<typeof judge>>;
+      try {
+        j = await judge(ref, action);
+      } catch (e) {
+        return withTurn(await failedOn(ref, e), turn);
+      }
+      if ("refused" in j) return withTurn(fail(`Refused: ${j.refused}`), turn);
+      const { driver, info, assessment, verdict } = j;
+      if (verdict.run) return withTurn(await perform(driver, action, whole, assessment.risk, { t0: q0, judged: Date.now() - q0, wanted }).catch((e: unknown) => failedOn(ref, e)), turn);
+      if ("refused" in verdict) return withTurn(fail(`Refused: ${verdict.refused}`), turn);
+      box.held = { info, assessment, confirm: verdict.confirm };
+      return undefined;
+    });
+    if (done || !box.held) return done ?? fail("Not run.");
+    const { info, assessment } = box.held;
+    const verdict = { confirm: box.held.confirm };
     const shown = shownOf(info, action, assessment);
     const what = `${verdict.confirm}, on ${place(info)}`;
     if (canElicit()) {
@@ -365,7 +417,7 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
         return fail(`Not run: the user could not be asked to confirm (${(e as Error).message.split("\n")[0]}).`);
       }
       if (answer.action !== "accept") return text(`Not run: the user ${answer.action === "decline" ? "declined" : "dismissed the confirmation of"} this action (${what}).`);
-      return runConfirmed(shown, whole);
+      return serial(shown.session, actionText(action), () => runConfirmed(shown, whole));
     }
     const now = Date.now();
     for (const [t, p] of pending) if (now - p.at > TOKEN_LIFE_MS) pending.delete(t);
@@ -419,7 +471,7 @@ An action that may write to SAP is refused, run, or held for the user's yes, as 
         // A token works once, whatever the outcome.
         pending.delete(token.trim());
         if (!p || Date.now() - p.at > TOKEN_LIFE_MS) return fail("Unknown or expired token: call sap_act again.");
-        return runConfirmed(p.shown);
+        return serial(p.shown.session, actionText(p.shown.action), () => runConfirmed(p.shown));
       }),
   );
 
@@ -438,7 +490,7 @@ An action that may write to SAP is refused, run, or held for the user's yes, as 
       }),
   );
 
-  registerRecordTools(server, registry, policy, recorder);
+  registerRecordTools(server, registry, policy, recorder, serial);
 
   return { server, registry, recorder };
 }
