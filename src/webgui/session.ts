@@ -35,6 +35,12 @@ interface Traffic {
   lastChange: number;
   /** The last round trip that failed on the network (the connection to SAP dropped), and when. */
   failed: { at: number; error: string } | undefined;
+  /** When each step POST started, by its number: the start of SAP's part of a round trip. */
+  postAt: number[];
+  /** When the last request ended. */
+  lastEnd: number;
+  /** The longest pause between one request ending and the next starting, since it was last reset. */
+  maxGap: number;
 }
 const trafficOf = new WeakMap<Page, Traffic>();
 
@@ -94,18 +100,21 @@ function valueOnly(r: Request): boolean {
 function watch(page: Page): Traffic {
   let t = trafficOf.get(page);
   if (t) return t;
-  const traffic: Traffic = { inflight: 0, posts: 0, lastChange: Date.now(), failed: undefined };
+  const traffic: Traffic = { inflight: 0, posts: 0, lastChange: Date.now(), failed: undefined, postAt: [], lastEnd: 0, maxGap: 0 };
   t = traffic;
   page.on("request", (r) => {
     if (!fromWebGui(r)) return;
+    const now = Date.now();
+    if (traffic.inflight === 0 && traffic.lastEnd) traffic.maxGap = Math.max(traffic.maxGap, now - traffic.lastEnd);
     traffic.inflight++;
-    if (r.method() === "POST" && !valueOnly(r)) traffic.posts++;
-    traffic.lastChange = Date.now();
+    if (r.method() === "POST" && !valueOnly(r)) traffic.postAt[traffic.posts++] = now;
+    traffic.lastChange = now;
   });
   const done = (r: Request) => {
     if (!fromWebGui(r)) return;
     traffic.inflight = Math.max(0, traffic.inflight - 1);
     traffic.lastChange = Date.now();
+    traffic.lastEnd = traffic.lastChange;
   };
   page.on("requestfinished", done);
   page.on("requestfailed", (r) => {
@@ -157,6 +166,39 @@ export async function hidden(frame: Frame): Promise<boolean> {
   return frame.evaluate(() => document.visibilityState === "hidden").catch(() => false);
 }
 
+/**
+ * Where the time of one action went, in milliseconds. "sap" is the part
+ * that is SAP's (and the network's): from the first request of a step to
+ * the end of the last one. "start" and "settle" are the server's own
+ * waiting: for a request to leave after the key or click, and after the
+ * last answer until the step counts as over.
+ */
+export interface Timing {
+  /** Before the action: focus emulation, the frame check, the wait for a step still running. */
+  wake: number;
+  /** After the key or click, until its request left (or the wait for one gave up). */
+  start: number;
+  /** From the first request of a step to the end of the last one. */
+  sap: number;
+  /** After the last answer, until the wait ended (quiet period, lock checks). */
+  settle: number;
+  /** Waits for quiet when no request was expected (after typing). */
+  idle: number;
+  /** Requests that carried a step. */
+  posts: number;
+  /** The longest pause between two requests of one step. */
+  gap: number;
+}
+
+export const noTiming = (): Timing => ({ wake: 0, start: 0, sap: 0, settle: 0, idle: 0, posts: 0, gap: 0 });
+
+/** "1306 ms: sap 812, start 40, settle 402, wake 30, other 22 (1 request)" */
+export function timingText(t: Timing, total: number): string {
+  const other = Math.max(0, total - t.wake - t.start - t.sap - t.settle - t.idle);
+  const parts = [`sap ${t.sap}`, `start ${t.start}`, `settle ${t.settle}`, ...(t.idle ? [`idle ${t.idle}`] : []), `wake ${t.wake}`, `other ${other}`];
+  return `${total} ms: ${parts.join(", ")} (${t.posts} request${t.posts === 1 ? "" : "s"}${t.gap ? `, longest pause between requests ${t.gap} ms` : ""})`;
+}
+
 export class WebGuiSession {
   readonly page: Page;
   private readonly traffic: Traffic;
@@ -180,6 +222,10 @@ export class WebGuiSession {
   started = false;
   /** The last full view read, for the step that follows it (assess, then act). */
   view: { at: number; text: string } | undefined;
+  /** Where the time of the current (or last) action went. */
+  timing: Timing = noTiming();
+  /** The last action's timing as one line (`timingText`). */
+  timingText: string | undefined;
 
   constructor(readonly frame: Frame) {
     this.page = frame.page();
@@ -213,8 +259,11 @@ export class WebGuiSession {
       if (this.traffic.posts > before || (await this.busyShown())) break;
       await this.page.waitForTimeout(50);
     }
-    await this.waitIdle();
+    const seen = Date.now();
+    this.traffic.maxGap = 0;
+    await this.waitIdle(this.quietMs, false);
     this.started = this.traffic.posts > before;
+    this.account(t0, seen, before);
     const failed = this.traffic.failed;
     if (failed && failed.at >= t0 - 50) {
       this.traffic.failed = undefined;
@@ -230,6 +279,24 @@ export class WebGuiSession {
    * still being awaited is then seen at once, where counting afterwards
    * waited the whole `startMs` for a POST that had already gone.
    */
+  /** Adds one wait to `timing`: `t0` when the wait began, `seen` when the request was seen (or the wait for it ended). */
+  private account(t0: number, seen: number, before: number): void {
+    const end = Date.now();
+    const t = this.timing;
+    const first = this.traffic.postAt[before];
+    if (this.traffic.posts > before && first !== undefined) {
+      const last = Math.max(this.traffic.lastEnd, first);
+      t.start += Math.max(0, first - t0);
+      t.sap += Math.max(0, last - first);
+      t.settle += Math.max(0, end - Math.max(last, t0));
+      t.posts += this.traffic.posts - before;
+      t.gap = Math.max(t.gap, this.traffic.maxGap);
+    } else {
+      t.start += seen - t0;
+      t.idle += end - seen;
+    }
+  }
+
   async roundtrip<T>(cause: () => Promise<T>, startMs = 1500): Promise<T> {
     const before = this.traffic.posts;
     const result = await cause();
@@ -277,8 +344,15 @@ export class WebGuiSession {
    * is done with the answer: its page is unlocked, or, where it does not say,
    * its loading sign is gone.
    */
-  async waitIdle(quietMs = this.quietMs): Promise<void> {
+  async waitIdle(quietMs = this.quietMs, timed = true): Promise<void> {
     const start = Date.now();
+    if (timed) {
+      try {
+        return await this.waitIdle(quietMs, false);
+      } finally {
+        this.timing.idle += Date.now() - start;
+      }
+    }
     const deadline = start + this.idleTimeoutMs;
     await this.page.waitForTimeout(100);
     while (Date.now() < deadline) {

@@ -140,6 +140,10 @@ class WebGuiDriver implements Driver {
     return act(sessionOf(this.frame), action);
   }
 
+  timing(): string | undefined {
+    return this.page.isClosed() ? undefined : sessionOf(this.frame).timingText;
+  }
+
   async screenshot(): Promise<Buffer> {
     const shot = () => this.page.screenshot({ type: "png", timeout: 8000 });
     try {
