@@ -5,8 +5,9 @@ description: Work in SAP screens with the sap-gui MCP tools — run a transactio
 
 # Working in SAP screens
 
-The `sap-gui` server works in the SAP sessions the user already has open,
-as that user. It never logs on. Everything you do is what the user could
+The `sap-gui` server ([sap-gui-mcp-server](https://github.com/DidroAI/sap-gui-mcp-server);
+its tools are named `sap_*`, whatever name the server was added under) works
+in the SAP sessions the user already has open, as that user. It never logs on. Everything you do is what the user could
 do by hand, under their authorisations.
 
 ## The loop

@@ -20,6 +20,7 @@ Set up the sap-gui MCP server (npm package sap-gui-mcp-server) on this machine f
 Never type an SAP password and never log on to SAP for me: I log on myself.
 ```
 
-While the package is not on npm, replace `npx -y sap-gui-mcp-server` with
-`sap-gui-mcp-server` after installing the package file you were given:
-`npm i -g ./sap-gui-mcp-server-<version>.tgz`.
+To use a build from a checkout instead of npm (see
+[CONTRIBUTING.md](../CONTRIBUTING.md)), run `npm link` in the checkout after
+`bun run build`, and replace `npx -y sap-gui-mcp-server` with
+`sap-gui-mcp-server` in the prompt.
