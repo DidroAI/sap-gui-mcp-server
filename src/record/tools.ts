@@ -33,7 +33,11 @@ async function answer(f: () => Promise<CallToolResult>): Promise<CallToolResult>
 const OPS = ["start", "stop", "status", "assert", "capture", "variable", "note", "undo", "list", "export"] as const;
 const SHOWN_MAX = 6000;
 
-export function registerRecordTools(server: McpServer, registry: Registry, policy: Policy, recorder: Recorder): void {
+/** Runs a call in the session's turn (server.ts): one call at a time per session. */
+export type Serial = (ref: string | undefined, label: string, f: () => Promise<CallToolResult>) => Promise<CallToolResult>;
+const direct: Serial = (_ref, _label, f) => f();
+
+export function registerRecordTools(server: McpServer, registry: Registry, policy: Policy, recorder: Recorder, serial: Serial = direct): void {
   /** The name of the last recording stopped in this server, for export and replay without a name. */
   let last: string | undefined;
   const session = z.string().optional().describe("session from sap_sessions; default: the active one");
@@ -80,8 +84,11 @@ A check or capture is tried on the screen as it is now and refused if it does no
         switch (a.op) {
           case "start": {
             if (!a.name) return fail('start needs "name".');
-            const { driver, info } = await registry.session(a.session);
-            return text(await recorder.start(driver, info, a.name, a.description, a.replace === true));
+            const name = a.name;
+            return serial(a.session, "sap_record start", async () => {
+              const { driver, info } = await registry.session(a.session);
+              return text(await recorder.start(driver, info, name, a.description, a.replace === true));
+            });
           }
           case "stop": {
             const r = await recorder.stop();
@@ -92,11 +99,13 @@ A check or capture is tried on the screen as it is now and refused if it does no
             return text(recorder.status());
           case "assert": {
             if (!a.check) return fail('assert needs "check": status, field, title, transaction or text.');
-            return text(await recorder.assert(await registry.driver(a.session), { check: a.check, id: a.id, equals: a.equals, contains: a.contains, matches: a.matches }));
+            const check = a.check;
+            return serial(a.session, "sap_record assert", async () => text(await recorder.assert(await registry.driver(a.session), { check, id: a.id, equals: a.equals, contains: a.contains, matches: a.matches })));
           }
           case "capture": {
             if (!a.name || !a.from) return fail('capture needs "name" and "from": status, field or title.');
-            return text(await recorder.capture(await registry.driver(a.session), { name: a.name, from: a.from, id: a.id, pattern: a.pattern }));
+            const [name, from] = [a.name, a.from];
+            return serial(a.session, "sap_record capture", async () => text(await recorder.capture(await registry.driver(a.session), { name, from, id: a.id, pattern: a.pattern })));
           }
           case "variable": {
             if (!a.name || a.value === undefined) return fail('variable needs "name" and "value".');
@@ -146,11 +155,14 @@ A check or capture is tried on the screen as it is now and refused if it does no
         const name = a.name ?? last;
         if (!name) return fail('Give "name", the recording to replay (sap_record {"op":"list"} lists them).');
         const test = await recorder.load(name);
-        const { driver } = await registry.session(a.session);
-        const r = await replay(driver, policy, test, { ...(a.variables ? { variables: a.variables } : {}), ...(a.screens ? { screens: a.screens } : {}), leaveOnFailure: false });
-        const needs = inputsOf(test);
-        const out = `${resultText(r)}${r.aborted && needs.length ? `\nThe test takes: ${needs.join(", ")}.` : ""}`;
-        return r.passed ? text(out) : fail(out);
+        // The whole replay is one turn of the session: no other call acts in between.
+        return serial(a.session, `sap_replay ${test.name}`, async () => {
+          const { driver } = await registry.session(a.session);
+          const r = await replay(driver, policy, test, { ...(a.variables ? { variables: a.variables } : {}), ...(a.screens ? { screens: a.screens } : {}), leaveOnFailure: false });
+          const needs = inputsOf(test);
+          const out = `${resultText(r)}${r.aborted && needs.length ? `\nThe test takes: ${needs.join(", ")}.` : ""}`;
+          return r.passed ? text(out) : fail(out);
+        });
       }),
   );
 }

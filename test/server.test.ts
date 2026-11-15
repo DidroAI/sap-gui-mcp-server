@@ -4,7 +4,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { policyFromEnv } from "../src/core/guard.js";
 import type { Action, Assessment } from "../src/core/types.js";
-import { createServer } from "../src/server.js";
+import { createServer, withStatus } from "../src/server.js";
 import { FakeSurface } from "./fakes.js";
 
 /** Save (key 11) commits; everything else navigates. */
@@ -296,5 +296,90 @@ describe("session list", () => {
     surface.add({ id: "chrome:1", system: "ABA", transaction: "VA03" });
     expect((await call("sap_use", { session: "webgui" })).text).toContain("SCREEN VA03");
     expect((await call("sap_look", { session: "fiori" })).error).toBe(true);
+  });
+});
+
+describe("one call at a time per session", () => {
+  test("two actions sent together run one after the other, and the second says it waited", async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA", transaction: "VA03" }, { actMs: 150 });
+    await call("sap_look");
+    const [a, b] = await Promise.all([call("sap_act", { action: { do: "set", id: "ctxtA", value: "4990" } }), call("sap_act", { action: { do: "key", key: 0 } })]);
+    const ops = surface.log.filter((l) => l.op !== "look").map((l) => `${l.op} ${l.action?.do}`);
+    expect(ops).toEqual(["assess set", "act set", "act-end set", "assess key", "act key", "act-end key"]);
+    expect(a.text).not.toContain("waited");
+    expect(b.text.split("\n")[0]).toMatch(/^\(This call waited 0\.\d s for the call before it on this session \(\{"do":"set","id":"ctxtA","value":"4990"\}\)/);
+  });
+
+  test("a look waits for the action under way", async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA" }, { actMs: 150 });
+    await call("sap_look");
+    surface.log.length = 0;
+    await Promise.all([call("sap_act", { action: { do: "key", key: 0 } }), call("sap_look")]);
+    expect(surface.log.map((l) => l.op)).toEqual(["assess", "act", "act-end", "look", "look"]);
+  });
+
+  test("the first calls, before any session is known, queue too", async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA" }, { actMs: 100 });
+    await Promise.all([call("sap_act", { action: { do: "set", id: "x", value: "1" } }), call("sap_act", { action: { do: "set", id: "y", value: "2" } })]);
+    const ops = surface.log.filter((l) => l.op !== "look").map((l) => l.op);
+    expect(ops).toEqual(["assess", "act", "act-end", "assess", "act", "act-end"]);
+  });
+
+  test("a failing action does not block the next one", async () => {
+    const { surface, call } = await setup();
+    const s = surface.add({ id: "chrome:1", system: "ABA" }, { actMs: 50, failAct: new Error("boom") });
+    const [a, b] = await Promise.all([call("sap_act", { action: { do: "key", key: 0 } }), call("sap_act", { action: { do: "key", key: 3 } })]);
+    expect([a.error, b.error]).toEqual([true, true]);
+    delete s.failAct;
+    expect((await call("sap_act", { action: { do: "key", key: 0 } })).error).toBe(false);
+  });
+
+  test("while the user is asked to confirm, the session is not held", async () => {
+    let release!: () => void;
+    const answered = new Promise<"accept">((r) => {
+      release = () => r("accept");
+    });
+    const { surface, call } = await setup({ SAP_WRITE: "confirm" }, () => answered);
+    surface.add({ id: "chrome:1", system: "ABA", transaction: "VA02" }, { assess });
+    await call("sap_look");
+    const save = call("sap_act", { action: { do: "key", key: 11 } });
+    await new Promise((r) => setTimeout(r, 50));
+    const look = await call("sap_look");
+    expect(look.error).toBe(false);
+    release();
+    expect((await save).error).toBe(false);
+    expect(surface.acts()).toEqual([{ do: "key", key: 11 }]);
+  });
+});
+
+describe("the answer to an action", () => {
+  test("an error in the status bar is said again when it did not change", () => {
+    const view = "TRANSACTION VA03  PROGRAM SAPMV45A  SCREEN 102\nsbar  status  E: SD document 99999999 is not in the database";
+    expect(withStatus("NO CHANGE on the screen (36 lines; sap_look shows it).", view)).toBe(
+      "NO CHANGE on the screen (36 lines; sap_look shows it).\n= sbar  status  E: SD document 99999999 is not in the database",
+    );
+    expect(withStatus(`+ ${view.split("\n")[1]}`, view)).toBe(`+ ${view.split("\n")[1]}`);
+    expect(withStatus("NO CHANGE", "x\nsbar  status  S: Order saved")).toBe("NO CHANGE");
+  });
+
+  test("a second Enter on the same error still names the error", async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA" }, { view: "TRANSACTION VA03  PROGRAM SAPMV45A  SCREEN 102\nctxtVBAK-VBELN  field  Order = \"9\"\nsbar  status  E: SD document 9 is not in the database" });
+    await call("sap_look");
+    const r = await call("sap_act", { action: { do: "key", key: 0 } });
+    expect(r.text).toContain("NO CHANGE");
+    expect(r.text).toContain("= sbar  status  E: SD document 9 is not in the database");
+  });
+
+  test('"timing": true adds where the time went, and is not part of the action', async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA" }, { timing: "812 ms: sap 600, start 40, settle 150, wake 12, other 10 (1 request)" });
+    const r = await call("sap_act", { action: { do: "key", key: 0, timing: true } });
+    expect(r.text).toMatch(/\(timing: \d+ ms in the server: judge \d+, act \d+, answer \d+; the action 812 ms: sap 600, start 40/);
+    expect(surface.acts()).toEqual([{ do: "key", key: 0 }]);
+    expect((await call("sap_act", { action: { do: "key", key: 0 } })).text).not.toContain("timing");
   });
 });
