@@ -11,7 +11,10 @@
  *   the screen, else to the shortest handle that is (core/ids.ts). Actions
  *   resolve handles.
  * - **Table controls.** The cells become one line per row, with only the
- *   cells that hold a value; a checkbox appears when checked.
+ *   cells that hold a value; a checkbox appears when checked. A button in a
+ *   cell appears with its text when the buttons of its column do not all
+ *   say the same (the operator of a selection criterion, a status icon);
+ *   a column of equal buttons is named in the column legend only.
  * - **Lists.** The cells of a classic list (`lbl[col,row]`) become one line
  *   per row of the list, each cell with its column in braces; rows that share
  *   their columns (a table drawn as a list) are written without them.
@@ -122,7 +125,24 @@ function plainHandles(ids: string[]): Map<string, string> {
 }
 
 /** One line of the result while it is built: text, or a line that is filled in at the end. */
-type Out = string | { cells: string[]; prefix: string; table?: Table; r?: number } | { list: List; r?: number } | { table: Table };
+type Out = string | { cells: Cell[]; prefix: string; table?: Table; r?: number } | { list: List; r?: number } | { table: Table };
+
+/** One cell of a table row: its column, its text ("Material=M-17"), and whether it is a button. */
+interface Cell {
+  c: number;
+  text: string;
+  button?: boolean;
+}
+/** The cells of a row that hold a value: a row with buttons only is an empty row. */
+const filled = (cells: Cell[]): boolean => cells.some((x) => !x.button);
+/** A row's cells in the order of the columns (a table scrolled sideways draws its fixed columns last). */
+const rowText = (cells: Cell[]): string =>
+  filled(cells)
+    ? [...cells]
+        .sort((a, b) => a.c - b.c)
+        .map((x) => x.text)
+        .join("; ")
+    : "";
 
 /** A table control: what its own line says, and what its cells say about its columns. */
 interface Table {
@@ -234,7 +254,7 @@ function foldEmptyColumns(lines: string[]): string[] {
     const rows: { prefix: string; cells: string[] }[] = [];
     let j = i + 1;
     for (; j < lines.length; j++) {
-      const r = /^( {2}row \d+(?: \(selected\))?: )(.*)$/.exec(lines[j] ?? "");
+      const r = /^( {2}row \d+(?: \((?:selected|total)\))*: )(.*)$/.exec(lines[j] ?? "");
       if (!r) break;
       rows.push({ prefix: r[1] ?? "", cells: (r[2] ?? "").split(" | ") });
     }
@@ -296,9 +316,18 @@ export function compact(full: string, options: CompactOptions = {}): string {
   const short = (id: string) => handles.get(id) ?? id;
 
   const tables = new Map<string, Table>();
-  const tableRows = new Map<string, string[]>();
+  const tableRows = new Map<string, Cell[]>();
   const lists = new Map<string, List>();
   const out: Out[] = [];
+  // Button cells by table and column: a column whose buttons all say the same holds an action, not a value.
+  const buttonTexts = new Map<string, Set<string>>();
+  for (const l of lines) {
+    const g = CELL.exec(l)?.groups;
+    if (!g || !(g.rest ?? "").startsWith("button  ")) continue;
+    const key = `${g.tbl}|${g.c}`;
+    if (!buttonTexts.has(key)) buttonTexts.set(key, new Set());
+    buttonTexts.get(key)?.add((g.rest ?? "").slice(8));
+  }
   for (const l of lines) {
     if (!l.startsWith("wnd[")) {
       out.push(l);
@@ -318,7 +347,11 @@ export function compact(full: string, options: CompactOptions = {}): string {
       // Two columns with one title (a key and its text, both "Country"): each is told apart by its number.
       const col = t && title && t.titles.indexOf(title) !== t.titles.lastIndexOf(title) ? `${title} [col ${c}]` : title;
       let cell: string | null = null;
-      if (cellRest.startsWith("checkbox")) cell = `${col} ${cellRest.includes("[x]") ? "[x]" : "[ ]"}`;
+      let button = false;
+      if (cellRest.startsWith("button  ")) {
+        button = true;
+        cell = (buttonTexts.get(`${tbl}|${c}`)?.size ?? 0) > 1 ? `${col}=${cellRest.slice(8).replace(/ {2}\(.*\)$/, "")}` : null;
+      } else if (cellRest.startsWith("checkbox")) cell = `${col} ${cellRest.includes("[x]") ? "[x]" : "[ ]"}`;
       else if (cellRest.startsWith("dropdown")) {
         // A dropdown cell: the entry's text, else its key.
         const v = /= "(.*?)"(.*)$/.exec(cellRest.replace(/ {2}(\d+ )?options: .*$/, "").replace(/\s*\((edit|read-only)\)\s*$/, ""));
@@ -344,7 +377,7 @@ export function compact(full: string, options: CompactOptions = {}): string {
         tableRows.set(key, cells);
         out.push({ cells, prefix: opt.shortRows ? `  row ${r}` : `  ${lastSegment(tbl)} row ${r}`, ...(t ? { table: t } : {}), r });
       }
-      if (cell) cells.push(cell);
+      if (cell) cells.push({ c, text: cell, ...(button ? { button } : {}) });
       continue;
     }
     if (l.includes("  table  rows ")) {
@@ -425,14 +458,14 @@ export function compact(full: string, options: CompactOptions = {}): string {
     }
     if ("cells" in x) {
       const sel = x.table && x.r !== undefined && x.table.selected.has(x.r) ? " (selected)" : "";
-      if (x.cells.length || sel || !opt.emptyRuns) return [`${x.prefix}${sel}: ${x.cells.join("; ") || "(empty)"}`];
+      if (filled(x.cells) || sel || !opt.emptyRuns) return [`${x.prefix}${sel}: ${rowText(x.cells) || "(empty)"}`];
       // Empty rows in a run: one line for the run.
       const prev = out[i - 1];
-      if (prev && typeof prev !== "string" && "cells" in prev && !prev.cells.length && prev.table === x.table && !(prev.table && prev.r !== undefined && prev.table.selected.has(prev.r))) return [];
+      if (prev && typeof prev !== "string" && "cells" in prev && !filled(prev.cells) && prev.table === x.table && !(prev.table && prev.r !== undefined && prev.table.selected.has(prev.r))) return [];
       let last = x.r ?? 0;
       for (let j = i + 1; j < out.length; j++) {
         const n = out[j];
-        if (!n || typeof n === "string" || !("cells" in n) || n.cells.length || n.table !== x.table || (n.table && n.r !== undefined && n.table.selected.has(n.r))) break;
+        if (!n || typeof n === "string" || !("cells" in n) || filled(n.cells) || n.table !== x.table || (n.table && n.r !== undefined && n.table.selected.has(n.r))) break;
         last = n.r ?? last;
       }
       return [last > (x.r ?? 0) ? `${x.prefix.replace(/row (\d+)$/, `rows $1 to ${last}`)}: (empty)` : `${x.prefix}: (empty)`];

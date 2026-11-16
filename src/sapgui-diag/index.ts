@@ -21,6 +21,7 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import type { Server } from "node:net";
 import { join } from "node:path";
+import { ONE_LINE_NOTE, oneLine } from "../core/action.js";
 import { ActionError, type Action, type Assessment, type DoctorCheck, type Driver, type LookOptions, type SessionInfo, type Surface } from "../core/types.js";
 import { CLOSES_SESSIONS, commitCode, commitWord, isLogonScreen, LOGON_REFUSAL, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
 import { DiagDecoder, type DiagElement, type DiagKey, type DiagScreen, type DiagWindow, diagView } from "../diag/index.js";
@@ -353,8 +354,10 @@ class DiagDriver implements Driver {
         if (t.kind !== "element" && t.kind !== "cell") throw new ActionError(`${t.what} does not take text.`);
         if (t.kind === "element" && !t.element.input) throw new ActionError(`${t.what} is read-only.`);
         const [x, y] = at(t, t.kind === "cell" ? t.width : t.element.width);
-        await send({ do: "set", x, y, value: String(action.value ?? ""), settle: 150 });
-        note = `typed into ${t.what}; SAP gets it with the next Enter or function key`;
+        // Typed with the keyboard: a line break would be the Enter key, so it is typed as a space.
+        const single = oneLine(String(action.value ?? ""));
+        await send({ do: "set", x, y, value: single.text, settle: 150 });
+        note = `typed into ${t.what}; SAP gets it with the next Enter or function key${single.had ? ` (${ONE_LINE_NOTE})` : ""}`;
         goes = false;
         break;
       }

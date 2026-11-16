@@ -4,6 +4,7 @@
  * marked (`data-sap-act`) and Playwright clicks or types into the mark.
  */
 import type { Locator } from "playwright-core";
+import { ONE_LINE_NOTE, oneLine } from "../core/action.js";
 import { ActionError } from "../core/types.js";
 import { vkey } from "./keys.js";
 import { type MarkedControl, markControl, menuRowOpen, normalizeLsdata } from "./page.js";
@@ -111,22 +112,64 @@ export const typeName = (type: string): string => type.replace(/^Gui/, "").repla
 export function setRefusal(c: MarkedControl): string | undefined {
   if (c.type === "GuiPasswordField" || c.inputType === "password") return `${c.sid} is a password field: this server never types a password. Type it yourself.`;
   if (c.type === "GuiOKCodeField") return 'The command field takes {"do":"okcode","value":"..."}, not "set".';
+  if (c.type === "GuiGridView") return `${c.sid} is a grid: to type into one of its cells add "row" and "col", e.g. {"do":"set","id":"...","row":0,"col":"<column id>","value":"..."} (the grid's line names the columns whose cells take input).`;
   if (!FIELD_TYPES.has(c.type)) return `${c.sid} is a ${typeName(c.type)}, not a field: "set" types into fields only. Use "press" for a button, "select" for a tab or a menu entry.`;
   if (c.tag !== "INPUT" && c.tag !== "TEXTAREA" && c.type !== "GuiTextEdit") return `${c.sid} cannot be typed into (it is shown as text).`;
   return undefined;
 }
 
-/** Types a value into a field as a person does: select all, delete, type; no line break (it would be Enter). */
-export async function typeInto(session: WebGuiSession, loc: Locator, value: string): Promise<void> {
-  value = value.replace(/[\r\n]+/g, " ");
+/** Above this many characters a text editor's text is put in at once: typed key by key, 300 characters took 4.8 s (measured on ECC). */
+const TYPE_KEYS_MAX = 120;
+
+/**
+ * Types a value into a field as a person does: select all, delete, type.
+ * A line break is never the Enter key (Enter would send the screen). In a
+ * control that has lines (`lines`: a text editor) the text goes in with its
+ * line breaks; in a field that has one line each becomes a space. Then the
+ * field is read back: the answer is what to add to the note, "" when the
+ * field holds what was asked for. A field cuts a value longer than itself
+ * without a word, so the note says what it holds. `cell`: the field is a
+ * cell of a grid, where the keys that empty a field mean something else.
+ */
+export async function typeInto(session: WebGuiSession, loc: Locator, value: string, lines = false, cell = false): Promise<string> {
+  const single = oneLine(value);
+  const text = lines ? value.replace(/\r\n?/g, "\n") : single.text;
   await session.closeSuggestions();
   await loc.focus({ timeout: 10000 });
-  // Select all: Ctrl+A, or Cmd+A when the browser runs on macOS.
-  await loc.press("ControlOrMeta+A");
-  await loc.press("Delete");
-  if (value) await loc.pressSequentially(value, { delay: 15 });
+  if (cell) {
+    // In a grid cell Ctrl+A selects every row and column of the grid, and Delete can be the grid's own
+    // function (measured on ECC): the cell's text is selected in the page and taken away with Backspace.
+    if (await loc.inputValue({ timeout: 1000 }).catch(() => "")) {
+      await loc.selectText({ timeout: 3000 });
+      await loc.press("Backspace");
+    }
+  } else {
+    // Select all: Ctrl+A, or Cmd+A when the browser runs on macOS.
+    await loc.press("ControlOrMeta+A");
+    await loc.press("Delete");
+  }
+  // With line breaks, or long: inserted as text, as a paste is (no key is pressed, so no Enter).
+  if (lines && (text.includes("\n") || text.length > TYPE_KEYS_MAX)) await session.page.keyboard.insertText(text);
+  else if (text) await loc.pressSequentially(text, { delay: 15 });
   await session.waitIdle(session.quietMs, true, 100, "typing");
   await session.closeSuggestions();
+  const notes: string[] = [];
+  if (!lines && single.had) notes.push(ONE_LINE_NOTE);
+  const held = await loc.inputValue({ timeout: 1000 }).then(
+    (v) => v.replace(/\r\n?/g, "\n"),
+    () => undefined,
+  );
+  const differs = held !== undefined && held.replace(/\s+$/, "").toLowerCase() !== text.replace(/\s+$/, "").toLowerCase();
+  if (differs) notes.push(heldNote(text, held as string));
+  return notes.length ? ` (${notes.join("; ")})` : "";
+}
+
+/** What a field holds when it is not what was typed: cut to the field's length, or changed by the field. */
+export function heldNote(typed: string, held: string): string {
+  const show = (t: string) => (t.length > 60 ? `${t.slice(0, 57)}...` : t).replace(/\n/g, "\\n");
+  if (held.length < typed.length && typed.toLowerCase().startsWith(held.toLowerCase()))
+    return `the field takes ${held.length} characters: it holds "${show(held)}", not all ${typed.length} typed`;
+  return `the field holds "${show(held)}", not the value typed`;
 }
 
 /**
