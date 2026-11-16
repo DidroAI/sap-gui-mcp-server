@@ -191,6 +191,25 @@ export function extractLook(limits: {
   const nameOf = (el: Element, sid: string) => labelFor.get(el.id) ?? labelNamed.get(sid.replace(/\/[a-z]+([^/]*)$/, "/lbl$1")) ?? "";
   const usedLabels = new Set<string>();
 
+  // SAP's message popup (a message shown in a window of its own): an icon label says its type, and the
+  // text is cut over the labels MESSTXT1, MESSTXT2... The view gives it as the status bar's message is
+  // given: the type, then the whole text on one line. Type A is a termination: its only button ends the transaction.
+  const popupMessage = new Map<number, { first: string; text: string; type: string }>();
+  for (const el of Array.from(document.querySelectorAll("[data-ls*=\"Type:'GuiLabel'\"]"))) {
+    const i = info(el);
+    if (!i.modal || !visible(el)) continue;
+    const icon = /\/s_m_(crit|erro|warn|info)\.[a-z]+$/.exec(el.querySelector("img[src]")?.getAttribute("src") ?? "")?.[1];
+    const part = /\/usr\/txtMESSTXT\d+$/.test(i.sid) ? norm((el as HTMLElement).innerText) || prop(i.ls, 3) : "";
+    if (!icon && !part) continue;
+    const m = popupMessage.get(i.modal) ?? { first: "", text: "", type: "" };
+    if (icon) m.type = ({ crit: "A", erro: "E", warn: "W", info: "I" } as Record<string, string>)[icon] ?? "";
+    if (part) {
+      if (!m.first) m.first = i.sid;
+      m.text = m.text ? `${m.text} ${part}` : part;
+    }
+    popupMessage.set(i.modal, m);
+  }
+
   // After an error or a warning SAP puts the cursor on the field the message is about: the view says which.
   const sbarKind = prop(document.getElementById("wnd[0]/sbar_msg")?.getAttribute("data-ls") ?? "", 1).toUpperCase();
   const cursorTold = sbarKind === "ERROR" || sbarKind === "WARNING";
@@ -350,6 +369,12 @@ export function extractLook(limits: {
           info(target).type !== "GuiLabel"
         )
           break;
+        const pm = popupMessage.get(modal);
+        if (pm && /\/usr\/txtMESSTXT\d+$/.test(sid)) {
+          if (sid === pm.first)
+            out(modal, `${sid}  label  ${pm.type ? `${pm.type}: ` : ""}${pm.text}${pm.type === "A" ? "  (termination message: SAP ends the transaction when it is confirmed, and unsaved input is lost)" : ""}`);
+          break;
+        }
         if (t) out(modal, `${sid}  label  ${t}`);
         break;
       }
