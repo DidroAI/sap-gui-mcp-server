@@ -4,8 +4,8 @@
  * `/n` and `/n<transaction>` leave a transaction at once: SAP asks nothing,
  * and input that was not saved is gone. The server cannot know what SAP
  * holds unsaved, but it knows what it typed itself: the inputs made in the
- * transaction since the last success message of the status bar (a save
- * answers with one). When the agent leaves with some, the answer says so.
+ * transaction, on screens that can save, since the last success message of
+ * the status bar (a save answers with one). When the agent leaves with some, the answer says so.
  * A count, not a proof: a success message that was not a save resets it too,
  * so the note can be missing; it is never said for input the agent did not make.
  */
@@ -23,8 +23,18 @@ export class Unsaved {
     this.success = success;
   }
 
-  /** The agent changed a value on the screen (typed into a field, set a checkbox, chose a dropdown entry). */
-  typed(): void {
+  /**
+   * The agent changed a value on the screen (typed into a field, set a
+   * checkbox, chose a dropdown entry); `view` is the screen it was set on.
+   * It counts where SAP can save: the system toolbar of the main window has
+   * Save (btn[11]). A display transaction and the initial screen that asks
+   * for a document number have none, so nothing typed there can be lost. On
+   * a report's selection screen that button saves a variant, and what is
+   * typed are selection criteria, not data.
+   */
+  typed(view: string): void {
+    if (!/^wnd\[0\]\/tbar\[0\]\/btn\[11\] {2}button/m.test(view)) return;
+    if (/%_APP_%-/.test(view) || /^TRANSACTION .* {2}SCREEN 1000(?: |$)/m.test(view)) return;
     this.inputs++;
   }
 
