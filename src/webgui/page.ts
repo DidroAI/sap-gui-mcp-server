@@ -1169,6 +1169,17 @@ export function markControl(ident: string): MarkedControl | string {
     const toggle = stack ? document.getElementById(`${stack.id}-tgl`) : null;
     if (toggle && /TglIconCol\b/.test(clsOf(toggle))) target = toggle;
   } else if (h.type === "GuiCalendar") target = h.el.querySelector("input[ct='I']") ?? h.el;
+  else if (h.type === "GuiStatusBar") {
+    // The status bar is clicked on its message: that opens the message's long text. (Its middle holds the SAP
+    // logo, whose double-click starts a support message.) Web GUI sends the click only when the text it drew
+    // is the text SAP sent, character by character, and it draws several spaces in a row as "&nbsp;": the
+    // text is written back as SAP sent it, which looks the same.
+    const msg = document.getElementById(`${h.sid}_msg`);
+    const txt = document.getElementById(`${h.sid}_msg-txt`);
+    const sent = /applicationText:'((?:[^'\\]|\\.)*)'/.exec(msg?.getAttribute("data-ls") ?? msg?.getAttribute("lsdata") ?? "")?.[1];
+    if (txt && sent !== undefined && txt.innerHTML !== sent && txt.innerHTML.replace(/&nbsp;/g, " ") === sent) txt.textContent = sent;
+    target = txt ?? msg ?? h.el;
+  }
   target.setAttribute("data-sap-act", "1");
   const cls = clsOf(h.el);
   // The class says the state the page shows; the hidden input keeps what the server drew.

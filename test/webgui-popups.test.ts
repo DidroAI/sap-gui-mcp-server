@@ -287,4 +287,14 @@ describe.skipIf(!exe)("a warning in the status bar and an empty grid, in a brows
     const view = (await webguiLookInFrame(page.mainFrame(), false)) ?? "";
     expect(view).toContain("wnd[0]/usr/cntlGRID1/shellcont/shell  grid  0 rows (the list is empty: SAP found no data for it); columns: MATNR=Material | WERKS=Plant");
   }, 30_000);
+
+  test("press on the status bar clicks its message, which opens the long text; never the logo beside it", async () => {
+    for (const action of [{ do: "press", id: "sbar" }, { do: "dblclick", id: "wnd[0]/sbar" }]) {
+      await page.evaluate(() => Object.assign(window, { help: 0 }));
+      expect(await act(new WebGuiSession(page.mainFrame()), action)).toContain("clicked the message of wnd[0]/sbar");
+      expect(await page.evaluate(() => (window as unknown as { help?: number }).help)).toBe(1);
+    }
+    // The click was not held back (the text was drawn with "&nbsp;"), and the support message was not started.
+    expect(await page.evaluate(() => [(window as unknown as { held?: number }).held, (window as unknown as { support?: number }).support])).toEqual([undefined, undefined]);
+  }, 30_000);
 });
