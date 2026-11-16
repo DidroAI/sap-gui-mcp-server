@@ -26,8 +26,13 @@ export const SURE_START_MS = 5000;
  * normalisation that fails leaves `data-ls` as it was.
  */
 export async function evalLs<A, R>(session: WebGuiSession, fn: (arg: A) => R, arg: A): Promise<R> {
-  await session.frame.evaluate(normalizeLsdata).catch(() => 0);
-  return session.frame.evaluate(fn as (arg: unknown) => R, arg as unknown);
+  // One round trip: the normalisation and the function in one expression (each was an evaluate of its own).
+  return session.frame.evaluate(withLs(fn, arg)) as Promise<R>;
+}
+
+/** The expression evalLs runs: normalizeLsdata (its failure ignored), then `fn(arg)`. Page functions close over nothing, so their source runs as it is. */
+export function withLs<A, R>(fn: (arg: A) => R, arg: A): string {
+  return `(() => { try { (${normalizeLsdata})(); } catch {} return (${fn})(${arg === undefined ? "" : JSON.stringify(arg)}); })()`;
 }
 
 /** The answer for an id that names nothing on the screen, as the guard and `sap_look` say it. */
