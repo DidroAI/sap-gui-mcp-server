@@ -124,6 +124,9 @@ const F4_SEARCH_HELP = lines(
   "wnd[1]/shell/tbar/btnCLOSE  button  Cancel",
 );
 
+// XD01's initial popup: titled like the main window, which names the transaction ("Create").
+const XD01_INIT = XD03_INIT.replace(/XD03/g, "XD01").replace(/Customer Display/g, "Customer Create");
+
 // XD01: an error message in a popup over the initial popup.
 const ERROR_POPUP = lines(
   ...XD03_INIT.split("\n").map((l) => l.replace("XD03", "XD01").replace("Customer Display", "Customer Create")),
@@ -219,6 +222,8 @@ describe("guard on saved live views: navigation is not a write (MD-03)", () => {
     ["XD03 Goto > Sales Area Data", XD03_ADDR, { do: "select", id: "wnd[0]/mbar/menu[2]/menu[4]" }, XD03_MENUS],
     ["search help Copy", F4_SEARCH_HELP, { do: "press", id: "btnCOPY" }, []],
     ["search help Print the hit list", F4_SEARCH_HELP, { do: "press", id: "btnPRINT" }, []],
+    ["Continue on XD01's initial popup, titled like the transaction", XD01_INIT, { do: "press", id: "wnd[1]/tbar[0]/btn[0]" }, []],
+    ["Enter there", XD01_INIT, { do: "key", key: 0 }, []],
     ["Confirm (Enter) on an error message", ERROR_POPUP, { do: "press", id: "wnd[2]/tbar[0]/btn[0]" }, []],
     ["Enter on an error message", ERROR_POPUP, { do: "key", key: 0 }, []],
     ["okcode Enter on it", ERROR_POPUP, { do: "okcode", value: "/0" }, []],
@@ -247,6 +252,7 @@ describe("guard on saved live views: navigation is not a write (MD-03)", () => {
 describe("guard on saved live views: what may write stays a commit", () => {
   const COMMIT: [string, string, Action, MenuEntry[]][] = [
     ["Save", MMH1_BASIC, { do: "press", id: "btn[11]" }, []],
+    ["XD01 Create (F7) on its own initial popup", XD01_INIT, { do: "press", id: "wnd[1]/tbar[0]/btn[7]" }, []],
     ["Lock material", MMH1_BASIC, { do: "press", id: "btn[37]" }, []],
     ["Create revision level", MMH1_BASIC, { do: "press", id: "btnRMMZU_REVLP" }, []],
     ["Default Setting (Save as Default Values)", MM03_VIEWS, { do: "press", id: "wnd[1]/tbar[0]/btn[14]" }, MM03_MENUS],
