@@ -44,10 +44,11 @@
  * Environment: SAP_FIORI_WAIT=busy turns RecordReplay.waitForUI5 off (the
  * driver then reads UI5's busy state only, and loads nothing into the page).
  */
-import { chromeDoctor, sapTabs, stillOwned } from "../browser/chrome.js";
-import { tabWhere } from "../browser/classify.js";
+import { chromeDoctor, chromeTabs, sapTabs, stillOwned } from "../browser/chrome.js";
+import { classify, tabSigns, tabWhere } from "../browser/classify.js";
 import type { Driver, SessionInfo, Surface } from "../core/types.js";
 import { FioriDriver, pageInfo, sessionOf } from "./driver.js";
+import { isPendingUrl, PendingTab, pendingSession, readPending } from "./pending.js";
 
 export { isLaunchpadUrl, isWebguiUrl } from "../browser/classify.js";
 export { FioriDriver, sessionOf, WEBGUI_MARK } from "./driver.js";
@@ -72,13 +73,36 @@ async function fioriTabs(env: Env) {
   );
 }
 
+/**
+ * Tabs at a launchpad address that show no launchpad (a logon or password page, a page that did not load,
+ * a tab that does not answer): listed, so that the agent can say what the user has to do (see pending.ts).
+ */
+async function pendingTabs(env: Env) {
+  const tabs = (await chromeTabs(env)).filter((t) => isPendingUrl(t.url));
+  const found = await Promise.all(
+    tabs.map(async (tab) => {
+      if (classify(tab.page.url(), await tabSigns(tab.page)) !== null) return undefined;
+      return { tab, session: named(pendingSession(tab, await readPending(tab))) };
+    }),
+  );
+  return found.filter((t) => t !== undefined);
+}
+
 export function fioriSurface(env: Env): Surface {
   const options = { recordReplay: (env.SAP_FIORI_WAIT ?? "").toLowerCase() !== "busy", idleTimeoutMs: 30_000 };
   return {
     name: "fiori",
-    discover: async (): Promise<SessionInfo[]> => (await fioriTabs(env)).map((x) => x.session),
+    discover: async (): Promise<SessionInfo[]> => {
+      const [live, pending] = await Promise.all([fioriTabs(env), pendingTabs(env)]);
+      // A tab whose launchpad came up between the two readings is the launchpad's.
+      return [...live.map((x) => x.session), ...pending.filter((p) => !live.some((x) => x.session.id === p.session.id)).map((p) => p.session)];
+    },
     open: async (session): Promise<Driver> => {
       const hit = (await fioriTabs(env)).find((x) => x.session.id === session.id);
+      if (!hit) {
+        const waiting = (await pendingTabs(env)).find((x) => x.session.id === session.id);
+        if (waiting) return new PendingTab(waiting.tab, waiting.session);
+      }
       if (!hit) throw new Error(`The Fiori tab of session ${session.id} is no longer open.`);
       const driver = new FioriDriver(hit.tab, hit.session, 0, options);
       // The driver's own refresh names the tab by a number: name it by its title, as discovery does.

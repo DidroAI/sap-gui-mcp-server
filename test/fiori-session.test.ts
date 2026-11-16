@@ -45,3 +45,42 @@ describe("fiori sessions", () => {
     expect(s.user).toBeUndefined();
   });
 });
+
+describe("FIORI-12: a tab at a launchpad address that shows no launchpad", () => {
+  const { PendingTab, pendingSession } = require("../src/fiori/pending.js") as typeof import("../src/fiori/pending.js");
+  const { ActionError } = require("../src/core/types.js") as typeof import("../src/core/types.js");
+  /** A tab whose page answers `facts`, or never answers. */
+  const tab = (facts: { title: string; password: boolean; text: string } | "never") =>
+    ({
+      id: "T9",
+      title: "Change Password",
+      url: "https://host:44300/sap/bc/ui2/flp?sap-client=100",
+      page: {
+        isClosed: () => false,
+        url: () => "https://host:44300/sap/bc/ui2/flp?sap-client=100",
+        mainFrame: () => ({ evaluate: () => (facts === "never" ? new Promise(() => {}) : Promise.resolve(facts)) }),
+      },
+    }) as never;
+  test("the session line says what the tab is", () => {
+    const s = pendingSession({ id: "T9", url: "https://host:44300/sap/bc/ui2/flp?sap-client=100", title: "x" }, { kind: "password", title: "Change Password", text: "" });
+    expect(s).toMatchObject({ id: "chrome:T9", surface: "fiori", client: "100", title: "Change Password [no launchpad in this tab: logon or password page]" });
+  });
+  test("a password page: the look names it and says who has to act; every action is refused", async () => {
+    const t = tab({ title: "Change Password", password: true, text: "Change Password | Current Password | New Password" });
+    const d = new PendingTab(t, pendingSession(t, { kind: "password", title: "Change Password", text: "" }));
+    const view = await d.look();
+    expect(view).toContain("PAGE Change Password");
+    expect(view).toContain("it asks for a password");
+    expect(view).toContain("never types a password: ask the user to finish this page");
+    expect(view).toContain("TEXT Change Password | Current Password | New Password");
+    await expect(d.assess({ do: "key", key: "Enter" })).rejects.toBeInstanceOf(ActionError);
+    await expect(d.act({ do: "set", id: "x", value: "y" })).rejects.toThrow("Nothing was done");
+  });
+  test("a tab that does not answer is said to be that, within a few seconds", async () => {
+    const t = tab("never");
+    const d = new PendingTab(t, pendingSession(t, { kind: "silent", title: "Home", text: "" }));
+    const t0 = Date.now();
+    expect(await d.look()).toContain("the tab does not answer");
+    expect(Date.now() - t0).toBeLessThan(4000);
+  }, 8000);
+});
