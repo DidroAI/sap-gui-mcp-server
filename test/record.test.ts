@@ -469,7 +469,7 @@ describe("replay: windows the recording does not have", () => {
     expect(detour(parseScreen('TRANSACTION VA03  PROGRAM SAPMV45A  SCREEN 4001\nWINDOW wnd[0]  "Display Order"'))).toBeUndefined();
   });
 
-  test("the availability control screen is passed with Continue", async () => {
+  test("the availability control screen is a choice: the replay stops unless asked to continue", async () => {
     const s = await setup({ SAP_WRITE: "on" });
     await s.rec("start", { name: "create" });
     await s.act({ do: "okcode", value: "/nZA01" });
@@ -482,9 +482,31 @@ describe("replay: windows the recording does not have", () => {
     await s.rec("stop");
     const t = await s.file("create.saptest.json");
     s.sap.available = 100;
-    const r = await replay(s.sap.driver(), s.policy, t, { variables: { qty: "500" } });
+    // By default the replay does not choose: the step fails, names the ways on, and nothing is pressed or saved.
+    s.sap.acts = [];
+    const stop = await replay(s.sap.driver(), s.policy, t, { variables: { qty: "500" }, leaveOnFailure: false });
+    expect(stop.passed).toBe(false);
+    expect(stop.steps[3]?.outcome).toBe("fail");
+    expect(stop.steps[3]?.failures[0]).toStartWith('SAP showed an availability control screen "Create Order: Availability Control" that the recording does not have here. It offers a choice (');
+    expect(stop.steps[3]?.failures[0]).toContain('so the replay pressed nothing');
+    expect(stop.steps[3]?.failures[0]).toContain('"choices":"continue"');
+    expect(stop.steps[4]?.outcome).toBe("skipped");
+    expect(s.sap.acts.filter((x) => x.do === "press").length).toBe(0);
+    expect(resultText(stop)).toStartWith("FAIL");
+    // Asked to continue, it presses the neutral way on and the first line says the run differed.
+    const r = await replay(s.sap.driver(), s.policy, t, { variables: { qty: "500" }, choices: "continue" });
     expect(r.passed).toBe(true);
-    expect(r.steps[3]?.warnings[0]).toBe('SAP showed a availability control screen "Create Order: Availability Control" that the recording does not have: the replay pressed Continue (Enter)');
+    expect(r.steps[3]?.warnings[0]).toBe(
+      'SAP showed an availability control screen "Create Order: Availability Control" that the recording does not have: the replay pressed Continue (Enter), as "choices":"continue" asked; what was saved may differ from the recording',
+    );
+    expect(resultText(r).split("\n")[0]).toContain('WITH NOTES: this run differed from the recording at step 4 (see "note:" below)');
+  });
+
+  test("a run like the recording has a plain first line", async () => {
+    const { test: t, sap, policy } = await recordDisplay();
+    const r = await replay(sap.driver(), policy, t);
+    expect(r.passed).toBe(true);
+    expect(resultText(r).split("\n")[0]).not.toContain("WITH NOTES");
   });
 
   test("a popup the recording confirmed but SAP does not show this time: the step is skipped", async () => {
