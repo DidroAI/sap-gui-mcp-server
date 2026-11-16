@@ -284,6 +284,9 @@ Actions (`sap_act`):
 {"do": "tree", "id": "shell", "node": "  4", "how": "double"}
 {"do": "grid", "id": "cntlGRID1/shell", "row": 120, "col": "VBELN", "how": "double"}
 {"do": "grid", "id": "cntlGRID1/shell", "col": "VBELN", "how": "select"}
+{"do": "set", "id": "cntlGRID1/shell", "row": 0, "col": "SEATSOCC", "value": "12"}
+{"do": "combo", "id": "critcol", "key": "T"}
+{"do": "tree", "id": "shell", "node": "05 3 1", "col": "1"}
 {"do": "scroll", "id": "cntlGRID1/shell", "to": 120}
 {"do": "toolbar", "id": "cntlGRID1/shell", "button": "&MB_FILTER"}
 {"do": "focus", "id": "ctxtVBAK-VKORG"}

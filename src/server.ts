@@ -460,6 +460,7 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
       title: "Act on the SAP screen",
       description: `One action on the active SAP screen, by an id from sap_look; answers with the new screen, or with only what changed when the screen is the same one ("~" changed line, "+" new, "-" gone, "=" unchanged, for context). Actions:
   {"do":"set","id":"ctxtVBAK-AUART","value":"OR"}   type into a field (Fiori: an input)
+  {"do":"set","id":"<grid>","row":0,"col":"SEATSOCC","value":"12"}   a cell of a grid that takes input (the grid's line names those columns); in a text editor "\\n" in the value is a line break
   {"do":"press","id":"btn[8]"}                      button (Fiori: "click" works too)
   {"do":"key","key":0}                              0 Enter, 3 Back, 4 F4, 8 F8, 11 Save, 12 Cancel
   {"do":"select","id":"tabpT\\08"}                tab, radio button, menu entry, list item, an open menu's entry (its id from the view)

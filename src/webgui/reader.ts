@@ -22,18 +22,19 @@
  */
 import { compact, controlBlock } from "../core/compact.js";
 import { shortIds } from "../core/ids.js";
+import { notationNote } from "../core/notation.js";
 import { readRows } from "../core/rows.js";
 import { ActionError, type Action, type Assessment, type LookOptions } from "../core/types.js";
 import { LOGON_REFUSAL, okcodeKind } from "../core/words.js";
 import { assessAction, popupButton, questionRefusal } from "./assess.js";
-import { checkedNow, clean, clickForRoundtrip, clickListLine, clickMenuRow, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlLook, pressOverflow, setCalendar, setRefusal, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
+import { checkedNow, clean, clickForRoundtrip, clickListLine, clickMenuRow, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlAct, noControlLook, pressOverflow, setCalendar, setRefusal, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
 import { collectFiles, watchFiles } from "./files.js";
 import { GAVE_UP, gaveUpOn, NO_CANCEL, stillRunning } from "./running.js";
 import { LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
 import { chooseEntry, entriesOf, markScrolled, notOnScreen, scrollTo, selectRow } from "./lists.js";
 import { behindPopup, closedByMessage, popupName, terminationIn, topPopup, transactionOf } from "./popups.js";
-import { extractFacts, extractMenus, markControl, markRow, markSelector, menuRowOpen, openOverlay, submenuOpen, scrollControl, topWindowOpen } from "./page.js";
-import { checkBeforeAct, focusOf, freshView, guardFacts, isDropdown, kindIn, LOGGED_OFF, loggedOff, look, lookRead, menuLines, readViewer, resolveIn, type ScreenRead, scrollables, viewerFrames } from "./screen.js";
+import { extractFacts, extractMenus, markControl, markRow, markSelector, markWindowClose, menuRowOpen, openOverlay, submenuOpen, scrollControl, searchHelps, topWindowOpen } from "./page.js";
+import { checkBeforeAct, focusOf, freshView, guardFacts, isDropdown, kindIn, LOGGED_OFF, loggedOff, look, lookRead, menuLines, readViewer, resolveIn, type ScreenRead, scrollables, VIEWER_TEXT_WHOLE, viewerFrames } from "./screen.js";
 import { IDLE_TIMEOUT_MS, LEAVE_MS, MAX_IDLE_TIMEOUT_MS, noTiming, timingText, type WebGuiSession } from "./session.js";
 
 export { setRefusal } from "./controls.js";
@@ -114,6 +115,16 @@ export async function view(session: WebGuiSession, options: LookOptions): Promis
   }
   let block = controlBlock(full, sid);
   if (!block) throw noControlLook(options.id);
+  if (kindIn(full, sid) === "html-viewer") {
+    // The viewer alone: its text whole (the view of the screen holds the start of it).
+    const v = (await viewerFrames(session)).find((x) => x.sid === sid);
+    if (v) {
+      const r = await readViewer(v.frame, VIEWER_TEXT_WHOLE);
+      const head = block.split("\n").filter((l) => !l.startsWith("  "));
+      const at = head.findIndex((l) => l.startsWith(`${sid}  `));
+      block = [...head.slice(0, at + 1), ...r.text, ...head.slice(at + 1)].join("\n");
+    }
+  }
   if (isDropdown(block, sid)) {
     // Every entry, also those the view cuts and those Web GUI loads only when the list opens.
     const entries = await entriesOf(session, sid);
@@ -298,6 +309,7 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
         const view = await freshView(session);
         const hit = popupButton(view, raw, (await focusOf(session))?.sid);
         const label = (c: { id: string; text: string }) => `${c.id} "${clean(c.text)}"`;
+        if (hit?.control && /^wnd\[\d+\]\/close$/.test(hit.control.id) && (await closeWindow(session))) return `key ${k} (pressed ${label(hit.control)})`;
         if (hit?.control) {
           await clickForRoundtrip(session, hit.control.id);
           return `key ${k} (pressed ${label(hit.control)})`;
@@ -318,6 +330,8 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
             await clickForRoundtrip(session, sid, true, true);
             return `key ${k} (pressed ${sid})`;
           }
+        // A popup without a Cancel button (it has no button at all): Cancel is the x in its title.
+        if (top > 0 && n === 12 && (await closeWindow(session))) return `key ${k} (the popup has no Cancel button: closed it with the x in its title)`;
         // No such button in the popup: give the popup the keyboard focus (a click on its title bar
         // does nothing else), so the key reaches it and not the screen behind.
         if (top > 0) {
@@ -383,7 +397,9 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
         ({ r, scrolled } = await markScrolled(session, id, a.row, markRow, target, r));
       }
       if (r !== "ok") throw new ActionError(notOnScreen(r) ? `${r}: the list does not have it, or it is not drawn. {"do":"scroll","id":"${id}","to":<row>} shows where the list ends.` : r);
-      const how = a.how ?? "double";
+      // An item of a tree node is clicked once (a double-click would open the node itself).
+      const item = a.do === "tree" && a.node !== undefined && a.col !== undefined && a.col !== "";
+      const how = a.how ?? (item ? "select" : "double");
       const cell = f.locator("[data-sap-act='cell']").first();
       await cell.scrollIntoViewIfNeeded().catch(() => {});
       await session.roundtrip(async () => {
@@ -396,14 +412,20 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       }, 1200);
       // A column and no row: the column's header was clicked (it selects the column, for the toolbar's sort or total).
       if (a.row === undefined && a.node === undefined && a.col !== undefined && a.col !== "") return `${a.do} ${how === "select" || how === "cell" ? "selected" : how} column ${a.col}`;
+      if (item) return `tree ${how === "double" ? "double-clicked" : "clicked"} item ${a.col} of node ${a.node}`;
       return `${a.do} ${how === "cell" ? "cursor on" : how} ${a.node ?? `row ${a.row}`}${a.col !== undefined && a.col !== "" && a.node === undefined ? ` column ${a.col}` : ""}${scrolled}`;
     }
     case "select": {
       if (isMenuPath(id)) {
         return chooseMenu(session, id);
       }
-      if (a.row !== undefined && /^(table|grid)$/.test(kindIn(await freshView(session), id)))
+      if (a.row !== undefined && /^(table|grid)$/.test(kindIn(await freshView(session), id))) {
+        // A grid without row selectors (the lists of "Change Layout") selects a row by a click on it.
+        const kind = kindIn(await freshView(session), id);
+        const sel = kind === "grid" && wantsOn(a.value) ? await evalLs(session, markSelector, { sid: id, row: Number(a.row) }).catch(() => "") : "";
+        if (typeof sel === "string" && / has no row selector\)$/.test(sel)) return run(session, { do: "grid", id, row: a.row, how: "select" });
         return selectRow(session, id, Number(a.row), wantsOn(a.value));
+      }
       if (await clickMenuRow(session, id)) return `chose menu entry ${id}`;
       const { loc, c } = await locate(session, id);
       // A tab sends a request, and choosing it twice is choosing it once: a lost click is made again.
@@ -430,10 +452,17 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
   }
   if (id.startsWith("html[") || /\/html\[\d+\]$/.test(id))
     return actHtml(session, a);
+  // The x in the title of a popup that has no button (the view lists it as wnd[N]/close).
+  if (a.do === "press" && /^wnd\[\d+\]\/close$/.test(id)) {
+    if (!(await closeWindow(session))) throw noControlAct(id);
+    return `pressed ${id} (the x in the window's title)`;
+  }
   // A row of an open popup menu is named by its DOM id.
   if ((a.do === "press" || a.do === "dblclick") && (await clickMenuRow(session, id))) return `chose menu entry ${id}`;
   if (a.do === "check" && a.row !== undefined && /^(table|grid)$/.test(kindIn(await freshView(session), id)))
     return selectRow(session, id, Number(a.row), wantsOn(a.value));
+  // A cell of a grid that takes input (an editable ALV) is named by the grid, a row and a column.
+  if (a.do === "set" && a.row !== undefined && a.col !== undefined && a.col !== "" && kindIn(await freshView(session), id) === "grid") return setCell(session, a);
   const { loc, c } = await locate(session, id);
   switch (a.do) {
     case "set": {
@@ -449,8 +478,11 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       const refusal = setRefusal(c);
       if (refusal) throw new ActionError(refusal);
       if (c.readonly) throw new ActionError(await closedText(session, `${c.sid} is read-only`));
-      await typeInto(session, loc, String(a.value ?? ""));
-      return `set ${c.sid}`;
+      // A text editor has lines; every other field has one.
+      const said = await typeInto(session, loc, String(a.value ?? ""), c.type === "GuiTextEdit" || c.tag === "TEXTAREA");
+      // A number typed in the other decimal notation than the screen's: SAP would read another number, or none.
+      const notation = notationNote(String(a.value ?? ""), await freshView(session).catch(() => ""));
+      return `set ${c.sid}${said}${notation ? ` (${notation})` : ""}`;
     }
     case "press":
       if (c.type === "GuiStatusBar") return messageHelp(session, c.sid);
@@ -502,6 +534,7 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       return `${c.sid} ${on ? "checked" : "unchecked"}`;
     }
     case "combo": {
+      if (c.type === "GuiSearchHelpPage") return chooseSearchHelp(session, c.sid, a.key ?? a.value);
       if (c.type !== "GuiComboBox") throw new ActionError(`${c.sid} is a ${typeName(c.type)}, not a dropdown.`);
       if (a.key === undefined && a.value === undefined) {
         // No key: the entries, and nothing is chosen.
@@ -583,6 +616,88 @@ async function chooseMenu(session: WebGuiSession, id: string): Promise<string> {
   if (session.posts === before && (await isOpen(full)) && (await f.evaluate(submenuOpen, full).catch(() => false)))
     return `menu ${full} opened: its entries are in the view, choose one by its id (the menu stays open until then or Escape; ${NOTHING_TO_SAP}`;
   return `menu ${full}`;
+}
+
+/** Clicks the x in the title of the popup in front and waits for the round trip; false when it has none. */
+async function closeWindow(session: WebGuiSession): Promise<boolean> {
+  if (!(await session.frame.evaluate(markWindowClose).catch(() => false))) return false;
+  await session.roundtrip(() => session.frame.locator("[data-sap-act='close']").first().click({ timeout: 3000 }), SURE_START_MS);
+  return true;
+}
+
+/**
+ * The search helps of a field's value help: without a key they are listed;
+ * with one (its letter, or its name or a part of it) that search help is
+ * chosen from the menu behind the button at the right of the tab's title.
+ */
+async function chooseSearchHelp(session: WebGuiSession, sid: string, wanted: unknown): Promise<string> {
+  const helps = await evalLs(session, searchHelps, sid);
+  if (typeof helps === "string") throw new ActionError(helps);
+  const listed = helps.entries.map((e) => `${e.key}:${e.text.replace(/^\S{1,3}: /, "")}`).join(", ");
+  if (wanted === undefined) return `${sid} has ${helps.entries.length} search helps: ${listed}`;
+  const want = clean(String(wanted)).toLowerCase();
+  const texts = helps.entries.map((e) => e.text.toLowerCase());
+  let idx = helps.entries.findIndex((e) => e.key.toLowerCase() === want);
+  if (idx < 0) idx = texts.findIndex((t) => t === want || t.replace(/^\S{1,3}: /, "") === want);
+  if (idx < 0 && want) idx = texts.findIndex((t) => t.includes(want));
+  const hit = helps.entries[idx];
+  if (!hit) throw new ActionError(`no search help "${clean(String(wanted))}" in ${sid}: ${listed}`);
+  if (hit.selected) return `${sid} already shows "${hit.text}": nothing changed`;
+  // The menu opens a moment after the click (300 ms was not always enough, measured on ECC): its row is waited
+  // for (0.6 s, then 1.5 s), and the button is clicked once more when the first click opened nothing.
+  const row = `${hit.dom}-menuItem`;
+  let open = false;
+  for (let attempt = 0; attempt < 2 && !open; attempt++) {
+    await session.frame.locator(`[id="${helps.opener}"]`).first().click({ timeout: 3000 });
+    // The first click is often lost right after the popup was drawn again (measured: about every second time).
+    for (let i = 0; i < (attempt === 0 ? 6 : 15) && !open; i++) {
+      await session.page.waitForTimeout(100);
+      open = !!(await session.frame.evaluate(menuRowOpen, row).catch(() => ""));
+    }
+  }
+  if (!open || !(await clickMenuRow(session, row))) {
+    if (await session.frame.evaluate(openOverlay).catch(() => "")) await session.page.keyboard.press("Escape");
+    throw new ActionError(`the menu of search helps of ${sid} did not open, so nothing was chosen. Look at the screen.`);
+  }
+  return `chose search help "${hit.text}"`;
+}
+
+/**
+ * Types a value into a cell of a grid: the cell is found as the "grid"
+ * action finds it (scrolled to when it is not drawn) and must hold an input
+ * that takes one. A grid sends what was typed with the next Enter or button.
+ */
+async function setCell(session: WebGuiSession, a: Action): Promise<string> {
+  const f = session.frame;
+  const id = String(a.id);
+  const row = Number(a.row);
+  const target = { sid: id, row, node: undefined, col: a.col };
+  let r = await evalLs(session, markRow, target);
+  let scrolled = "";
+  if (notOnScreen(r)) {
+    const here = await f.evaluate(scrollControl, { sid: id, to: "here" }).catch(() => "");
+    if (typeof here !== "string" && row >= here.total) throw new ActionError(`row ${row}: the list has ${here.total} rows (0 to ${here.total - 1}).`);
+    ({ r, scrolled } = await markScrolled(session, id, row, markRow, target, r));
+  }
+  if (r !== "ok") throw new ActionError(r);
+  const cell = f.locator("[data-sap-act='cell']").first();
+  const input = cell.locator("input:not([type=hidden]),textarea").first();
+  const where = `row ${row} column ${a.col} of ${id}`;
+  const state = await input
+    .evaluate((e) => {
+      const i = e as HTMLInputElement;
+      const frame = e.closest(".lsField")?.className ?? "";
+      return { type: i.type, locked: i.readOnly || i.disabled || /lsField--(readonly|disabled)\b/.test(typeof frame === "string" ? frame : "") };
+    }, undefined, { timeout: 1000 })
+    .catch(() => undefined);
+  if (!state) throw new ActionError(`${where} does not take input: it shows a value only. The grid's line names the columns whose cells take input, if it has any.`);
+  if (state.type === "password") throw new ActionError(`${where} is a password field: this server never types a password. Type it yourself.`);
+  if (state.type === "checkbox" || state.type === "radio") throw new ActionError(`${where} is a checkbox: {"do":"grid","id":"${id}","row":${row},"col":"${a.col}","how":"select"} clicks it.`);
+  if (state.locked) throw new ActionError(`${where} is read-only`);
+  await cell.scrollIntoViewIfNeeded().catch(() => {});
+  const said = await typeInto(session, input, String(a.value ?? ""), false, true);
+  const notation = notationNote(String(a.value ?? ""), await freshView(session).catch(() => ""));
+  return `set ${where}${said}${scrolled}${notation ? ` (${notation})` : ""}`;
 }
 
 /** Why an action may not run on this element of an HTML viewer, or undefined when it may. */

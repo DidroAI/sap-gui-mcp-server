@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { actionText, normalizeAction, normalizeKey, VERBS } from "../src/core/action.js";
+import { actionText, normalizeAction, normalizeKey, oneLine, VERBS } from "../src/core/action.js";
 import { ActionError } from "../src/core/types.js";
 
 describe("normalizeAction", () => {
@@ -35,7 +35,12 @@ describe("normalizeAction", () => {
     expect(VERBS).toContain("okcode");
   });
   test("line breaks leave string values and ids", () => {
-    expect(normalizeAction({ do: "set", id: "ctxtA\r\n", value: "OR\n/nSE38\r" })).toEqual({ do: "set", id: "ctxtA", value: "OR/nSE38" });
+    // The value of a set keeps its lines (a text editor has lines): one "\n" each, none at either end.
+    expect(normalizeAction({ do: "set", id: "ctxtA\r\n", value: "OR\r\n/nSE38\r" })).toEqual({ do: "set", id: "ctxtA", value: "OR\n/nSE38" });
+    expect(normalizeAction({ do: "set", id: "ed", value: "\none\r\rtwo\n\n" })).toEqual({ do: "set", id: "ed", value: "one\n\ntwo" });
+    // A field that has one line gets a space for each run of line breaks, never Enter.
+    expect(oneLine("OR\n/nSE38")).toEqual({ text: "OR /nSE38", had: true });
+    expect(oneLine("OR")).toEqual({ text: "OR", had: false });
     expect(normalizeAction({ do: "okcode", value: " /nVA03\n" })).toEqual({ do: "okcode", value: "/nVA03" });
     expect(normalizeAction({ do: "tree", id: "shell", node: "  4\n", how: "double" })).toEqual({ do: "tree", id: "shell", node: "  4", how: "double" });
     expect(normalizeAction({ do: "combo", id: "c", key: "PR\nOG" })).toEqual({ do: "combo", id: "c", key: "PROG" });

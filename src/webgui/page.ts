@@ -224,6 +224,8 @@ export function extractLook(limits: {
   const inHandled = (el: Element) =>
     handled.some((h) => h !== el && h.contains(el));
 
+  // Popups that have the x of a window in their title.
+  const closable = new Set<number>();
   // Window titles.
   titles.set(
     0,
@@ -242,6 +244,8 @@ export function extractLook(limits: {
         ?.innerText,
     );
     if (t && !titles.has(i.modal)) titles.set(i.modal, t);
+    const x = document.getElementById(`${el.id}-close`);
+    if (x && visible(x)) closable.add(i.modal);
   }
 
   /** A row selector cell (subct SC) shows a selected row with a "Sel" icon class, an unselected one with "UnSel". */
@@ -376,6 +380,8 @@ export function extractLook(limits: {
           break;
         }
         if (t) out(modal, `${sid}  label  ${t}`);
+        // A label that is an icon (the operator of a selection criterion, a status light): its tooltip says what it shows.
+        else if (tip || prop(ls, 0)) out(modal, `${sid}  label  icon "${tip || prop(ls, 0)}"`);
         break;
       }
       case "GuiCheckBox":
@@ -451,7 +457,8 @@ export function extractLook(limits: {
         break;
       }
       case "GuiTab": {
-        const t = prop(ls, 2) || norm(h.innerText);
+        // A tab that shows an icon only is named by its tooltip.
+        const t = norm(prop(ls, 2)) || norm(h.innerText) || tip || norm(el.querySelector("img[title],[title]")?.getAttribute("title"));
         const sel =
           /Sel\b|ItemSel|--selected/.test(h.className) ||
           el.getAttribute("aria-selected") === "true" ||
@@ -469,13 +476,17 @@ export function extractLook(limits: {
         out(modal, `${sid}  command-field`);
         break;
       case "GuiTextEdit": {
+        // The lines of the text, with "\n" between them (a backslash and an n: the view has one line per control).
+        const raw = (h as HTMLTextAreaElement).value ?? h.innerText ?? "";
         const v =
           (h as HTMLInputElement).type === "password"
             ? "***"
-            : norm((h as HTMLTextAreaElement).value ?? h.innerText).slice(
-                0,
-                2000,
-              );
+            : raw
+                .split(/\r\n?|\n/)
+                .map((x) => norm(x))
+                .join("\\n")
+                .replace(/(\\n)+$/, "")
+                .slice(0, 2000);
         out(modal, `${sid}  text-editor  "${v}"`);
         break;
       }
@@ -567,14 +578,56 @@ export function extractLook(limits: {
         const s = scrollInfo(el.id);
         const shown = m.rows.filter(([, r]) => inView(r.tr, m.box));
         const total = Number.isNaN(s.total) ? m.rows.length : s.total;
+        const idOfCol = (c: number, i: number) => /\/col([^/]+)$/.exec(m.heads.get(c) ? info(m.heads.get(c)!).sid : "")?.[1] ?? colIds[i] ?? String(c);
+        // A title above the column headers (the two lists of "Change Layout").
+        const capEl = el.querySelector(".urST3Tit [ct='CP']");
+        const cap = capEl ? prop(capEl.getAttribute("data-ls") ?? "", 1) || norm((capEl as HTMLElement).innerText) : "";
+        // What the column headers show besides their title: selected (for the toolbar's sort, total, filter), and
+        // the icon of a sort, a total or a filter. The icon's file name says which: head + a|d|o (sorted
+        // ascending, descending, not) + t|o (totalled or not) + f|o (filtered or not), measured on ECC.
+        const picked: string[] = [];
+        const marks: string[] = [];
+        colIdx.forEach((c, i) => {
+          const th = m.heads.get(c);
+          if (!th) return;
+          const id = idOfCol(c, i);
+          if (/\burST3HSel\b/.test(typeof th.className === "string" ? th.className : "")) picked.push(id);
+          const icon = /\/head([ado])([a-z])([a-z])\.[a-z]+$/.exec(th.querySelector("img[id$='-HCICO']")?.getAttribute("src") ?? "");
+          if (!icon) return;
+          const what = [icon[1] === "a" ? "sorted ascending" : icon[1] === "d" ? "sorted descending" : "", icon[2] === "t" ? "totalled" : "", icon[3] === "f" ? "filtered" : ""].filter(Boolean);
+          if (what.length) marks.push(`${id} ${what.join(" and ")}`);
+        });
+        // Cells that take input (an editable ALV): by column, and in which of the rows shown.
+        const open = (td: Element | undefined) => {
+          if (!td) return false;
+          // A checkbox or a radio button in a cell is clicked, not typed into.
+          if (td.querySelector("[ct^='C_'],[ct^='R_'],[class*='lsCheckBox'],[class*='lsRadioButton'],input[type=checkbox],input[type=radio]")) return false;
+          if (/^\{2:'EDIT'/.test(td.getAttribute("data-ls") ?? "")) return true;
+          const inp = td.querySelector("input:not([type=hidden]),textarea") as HTMLInputElement | null;
+          return !!inp && !inp.readOnly && !inp.disabled && !/lsField--(readonly|disabled)\b/.test(inp.closest(".lsField")?.className ?? "");
+        };
+        const rowsShown = shown.slice(0, limits.grid);
+        // A row of totals or subtotals is drawn in the totals colour: it is no row of data.
+        const totals = (row: { cells: Map<number, Element> }) =>
+          [...row.cells.values()].some((td) => /[{,]3:'COL_TOTAL/.test(td.getAttribute("data-ls") ?? "") || /\burColorTotal/.test(typeof td.className === "string" ? td.className : ""));
+        const dataRows = rowsShown.filter(([, row]) => !totals(row)).length;
+        const editable: string[] = [];
+        colIdx.forEach((c, i) => {
+          const rows = rowsShown.filter(([, row]) => open(row.cells.get(c))).map(([r]) => r - 1);
+          if (!rows.length) return;
+          editable.push(rows.length === dataRows ? idOfCol(c, i) : `${idOfCol(c, i)} (rows ${rows.slice(0, 8).join(",")}${rows.length > 8 ? ",..." : ""})`);
+        });
+        const state = `${picked.length ? `; selected columns: ${picked.join(", ")}` : ""}${marks.length ? `; ${marks.join(", ")}` : ""}${
+          editable.length ? `; cells that take input ("set" with "row" and "col"): ${editable.join(", ")}` : ""
+        }`;
         out(
           modal,
-          `${sid}  grid  ${total} rows${total === 0 ? " (the list is empty: SAP found no data for it)" : ""}${m.selectable ? "; rows can be selected" : ""}; columns: ${names.join(" | ")}`,
+          `${sid}  grid  ${total} rows${cap ? ` "${cap}"` : ""}${total === 0 ? " (the list is empty: SAP found no data for it)" : ""}${m.selectable ? "; rows can be selected" : ""}${state}; columns: ${names.join(" | ")}`,
         );
-        for (const [r, row] of shown.slice(0, limits.grid))
+        for (const [r, row] of rowsShown)
           out(
             modal,
-            `  row ${r - 1}${row.selector && selectorOn(row.selector) ? " (selected)" : ""}: ${colIdx.map((c) => (row.cells.get(c) ? cellText(row.cells.get(c)!) : "")).join(" | ")}`,
+            `  row ${r - 1}${row.selector && selectorOn(row.selector) ? " (selected)" : ""}${totals(row) ? " (total)" : ""}: ${colIdx.map((c) => (row.cells.get(c) ? cellText(row.cells.get(c)!) : "")).join(" | ")}`,
           );
         const first = shown[0]?.[0] ?? 1;
         const rest = total - Math.min(shown.length, limits.grid);
@@ -601,6 +654,8 @@ export function extractLook(limits: {
           .map(([, th]) => headTitle(th))
           .filter(Boolean);
         const nodes: string[] = [];
+        // Icons of a node that are links (documentation and activity in the IMG): its items, by name.
+        const itemsOf: { name: string; title: string }[][] = [];
         // A tree with columns (MMBE): one value per column, empty ones kept, so each value stays under its title.
         const columns = heads.length > 1 ? Math.max(...m.heads.keys()) : -1;
         for (const [, row] of m.rows) {
@@ -634,8 +689,28 @@ export function extractLook(limits: {
           if (!key && !text.replace(/[ |]/g, "")) continue;
           // The node that was clicked last: Web GUI marks its hierarchy cell (urST4Sel2).
           const picked = /\burST\d+Sel\d*\b/.test(typeof hier?.className === "string" ? hier.className : "");
+          itemsOf.push(
+            Array.from(row.tr.querySelectorAll("a[ct='LN']"))
+              // An icon without a tooltip is a spacer (it keeps the texts aligned): no item.
+              .filter((x) => !norm((x as HTMLElement).innerText) && /#[^#]+#i$/.test(x.id) && norm(x.getAttribute("title")))
+              .map((x) => ({ name: x.id.split("#").slice(-2)[0] ?? "", title: norm(x.getAttribute("title")) })),
+          );
           nodes.push(`  ${"  ".repeat(depth)}${state}${text}${picked ? " (selected)" : ""}  {node ${key}}`);
         }
+        // An item that says the same on every node is explained once, in the tree's line; the nodes name their items.
+        const titlesOf = new Map<string, Set<string>>();
+        for (const items of itemsOf)
+          for (const it of items) {
+            if (!titlesOf.has(it.name)) titlesOf.set(it.name, new Set());
+            titlesOf.get(it.name)!.add(it.title);
+          }
+        const common = [...titlesOf.entries()].filter(([, t]) => t.size === 1);
+        itemsOf.forEach((items, i) => {
+          if (!items.length) return;
+          const said = items.map((it) => (titlesOf.get(it.name)!.size === 1 ? it.name : `${it.name}=${it.title}`)).join(", ");
+          nodes[i] = (nodes[i] ?? "").replace(/ {2}\{node ([^}]*)\}$/, ` [items ${said}]  {node $1}`);
+        });
+        const itemsNote = titlesOf.size ? `; node items${common.length ? ` ${common.map(([n, t]) => `${n}=${[...t][0]}`).join(", ")}` : ""} ("tree" with "node" and "col":"<item>" clicks one)` : "";
         out(
           modal,
           `${sid}  tree  ${nodes.length} nodes shown${(() => {
@@ -644,7 +719,7 @@ export function extractLook(limits: {
             return !Number.isNaN(sc.total) && sc.total > nodes.length
               ? ` of ${sc.total} (first ${sc.first}; scroll for the others)`
               : "";
-          })()}${heads.length ? `; columns: ${heads.join(" | ")}` : ""}`,
+          })()}${itemsNote}${heads.length ? `; columns: ${heads.join(" | ")}` : ""}`,
         );
         for (const n of nodes.slice(0, limits.tree)) out(modal, n);
         break;
@@ -696,7 +771,13 @@ export function extractLook(limits: {
         const toggle = stack ? document.getElementById(`${stack.id}-tgl`) : null;
         const closed = !!toggle && /TglIconCol\b/.test(toggle.className);
         const chosen = !!stack && prop(stack.getAttribute("data-ls") ?? "", 8) === el.id;
-        if (t) out(modal, `${sid}  tab  ${t}${closed ? '  (closed: "select" opens it and shows its fields)' : chosen ? " (selected)" : ""}`);
+        // The other search helps of the field are behind the button at the right of the title: said once, with the way to them.
+        const others = stack ? stack.querySelectorAll("div[ct='P']").length : 0;
+        if (t)
+          out(
+            modal,
+            `${sid}  tab  ${t}${closed ? '  (closed: "select" opens it and shows its fields)' : chosen ? " (selected)" : ""}${others > 1 ? `  (1 of ${others} search helps: "combo" on this id lists them, with "key" chooses one)` : ""}`,
+          );
         break;
       }
       case "GuiSearchHelpPageItem": {
@@ -729,6 +810,12 @@ export function extractLook(limits: {
       const t = norm((tv as HTMLElement).innerText);
       if (t && visible(tv) && !inHandled(tv)) out(modal, `${sid}  label  ${t}`);
     }
+  }
+  // A popup without a button of its own (the error log of an editable grid, a docked list) closes with the x
+  // in its title only: that x is its one button. Popups with buttons are closed by those.
+  for (const k of closable) {
+    const own = lines.get(k);
+    if (own && !own.some((l) => / {2}button {2}/.test(l))) own.push(`wnd[${k}]/close  button  Close  (the x in the title of this window: it has no other button)`);
   }
   // Status bar of the main window, with its message type.
   const msg = document.getElementById("wnd[0]/sbar_msg");
@@ -903,6 +990,11 @@ export function topWindowOpen(): number {
     const m = /wnd\[(\d+)\]/.exec(el.getAttribute("lsdata") ?? "");
     if (m && (el as HTMLElement).offsetWidth > 0) max = Math.max(max, Number(m[1]));
   }
+  // A dialog shell (the error log of an editable grid) is a popup whose controls keep ids of wnd[0]: its ModalNo says it is one.
+  for (const el of Array.from(document.querySelectorAll("div[ct='PW'][lsdata]"))) {
+    const m = /"?ModalNo"?:(\d+)/.exec(el.getAttribute("lsdata") ?? "");
+    if (m && (el as HTMLElement).offsetWidth > 0) max = Math.max(max, Number(m[1]));
+  }
   return max;
 }
 
@@ -960,15 +1052,22 @@ export function openOverlay(): "menubar" | "menu" | "list" | "" {
   return "";
 }
 
-/** Runs in an HTML viewer's frame: its form controls and links, numbered. */
-export function extractViewer(start: number): {
+/**
+ * Runs in an HTML viewer's frame: its form controls and links, numbered, and
+ * the text it shows (the documentation of F1, the long text of a message),
+ * one entry per line of the page, at most `text` characters; `more` counts
+ * the characters left out.
+ */
+export function extractViewer(a: { start: number; text: number }): {
   lines: string[];
   next: number;
+  text: string[];
+  more: number;
 } {
   const norm = (s: string | null | undefined) =>
     (s ?? "").replace(/[\s\u00a0]+/g, " ").replace(/^ | $/g, "");
   const out: string[] = [];
-  let n = start;
+  let n = a.start;
   for (const el of Array.from(
     document.querySelectorAll(
       "select,input:not([type=hidden]),textarea,button,a[href]",
@@ -1020,7 +1119,28 @@ export function extractViewer(start: number): {
         out.push(`html[${n}]  ${el.tagName === "A" ? "link" : "button"}  ${t}`);
     }
   }
-  return { lines: out, next: n };
+  // The text as the page shows it: one entry per line, the cells of a table row with " | " between them.
+  // A line that is only the text of a button or a link is left out (its control line says it).
+  const pressed = [...new Set(Array.from(document.querySelectorAll("button,a[href]")).map((b) => norm((b as HTMLElement).innerText)))].filter(Boolean).sort((x, y) => y.length - x.length);
+  const onlyControls = (t: string) => {
+    let rest = t;
+    for (const p of pressed) rest = rest.split(p).join("");
+    return !rest.replace(/[\s|]/g, "");
+  };
+  const text: string[] = [];
+  let more = 0;
+  let left = a.text;
+  for (const raw of (document.body?.innerText ?? "").split("\n")) {
+    const t = norm(raw.replace(/\t+/g, " | ")).replace(/^(\| )+|( \|)+$/g, "");
+    if (!t || onlyControls(t)) continue;
+    if (left <= 0) more += t.length;
+    else if (t.length > left) {
+      text.push(`${t.slice(0, left)}...`);
+      more += t.length - left;
+    } else text.push(t);
+    left -= t.length;
+  }
+  return { lines: out, next: n, text, more };
 }
 
 /**
@@ -1298,6 +1418,15 @@ export function markRow(a: { sid: string; row?: number | undefined; node?: strin
     return { th: th ?? ths.find((t) => Number(t.getAttribute("lsmatrixcolindex")) === ci), ci };
   };
   const noColumn = (col: string) => `no column ${col} in ${sidOf(root)}${colIds.length ? `: its columns are ${colIds.slice(0, 60).join(", ")}${colIds.length > 60 ? ", ..." : ""}` : ""}`;
+  // An item of a tree node (an icon that is a link), named as the view names it.
+  if (a.node !== undefined && a.col !== undefined && a.col !== "") {
+    const tr = tds.find((td) => Number(td.getAttribute("lsmatrixrowindex")) === rowIdx)?.closest("tr");
+    const item = Array.from(tr?.querySelectorAll("a[ct='LN']") ?? []).find((e) => e.id.endsWith(`#${a.col}#i`));
+    if (item) {
+      item.setAttribute("data-sap-act", "cell");
+      return "ok";
+    }
+  }
   const named = a.col !== undefined && a.col !== "" ? column(String(a.col)) : undefined;
   if (named && Number.isNaN(named.ci)) return noColumn(String(a.col));
   // A column without a row or a node: the column itself, by its header.
@@ -1759,4 +1888,49 @@ export function comboEntries(sid: string): { key: string; text: string }[] | str
     if (key || text) out.push({ key, text });
   }
   return out;
+}
+
+
+/** The search helps of a field (the tabs of its value help): Web GUI shows one and keeps the others behind a menu. */
+export interface SearchHelps {
+  /** DOM id of the button that opens the menu of search helps. */
+  opener: string;
+  entries: { key: string; text: string; dom: string; selected: boolean }[];
+}
+
+/**
+ * The search helps the value help of a field offers, for the tab `sid`
+ * (the one shown). The key of an entry is the letter SAP puts before its
+ * name ("T: Material by Material Type"), else its number from 1. A text
+ * when the id names no such tab.
+ */
+export function searchHelps(sid: string): SearchHelps | string {
+  const unesc = (s: string) =>
+    s
+      .replace(/\\x([0-9a-fA-F]{2})/g, (_m, h) => String.fromCharCode(parseInt(h, 16)))
+      .replace(/\\u([0-9a-fA-F]{4})/g, (_m, h) => String.fromCharCode(parseInt(h, 16)))
+      .replace(/\\(.)/g, "$1");
+  const title = (el: Element) => unesc(/(?:^|[{,])8:'((?:[^'\\]|\\.)*)'/.exec(el.getAttribute("data-ls") ?? "")?.[1] ?? "");
+  const page = Array.from(document.querySelectorAll("div[ct='P'][data-ls*=\"Type:'GuiSearchHelpPage'\"]")).find((e) => {
+    const raw = /SID:'((?:[^'\\]|\\.)*)'/.exec(e.getAttribute("data-ls") ?? "")?.[1] ?? "";
+    return raw.replace(/\\\\/g, "\\") === sid && (e as HTMLElement).offsetWidth > 0;
+  });
+  const stack = page?.closest("table[ct='PST']");
+  if (!page || !stack) return `${sid} is not the tab of a value help on this screen`;
+  const entries = Array.from(stack.querySelectorAll("div[ct='P']")).map((e, i) => {
+    const text = title(e);
+    return { key: /^(\S{1,3}): /.exec(text)?.[1] ?? String(i + 1), text, dom: e.id, selected: e === page };
+  });
+  return { opener: `${stack.id}-menuOpener`, entries };
+}
+
+
+/** Marks the x in the title of the popup in front (data-sap-act="close"): false when it has none. */
+export function markWindowClose(): boolean {
+  for (const e of Array.from(document.querySelectorAll("[data-sap-act]"))) e.removeAttribute("data-sap-act");
+  const open = Array.from(document.querySelectorAll("div[ct='PW']")).filter((e) => (e as HTMLElement).offsetWidth > 0);
+  const x = document.getElementById(`${open[open.length - 1]?.id ?? ""}-close`);
+  if (!x || x.offsetWidth <= 0) return false;
+  x.setAttribute("data-sap-act", "close");
+  return true;
 }
