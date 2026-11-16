@@ -225,9 +225,21 @@ export async function clickMenuRow(session: WebGuiSession, id: string): Promise<
   const f = session.frame;
   const dom = await f.evaluate(menuRowOpen, id).catch(() => "");
   if (!dom) return false;
-  await session.roundtrip(() => f.locator(`tr[id="${dom.replace(/"/g, '\\"')}"]`).first().click({ timeout: 10000 }), 1200);
+  try {
+    await session.roundtrip(() => f.locator(`tr[id="${dom.replace(/"/g, '\\"')}"]`).first().click({ timeout: MENU_CLICK_MS }), 1200);
+  } catch (e) {
+    // The row was open when read and could not be clicked: its menu closed again, or something covers it.
+    if (e instanceof Error && /Timeout \d+ms exceeded/.test(e.message)) throw new MenuGone(`The menu entry ${id} could not be clicked: its menu closed again or is covered. Nothing was chosen; look at the screen and open the menu again.`);
+    throw e;
+  }
   return true;
 }
+
+/** How long a click on an open menu row may wait for the row: a menu that closed under it never comes back. */
+const MENU_CLICK_MS = 2000;
+
+/** A menu row that was open could not be clicked (see clickMenuRow): a caller that can open the menu again retries. */
+export class MenuGone extends ActionError {}
 
 /**
  * How long Web GUI holds a click on a line of a classic list before it
