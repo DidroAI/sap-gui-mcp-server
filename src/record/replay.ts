@@ -338,7 +338,7 @@ export async function replay(driver: Driver, policy: Policy, recorded: SapTest, 
       // Does the recorded action run? Not when a repair stands in for it, or it ran before the run resumed.
       let runs = true;
       if (repair) {
-        r.repair = { why: repair.why, outcome: "refused", did: [], ...(repair.then ? { then: repair.then } : {}) };
+        r.repair = { why: repair.why, outcome: "refused", did: [], ...(repair.place ? { place: repair.place } : {}) };
         const no = repairRefusal(step, repair, test);
         if (no) throw new RepairRefused(no);
         // A screen whose ways on decide what is saved is the person's to answer, as in a replay without a repair.
@@ -356,7 +356,7 @@ export async function replay(driver: Driver, policy: Policy, recorded: SapTest, 
           r.repair.did = run.did;
         }
         r.repair.outcome = "failed";
-        runs = repair.then === "retry";
+        runs = repair.place === "before";
       }
       if (step.action) {
         let action = actionWith(step.action, vars);
@@ -504,7 +504,7 @@ export function resultText(r: ReplayResult): string {
   for (const s of r.steps) {
     lines.push(`${s.outcome === "pass" ? "ok  " : s.outcome === "fail" ? "FAIL" : "skip"} ${s.n}. ${s.action ?? "(check only)"}${s.note ? `  — ${s.note}` : ""}`);
     for (const f of s.failures) lines.push(`       failed${s.phase ? ` (${s.phase})` : ""}: ${f}`);
-    if (s.repair) lines.push(`       ${s.repair.outcome === "repaired" ? "repaired" : `repair ${s.repair.outcome}`}: ${s.repair.why}${s.repair.did.length ? `  did: ${s.repair.did.join(", ")}${s.repair.then ? ` (${s.repair.then})` : ""}` : ""}${s.repair.captured ? `  ${s.repair.captured}` : ""}`);
+    if (s.repair) lines.push(`       ${s.repair.outcome === "repaired" ? "repaired" : `repair ${s.repair.outcome}`}: ${s.repair.why}${s.repair.did.length ? `  did: ${s.repair.did.join(", ")}${s.repair.place ? ` (${s.repair.place})` : ""}` : ""}${s.repair.captured ? `  ${s.repair.captured}` : ""}`);
     for (const w of s.warnings) lines.push(`       note: ${w}`);
     for (const p of s.passed) lines.push(`       ok: ${p}`);
   }

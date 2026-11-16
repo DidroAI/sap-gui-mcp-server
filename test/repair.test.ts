@@ -96,7 +96,7 @@ describe("a repair for one step", () => {
     const r = await replay(sap.driver(), policy, t, {
       from: 3,
       variables: first.variables,
-      repair: { why: "SAP asks whether to display an order that has deliveries", actions: [{ do: "press", id: "wnd[1]/usr/btnSPOP-OPTION1" }], then: "after" },
+      repair: { why: "SAP asks whether to display an order that has deliveries", actions: [{ do: "press", id: "wnd[1]/usr/btnSPOP-OPTION1" }], place: "after" },
     });
     expect(r.passed).toBe(true);
     expect(r.from).toBe(3);
@@ -126,21 +126,21 @@ describe("a repair for one step", () => {
     (old.steps[1] as { action: Record<string, unknown> }).action.id = "ctxtZORD-AUFNR";
     delete (old.steps[1] as { target?: unknown }).target;
     await replay(sap.driver(), policy, old, { leaveOnFailure: false });
-    const r = await replay(sap.driver(), policy, old, { from: 2, repair: { why: "the order field has another name", actions: [{ do: "set", id: "ctxtZORD-VBELN", value: "5000" }], then: "instead" } });
+    const r = await replay(sap.driver(), policy, old, { from: 2, repair: { why: "the order field has another name", actions: [{ do: "set", id: "ctxtZORD-VBELN", value: "5000" }], place: "instead" } });
     expect(r.passed).toBe(true);
     expect(r.proposal?.test.steps[1]?.action).toEqual({ do: "set", id: "ctxtZORD-VBELN", value: "5000" });
     expect(r.proposal?.origin).toEqual([1, 2, 3, 4]);
     expect(r.proposal?.changes[1]).toContain("Step 2 replaced by");
   });
 
-  test("retry: a field that is now required is filled with a value of the recording, then the recorded action runs", async () => {
+  test("before: a field that is now required is filled with a value of the recording, then the recorded action runs", async () => {
     const { test: t, sap, policy } = await recordCreate();
     // As if the customer had been a default when recorded: the step that typed it is not in the test.
     const lean = structuredClone(t);
     lean.steps.splice(1, 1);
     const first = await replay(sap.driver(), policy, lean, { leaveOnFailure: false });
     expect(first.steps[2]).toMatchObject({ outcome: "fail", phase: "landing" });
-    const r = await replay(sap.driver(), policy, lean, { from: 3, repair: { why: "Customer is empty and required", actions: [{ do: "set", id: "ctxtZORD-KUNNR", value: "2200" }], then: "retry" } });
+    const r = await replay(sap.driver(), policy, lean, { from: 3, repair: { why: "Customer is empty and required", actions: [{ do: "set", id: "ctxtZORD-KUNNR", value: "2200" }], place: "before" } });
     expect(r.steps[0]?.repair?.outcome).toBe("repaired");
     expect(r.proposal?.test.steps.length).toBe(lean.steps.length + 1);
     expect(r.proposal?.origin.slice(0, 5)).toEqual([1, 2, 3, 3, 4]);
@@ -186,7 +186,7 @@ describe("what a repair may not do", () => {
   };
 
   test("a write the recorded step does not have", async () => {
-    const { r, sap, said } = await refusedWith({ why: "x", actions: [{ do: "key", key: 11 }], then: "after" });
+    const { r, sap, said } = await refusedWith({ why: "x", actions: [{ do: "key", key: 11 }], place: "after" });
     expect(said).toContain("the repair was refused");
     expect(said).toContain("a repair adds no write");
     expect(r.steps[0]?.repair?.outcome).toBe("refused");
@@ -194,17 +194,17 @@ describe("what a repair may not do", () => {
   });
 
   test("leaving the transaction, an invented value, too many actions, no actions", async () => {
-    expect((await refusedWith({ why: "x", actions: [{ do: "okcode", value: "/nZA01" }], then: "after" })).said).toContain("stays in the recorded flow");
-    expect((await refusedWith({ why: "x", actions: [{ do: "okcode", value: "/n" }], then: "after" })).said).toContain("stays in the recorded flow");
-    expect((await refusedWith({ why: "x", actions: [{ do: "set", id: "ctxtZORD-VBELN", value: "4711" }], then: "after" })).said).toContain("does not invent data");
-    expect((await refusedWith({ why: "x", actions: Array(5).fill({ do: "key", key: 0 }), then: "after" })).said).toContain("at most 4 actions");
+    expect((await refusedWith({ why: "x", actions: [{ do: "okcode", value: "/nZA01" }], place: "after" })).said).toContain("stays in the recorded flow");
+    expect((await refusedWith({ why: "x", actions: [{ do: "okcode", value: "/n" }], place: "after" })).said).toContain("stays in the recorded flow");
+    expect((await refusedWith({ why: "x", actions: [{ do: "set", id: "ctxtZORD-VBELN", value: "4711" }], place: "after" })).said).toContain("does not invent data");
+    expect((await refusedWith({ why: "x", actions: Array(5).fill({ do: "key", key: 0 }), place: "after" })).said).toContain("at most 4 actions");
     expect((await refusedWith({ why: "x" })).said).toContain("needs actions or a capture");
-    expect((await refusedWith({ why: "x", actions: [{ do: "key", key: 0 }] })).said).toContain('"then"');
+    expect((await refusedWith({ why: "x", actions: [{ do: "key", key: 0 }] })).said).toContain('"place"');
   });
 
   test("a second write next to the recorded one", async () => {
     const { test: t, sap, policy } = await recordCreate();
-    const r = await replay(sap.driver(), policy, t, { from: 5, repair: { why: "x", actions: [{ do: "key", key: 11 }], then: "retry" } });
+    const r = await replay(sap.driver(), policy, t, { from: 5, repair: { why: "x", actions: [{ do: "key", key: 11 }], place: "before" } });
     expect(r.steps[0]?.failures[0]).toContain("the recorded write would run after it");
   });
 
@@ -230,7 +230,7 @@ describe("what a repair may not do", () => {
   test("a repair that does not lead where the recording led fails the step", async () => {
     const { test: t, sap, policy } = await popupAt3();
     // Cancel closes the popup but the fake stays on the order: use a wrong tab press instead, which SAP refuses.
-    const r = await replay(sap.driver(), policy, t, { from: 3, repair: { why: "x", actions: [{ do: "select", id: "tabpT\\02" }], then: "after" }, leaveOnFailure: false });
+    const r = await replay(sap.driver(), policy, t, { from: 3, repair: { why: "x", actions: [{ do: "select", id: "tabpT\\02" }], place: "after" }, leaveOnFailure: false });
     expect(r.passed).toBe(false);
     expect(r.steps[0]?.repair?.outcome).toBe("failed");
   });
@@ -240,7 +240,7 @@ describe("what a repair may not do", () => {
     sap.available = 5;
     const first = await replay(sap.driver(), policy, t, { leaveOnFailure: false });
     expect(first.steps[3]).toMatchObject({ outcome: "fail", phase: "landing" });
-    const r = await replay(sap.driver(), policy, t, { from: 4, repair: { why: "x", actions: [{ do: "press", id: "wnd[0]/tbar[1]/btn[0]" }], then: "after" }, leaveOnFailure: false });
+    const r = await replay(sap.driver(), policy, t, { from: 4, repair: { why: "x", actions: [{ do: "press", id: "wnd[0]/tbar[1]/btn[0]" }], place: "after" }, leaveOnFailure: false });
     expect(r.steps[0]?.failures[0]).toContain("offers a choice");
     expect(r.steps[0]?.repair?.outcome).toBe("refused");
     expect(sap.screen).toBe("500");
@@ -248,7 +248,7 @@ describe("what a repair may not do", () => {
 
   test("write off: a repair cannot write either", async () => {
     const c = await recordCreate();
-    const r = await replay(c.sap.driver(), policyFromEnv({}), c.test, { from: 5, repair: { why: "x", actions: [{ do: "key", key: 11 }], then: "instead" } });
+    const r = await replay(c.sap.driver(), policyFromEnv({}), c.test, { from: 5, repair: { why: "x", actions: [{ do: "key", key: 11 }], place: "instead" } });
     expect(r.steps[0]?.failures[0]).toContain("refused");
     expect(c.sap.next).toBe(5002);
   });
@@ -262,7 +262,7 @@ describe("sap_replay with from, repair and format json", () => {
     expect(first.passed).toBe(false);
     expect(first.steps[2].phase).toBe("landing");
     expect(first.screenFull).toContain("btnSPOP-OPTION1");
-    const again = await s.call("sap_replay", { name: "display", format: "json", from: 3, variables: first.variables, repair: { why: "a question popup", actions: [{ do: "press", id: "wnd[1]/usr/btnSPOP-OPTION1" }], then: "after" } });
+    const again = await s.call("sap_replay", { name: "display", format: "json", from: 3, variables: first.variables, repair: { why: "a question popup", actions: [{ do: "press", id: "wnd[1]/usr/btnSPOP-OPTION1" }], place: "after" } });
     expect(again.error).toBe(false);
     const r = JSON.parse(again.text);
     expect(r.passed).toBe(true);
