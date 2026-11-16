@@ -147,6 +147,31 @@ describe("a repair for one step", () => {
     expect(r.proposal?.test.steps[2]?.note).toContain("Added by a repair");
   });
 
+  test("before, after the recorded action already led elsewhere: the proposed test holds the action, the repair, the action again", async () => {
+    const { test: t, sap, policy } = await recordDisplay();
+    // As if SAP had proposed another order: the recorded Enter opens order 4990, whose customer is not the checked one.
+    sap.orders.set("4990", { customer: "1000", quantity: "1", rush: false });
+    const other = structuredClone(t);
+    (other.steps[1] as { action: Record<string, unknown> }).action.value = "4990";
+    const first = await replay(sap.driver(), policy, other, { leaveOnFailure: false });
+    expect(first.steps[2]).toMatchObject({ outcome: "fail", phase: "check" });
+    const r = await replay(sap.driver(), policy, other, {
+      from: 3,
+      repair: { why: "another order opened", actions: [{ do: "key", key: 3 }, { do: "set", id: "ctxtZORD-VBELN", value: "5000" }], place: "before" },
+    });
+    expect(r.passed).toBe(true);
+    const p = r.proposal as NonNullable<typeof r.proposal>;
+    expect(p.test.steps.map((s) => `${s.action?.do}${s.action?.key ?? ""}`)).toEqual(["okcode", "set", "key0", "key3", "set", "key0", "key3"]);
+    expect(p.origin).toEqual([1, 2, 3, 3, 3, 3, 4]);
+    expect(p.test.steps[2]?.expect).toBeUndefined();
+    expect(p.test.steps[2]?.after?.screen).toBe("300");
+    expect(p.test.steps[5]?.expect?.length).toBe(1);
+    expect(p.test.steps[5]?.note).toBe("Step 1: Display the order");
+    expect(p.changes[1]).toContain("then the action of step 3 again");
+    // It replays as it is, with no repair.
+    expect((await replay(sap.driver(), policy, parseTest(serializeTest(p.test)))).passed).toBe(true);
+  });
+
   test("capture: a new document number becomes a variable, and the later steps use it", async () => {
     const { test: t, sap, policy } = await recordCreate();
     const first = await replay(sap.driver(), policy, t, { leaveOnFailure: false });
