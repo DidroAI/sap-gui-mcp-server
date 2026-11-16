@@ -256,7 +256,16 @@ export function propose(original: SapTest, working: SapTest, index: number, repa
   const fresh = structuredClone(added);
   const list = fresh.map((s) => actionText(normalizeAction(s.action as Record<string, unknown>))).join(", then ");
   let changes: string[];
-  if (repair.place === "before") {
+  // "before" on a screen the step was not recorded on: the recorded action had already run in this run and led
+  // there, and it ran again after the repair. The proposed test holds what the run did: the action, the added
+  // actions, the action again with its checks.
+  const at = fresh[0]?.on;
+  const ranBefore = repair.place === "before" && !!step.action && !!step.on && !!at && (["transaction", "program", "screen"] as const).some((k) => step.on?.[k] && at[k] && step.on[k] !== at[k]);
+  if (ranBefore) {
+    const { note: _note, expect: _expect, capture: _capture, ...bare } = structuredClone(step);
+    test.steps.splice(index, 0, { ...bare, ...(at ? { after: at } : {}) }, ...fresh);
+    changes = [`Step ${n} (${what}): ${repair.why}`, `Added after step ${n}: ${list}, then the action of step ${n} again, with its checks.`];
+  } else if (repair.place === "before") {
     test.steps.splice(index, 0, ...fresh);
     changes = [`Step ${n} (${what}): ${repair.why}`, `Added before step ${n}: ${list}.`];
   } else {
