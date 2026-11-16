@@ -21,7 +21,7 @@
  *   {"do":"toolbar","id":"shell","button":"&FIND"}
  */
 import { compact, controlBlock } from "../core/compact.js";
-import { shortIds } from "../core/ids.js";
+import { menuSid, shortIds } from "../core/ids.js";
 import { notationNote } from "../core/notation.js";
 import { readRows } from "../core/rows.js";
 import { ActionError, type Action, type Assessment, type LookOptions } from "../core/types.js";
@@ -168,7 +168,7 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
     const before = named ? await freshView(session) : await freshView(session).catch(() => "");
     const resolved = named ? { ...a, id: resolveIn(before, String(a.id)) } : a;
     // A control of a window behind a popup takes nothing: said at once, with the popup, not after a click has timed out.
-    const covered = a.id === undefined ? undefined : behindPopup(before, isMenuPath(String(a.id)) ? `wnd[0]/mbar/${String(a.id).replace(/^wnd\[0\]\/mbar\//, "")}` : String(resolved.id), a.do);
+    const covered = a.id === undefined ? undefined : behindPopup(before, (menuSid(String(a.id)) ?? String(resolved.id)), a.do);
     if (covered && a.do !== "scroll" && (await session.blocked())) throw new ActionError(covered);
     const windows = session.windowsOpened;
     const done = await run(session, resolved);
@@ -242,7 +242,7 @@ function windowBlock(view: string, n: number): string {
   return lines.slice(start, next < 0 ? lines.length : next).join("\n");
 }
 
-const isMenuPath = (id: string) => /\/mbar\/menu\[/.test(id) || /^menu\[/.test(id);
+const isMenuPath = (id: string) => menuSid(id) !== undefined;
 
 /** Playwright's errors carry a long call log: keep the first line, and say what blocks when a popup covers the control. */
 function tidy(e: unknown): Error {
@@ -596,7 +596,7 @@ const MENU_ROW_MS = 3000;
  */
 async function chooseMenu(session: WebGuiSession, id: string): Promise<string> {
   const f = session.frame;
-  const full = id.startsWith("wnd[") ? id : `wnd[0]/mbar/${id}`;
+  const full = menuSid(id) ?? id;
   const parts = full.split("/").slice(2);
   const sids = parts.map((_, i) => `wnd[0]/mbar/${parts.slice(0, i + 1).join("/")}`);
   const isOpen = async (sid: string) => !!(await f.evaluate(menuRowOpen, sid).catch(() => ""));

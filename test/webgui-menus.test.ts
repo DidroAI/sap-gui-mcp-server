@@ -10,7 +10,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { chromium, type Browser, type Page } from "playwright-core";
-import { shortIds } from "../src/core/ids.js";
+import { menuSid, shortIds } from "../src/core/ids.js";
 import { ActionError } from "../src/core/types.js";
 import { webguiLookInFrame } from "../src/webgui/index.js";
 import { act } from "../src/webgui/reader.js";
@@ -87,6 +87,15 @@ describe("menu handles", () => {
     // "menu[6]" alone would read as a top menu.
     expect(h.get(`${M}/menu[3]/menu[6]`)).toBe("menu[3]/menu[6]");
   });
+
+  test("a menu entry can be named by its handle, from the menu bar, or by its whole id", () => {
+    expect(menuSid("menu[4]/menu[10]")).toBe(`${M}/menu[4]/menu[10]`);
+    expect(menuSid("mbar/menu[4]/menu[10]")).toBe(`${M}/menu[4]/menu[10]`);
+    expect(menuSid(`${M}/menu[4]`)).toBe(`${M}/menu[4]`);
+    expect(menuSid("mbar")).toBeUndefined();
+    expect(menuSid("wnd[0]/usr/btnX")).toBeUndefined();
+    expect(menuSid("wnd[0]/menu[1]")).toBeUndefined();
+  });
 });
 
 describe.skipIf(!exe)("the menu bar, in a browser", () => {
@@ -157,5 +166,28 @@ describe.skipIf(!exe)("the menu bar, in a browser", () => {
     expect((e as Error).message).toContain(`No menu entry "${M}/menu[1]/menu[7]" on this screen`);
     expect(Date.now() - t0).toBeLessThan(3000);
     expect(await menuLines()).toEqual([]);
+  }, 30_000);
+
+  // Measured on ECC: a menu that was opened once is no template any more, its rows stay in the page when it closes.
+  test("after a menu was opened and closed, the menu bar is still in the view and its menus open", async () => {
+    await open();
+    await act(session, { do: "select", id: `${M}/menu[1]` });
+    await act(session, { do: "select", id: `${M}/menu[1]/menu[0]` });
+    await page.evaluate(() => document.querySelectorAll(".lsMnu--root xmp").forEach((x) => x.remove()));
+    await act(session, { do: "key", key: "Escape" });
+    const view = (await webguiLookInFrame(page.mainFrame(), true)) ?? "";
+    expect(view).toContain('mbar  menubar  Order {menu[0]}, Goto {menu[1]}  (every entry and its path: look id "mbar")');
+    expect(await act(session, { do: "select", id: `${M}/menu[0]` })).toContain("opened");
+    // While the menu is open its rows are the "menu" lines: no second line for the menu bar.
+    expect((await webguiLookInFrame(page.mainFrame(), true)) ?? "").not.toContain("menubar");
+    await act(session, { do: "key", key: "Escape" });
+    expect(await act(session, { do: "select", id: `${M}/menu[1]/menu[0]/menu[3]` })).toBe(`menu ${M}/menu[1]/menu[0]/menu[3]`);
+    expect(await chosen()).toBe(`${M}/menu[1]/menu[0]/menu[3]`);
+  }, 30_000);
+
+  test("an entry named from the menu bar (mbar/menu[1]/menu[1]) is chosen as by its whole id", async () => {
+    await open();
+    expect(await act(session, { do: "select", id: "mbar/menu[1]/menu[1]" })).toBe(`menu ${M}/menu[1]/menu[1]`);
+    expect(await chosen()).toBe(`${M}/menu[1]/menu[1]`);
   }, 30_000);
 });

@@ -876,6 +876,7 @@ export function extractLook(limits: {
       out(0, `wnd[0]/sbar  status  ${mt ? `${mt}: ` : ""}${text}`);
   }
   // Menu bar: Web GUI keeps it as an HTML template behind the Menu button.
+  let mbarShown = false;
   for (const x of Array.from(document.querySelectorAll(".lsMnu--root xmp"))) {
     const src = x.textContent ?? "";
     if (
@@ -905,8 +906,19 @@ export function extractLook(limits: {
         }
       }
     // The entries below the top menus are not on this line: the view of the menu bar alone lists them all.
-    if (names.length) out(0, `wnd[0]/mbar  menubar  ${names.join(", ")}  (every entry and its path: look id "mbar")`);
+    if (names.length) {
+      out(0, `wnd[0]/mbar  menubar  ${names.join(", ")}  (every entry and its path: look id "mbar")`);
+      mbarShown = true;
+    }
     break;
+  }
+  // A menu that was opened once is a template no more: Web GUI has drawn its rows into the page and keeps
+  // them there, far above the window, after the menu is closed (measured on ECC). The line is read from them.
+  if (!mbarShown) {
+    const tops = Array.from(document.querySelectorAll("tr[ct^='POMN']")).filter((tr) => /^wnd\[0\]\/mbar\/menu\[\d+\]$/.test(tr.id));
+    const names = tops.map((tr) => `${prop(tr.getAttribute("data-ls") ?? "", 1) || norm(tr.textContent)} {${tr.id.slice("wnd[0]/mbar/".length)}}`);
+    // While the menu is open its rows are in the view as "menu" lines (below).
+    if (names.length && !tops.some((tr) => visible(tr) && inView(tr))) out(0, `wnd[0]/mbar  menubar  ${names.join(", ")}  (every entry and its path: look id "mbar")`);
   }
   // Open popup menus: rows whose DOM id is the scripting id.
   // A closed menu stays in the page, moved far above the window (top -9999 px): only rows in the window are open.
@@ -1625,6 +1637,31 @@ export function extractMenus(): MenuEntry[] {
         /* not JSON */
       }
     }
+  }
+  // A menu that was opened once is a template no more: Web GUI has drawn its rows into the page and keeps
+  // them there, far above the window, after the menu is closed (measured on ECC: the top level and each
+  // submenu that was opened). Those entries are read from the rows.
+  for (const tr of Array.from(document.querySelectorAll("tr[ct^='POMN'][lsdata]"))) {
+    const ls = tr.getAttribute("lsdata") ?? "";
+    let sid = "";
+    let text = "";
+    let key = "";
+    if (ls.startsWith('{"')) {
+      try {
+        const o = JSON.parse(ls) as Record<string, unknown>;
+        const sidObj = Object.values(o).find((v) => v && typeof v === "object" && "SID" in (v as object)) as { SID?: string } | undefined;
+        sid = sidObj?.SID ?? "";
+        text = typeof o["1"] === "string" ? o["1"] : "";
+        key = typeof o["15"] === "string" ? o["15"] : "";
+      } catch {
+        /* not JSON */
+      }
+    } else {
+      sid = (/SID:'((?:[^'\\]|\\.)*)'/.exec(ls)?.[1] ?? "").replace(/\\\\/g, "\\");
+      text = prop(ls, 1);
+      key = prop(ls, 15);
+    }
+    if (/^wnd\[\d+\]\/mbar\/menu\[/.test(sid)) add(sid, text, key);
   }
   return out;
 }
