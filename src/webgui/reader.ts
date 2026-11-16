@@ -25,7 +25,7 @@ import { shortIds } from "../core/ids.js";
 import { readRows } from "../core/rows.js";
 import { ActionError, type Action, type Assessment, type LookOptions } from "../core/types.js";
 import { LOGON_REFUSAL, okcodeKind } from "../core/words.js";
-import { assessAction, popupButton } from "./assess.js";
+import { assessAction, popupButton, questionRefusal } from "./assess.js";
 import { checkedNow, clean, clickForRoundtrip, clickMenuRow, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlLook, pressOverflow, setRefusal, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
 import { LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
 import { chooseEntry, entriesOf, markScrolled, notOnScreen, scrollTo, selectRow } from "./lists.js";
@@ -56,6 +56,12 @@ export async function assess(session: WebGuiSession, action: Action): Promise<As
     const view = screen.text;
     const { menus, focus } = await guardFacts(session, action.do === "key" || action.do === "okcode");
     const facts = screen.facts ?? (await session.frame.evaluate(extractFacts));
+    // Enter on a question popup is never sent, with writing on or off: the answer lists the popup's answers.
+    if (action.do === "key") {
+      const raw = action.key ?? action.value;
+      const hit = typeof raw === "number" || typeof raw === "string" ? popupButton(view, raw, focus?.sid) : undefined;
+      if (hit?.asksDefault) throw new ActionError(questionRefusal(hit));
+    }
     // The control the action will act on, resolved as `act` resolves it: the guard judges that one.
     const resolved = action.id ? { ...action, id: resolveIn(view, String(action.id)) } : action;
     const verdict = assessAction(resolved, view, menus, { language: facts.language, focus });
@@ -205,14 +211,8 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
           await clickForRoundtrip(session, hit.control.id);
           return `key ${k} (pressed ${label(hit.control)})`;
         }
-        if (hit?.asksDefault) {
-          // Enter would press the popup's default answer, and the page does not tell which one that is:
-          // on "Do you wish to save your data first?" it is Yes. Pressing blind saved a document once.
-          const answers = hit.window.controls.filter((c) => c.kind === "button" && c.id.includes("/usr/"));
-          throw new ActionError(
-            `Enter on the popup "${hit.window.title}" would press its default answer, and the server cannot tell which one that is, so nothing was pressed. Press the answer you mean by its id: ${answers.map(label).join(", ")}.`,
-          );
-        }
+        // A question popup (Yes / No in its body): Enter presses nothing, whatever has the focus.
+        if (hit?.asksDefault) throw new ActionError(questionRefusal(hit));
       }
       if (n !== undefined) {
         const f = session.frame;

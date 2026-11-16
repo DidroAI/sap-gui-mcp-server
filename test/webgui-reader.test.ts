@@ -44,7 +44,7 @@ const PAGE = `<!doctype html><html lang="en"><head><title>Synthetic</title></hea
 <div id="sysInfoAreaMenuItemSAPITS_MBAR_TRANSACTION" lsdata="{0:'abc',1:'Transaction',13:'ZT02'}"></div>
 <div ct="PW" id="P1" lsdata="{0:'x',5:${sid("wnd[1]", "GuiModalWindow", 1)}}"><span id="P1-ttltxt">Exit Order Processing</span>
 <span lsdata="{1:'',3:'Do\\x20you\\x20wish\\x20to\\x20save\\x20your\\x20data\\x20first?',19:${sid("wnd[1]/usr/txtSPOP-TEXTLINE1", "GuiLabel", 1)}}">Do you wish to save your data first?</span>
-<div lsdata="{0:'Yes',28:${sid("wnd[1]/usr/btnSPOP-OPTION1", "GuiButton", 1)}}">Yes</div>
+<div id="YES" tabindex="0" onclick="window.yes=1" onkeydown="if(event.key==='Enter')window.yes=1" lsdata="{0:'Yes',28:${sid("wnd[1]/usr/btnSPOP-OPTION1", "GuiButton", 1)}}">Yes</div>
 <div lsdata="{0:'No',28:${sid("wnd[1]/usr/btnSPOP-OPTION2", "GuiButton", 1)}}">No</div></div>
 </body></html>`;
 
@@ -227,15 +227,11 @@ describe.skipIf(!exe)("Web GUI reader in a browser", () => {
     await page.locator("#B1").focus(); // "Delete item"
     expect(await page.evaluate(focusedControl)).toMatchObject({ sid: "wnd[0]/usr/btnBT_DEL", type: "GuiButton" });
     // Space presses the focused button. Enter goes to the popup that is open (a save question with its answers
-    // in its body, focus on neither): it would press the popup's default answer, still a commit, said as such.
+    // in its body): it would press the popup's default answer, and is refused before the guard rates it.
     const space = await webguiAssessInFrame(f, { do: "key", key: "Space" });
     expect(space.risk).toBe("commit");
     expect(space.reason).toContain("Delete item");
-    for (const key of [0, "Enter"]) {
-      const a = await webguiAssessInFrame(f, { do: "key", key });
-      expect([key, a.risk]).toEqual([key, "commit"]);
-      expect(a.reason).toContain("default answer of the popup");
-    }
+    for (const key of [0, "Enter"]) expect(await refusal(webguiAssessInFrame(f, { do: "key", key }))).toContain("would press its default answer");
     await page.locator("#B2").focus(); // "Display item": safe, but the popup asks whether to save, so Enter stays a commit
     expect((await webguiAssessInFrame(f, { do: "key", key: "Space" })).risk).toBe("navigate");
     await page.locator("#F1").focus();
@@ -257,6 +253,22 @@ describe.skipIf(!exe)("Web GUI reader in a browser", () => {
     expect(r).toContain("would press its default answer");
     expect(r).toContain('wnd[1]/usr/btnSPOP-OPTION1 "Yes"');
     expect(r).toContain('wnd[1]/usr/btnSPOP-OPTION2 "No"');
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  });
+
+  test("Enter on a Yes / No popup is refused also when SAP has put the focus on an answer (KEY-03)", async () => {
+    const f = page.mainFrame();
+    await page.locator("#YES").focus();
+    for (const key of [0, "Enter"]) {
+      // The guard's step and the action itself: both say it, so it holds with writing on and off.
+      for (const r of [await refusal(webguiAssessInFrame(f, { do: "key", key })), await refusal(webguiActInFrame(f, { do: "key", key }))]) {
+        expect(r).toContain('would press the answer SAP has put the focus on (wnd[1]/usr/btnSPOP-OPTION1 "Yes")');
+        expect(r).toContain('press the answer you mean by its id: wnd[1]/usr/btnSPOP-OPTION1 "Yes", wnd[1]/usr/btnSPOP-OPTION2 "No"');
+      }
+    }
+    expect(await page.evaluate(() => (window as unknown as { yes?: number }).yes)).toBeUndefined();
+    // The answer pressed by its id is still rated for what it does: Yes on a save question writes.
+    expect((await webguiAssessInFrame(f, { do: "press", id: "btnSPOP-OPTION1" })).risk).toBe("commit");
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   });
 
