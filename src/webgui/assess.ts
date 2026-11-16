@@ -27,7 +27,7 @@ import { resolveId } from "../core/ids.js";
 import type { Action, Assessment } from "../core/types.js";
 import { CLOSES_SESSIONS, commitCode, commitWord, discardsInput, endsLogon, isGotoMenu, languageCovered, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
 import type { MenuEntry } from "./page.js";
-import { vkey } from "./reader.js";
+import { vkey } from "./keys.js";
 
 /**
  * Keys that never write, whatever the screen: the safe SAP function keys

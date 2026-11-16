@@ -21,8 +21,6 @@ export interface LookResult {
   system: string;
   screen: string;
   windows: { id: string; title: string; lines: string[] }[];
-  /** Lines of HTML viewers (frames inside the screen), by viewer id. */
-  viewers: string[];
 }
 
 /** The full read of one Web GUI frame: every control as a line, by window. */
@@ -772,8 +770,78 @@ export function extractLook(limits: {
     screen: screen ?? "",
     system,
     windows,
-    viewers: [],
   };
+}
+
+/** One of Web GUI's own dialogs (session timeout, connection lost): see extractClientPopups. */
+export interface ClientPopup {
+  id: string;
+  title: string;
+  text: string;
+  buttons: string[];
+}
+
+/**
+ * Web GUI's own dialogs (session timeout, connection lost) are popup windows
+ * of the page, not SAP windows: they carry no scripting id, so extractLook
+ * does not list them, yet they block the screen. The reader lists them as
+ * WINDOW browser.
+ */
+export function extractClientPopups(): ClientPopup[] {
+  const out: ClientPopup[] = [];
+  const clean = (t: string | null | undefined) => (t ?? "").replace(/\s+/g, " ").replace(/^ | $/g, "");
+  for (const el of Array.from(document.querySelectorAll<HTMLElement>("div[ct='PW']"))) {
+    const st = getComputedStyle(el);
+    if (st.display === "none" || st.visibility === "hidden" || el.offsetWidth === 0) continue;
+    // An SAP popup window holds controls with scripting ids; those are read by extractLook.
+    if (el.querySelector("[lsdata*='wnd[']")) continue;
+    const title = clean(el.querySelector(".urPWTitleText")?.textContent);
+    const body = el.querySelector<HTMLElement>(".urPWContent");
+    const buttons = Array.from(el.querySelectorAll<HTMLElement>("[ct='B'],button,[role='button']"))
+      .map((b) => clean(b.textContent))
+      .filter((t) => t.length > 0);
+    const text = clean(body?.innerText);
+    out.push({ id: el.id, title, text, buttons });
+  }
+  return out;
+}
+
+/**
+ * The HTML viewers of the screen (frames inside the Web GUI frame), by
+ * scripting id and the DOM id of their iframe. Runs after normalizeLsdata.
+ */
+export function extractViewerIds(): { sid: string; dom: string }[] {
+  return Array.from(document.querySelectorAll("iframe[data-ls*=\"Type:'GuiHtmlViewer'\"]"))
+    .filter((e) => e.getBoundingClientRect().width > 0)
+    .map((e) => ({
+      sid: /SID:'((?:[^'\\]|\\.)*)'/.exec(e.getAttribute("data-ls") ?? "")?.[1] ?? "",
+      dom: e.id,
+    }));
+}
+
+/**
+ * The highest window number on screen: 0 when no popup is open. Runs in the
+ * Web GUI frame; reads `lsdata` itself.
+ */
+export function topWindowOpen(): number {
+  let max = 0;
+  for (const el of Array.from(document.querySelectorAll("[lsdata*='wnd[']"))) {
+    const m = /wnd\[(\d+)\]/.exec(el.getAttribute("lsdata") ?? "");
+    if (m && (el as HTMLElement).offsetWidth > 0) max = Math.max(max, Number(m[1]));
+  }
+  return max;
+}
+
+/**
+ * Is the menu row with this DOM id open on screen? A row of a popup menu (a
+ * context menu, a dropdown button's menu, the ">>" menu of a toolbar). A
+ * closed menu stays in the page far above the window.
+ */
+export function menuRowOpen(rowId: string): boolean {
+  const tr = document.getElementById(rowId);
+  if (!tr || tr.tagName !== "TR" || !(tr.getAttribute("ct") ?? "").startsWith("POMN")) return false;
+  const r = tr.getBoundingClientRect();
+  return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight;
 }
 
 /** Runs in an HTML viewer's frame: its form controls and links, numbered. */
