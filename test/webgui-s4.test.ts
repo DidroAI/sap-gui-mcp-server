@@ -203,6 +203,14 @@ describe.skipIf(!exe)("Web GUI reader: SAP GUI for HTML of S/4HANA 2025, in a br
     expect(await act({ do: "press", id: "close" })).toContain("pressed wnd[1]/close");
   });
 
+  test("FIORI-07: without the system information area, the transaction is the one Web GUI's own state names, not the start one", async () => {
+    const start = `<script>var cfg = {urltxstr:'VA01'};</script>`;
+    await load(POPUP.replace("</body>", `${start}</body>`));
+    expect((await fullView())[0]).toContain("TRANSACTION VA01 (start)");
+    await load(POPUP.replace("</body>", `${start}<script>window.sap = { its: { arrSystemParams: { "t-code": "VA03" } } };</script></body>`));
+    expect((await fullView())[0]).toContain("TRANSACTION VA03  ");
+  });
+
   test("Enter on that question popup is refused, with the answers; the answer meant is pressed by its id", async () => {
     await load(POPUP);
     const said = await refusal(act({ do: "key", key: 0 }));

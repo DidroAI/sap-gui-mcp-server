@@ -960,6 +960,12 @@ export function extractLook(limits: {
     );
     if (m) [program, screen] = [m[1], m[2]];
   }
+  // Without that area (Web GUI inside the launchpad of S/4HANA 2025), Web GUI's own state names the transaction
+  // of the screen (sap.its.arrSystemParams["t-code"], measured: VA03 after /nVA03 from a VA01 tile).
+  if (!transaction) {
+    const live = (window as unknown as { sap?: { its?: { arrSystemParams?: Record<string, unknown> } } }).sap?.its?.arrSystemParams?.["t-code"];
+    if (typeof live === "string" && /^[A-Z0-9_/.]+$/i.test(live)) transaction = live.toUpperCase();
+  }
   if (!transaction) {
     const m = /urltxstr:'\*?([A-Z0-9_/]+)/.exec(
       document.documentElement.innerHTML,
@@ -1736,6 +1742,10 @@ export function extractFacts(): PageFacts {
     client ||= both[2] ?? "";
   }
   let transaction = sys("TRANSACTION");
+  if (!transaction && webgui) {
+    const live = (window as unknown as { sap?: { its?: { arrSystemParams?: Record<string, unknown> } } }).sap?.its?.arrSystemParams?.["t-code"];
+    if (typeof live === "string" && /^[A-Z0-9_/.]+$/i.test(live)) transaction = live.toUpperCase();
+  }
   if (!transaction && webgui) {
     const m = /urltxstr:'\*?([A-Z0-9_/]+)/.exec(document.documentElement.innerHTML);
     if (m?.[1]) transaction = `${m[1]} (start)`;
