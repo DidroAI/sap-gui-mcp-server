@@ -1231,6 +1231,8 @@ export function normalizeLsdata(): number {
         .join(",")}}`;
     return String(v);
   };
+  /** A cell of a classic list by the kind of its element: text, icon, checkbox. */
+  const LIST_CELL_TYPES: Record<string, string> = { ALT: "ABAPLISTTEXT", ALI: "ABAPLISTIMAGE", ALC: "ABAPLISTCHECKBOX" };
   let n = 0;
   for (const el of Array.from(document.querySelectorAll("[lsdata]"))) {
     const ls = el.getAttribute("lsdata") ?? "";
@@ -1243,6 +1245,10 @@ export function normalizeLsdata(): number {
         /* keep the original */
       }
     }
+    // S/4HANA 2025 does not type the cells of a classic list (only {"SID":"wnd[1]/usr/lbl[1,4]"}): the element's
+    // own kind says what the cell is, as ECC's Type does. Without it no row of such a list was read.
+    const cell = LIST_CELL_TYPES[el.getAttribute("ct") ?? ""];
+    if (cell && /SID:'/.test(out) && !/[{,]Type:'/.test(out)) out = out.replace(/SID:'((?:[^'\\]|\\.)*)'/, `SID:'$1',Type:'${cell}'`);
     el.setAttribute("data-ls", out);
     el.setAttribute("data-ls-src", ls);
     n++;
