@@ -31,7 +31,7 @@ export async function evalLs<A, R>(session: WebGuiSession, fn: (arg: A) => R, ar
 }
 
 /** The expression evalLs runs: normalizeLsdata (its failure ignored), then `fn(arg)`. Page functions close over nothing, so their source runs as it is. */
-export function withLs<A, R>(fn: (arg: A) => R, arg: A): string {
+function withLs<A, R>(fn: (arg: A) => R, arg: A): string {
   return `(() => { try { (${normalizeLsdata})(); } catch {} return (${fn})(${arg === undefined ? "" : JSON.stringify(arg)}); })()`;
 }
 
