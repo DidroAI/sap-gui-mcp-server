@@ -47,7 +47,7 @@ const GRID = `
   <tr>${th(1, "CARRID", "ID", "urST3HUnsel", "headaoo")}${th(2, "PLANETYPE", "Plane Type", "urST3HSel")}${th(3, "SEATSOCC", "Occupied", "urST3HUnsel", "headotf")}</tr></thead>
   <tbody>
   <tr>${td(1, 1, "AA")}${cellInput(1, 2, "747")}${cellInput(1, 3, "373")}</tr>
-  <tr>${td(2, 1, "AZ")}${cellInput(2, 2, "A380")}${td(2, 3, "12")}</tr>
+  <tr>${td(2, 1, "AZ")}${cellInput(2, 2, "A380")}${td(2, 3, "12", "3:'COL_TOTAL',").replace("<td ", '<td class="urSTC urColorTotalIntensifiedOff" ')}</tr>
   <tr>${td(3, 1, "", "3:'COL_TOTAL_INTENSIFIED',")}${td(3, 2, "", "3:'COL_TOTAL_INTENSIFIED',")}${td(3, 3, "385", "3:'COL_TOTAL_INTENSIFIED',")}</tr>
   </tbody></table>`;
 
@@ -163,6 +163,8 @@ describe.skipIf(!exe)("Web GUI reader: edge cases of round 3, in a browser", () 
     );
     expect(lines).toContain("  row 0: AA | 747 | 373");
     expect(lines).toContain("  row 2 (total):  |  | 385");
+    // R2 (SE16N): a column drawn in the totals colour does not make its rows totals rows.
+    expect(lines).toContain("  row 1: AZ | A380 | 12");
   });
 
   test("ECCSCR-05: set with row and col types into a cell of a grid, without the keys that mean something else there", async () => {
