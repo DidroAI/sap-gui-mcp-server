@@ -14,6 +14,7 @@ import { compact } from "../core/compact.js";
 import { type Action, ActionError, type Assessment, type Driver, type LookOptions, type SessionInfo, type Surface } from "../core/types.js";
 import { extractFacts, type PageFacts } from "./page.js";
 import { act, assess, look, view } from "./reader.js";
+import { runningSince } from "./running.js";
 import { lookRead } from "./screen.js";
 import { endedText, WebGuiSession } from "./session.js";
 
@@ -124,12 +125,12 @@ export async function webguiView(session: WebGuiSession, options: LookOptions): 
     const r = await lookRead(session, true);
     if (r.ended) return endedView(r.ended);
     const text = options.compact ? compact(r.text) : r.text;
-    return r.locked === true ? `${text}\n${STILL_WORKING}` : text;
+    return r.locked === true ? `${text}\n${STILL_WORKING}${runningSince(session)}` : text;
   }
   const gone = await session.ended();
   if (gone) return endedView(gone);
   const text = await view(session, options);
-  if ((await session.locked()) === true) return `${text}\n${STILL_WORKING}`;
+  if ((await session.locked()) === true) return `${text}\n${STILL_WORKING}${runningSince(session)}`;
   return text;
 }
 
