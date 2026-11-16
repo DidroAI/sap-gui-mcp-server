@@ -18,6 +18,7 @@ import type { Registry } from "../core/registry.js";
 import { exportTest, TARGET_NAMES, TARGETS } from "./export/index.js";
 import { FILE_SUFFIX, inputsOf, slug } from "./format.js";
 import type { Recorder } from "./recorder.js";
+import { repairSchema } from "./repair.js";
 import { replay, resultText } from "./replay.js";
 
 const text = (t: string): CallToolResult => ({ content: [{ type: "text", text: t }] });
@@ -149,6 +150,13 @@ A check or capture is tried on the screen as it is now and refused if it does no
           .enum(["stop", "continue"])
           .optional()
           .describe('a screen with a choice the recording does not have (availability control). stop (default): the step fails and names the ways on. continue: press its neutral Continue and say so'),
+        from: z.number().int().min(1).optional().describe("resume at this step on the screen as it is (after a failure there), with the variables the failed run ended with"),
+        repair: repairSchema
+          .optional()
+          .describe(
+            'with "from": a repair for that one step, then the replay goes on as recorded. {"why":"what changed","actions":[...],"then":"retry|instead|after"} (at most 4 actions; retry: then the recorded action runs; instead: they replace it; after: it already ran) or {"why":"...","capture":{"var":"order","from":"status","pattern":"Order (\\d+)"}} for a number SAP makes anew when it saves. Refused: a write the recorded step does not have, leaving the transaction, a typed value that is neither in the recording nor on the screen. The recorded checks still judge the step. The answer holds a proposed test; nothing is saved',
+          ),
+        format: z.enum(["text", "json"]).optional().describe("json: the result as data (steps with the phase of a failure, the full screen, the proposed test)"),
         session,
       },
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
@@ -162,9 +170,10 @@ A check or capture is tried on the screen as it is now and refused if it does no
         // The whole replay is one turn of the session: no other call acts in between.
         return serial(a.session, `sap_replay ${test.name}`, async () => {
           const { driver } = await registry.session(a.session);
-          const r = await replay(driver, policy, test, { ...(a.variables ? { variables: a.variables } : {}), ...(a.screens ? { screens: a.screens } : {}), ...(a.choices ? { choices: a.choices } : {}), leaveOnFailure: false });
+          const r = await replay(driver, policy, test, { ...(a.variables ? { variables: a.variables } : {}), ...(a.screens ? { screens: a.screens } : {}), ...(a.choices ? { choices: a.choices } : {}), ...(a.from !== undefined ? { from: a.from } : {}), ...(a.repair ? { repair: a.repair } : {}), leaveOnFailure: false });
           const needs = inputsOf(test);
-          const out = `${resultText(r)}${r.aborted && needs.length ? `\nThe test takes: ${needs.join(", ")}.` : ""}`;
+          const said = `${resultText(r)}${r.aborted && needs.length ? `\nThe test takes: ${needs.join(", ")}.` : ""}`;
+          const out = a.format === "json" ? JSON.stringify({ ...r, text: said }) : said;
           return r.passed ? text(out) : fail(out);
         });
       }),
