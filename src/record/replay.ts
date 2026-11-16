@@ -341,6 +341,10 @@ export async function replay(driver: Driver, policy: Policy, recorded: SapTest, 
         r.repair = { why: repair.why, outcome: "refused", did: [], ...(repair.then ? { then: repair.then } : {}) };
         const no = repairRefusal(step, repair, test);
         if (no) throw new RepairRefused(no);
+        // A screen whose ways on decide what is saved is the person's to answer, as in a replay without a repair.
+        const open = detour(screen);
+        if (open?.kind === "choice" && options.choices !== "continue")
+          throw new RepairRefused(`SAP shows ${a(open.what)} that offers a choice (${(open.ways ?? []).join("; ")}): which one is taken decides what is saved, so a repair does not take it. Record the test on data that shows this screen`);
         if (repair.actions?.length) {
           const run = await runRepairActions(driver, test, step, repair, vars, screen, (a) => guarded(driver, policy, a), () => read(driver)).catch((e) => {
             // An action SAP did not take: the repair was tried and did not work.
