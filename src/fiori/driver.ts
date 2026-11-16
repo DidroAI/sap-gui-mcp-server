@@ -328,7 +328,15 @@ export class FioriDriver implements Driver {
             if (!lines && single.had) said = ` (${ONE_LINE_NOTE})`;
             await target.fill(lines ? String(action.value ?? "") : single.text, { timeout: 8000 });
             // Tab leaves the field, which is when UI5 takes the value; a search field searches on Enter.
-            await target.press(r.enter || action.enter === true ? "Enter" : "Tab", { timeout: 8000 });
+            const key = r.enter || action.enter === true ? "Enter" : "Tab";
+            try {
+              await target.press(key, { timeout: 1500 });
+            } catch (e) {
+              // UI5 drew the field again while it was filled (a date range that was cleared does), so the
+              // element that was marked is gone: the focus is still in the field, and the key goes there.
+              if ((await target.count().catch(() => 1)) > 0) throw e;
+              await this.page.keyboard.press(key);
+            }
           } else if (op === "dblclick") await target.dblclick({ timeout: 8000 });
           else await target.click({ timeout: 8000 });
           break;
