@@ -229,6 +229,10 @@ complete it: a popup it raised). The other kind of repair is a capture, for
 a number SAP makes anew when it saves:
 `{"why": "...", "capture": {"var": "order", "from": "status", "pattern": "Order (\\d+) has been saved"}}`.
 
+With `after`, `"earlier": [...]` names the actions an earlier try at the
+same step already ran without getting it through: they are not run again,
+and the proposed recording holds them before the new ones.
+
 The server calls no model. It carries out the repair under rules the caller
 cannot change (`src/record/repair.ts`):
 

@@ -123,6 +123,30 @@ describe("a repair for one step", () => {
     expect((await replay(sap.driver(), policy, parseTest(serializeTest(p.test)))).passed).toBe(true);
   });
 
+  test("after, with what an earlier try already ran: the proposed test holds both tries' actions, and replays", async () => {
+    const { test: t, sap, policy } = await recordDisplay();
+    const second = { title: "Second question", text: "Really?", question: true };
+    sap.popupsFor.set("5000", [question, second]);
+    await replay(sap.driver(), policy, t, { leaveOnFailure: false });
+    // A first try answers the first popup only: the step still fails, on the second popup.
+    const one = await replay(sap.driver(), policy, t, { from: 3, repair: { why: "a question", actions: [{ do: "press", id: "wnd[1]/usr/btnSPOP-OPTION1" }], place: "after" }, leaveOnFailure: false });
+    expect(one.steps[0]?.repair?.outcome).toBe("failed");
+    const two = await replay(sap.driver(), policy, t, {
+      from: 3,
+      repair: { why: "two questions", actions: [{ do: "press", id: "wnd[1]/usr/btnSPOP-OPTION1" }], earlier: [{ do: "press", id: "wnd[1]/usr/btnSPOP-OPTION1" }], place: "after" },
+    });
+    expect(two.passed).toBe(true);
+    const p = two.proposal as NonNullable<typeof two.proposal>;
+    expect(p.test.steps.map((s) => s.action?.do)).toEqual(["okcode", "set", "key", "press", "press", "key"]);
+    expect(p.origin).toEqual([1, 2, 3, 3, 3, 4]);
+    expect(p.test.steps[2]?.after).toBeUndefined();
+    expect(p.test.steps[4]?.expect?.length).toBe(1);
+    expect((await replay(sap.driver(), policy, parseTest(serializeTest(p.test)))).passed).toBe(true);
+    // Only with "after".
+    const no = await replay(sap.driver(), policy, t, { from: 3, repair: { why: "x", actions: [{ do: "key", key: 0 }], earlier: [{ do: "key", key: 0 }], place: "before" } });
+    expect(no.steps[0]?.failures[0]).toContain('go with place "after"');
+  });
+
   test("instead: a renamed field is set under its new id", async () => {
     const { test: t, sap, policy } = await recordDisplay();
     const old = structuredClone(t);

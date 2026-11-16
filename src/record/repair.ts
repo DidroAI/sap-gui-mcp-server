@@ -59,6 +59,11 @@ export const repairSchema = z.object({
    */
   place: z.enum(["before", "instead", "after"]).optional(),
   /** A value SAP makes anew at each run (a document number), read into a variable from now on. */
+  /**
+   * With place "after": actions an earlier try at this step already ran, in order, when that try did not get the
+   * step through. They are not run again; the proposed test holds them before `actions`, because the run did.
+   */
+  earlier: z.array(z.record(z.string(), z.unknown())).optional(),
   capture: z.object({ var: z.string(), from: z.enum(["status", "field", "title"]), id: z.string().optional(), pattern: z.string().min(1) }).optional(),
 });
 export type Repair = z.infer<typeof repairSchema>;
@@ -102,6 +107,7 @@ export function repairRefusal(step: Step, repair: Repair, test: SapTest): string
   if (n > MAX_REPAIR_ACTIONS) return `a repair is at most ${MAX_REPAIR_ACTIONS} actions (got ${n}): a step that needs more has changed too much, record it again`;
   if (n && !repair.place) return 'a repair with actions says "place": before (then the recorded action runs), instead (they replace it) or after (it already ran)';
   if (n && repair.place === "instead" && !step.action) return "this step has no action to replace";
+  if (repair.earlier?.length && repair.place !== "after") return 'actions of an earlier try ("earlier") go with place "after": they ran after the recorded action';
   if (repair.capture) {
     if (step.risk !== "commit") return "a capture is for a number SAP makes when it saves: this step does not write, so a different value here is a different result, not a new number";
     if (!NAME.test(repair.capture.var)) return "a variable name is letters, digits and _, not starting with a digit";
@@ -297,13 +303,18 @@ export function propose(original: SapTest, working: SapTest, index: number, repa
     };
   }
   const test = structuredClone(original);
-  const fresh = structuredClone(added);
+  // What an earlier try ran comes first: the screens it was done on are not known here, so those steps hold none.
+  const earlier: Step[] = (repair.earlier ?? []).map((raw) => {
+    const { do: verb, ...rest } = normalizeAction(raw);
+    return { action: { do: verb, ...rest }, note: `Added by a repair: ${repair.why}` };
+  });
+  const fresh = [...earlier, ...structuredClone(added)];
   const list = fresh.map((s) => actionText(normalizeAction(s.action as Record<string, unknown>))).join(", then ");
   let changes: string[];
   // "before" on a screen the step was not recorded on: the recorded action had already run in this run and led
   // there, and it ran again after the repair. The proposed test holds what the run did: the action, the added
   // actions, the action again with its checks.
-  const at = fresh[0]?.on;
+  const at = added[0]?.on;
   const ranBefore = repair.place === "before" && !!step.action && !!step.on && !!at && (["transaction", "program", "screen"] as const).some((k) => step.on?.[k] && at[k] && step.on[k] !== at[k]);
   if (ranBefore) {
     const { note: _note, expect: _expect, capture: _capture, ...bare } = structuredClone(step);
@@ -325,7 +336,8 @@ export function propose(original: SapTest, working: SapTest, index: number, repa
       changes = [`Step ${n} (${what}): ${repair.why}`, `Step ${n} replaced by: ${list}. Its checks are unchanged.`];
     } else {
       const first = fresh[0] as Step;
-      const { note: _note, expect: _expect, capture: _capture, ...bare } = kept;
+      // The step now leads to the screen the first added action was done on; when that is not known, to no checked screen.
+      const { note: _note, expect: _expect, capture: _capture, after: _after, ...bare } = kept;
       test.steps.splice(index, 1, { ...bare, ...(first.on ? { after: first.on } : {}) }, ...fresh);
       changes = [`Step ${n} (${what}): ${repair.why}`, `Added after step ${n}: ${list}. The checks of step ${n} now follow the added action${fresh.length > 1 ? "s" : ""}.`];
     }
