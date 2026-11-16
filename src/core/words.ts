@@ -517,6 +517,22 @@ export function runSwitch(name: string, label: string): "test" | "update" | unde
   return undefined;
 }
 
+/**
+ * A report that shows a list often asks on its selection screen how the list
+ * is to look: "Scope of List", "List with Items", "Layout", "Display
+ * Variant". A report that asks this ends in a list (from which the user may
+ * act, on a screen the guard judges again), whatever verb its title holds.
+ * Known by the label, and by the parameter names SAP uses for it (LISTU,
+ * P_VARI, P_LAYOUT), the same in every logon language.
+ */
+const LIST_CHOICE_RE = /(?<![\p{L}\p{N}])(lists?|layout|display variant|liste|listumfang|listvariante|anzeigevariante|variante d'affichage|mise en forme|lista|variante de visualización|disposición)(?![\p{L}\p{N}])/iu;
+const LIST_CHOICE_ID_RE = /^(LISTU|(P|PA|SO?)?_?(VARI|VARIANT|VARIA|LAYOUT|LAYO|LVAR|ALV_?VAR\w*))$/i;
+
+/** Does a field, checkbox or radio button of a selection screen choose how the report's list looks? */
+export function listChoice(name: string, label: string): boolean {
+  return LIST_CHOICE_ID_RE.test(name) || LIST_CHOICE_RE.test(label);
+}
+
 // ---- what a popup or a menu is about ----------------------------------------------------
 
 /**

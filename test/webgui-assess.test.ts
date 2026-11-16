@@ -630,6 +630,24 @@ describe("Execute on a selection screen: safe for a list, a commit for a report 
     expect(all(selection("Deletion of Jobs"), { language: "JA" })[0]).toBe("navigate");
   });
 
+  test("R3: a report that asks how its list looks, and a screen of a dialog program, run whatever the title says", () => {
+    // ME28: the title names an action, the screen asks for the scope of the list.
+    const release = "Release (Approve) Synthetic Documents";
+    expect(all(selection(release))[0]).toBe("commit");
+    expect(all(selection(release, 'wnd[0]/usr/ctxtLISTU  field  Scope of List = "BEST"  (edit)'))).toEqual(["navigate", "navigate", "navigate", "navigate"]);
+    expect(all(selection(release, "wnd[0]/usr/chkP_MITPOS  checkbox  [ ] List with Items"))[0]).toBe("navigate");
+    expect(all(selection(release, 'wnd[0]/usr/ctxtP_VARI  field  レイアウト = ""  (edit)'), { language: "JA" })[0]).toBe("navigate");
+    expect(all(selection("Synthetische Belege freigeben", 'wnd[0]/usr/ctxtZZ1  field  Listumfang = "BEST"  (edit)'), { language: "DE" })[0]).toBe("navigate");
+    // A value that holds the word is no label.
+    expect(all(selection(release, 'wnd[0]/usr/ctxtZZ1  field  Name = "LIST"  (edit)'))[0]).toBe("commit");
+    // A test run that is not ticked still decides.
+    expect(all(selection(release, 'wnd[0]/usr/ctxtLISTU  field  Scope of List = "BEST"  (edit)', "wnd[0]/usr/chkTESTRUN  checkbox  [ ] Test Run"))[0]).toBe("commit");
+    // SM13: a module pool's screen 1000 with Execute; its title names the object ("Update Requests").
+    const sm13 = selection("Update Requests: Initial Screen").replace("PROGRAM ZREPORT", "PROGRAM SAPMZSYN").replace(/\n[^\n]*S_NAME[^\n]*/g, "");
+    expect(all(sm13)).toEqual(["navigate", "navigate", "navigate", "navigate"]);
+    expect(all(sm13.replace("PROGRAM SAPMZSYN", "PROGRAM ZREPORT"))[0]).toBe("commit");
+  });
+
   test("the menu entry that carries F8 is judged the same; pushbuttons of the selection stay safe", () => {
     const menus: MenuEntry[] = [
       { sid: "wnd[0]/mbar/menu[0]", text: "Program", key: "" },
