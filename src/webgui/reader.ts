@@ -530,12 +530,13 @@ async function chooseSearchHelp(session: WebGuiSession, sid: string, wanted: unk
   if (!hit) throw new ActionError(`no search help "${clean(String(wanted))}" in ${sid}: ${listed}`);
   if (hit.selected) return `${sid} already shows "${hit.text}": nothing changed`;
   // The menu opens a moment after the click (300 ms was not always enough, measured on ECC): its row is waited
-  // for, and the button is clicked once more when the first click opened nothing.
+  // for (0.6 s, then 1.5 s), and the button is clicked once more when the first click opened nothing.
   const row = `${hit.dom}-menuItem`;
   let open = false;
   for (let attempt = 0; attempt < 2 && !open; attempt++) {
     await session.frame.locator(`[id="${helps.opener}"]`).first().click({ timeout: 3000 });
-    for (let i = 0; i < 15 && !open; i++) {
+    // The first click is often lost right after the popup was drawn again (measured: about every second time).
+    for (let i = 0; i < (attempt === 0 ? 6 : 15) && !open; i++) {
       await session.page.waitForTimeout(100);
       open = !!(await session.frame.evaluate(menuRowOpen, row).catch(() => ""));
     }
