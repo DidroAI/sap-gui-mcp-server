@@ -29,7 +29,7 @@ import { assessAction, popupButton, questionRefusal } from "./assess.js";
 import { checkedNow, clean, clickForRoundtrip, clickListLine, clickMenuRow, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlLook, pressOverflow, setCalendar, setRefusal, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
 import { LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
 import { chooseEntry, entriesOf, markScrolled, notOnScreen, scrollTo, selectRow } from "./lists.js";
-import { behindPopup, popupName, topPopup } from "./popups.js";
+import { behindPopup, popupName, terminationIn, topPopup, transactionOf } from "./popups.js";
 import { extractFacts, extractMenus, markControl, markRow, markSelector, menuRowOpen, openOverlay, submenuOpen, scrollControl, topWindowOpen } from "./page.js";
 import { checkBeforeAct, focusOf, freshView, guardFacts, isDropdown, kindIn, LOGGED_OFF, loggedOff, look, lookRead, menuLines, readViewer, resolveIn, type ScreenRead, scrollables, viewerFrames } from "./screen.js";
 import { IDLE_TIMEOUT_MS, LEAVE_MS, MAX_IDLE_TIMEOUT_MS, noTiming, timingText, type WebGuiSession } from "./session.js";
@@ -158,7 +158,15 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
     // A key the popup in front has no function for: the answer names the popup, the key did not reach the window behind it.
     const front = nothing && a.do === "key" && !LOCAL_KEY.test(vkey(a.key ?? a.value)) ? topPopup(before) : undefined;
     if (front) nothing = `Nothing was sent to SAP: the popup ${popupName(before, front)} is open and this key does nothing on it.`;
-    const note = nothing ? `${done}\n${nothing}` : done;
+    let note = nothing ? `${done}\n${nothing}` : done;
+    // A termination message that was confirmed: SAP has ended the transaction, and the answer says so
+    // (the screen that follows is the start screen or the menu, with no word about it).
+    const ended = terminationIn(before);
+    if (ended !== undefined && !nothing) {
+      const after = await look(session).catch(() => "");
+      if (after && terminationIn(after) === undefined)
+        note = `${note}\nSAP ended transaction ${transactionOf(before)} after the termination message "${ended}": input that was not saved there is lost. The screen below is where SAP went; start the transaction again to retry.`;
+    }
     return session.unsettled ? `${note}\n(Web GUI still showed its loading sign when the server stopped waiting: the step may not be over. If the screen below is not what the step should lead to, look again in a moment.)` : note;
   } catch (e) {
     throw tidy(e);
