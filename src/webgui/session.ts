@@ -6,6 +6,7 @@
  * round trip to start, then for the frame to be quiet.
  */
 import type { Frame, Page, Request } from "playwright-core";
+import { Unsaved } from "./unsaved.js";
 import { ActionError } from "../core/types.js";
 
 /** The URL path of SAP GUI for HTML. */
@@ -390,6 +391,8 @@ export class WebGuiSession {
   started = false;
   /** The last full view read, for the step that follows it (assess, then act). */
   view: { at: number; text: string } | undefined;
+  /** What the agent typed into the transaction since its last success message (see unsaved.ts). */
+  readonly unsaved = new Unsaved();
   /** Where the time of the current (or last) action went. */
   timing: Timing = noTiming();
   /** The last action's timing as one line (`timingText`). */
