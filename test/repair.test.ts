@@ -235,6 +235,17 @@ describe("what a repair may not do", () => {
     expect(r.steps[0]?.repair?.outcome).toBe("failed");
   });
 
+  test("a screen that offers a choice (availability control) is not a repair's to answer", async () => {
+    const { test: t, sap, policy } = await recordCreate();
+    sap.available = 5;
+    const first = await replay(sap.driver(), policy, t, { leaveOnFailure: false });
+    expect(first.steps[3]).toMatchObject({ outcome: "fail", phase: "landing" });
+    const r = await replay(sap.driver(), policy, t, { from: 4, repair: { why: "x", actions: [{ do: "press", id: "wnd[0]/tbar[1]/btn[0]" }], then: "after" }, leaveOnFailure: false });
+    expect(r.steps[0]?.failures[0]).toContain("offers a choice");
+    expect(r.steps[0]?.repair?.outcome).toBe("refused");
+    expect(sap.screen).toBe("500");
+  });
+
   test("write off: a repair cannot write either", async () => {
     const c = await recordCreate();
     const r = await replay(c.sap.driver(), policyFromEnv({}), c.test, { from: 5, repair: { why: "x", actions: [{ do: "key", key: 11 }], then: "instead" } });
