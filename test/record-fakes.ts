@@ -41,6 +41,9 @@ export class FakeSap implements Surface {
   popupsFor = new Map<string, Popup[]>();
   /** The popups open now, the one in front first. */
   popups: Popup[] = [];
+  /** After an action, this many looks still show the screen from before it, with the note that SAP is still working. */
+  lag = 0;
+  private stale: { view: string; left: number } | undefined;
   /** ZA01: a quantity above this shows the availability control screen after Enter. */
   available = Number.POSITIVE_INFINITY;
 
@@ -204,9 +207,17 @@ export class FakeSap implements Surface {
       },
       refresh,
       valid: async () => true,
-      look: async () => this.view(),
+      look: async () => {
+        if (this.stale && this.stale.left-- > 0) return `${this.stale.view}\nNOTE SAP is still working on a step (Web GUI has locked the page until its answer is drawn): this screen is from before that step and will change.`;
+        return this.view();
+      },
       assess: async (a): Promise<Assessment> => (a.do === "key" && a.key === 11 ? { risk: "commit", reason: "key 11: Save" } : { risk: "navigate", reason: a.do }),
-      act: async (a) => this.run(a),
+      act: async (a) => {
+        const view = this.view();
+        const note = this.run(a);
+        if (this.lag) this.stale = { view, left: this.lag };
+        return note;
+      },
       screenshot: async () => Buffer.from("png"),
       close: async () => {},
     };

@@ -16,7 +16,7 @@ import type { NormalizedAction } from "../core/action.js";
 import type { Driver, SessionInfo } from "../core/types.js";
 import { captureValue, evaluate } from "./checks.js";
 import { type Capture, type Check, FILE_SUFFIX, FORMAT, type Op, parametriseStep, parseTest, type SapTest, serializeTest, slug, type Step, type Subject, withVariable } from "./format.js";
-import { locate, type ParsedScreen, parseScreen, refOf } from "./screen.js";
+import { locate, type ParsedScreen, readSettled, refOf } from "./screen.js";
 
 export interface RecorderOptions {
   /** Where recordings are written and read (SAP_RECORD_DIR). */
@@ -54,8 +54,9 @@ export interface CaptureInput {
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const HOME = new Set(["SESSION_MANAGER", "SMEN", "S000"]);
 
+/** The screen as it is, once the step before it is over: never one from before that step. */
 async function screenOf(driver: Driver): Promise<ParsedScreen> {
-  return parseScreen(await driver.look({ compact: false }));
+  return readSettled(() => driver.look({ compact: false }));
 }
 
 /** One line per step, for the agent to read back what it recorded. */

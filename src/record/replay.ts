@@ -18,7 +18,7 @@ import type { Driver } from "../core/types.js";
 import { compact } from "../core/compact.js";
 import { captureValue, evaluate } from "./checks.js";
 import { actionWith, fill, inputsOf, type SapTest, type Step } from "./format.js";
-import { type Control, locate, type ParsedScreen, parseScreen } from "./screen.js";
+import { type Control, locate, type ParsedScreen, readSettled } from "./screen.js";
 
 export interface ReplayOptions {
   /** Values for the test's variables; the file's defaults fill the rest. */
@@ -72,8 +72,9 @@ const HOME = new Set(["SESSION_MANAGER", "SMEN", "S000"]);
 const first = (e: unknown) => (e instanceof Error ? e.message : String(e)).split("\n")[0] ?? "";
 const where = (r: { transaction?: string | undefined; program?: string | undefined; screen?: string | undefined }) => `${r.transaction ?? "?"} ${r.program ?? "?"}/${r.screen ?? "?"}`;
 
+/** The screen a step led to: read once the step is over (see readSettled). */
 async function read(driver: Driver): Promise<ParsedScreen> {
-  return parseScreen(await driver.look({ compact: false }));
+  return readSettled(() => driver.look({ compact: false }));
 }
 
 /** Runs one action the way sap_act does: the same guard, then the driver. Returns the driver's note, or throws with the refusal. */
