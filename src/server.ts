@@ -146,6 +146,7 @@ const actionSchema = z
     row: z.number().int().optional(),
     col: z.string().optional(),
     button: z.string().optional(),
+    app: z.string().optional().describe('open: the intent of a Fiori launchpad app, e.g. "#SalesOrder-manage"'),
     to: z.union([z.number().int(), z.string()]).optional().describe('scroll: a row counted from 0, or "next", "prev", "first", "last"; sideways "right", "left"'),
   })
   .passthrough();
@@ -355,6 +356,9 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
     const here = sessionRefusal(policy, info);
     if (here && !leavesTransaction(policy, action))
       return { driver, info, refused: `this session is in a transaction the agent may not work in: ${here}. Leave it with {"do":"okcode","value":"/n"} or open an allowed transaction with {"do":"okcode","value":"/n<transaction>"}.` };
+    // Opening an app by its intent is the Fiori launchpad's: said here, before the user is asked to confirm an action that cannot run.
+    if (action.do === "open" && info.surface !== "fiori")
+      throw new ActionError('open works in a Fiori launchpad tab only (sap_sessions lists the tabs). On an SAP GUI or Web GUI screen, open a transaction with {"do":"okcode","value":"/n<transaction>"}.');
     const assessment = await driver.assess(action);
     return { driver, info, assessment, verdict: decide(policy, action, assessment) };
   }
@@ -474,6 +478,7 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
   {"do":"grid","id":"...","row":0,"col":"VBELN","how":"double|select|cell"}   any row of the grid: one that is not on screen is scrolled to first; "select" selects the row, "cell" only puts the cursor on the cell; "select" with "col" and no "row" selects the column (for the grid's sort or total buttons)
   {"do":"toolbar","id":"...","button":"<id>"}
   {"do":"scroll","id":"...","to":120}               grid, table control, tree or list: to a row counted from 0, or "next", "prev", "first", "last"; a table control's columns: "right", "left" (Fiori: scrolls a table or the page when the view ends with SCROLL)
+  {"do":"open","app":"#SalesOrder-manage"}          Fiori only: opens a launchpad app by its intent (the part of its address after #; parameters allowed, e.g. "#SalesOrder-display?SalesOrder=4711"). Never a URL: the tab stays on its launchpad. An intent the user may not open answers with the launchpad's error popup
 Ids: use them as the view shows them. A toolbar button btn[N] is function key N: press it, or send the key. A handle such as cntlGRID1/shell or shellcont[1]/shell is a shortened id; an id that names several controls is refused with the list of them, and an id from an earlier screen is refused with the screen you are on.
 For "key", "key" is an SAP virtual key number (0 to 99) or a key name (Enter, Escape, Tab, F4, Control+S). The command field takes commands through "okcode" only.
 An action that may write to SAP is refused, run, or held for the user's yes, as the user set it up. When held, the client asks the user itself if it can, and the answer here is the result; if it cannot, the answer holds a token for sap_confirm.`,

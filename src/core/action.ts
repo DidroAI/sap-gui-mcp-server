@@ -13,6 +13,7 @@
  *   virtual key), or a key name in one spelling ("Enter", "Shift+Tab",
  *   "Control+s");
  * - an `okcode` action has a trimmed string `value`;
+ * - an `open` action has a trimmed string `app`;
  * - no string holds a carriage return or a line feed, except the `value` of
  *   a `set`: a text editor has lines. There a line break is one "\n", and
  *   none stands at either end. A surface types it into a control that has
@@ -24,7 +25,7 @@
 import { type Action, ActionError } from "./types.js";
 
 /** Every `do` the server accepts. Each surface supports a subset and says so when it does not. */
-export const VERBS = ["set", "press", "click", "key", "select", "check", "combo", "okcode", "f4", "focus", "dblclick", "tree", "grid", "toolbar", "scroll"] as const;
+export const VERBS = ["set", "press", "click", "key", "select", "check", "combo", "okcode", "f4", "focus", "dblclick", "tree", "grid", "toolbar", "scroll", "open"] as const;
 export type Verb = (typeof VERBS)[number];
 
 /** Older names that are still accepted, and the verb they mean. */
@@ -168,6 +169,11 @@ export function normalizeAction(input: unknown): NormalizedAction {
     if (key === undefined) throw new ActionError(KEY_HELP);
     out.key = key;
     delete out.value;
+  }
+  if (verb === "open") {
+    // A Fiori launchpad app by its intent; the Fiori surface checks its shape (never a URL).
+    if (typeof out.app !== "string" || !out.app.trim()) throw new ActionError('open needs "app": the intent of a Fiori launchpad app, e.g. {"do":"open","app":"#SalesOrder-manage"}.');
+    out.app = out.app.trim();
   }
   if (verb === "okcode") {
     if (typeof out.value !== "string" || !out.value.trim()) throw new ActionError('okcode needs "value", a string, e.g. {"do":"okcode","value":"/nVA03"}.');

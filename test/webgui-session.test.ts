@@ -19,3 +19,41 @@ describe("carriesStep: is a Web GUI request a round trip, or sent on the side", 
     expect(carriesStep('{"post":"action/1"}')).toBe(true);
   });
 });
+
+describe("closeTypeAhead: closing a type-ahead list keeps the focus in the field", () => {
+  const { closeTypeAhead } = require("../src/webgui/session.js") as typeof import("../src/webgui/session.js");
+  function page(shown: boolean, tabMovesTo: string) {
+    const state = { focus: "field", log: [] as string[] };
+    return {
+      state,
+      io: {
+        shown: async () => shown,
+        focused: async () => state.focus,
+        tab: async () => {
+          state.log.push("Tab");
+          state.focus = tabMovesTo;
+        },
+        focus: async (id: string) => {
+          state.log.push(`focus ${id}`);
+          state.focus = id;
+        },
+      },
+    };
+  }
+  test("Tab closes the list, then the focus goes back to the field: Enter stays an Enter in the field", async () => {
+    const p = page(true, "button-next-to-it");
+    expect(await closeTypeAhead(p.io)).toBe(true);
+    expect(p.state.log).toEqual(["Tab", "focus field"]);
+    expect(p.state.focus).toBe("field");
+  });
+  test("no list: no key is sent", async () => {
+    const p = page(false, "elsewhere");
+    expect(await closeTypeAhead(p.io)).toBe(false);
+    expect(p.state.log).toEqual([]);
+  });
+  test("Tab left the focus where it was: nothing more", async () => {
+    const p = page(true, "field");
+    await closeTypeAhead(p.io);
+    expect(p.state.log).toEqual(["Tab"]);
+  });
+});

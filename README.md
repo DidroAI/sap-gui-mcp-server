@@ -306,6 +306,24 @@ in its body) is refused with the answers listed: press the one you mean
 by its id. Escape with a menu or a list open closes that only. `toolbar` presses a button of a control's
 own toolbar (an ALV grid's, for example). Fiori also takes `click`.
 
+On Fiori, `{"do": "open", "app": "#SalesOrder-manage"}` opens a launchpad
+app by its intent: the part of the app's address after `#`, with
+parameters if you need them (`"#SalesOrder-display?SalesOrder=4711"`).
+The server sets the launchpad's hash, as a bookmark of the app does, so
+the tab stays on the launchpad it is on and on its logon; a URL is
+refused. Opening an app is navigation for the guard, and
+`SAP_ALLOW_TCODES` and `SAP_BLOCK_TCODES` are checked against the intent
+before it is opened. An intent that carries a function code for a
+transaction (`DYNP_OKCODE`) counts as a write. When the user may not open
+the app, the launchpad says so in a popup, and the answer holds it.
+A tab at a launchpad address that shows no launchpad (SAP's logon
+page, its page to change the password, a tab that does not answer) is
+listed by `sap_sessions` with a title that says so; a look names the
+page, and every action there is refused: the user has to finish it.
+`key` `Back` presses the launchpad's back button and never leaves the
+launchpad; `sap_look` with an `id` reads that one control whole (also
+the part of a table below the fold; `rows` is not used on Fiori).
+
 The server brings every action to one shape before anything reads it:
 `do` must be one of the verbs above, a key must be a number or a known
 name, and line breaks are removed from ids and values. The guard and the

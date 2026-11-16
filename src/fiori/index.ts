@@ -18,9 +18,12 @@
  *   {"do":"check","id":"…","value":true}   checkbox, switch, toggle button, selectable row; without value: toggle
  *   {"do":"combo","id":"…","key":"…"}      entry of sap.m.Select, ComboBox or MultiComboBox by key or text, through the
  *                                          control's API; other dropdowns in two steps (open, pick the option).
- *                                          An unknown entry answers with the list of entries.
- *   {"do":"key","key":"Enter"}             Enter, Escape, Tab, Shift+Tab, F4, arrows, PageUp/PageDown, Home, End, Back,
- *                                          Control+S, Control+Enter; SAP GUI's numbers 0, 3, 4, 11, 12 mean the same
+ *                                          An unknown entry, or no key at all, answers with the list of entries
+ *                                          and chooses nothing.
+ *   {"do":"key","key":"Enter"}             Enter, Space, Escape, Tab, Shift+Tab, F4, Delete, Backspace, arrows,
+ *                                          PageUp/PageDown, Home, End, Back, Control+S, Control+Enter; SAP GUI's
+ *                                          numbers 0, 3, 4, 11, 12 mean the same. Back is the launchpad's back
+ *                                          button; it never leaves the launchpad for another site.
  *
  * Extra actions, beyond the shared vocabulary:
  *
@@ -29,6 +32,10 @@
  *   {"do":"scroll","how":"down"}           down, up, top or bottom in the open popup or the page's main area; with an
  *                                          id, in the scroll area around that control ("how":"to" brings it into view).
  *                                          The view holds what the viewport shows and says when there is more.
+ *   {"do":"open","app":"#SalesOrder-manage"}  open a launchpad app by its intent (with parameters: "#SalesOrder-display?SalesOrder=4711").
+ *                                          The launchpad's hash is set, as a bookmark does: the tab, its origin and the
+ *                                          logon stay. Never a URL. Rated as navigation; SAP_ALLOW_TCODES and
+ *                                          SAP_BLOCK_TCODES apply to the intent before it is opened.
  *   "fill" and "double"                    the original reader's names for set and dblclick, still accepted
  *
  * okcode, tree, grid and toolbar exist only on SAP GUI screens: they go to the
@@ -37,10 +44,11 @@
  * Environment: SAP_FIORI_WAIT=busy turns RecordReplay.waitForUI5 off (the
  * driver then reads UI5's busy state only, and loads nothing into the page).
  */
-import { chromeDoctor, sapTabs, stillOwned } from "../browser/chrome.js";
-import { tabWhere } from "../browser/classify.js";
+import { chromeDoctor, chromeTabs, sapTabs, stillOwned } from "../browser/chrome.js";
+import { classify, tabSigns, tabWhere } from "../browser/classify.js";
 import type { Driver, SessionInfo, Surface } from "../core/types.js";
 import { FioriDriver, pageInfo, sessionOf } from "./driver.js";
+import { isPendingUrl, PendingTab, pendingSession, readPending } from "./pending.js";
 
 export { isLaunchpadUrl, isWebguiUrl } from "../browser/classify.js";
 export { FioriDriver, sessionOf, WEBGUI_MARK } from "./driver.js";
@@ -65,13 +73,36 @@ async function fioriTabs(env: Env) {
   );
 }
 
+/**
+ * Tabs at a launchpad address that show no launchpad (a logon or password page, a page that did not load,
+ * a tab that does not answer): listed, so that the agent can say what the user has to do (see pending.ts).
+ */
+async function pendingTabs(env: Env) {
+  const tabs = (await chromeTabs(env)).filter((t) => isPendingUrl(t.url));
+  const found = await Promise.all(
+    tabs.map(async (tab) => {
+      if (classify(tab.page.url(), await tabSigns(tab.page)) !== null) return undefined;
+      return { tab, session: named(pendingSession(tab, await readPending(tab))) };
+    }),
+  );
+  return found.filter((t) => t !== undefined);
+}
+
 export function fioriSurface(env: Env): Surface {
   const options = { recordReplay: (env.SAP_FIORI_WAIT ?? "").toLowerCase() !== "busy", idleTimeoutMs: 30_000 };
   return {
     name: "fiori",
-    discover: async (): Promise<SessionInfo[]> => (await fioriTabs(env)).map((x) => x.session),
+    discover: async (): Promise<SessionInfo[]> => {
+      const [live, pending] = await Promise.all([fioriTabs(env), pendingTabs(env)]);
+      // A tab whose launchpad came up between the two readings is the launchpad's.
+      return [...live.map((x) => x.session), ...pending.filter((p) => !live.some((x) => x.session.id === p.session.id)).map((p) => p.session)];
+    },
     open: async (session): Promise<Driver> => {
       const hit = (await fioriTabs(env)).find((x) => x.session.id === session.id);
+      if (!hit) {
+        const waiting = (await pendingTabs(env)).find((x) => x.session.id === session.id);
+        if (waiting) return new PendingTab(waiting.tab, waiting.session);
+      }
       if (!hit) throw new Error(`The Fiori tab of session ${session.id} is no longer open.`);
       const driver = new FioriDriver(hit.tab, hit.session, 0, options);
       // The driver's own refresh names the tab by a number: name it by its title, as discovery does.

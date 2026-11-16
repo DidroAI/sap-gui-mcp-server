@@ -368,6 +368,33 @@ export function pageState(arg: { busy: string; watch: boolean; maxMs: number }):
   return { busy, locked, queue, calm };
 }
 
+/** What closing a type-ahead list needs of the page. */
+export interface TypeAheadPage {
+  /** Is a type-ahead list on screen? */
+  shown(): Promise<boolean>;
+  /** The id of the element that has the focus ("" for none). */
+  focused(): Promise<string>;
+  /** Presses Tab. */
+  tab(): Promise<void>;
+  /** Puts the focus on the element with this id. */
+  focus(id: string): Promise<void>;
+}
+
+/**
+ * Closes an open type-ahead list with Tab and puts the focus back where it
+ * was. Tab alone leaves the focus on the next control: the Enter that
+ * followed then pressed the button next to the field (VA01: "Create Sold-to
+ * Party" after the sold-to party was typed), while the guard had judged a
+ * plain Enter in the field.
+ */
+export async function closeTypeAhead(page: TypeAheadPage): Promise<boolean> {
+  if (!(await page.shown())) return false;
+  const was = await page.focused();
+  await page.tab();
+  if (was && (await page.focused()) !== was) await page.focus(was);
+  return true;
+}
+
 export class WebGuiSession {
   readonly page: Page;
   private readonly traffic: Traffic;
@@ -736,10 +763,21 @@ export class WebGuiSession {
    */
   async closeSuggestions(): Promise<void> {
     const list = this.frame.locator("[role='listbox'],.lsListbox,[ct='LIB']").filter({ visible: true });
-    if ((await list.count().catch(() => 0)) > 0) {
-      await this.page.keyboard.press("Tab");
-      await this.pause(150);
-    }
+    await closeTypeAhead({
+      shown: async () => (await list.count().catch(() => 0)) > 0,
+      focused: () => this.frame.evaluate(() => (document.activeElement as HTMLElement | null)?.id ?? "").catch(() => ""),
+      tab: async () => {
+        await this.page.keyboard.press("Tab");
+        await this.pause(150);
+      },
+      focus: (id) =>
+        this.frame
+          .evaluate((id) => {
+            const e = document.getElementById(id);
+            if (e && document.activeElement !== e) e.focus();
+          }, id)
+          .catch(() => {}),
+    });
   }
 
   /** Sends a key to the screen. When Web GUI sits in an iframe, the key must land in that frame. */
