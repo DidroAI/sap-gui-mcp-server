@@ -65,11 +65,12 @@ export function extractLook(limits: {
       /SID:'((?:[^'\\]|\\.)*)'/.exec(ls)?.[1];
     const type = /[{,]Type:'([^']*)'/.exec(ls)?.[1] ?? "";
     // lsdata escapes a backslash twice (tabpT\\08 is the id tabpT\08).
+    // S/4HANA 2025 writes ModalNo only on the window itself: a control's window is then the one its id names.
     return {
       ls,
       sid: raw ? raw.replace(/\\\\/g, "\\") : "",
       type,
-      modal: Number(/ModalNo:(\d+)/.exec(ls)?.[1] ?? 0),
+      modal: Number(/ModalNo:(\d+)/.exec(ls)?.[1] ?? /^wnd\[(\d+)\]/.exec(raw ?? "")?.[1] ?? 0),
     };
   };
   const visible = (el: Element) => {
@@ -213,16 +214,23 @@ export function extractLook(limits: {
       1,
     ) || norm(document.title),
   );
+  // A popup window is ct="PW" on ECC and ct="PW_standards" on S/4HANA 2025 (its title in the new header):
+  // any ct that starts with PW, and any element that says it is a modal window.
   for (const el of Array.from(
-    document.querySelectorAll("[ct='PW'][data-ls]"),
+    document.querySelectorAll("[ct^='PW'][data-ls],[data-ls*=\"Type:'GuiModalWindow'\"]"),
   )) {
     const i = info(el);
     if (!i.modal || !visible(el)) continue;
     const t = norm(
-      (document.getElementById(`${el.id}-ttltxt`) as HTMLElement | null)
-        ?.innerText,
+      (
+        (document.getElementById(`${el.id}-ttltxt`) ??
+          document.getElementById(`${el.id}-header-title-txt`) ??
+          el.querySelector(".urPWTitleText,[role='heading']")) as HTMLElement | null
+      )?.innerText,
     );
     if (t && !titles.has(i.modal)) titles.set(i.modal, t);
+    // A popup with nothing the view lists (a text only) is still a window that blocks the screen.
+    if (!lines.has(i.modal)) lines.set(i.modal, []);
   }
 
   /** A row selector cell (subct SC) shows a selected row with a "Sel" icon class, an unselected one with "UnSel". */
@@ -834,13 +842,14 @@ export interface ClientPopup {
 export function extractClientPopups(): ClientPopup[] {
   const out: ClientPopup[] = [];
   const clean = (t: string | null | undefined) => (t ?? "").replace(/\s+/g, " ").replace(/^ | $/g, "");
-  for (const el of Array.from(document.querySelectorAll<HTMLElement>("div[ct='PW']"))) {
+  for (const el of Array.from(document.querySelectorAll<HTMLElement>("div[ct^='PW']"))) {
     const st = getComputedStyle(el);
     if (st.display === "none" || st.visibility === "hidden" || el.offsetWidth === 0) continue;
     // An SAP popup window holds controls with scripting ids; those are read by extractLook.
     if (el.querySelector("[lsdata*='wnd[']")) continue;
-    const title = clean(el.querySelector(".urPWTitleText")?.textContent);
-    const body = el.querySelector<HTMLElement>(".urPWContent");
+    // ECC, then the popup of S/4HANA 2025 (ct="PW_standards": a header with a heading, a content section).
+    const title = clean(el.querySelector(".urPWTitleText,[id$='-header-title-txt'],[role='heading']")?.textContent);
+    const body = el.querySelector<HTMLElement>(".urPWContent,.lsPWNewContentSection");
     const buttons = Array.from(el.querySelectorAll<HTMLElement>("[ct='B'],button,[role='button']"))
       .map((b) => clean(b.textContent))
       .filter((t) => t.length > 0);
@@ -1046,7 +1055,8 @@ export function markControl(ident: string): MarkedControl | string {
     return {
       sid: raw ? raw.replace(/\\\\/g, "\\") : "",
       type: /[{,]Type:'([^']*)'/.exec(ls)?.[1] ?? "",
-      modal: Number(/ModalNo:(\d+)/.exec(ls)?.[1] ?? 0),
+      // S/4HANA 2025 writes ModalNo only on the window itself: the control's window is the one its id names.
+      modal: Number(/ModalNo:(\d+)/.exec(ls)?.[1] ?? /^wnd\[(\d+)\]/.exec(raw ?? "")?.[1] ?? 0),
     };
   };
   const visible = (el: Element) => {
