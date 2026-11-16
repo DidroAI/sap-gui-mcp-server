@@ -321,6 +321,15 @@ describe("what a repair may not do", () => {
     r = await replay(c.sap.driver(), c.policy, c.test, { from: 5, repair: { why: "a warning", actions: [{ do: "key", key: 0 }], place: "after" }, leaveOnFailure: false });
     expect(c.sap.next).toBe(5003);
     expect(r.steps[0]?.repair?.did).toEqual(['{"do":"key","key":0}']);
+    // The order has a new number: a capture finishes the step, and the proposed test holds the Enter that saved.
+    const done = await replay(c.sap.driver(), c.policy, c.test, { from: 5, repair: { why: "a warning, then a new number", capture: { var: "order", from: "status", pattern: "Order (\\d+) has been saved" }, earlier: [{ do: "key", key: 0 }] } });
+    expect(done.passed).toBe(true);
+    const proposed = done.proposal?.test as SapTest;
+    expect(proposed.steps.slice(3, 7).map((s) => `${s.action?.do} ${s.action?.key ?? s.action?.value}`)).toEqual(["key 0", "key 11", "key 0", "okcode /nZA03"]);
+    expect(proposed.steps[4]?.expect).toBeUndefined();
+    expect(proposed.steps[5]?.capture?.[0]?.var).toBe("order");
+    expect(done.proposal?.origin.slice(3, 7)).toEqual([4, 5, 5, 6]);
+    expect((await replay(c.sap.driver(), c.policy, proposed)).passed).toBe(true);
     // On a step that is not the write (the one after it), with the warning still there: refused, nothing saved.
     c = await warned();
     r = await replay(c.sap.driver(), c.policy, c.test, { from: 6, repair: { why: "a warning", actions: [{ do: "key", key: 0 }], place: "before" }, leaveOnFailure: false });
