@@ -60,7 +60,7 @@ export const repairSchema = z.object({
   place: z.enum(["before", "instead", "after"]).optional(),
   /** A value SAP makes anew at each run (a document number), read into a variable from now on. */
   /**
-   * With place "after": actions an earlier try at this step already ran, in order, when that try did not get the
+   * With place "after", or with a capture: actions an earlier try at this step already ran, in order, when that try did not get the
    * step through. They are not run again; the proposed test holds them before `actions`, because the run did.
    */
   earlier: z.array(z.record(z.string(), z.unknown())).optional(),
@@ -107,7 +107,7 @@ export function repairRefusal(step: Step, repair: Repair, test: SapTest): string
   if (n > MAX_REPAIR_ACTIONS) return `a repair is at most ${MAX_REPAIR_ACTIONS} actions (got ${n}): a step that needs more has changed too much, record it again`;
   if (n && !repair.place) return 'a repair with actions says "place": before (then the recorded action runs), instead (they replace it) or after (it already ran)';
   if (n && repair.place === "instead" && !step.action) return "this step has no action to replace";
-  if (repair.earlier?.length && repair.place !== "after") return 'actions of an earlier try ("earlier") go with place "after": they ran after the recorded action';
+  if (repair.earlier?.length && !repair.capture && repair.place !== "after") return 'actions of an earlier try ("earlier") go with place "after": they ran after the recorded action';
   if (repair.capture) {
     if (step.risk !== "commit") return "a capture is for a number SAP makes when it saves: this step does not write, so a different value here is a different result, not a new number";
     if (!NAME.test(repair.capture.var)) return "a variable name is letters, digits and _, not starting with a digit";
@@ -290,24 +290,30 @@ export function propose(original: SapTest, working: SapTest, index: number, repa
   const n = index + 1;
   const step = original.steps[index] as Step;
   const what = step.action ? actionText(normalizeAction(step.action)) : "(check only)";
-  if (repair.capture) {
-    const uses = working.steps.slice(index + 1).filter((s, k) => JSON.stringify(s) !== JSON.stringify(original.steps[index + 1 + k])).length;
-    return {
-      test: structuredClone(working),
-      origin: working.steps.map((_, i) => i + 1),
-      changes: [
-        `Step ${n} (${what}): ${repair.why}`,
-        `New variable \${${repair.capture.var}}, read from the ${repair.capture.from} after step ${n} with ${repair.capture.pattern} (recorded "${captured?.recorded ?? ""}", this run "${captured?.now ?? ""}").`,
-        `The checks of step ${n}${uses ? ` and ${uses} later step(s)` : ""} use the variable in place of "${captured?.recorded ?? ""}".`,
-      ],
-    };
-  }
-  const test = structuredClone(original);
   // What an earlier try ran comes first: the screens it was done on are not known here, so those steps hold none.
   const earlier: Step[] = (repair.earlier ?? []).map((raw) => {
     const { do: verb, ...rest } = normalizeAction(raw);
     return { action: { do: verb, ...rest }, note: `Added by a repair: ${repair.why}` };
   });
+  if (repair.capture) {
+    const uses = working.steps.slice(index + 1).filter((s, k) => JSON.stringify(s) !== JSON.stringify(original.steps[index + 1 + k])).length;
+    const test = structuredClone(working);
+    const changes = [
+      `Step ${n} (${what}): ${repair.why}`,
+      `New variable \${${repair.capture.var}}, read from the ${repair.capture.from} after step ${n} with ${repair.capture.pattern} (recorded "${captured?.recorded ?? ""}", this run "${captured?.now ?? ""}").`,
+      `The checks of step ${n}${uses ? ` and ${uses} later step(s)` : ""} use the variable in place of "${captured?.recorded ?? ""}".`,
+    ];
+    if (earlier.length) {
+      // An earlier try's actions completed the step (they confirmed what SAP raised): the step's result, checks and capture follow them.
+      const { note, expect, capture, after, ...bare } = test.steps[index] as Step;
+      const last = earlier.at(-1) as Step;
+      Object.assign(last, { ...(note ? { note } : {}), ...(after ? { after } : {}), ...(expect ? { expect } : {}), ...(capture ? { capture } : {}) });
+      test.steps.splice(index, 1, bare, ...earlier);
+      changes.splice(1, 0, `Added after step ${n}: ${earlier.map((s) => actionText(normalizeAction(s.action as Record<string, unknown>))).join(", then ")}. The checks of step ${n} now follow.`);
+    }
+    return { test, origin: test.steps.map((_, i) => (i <= index ? i + 1 : i <= index + earlier.length ? n : i + 1 - earlier.length)), changes };
+  }
+  const test = structuredClone(original);
   const fresh = [...earlier, ...structuredClone(added)];
   const list = fresh.map((s) => actionText(normalizeAction(s.action as Record<string, unknown>))).join(", then ");
   let changes: string[];
