@@ -428,6 +428,7 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       return `set ${c.sid}`;
     }
     case "press":
+      if (c.type === "GuiStatusBar") return messageHelp(session, c.sid);
       if (c.overflow) return pressOverflow(session, c);
       if (c.type === "GuiButton") await clickForRoundtrip(session, c.sid, true, true);
       else await session.roundtrip(() => loc.click(), 1200);
@@ -436,6 +437,7 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       await loc.focus();
       return `focus ${c.sid}`;
     case "dblclick": {
+      if (c.type === "GuiStatusBar") return messageHelp(session, c.sid);
       const inPopup = windowOf(c.sid) > 0;
       if (!inPopup || !c.type.startsWith("ABAPLIST")) {
         await session.roundtrip(() => loc.dblclick(), 1200);
@@ -497,6 +499,20 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
 async function closedText(session: WebGuiSession, refusal: string): Promise<string> {
   const why = closedByMessage(await freshView(session).catch(() => ""));
   return why ? `${refusal.replace(/\.$/, "")} for now: ${why}` : refusal;
+}
+
+/**
+ * The long text of the status bar's message: one click on the message, as a
+ * person does it (locate has marked the message's text). SAP answers with a
+ * window that holds the text (the Performance Assistant).
+ */
+async function messageHelp(session: WebGuiSession, sid: string): Promise<string> {
+  if (!/^(wnd\[0\]\/)?sbar {2}status {2}/m.test(await freshView(session))) throw new ActionError("The status bar shows no message now: there is no long text to open.");
+  const before = session.posts;
+  await session.roundtrip(() => marked(session).click(), 1500);
+  if (session.posts === before)
+    throw new ActionError(`Web GUI did not send the click on the message of ${sid}, so its long text did not open (it holds back the click for some texts). The message itself is on the status line of the view.`);
+  return `clicked the message of ${sid}: SAP shows its long text when it has one (a window with the text; close it to go on)`;
 }
 
 /** How long a menu entry may take to be drawn after its menu was opened. */
