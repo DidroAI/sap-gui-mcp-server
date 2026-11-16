@@ -14,6 +14,7 @@ import { compact } from "../core/compact.js";
 import { type Action, ActionError, type Assessment, type Driver, type LookOptions, type SessionInfo, type Surface } from "../core/types.js";
 import { extractFacts, type PageFacts } from "./page.js";
 import { act, assess, look, view } from "./reader.js";
+import { lookRead } from "./screen.js";
 import { endedText, WebGuiSession } from "./session.js";
 
 export { assessAction } from "./assess.js";
@@ -118,6 +119,13 @@ export function endedView(said: string): string {
  * step (one given up on after its timeout) says that it is from before it.
  */
 export async function webguiView(session: WebGuiSession, options: LookOptions): Promise<string> {
+  if (!options.id) {
+    // The whole screen: the end of the session, the screen and the lock come from one read of the page.
+    const r = await lookRead(session, true);
+    if (r.ended) return endedView(r.ended);
+    const text = options.compact ? compact(r.text) : r.text;
+    return r.locked === true ? `${text}\n${STILL_WORKING}` : text;
+  }
   const gone = await session.ended();
   if (gone) return endedView(gone);
   const text = await view(session, options);

@@ -9,8 +9,8 @@ import { ActionError } from "../core/types.js";
 import { LOGON_PROGRAM, LOGON_REFUSAL } from "../core/words.js";
 import type { FocusFacts } from "./assess.js";
 import { evalLs } from "./controls.js";
-import { extractClientPopups, extractFacts, extractLook, extractMenus, extractViewer, extractViewerIds, focusedControl, viewerFocus } from "./page.js";
-import type { WebGuiSession } from "./session.js";
+import { type ClientPopup, extractClientPopups, extractFacts, extractLook, extractMenus, extractViewer, extractViewerIds, type FocusedControl, focusedControl, type LookResult, type MenuEntry, normalizeLsdata, type PageFacts, viewerFocus } from "./page.js";
+import { endedText, extractEnded, type WebGuiSession } from "./session.js";
 
 const MAX_GRID_ROWS = 50;
 const MAX_TREE_NODES = 300;
@@ -55,8 +55,7 @@ export async function viewerFrames(session: WebGuiSession): Promise<{ sid: strin
 }
 
 /** Lines for Web GUI's own dialogs, with what the agent can do about them. */
-async function clientPopupLines(f: Frame): Promise<string[]> {
-  const pops = await f.evaluate(extractClientPopups).catch(() => []);
+function clientPopupLines(pops: ClientPopup[]): string[] {
   const out: string[] = [];
   for (const p of pops) {
     out.push(`WINDOW browser  "${p.title}"  (a Web GUI message above the SAP screen; the SAP screen does not react until it is closed)`);
@@ -68,14 +67,32 @@ async function clientPopupLines(f: Frame): Promise<string[]> {
   return out;
 }
 
-/** Is the page SAP's logon page, or the logon screen inside Web GUI? */
-async function onLogon(session: WebGuiSession): Promise<boolean> {
-  return (await session.frame.evaluate(extractFacts).catch(() => undefined))?.logon === true;
-}
+/**
+ * Runs in the Web GUI frame: what an action checks before it starts, in one
+ * round trip. `ended` as extractEnded says it, `logon` as extractFacts says
+ * it, and `screen`: the frame holds a Web GUI screen, so the tab is not on
+ * the logoff page (see loggedOff). A part that cannot be read says "" or false.
+ */
+const BEFORE_ACT = `(() => {
+  const out = { ended: "", logon: false, screen: false };
+  try { out.ended = (${extractEnded})(); } catch {}
+  try { out.logon = (${extractFacts})().logon === true; } catch {}
+  try { out.screen = !!document.querySelector("#ToolbarOkCode, [lsdata], [data-ls]"); } catch {}
+  return out;
+})()`;
 
-/** This server never acts on a logon screen: not a key, not a click. */
-export async function refuseLogon(session: WebGuiSession): Promise<void> {
-  if (await onLogon(session)) throw new ActionError(LOGON_REFUSAL);
+/**
+ * Before an action: the session has not ended (ActionError with what the
+ * page says), the screen is not the logon screen (never acted on) and the
+ * tab is not on the logoff page.
+ */
+export async function checkBeforeAct(session: WebGuiSession): Promise<void> {
+  const before = await session.frame.evaluate<{ ended: string; logon: boolean; screen: boolean }>(BEFORE_ACT).catch(() => ({ ended: "", logon: false, screen: false }));
+  // A session that has ended takes nothing more: said at once, not after a wait.
+  if (before.ended) throw new ActionError(endedText(before.ended));
+  if (before.logon) throw new ActionError(LOGON_REFUSAL);
+  // A Web GUI screen in this frame is not the logoff page; else every frame of the tab is looked at.
+  if (!before.screen && (await loggedOff(session))) throw new ActionError(LOGGED_OFF);
 }
 
 /**
@@ -100,8 +117,8 @@ export const LOGGED_OFF =
  * The control that has the keyboard focus, for the guard: Enter and Space
  * press it. Undefined when the page gives none.
  */
-export async function focusOf(session: WebGuiSession): Promise<FocusFacts | undefined> {
-  const fc = await evalLs(session, focusedControl, undefined).catch(() => null);
+export async function focusOf(session: WebGuiSession, known?: FocusedControl | null): Promise<FocusFacts | undefined> {
+  const fc = known !== undefined ? known : await evalLs(session, focusedControl, undefined).catch(() => null);
   if (!fc) return undefined;
   if (fc.type !== "frame") return fc.type === "browser" ? { sid: "", type: "browser", pressable: fc.pressable, text: fc.text } : { sid: fc.sid, type: fc.type, text: fc.text };
   // The focus is inside an HTML viewer: ask that frame. What cannot be read counts as a button.
@@ -164,21 +181,30 @@ export async function freshView(session: WebGuiSession): Promise<string> {
  * waits for the new screen and reads once more.
  */
 export async function look(session: WebGuiSession): Promise<string> {
-  let text: string;
+  return (await lookRead(session)).text;
+}
+
+/**
+ * As `look`, with what the same read saw besides the view: the session
+ * facts, and Web GUI's lock. With `ended`, a page whose session has ended
+ * is not read: `ended` then says what it says, and `text` is "".
+ */
+export async function lookRead(session: WebGuiSession, ended = false): Promise<ScreenRead> {
+  let r: ScreenRead;
   try {
-    text = await read(session);
+    r = await read(session, ended);
   } catch (e) {
     if (!/context was destroyed|navigat|detached|Target closed/i.test((e as Error).message) || session.page.isClosed()) throw e;
     await session.waitIdle().catch(() => {});
-    text = await read(session);
+    r = await read(session, ended);
   }
   // A grid that was just scrolled far fetches its rows after the scroll: for a moment it has rows and draws none.
-  for (let i = 0; i < 20 && text.includes(NONE_DRAWN); i++) {
+  for (let i = 0; i < 20 && r.text.includes(NONE_DRAWN); i++) {
     await session.page.waitForTimeout(250);
-    text = await read(session);
+    r = await read(session, ended);
   }
-  session.view = { at: Date.now(), text };
-  return text;
+  if (!r.ended) session.view = { at: Date.now(), text: r.text };
+  return r;
 }
 
 /** Every menu entry of the menu bar, with its id and its shortcut: what the view names as one `menubar` line. */
@@ -201,18 +227,69 @@ export async function menuLines(session: WebGuiSession): Promise<string> {
   return out.join("\n");
 }
 
-async function read(session: WebGuiSession): Promise<string> {
-  if (await onLogon(session)) {
-    const facts = await session.frame.evaluate(extractFacts);
-    // The logon screen is not read out: nothing on it is for the agent.
-    return [`TRANSACTION   PROGRAM ${facts.program || LOGON_PROGRAM}  SCREEN `, `WINDOW wnd[0]  "${facts.title.replace(/"/g, "'")}"`, `NOTE this is the SAP logon screen. ${LOGON_REFUSAL}.`].join("\n");
-  }
+export interface ScreenRead {
+  /** The full view; "" when the session has ended. */
+  text: string;
+  /** What the page says when its session has ended (only when asked for); "" while it has not. */
+  ended: string;
+  /** The session facts; undefined when the page could not give them. */
+  facts: PageFacts | undefined;
+  /** Web GUI's lock after the read: true while a step runs; undefined when this Web GUI does not say. */
+  locked: boolean | undefined;
+}
+
+interface Snapshot {
+  ended: string;
+  facts?: PageFacts;
+  look?: LookResult;
+  popups: ClientPopup[];
+  viewers: { sid: string; dom: string }[];
+  locked?: boolean;
+}
+
+/**
+ * Everything a read takes from the Web GUI frame, in one round trip: the
+ * end of the session (when asked), the facts (the logon screen is not read
+ * further), the controls (on `data-ls` brought up to date), Web GUI's own
+ * dialogs, the HTML viewers, and the lock. A part that may fail on its own
+ * fails as before: the controls fail the read, the rest reads as nothing.
+ */
+const snapshotScript = (ended: boolean): string => `(() => {
+  const out = { ended: "", popups: [], viewers: [] };
+  ${ended ? `try { out.ended = (${extractEnded})(); } catch {}
+  if (out.ended) return out;` : ""}
+  try { out.facts = (${extractFacts})(); } catch {}
+  if (out.facts && out.facts.logon) return out;
+  try { (${normalizeLsdata})(); } catch {}
+  out.look = (${extractLook})(${JSON.stringify({ grid: MAX_GRID_ROWS, tree: MAX_TREE_NODES })});
+  try { out.popups = (${extractClientPopups})(); } catch {}
+  try { out.viewers = (${extractViewerIds})(); } catch {}
+  try {
+    const ls = window.oLS;
+    if (ls && typeof ls.bLocked === "function") out.locked = ls.bLocked() === true;
+  } catch {}
+  return out;
+})()`;
+const SNAPSHOT = snapshotScript(false);
+const SNAPSHOT_UNLESS_ENDED = snapshotScript(true);
+
+async function read(session: WebGuiSession, ended: boolean): Promise<ScreenRead> {
   const f = session.frame;
-  const r = await evalLs(session, extractLook, { grid: MAX_GRID_ROWS, tree: MAX_TREE_NODES });
+  const s = await f.evaluate<Snapshot>(ended ? SNAPSHOT_UNLESS_ENDED : SNAPSHOT);
+  if (s.ended) return { text: "", ended: s.ended, facts: undefined, locked: undefined };
+  const facts = s.facts;
+  if (facts?.logon) {
+    // The logon screen is not read out: nothing on it is for the agent.
+    const text = [`TRANSACTION   PROGRAM ${facts.program || LOGON_PROGRAM}  SCREEN `, `WINDOW wnd[0]  "${facts.title.replace(/"/g, "'")}"`, `NOTE this is the SAP logon screen. ${LOGON_REFUSAL}.`].join("\n");
+    return { text, ended: "", facts, locked: undefined };
+  }
+  const r = s.look as LookResult;
   const out = [`TRANSACTION ${r.transaction}  PROGRAM ${r.program}  SCREEN ${r.screen}${r.system ? `  SYSTEM ${r.system}` : ""}`];
   // Web GUI's own dialogs first: while one is open, nothing below reacts.
-  out.push(...(await clientPopupLines(f)));
-  const viewers = await viewerFrames(session).catch(() => []);
+  out.push(...clientPopupLines(s.popups));
+  // The viewers' frames are found only for a screen that has one.
+  const hasViewer = r.windows.some((w) => w.lines.some((l) => l.endsWith("  html-viewer")));
+  const viewers = hasViewer ? await framesOf(f, s.viewers).catch(() => []) : [];
   for (const w of r.windows) {
     out.push(`WINDOW ${w.id}  "${w.title}"`);
     for (const l of w.lines) {
@@ -223,5 +300,26 @@ async function read(session: WebGuiSession): Promise<string> {
       }
     }
   }
-  return out.join("\n");
+  return { text: out.join("\n"), ended: "", facts, locked: s.locked };
+}
+
+/**
+ * Runs in the Web GUI frame on `data-ls` brought up to date: the menu
+ * entries for the guard, and the focused control when asked (null when it
+ * cannot be read), in one round trip.
+ */
+const guardScript = (focus: boolean): string => `(() => {
+  try { (${normalizeLsdata})(); } catch {}
+  const menus = (${extractMenus})();
+  let focus = null;
+  ${focus ? `try { focus = (${focusedControl})(); } catch {}` : ""}
+  return { menus, focus };
+})()`;
+const GUARD = guardScript(false);
+const GUARD_FOCUS = guardScript(true);
+
+/** The menu entries, and the focused control when `focus`: what the guard reads besides the view. */
+export async function guardFacts(session: WebGuiSession, focus: boolean): Promise<{ menus: MenuEntry[]; focus: FocusFacts | undefined }> {
+  const r = await session.frame.evaluate<{ menus: MenuEntry[]; focus: FocusedControl | null }>(focus ? GUARD_FOCUS : GUARD);
+  return { menus: r.menus, focus: focus ? await focusOf(session, r.focus) : undefined };
 }
