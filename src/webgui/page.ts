@@ -2029,7 +2029,8 @@ export function searchHelps(sid: string): SearchHelps | string {
 /** Marks the x in the title of the popup in front (data-sap-act="close"): false when it has none. */
 export function markWindowClose(): boolean {
   for (const e of Array.from(document.querySelectorAll("[data-sap-act]"))) e.removeAttribute("data-sap-act");
-  const open = Array.from(document.querySelectorAll("div[ct='PW']")).filter((e) => (e as HTMLElement).offsetWidth > 0);
+  // A popup window as the view finds it: ct="PW" on ECC, ct="PW_standards" on S/4HANA 2025, or any element that says it is a modal window.
+  const open = Array.from(document.querySelectorAll("[ct^='PW'],[lsdata*='GuiModalWindow']")).filter((e) => e.id && (e as HTMLElement).offsetWidth > 0);
   const x = document.getElementById(`${open[open.length - 1]?.id ?? ""}-close`);
   if (!x || x.offsetWidth <= 0) return false;
   x.setAttribute("data-sap-act", "close");
