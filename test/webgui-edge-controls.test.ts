@@ -194,6 +194,36 @@ describe.skipIf(!exe)("Web GUI reader: edge cases of round 3, in a browser", () 
     expect(await webguiActInFrame(f, { do: "combo", id: "critcol", key: "ZZ" }).catch((e: Error) => e.message)).toContain('no search help "ZZ"');
   });
 
+  test("ECCSCR-04: a menu of search helps that closes under the click is opened again, or refused quickly", async () => {
+    const f = await show(HELPS);
+    // The menu closes again 180 ms after it opened, the first time only (a late first click and the second one that toggles it).
+    await page.evaluate(() => {
+      const m = document.getElementById("SHM") as HTMLElement;
+      const b = document.getElementById("PST1-menuOpener") as HTMLElement;
+      let n = 0;
+      b.onclick = () => {
+        m.style.top = "200px";
+        if (n++ === 0) setTimeout(() => (m.style.top = "-9999px"), 180);
+      };
+    });
+    const t0 = Date.now();
+    expect(await webguiActInFrame(f, { do: "combo", id: "critcol", key: "T" })).toContain('chose search help "T: Material by Material Type"');
+    expect(Date.now() - t0).toBeLessThan(6000);
+    // A menu that never stays open: a refusal in plain words, not a locator timeout.
+    await page.evaluate(() => {
+      const m = document.getElementById("SHM") as HTMLElement;
+      (document.getElementById("PST1-menuOpener") as HTMLElement).onclick = () => {
+        m.style.top = "200px";
+        setTimeout(() => (m.style.top = "-9999px"), 180);
+      };
+    });
+    const t1 = Date.now();
+    const e = await webguiActInFrame(f, { do: "combo", id: "critcol", key: "A" }).catch((x: Error) => x.message);
+    expect(e).toContain("the menu of search helps of wnd[1]/shell/critcol did not open, so nothing was chosen");
+    expect(e).not.toContain("Timeout");
+    expect(Date.now() - t1).toBeLessThan(9000);
+  }, 30_000);
+
   test("ECCSCR-09: the icons of a tree node that are links are its items, and tree with col clicks one", async () => {
     const f = await show(TREE);
     const lines = (await full()).split("\n");
@@ -212,7 +242,7 @@ describe.skipIf(!exe)("Web GUI reader: edge cases of round 3, in a browser", () 
     // An icon-only tab is named by its tooltip.
     expect(view).toContain("wnd[0]/usr/tabsTS/tabpOK_PEOPLE  tab  Partners");
     // Cancel (key 12) on a popup that has no Cancel button is that x too.
-    expect(await webguiActInFrame(f, { do: "key", key: 12 })).toContain("closed it with the x in its title");
+    expect(await webguiActInFrame(f, { do: "key", key: 12 })).toContain("closed the popup with the x in its title, which cancels it");
     await page.evaluate(() => (document.getElementById("DS1") as HTMLElement).style.removeProperty("display"));
     expect(await webguiActInFrame(f, { do: "press", id: "wnd[1]/close" })).toContain("pressed wnd[1]/close (the x in the window's title)");
     expect(await full()).not.toContain("WINDOW wnd[1]");
