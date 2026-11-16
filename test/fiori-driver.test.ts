@@ -91,7 +91,7 @@ describe("fiori driver: the logon page", () => {
 
 describe("fiori driver: open, Back and unknown keys", () => {
   /** A launchpad tab whose page answers each in-page function by name. */
-  function shellTab(answers: Record<string, unknown>, ran: string[], clicks: string[]): ChromeTab {
+  function shellTab(answers: Record<string, unknown>, ran: string[], clicks: string[], target?: Record<string, unknown>): ChromeTab {
     const frame = {
       isDetached: () => false,
       url: () => "https://host/sap/bc/ui2/flp",
@@ -104,7 +104,7 @@ describe("fiori driver: open, Back and unknown keys", () => {
         return fn.name ? undefined : "ui5";
       },
       waitForLoadState: async () => {},
-      locator: () => ({ first: () => ({ click: async () => void clicks.push("target") }) }),
+      locator: () => ({ first: () => ({ click: async () => void clicks.push("target"), ...target }) }),
     };
     const page = {
       frames: () => [frame],
@@ -117,11 +117,22 @@ describe("fiori driver: open, Back and unknown keys", () => {
     };
     return { id: "T1", title: "Home", url: page.url(), page } as unknown as ChromeTab;
   }
-  const on = (answers: Record<string, unknown>) => {
+  const on = (answers: Record<string, unknown>, target?: Record<string, unknown>) => {
     const ran: string[] = [];
     const clicks: string[] = [];
-    return { d: new FioriDriver(shellTab(answers, ran, clicks), INFO, 1, { recordReplay: false, idleTimeoutMs: 2000 }), ran, clicks };
+    return { d: new FioriDriver(shellTab(answers, ran, clicks, target), INFO, 1, { recordReplay: false, idleTimeoutMs: 2000 }), ran, clicks };
   };
+
+  test("FIORI-05: a field that UI5 draws again while it is filled still gets its key, at once", async () => {
+    // The marked element is gone after the fill (a date range that was cleared): the key on it times out.
+    const gone = { evaluate: async () => false, fill: async () => {}, press: async () => Promise.reject(new Error("locator.press: Timeout 1500ms exceeded.")), count: async () => 0 };
+    const cleared = on({ ui5Control: { status: "TARGET", note: "sap.m.DynamicDateRange app--Date-inner" } }, gone);
+    expect(await cleared.d.act({ do: "set", id: "Date-inner", value: "" })).toContain("set sap.m.DynamicDateRange app--Date-inner; idle");
+    expect(cleared.clicks).toEqual(["Tab"]);
+    // Still there and not taking the key: that is said.
+    const covered = on({ ui5Control: { status: "TARGET", note: "sap.m.Input app--X" } }, { ...gone, count: async () => 1 });
+    await expect(covered.d.act({ do: "set", id: "X", value: "1" })).rejects.toThrow("the control is covered, hidden or not ready");
+  });
 
   test("open sets the launchpad's hash and is rated before any control is looked up", async () => {
     const { d, ran } = on({ ui5Open: "OK" });
