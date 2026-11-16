@@ -208,6 +208,51 @@ handled by what it asks:
 When the replay did anything the recording does not have, the first line of
 the result says `PASS ... WITH NOTES` and names the steps.
 
+### Repairing one step and going on
+
+A replay that fails says where the step failed (`failed (act)`, `(landing)`,
+`(check)`, `(refused)`) and leaves the session on that screen. Whoever ran
+it can hand back a repair for that one step and let the replay go on:
+
+```json
+{"name": "VA03 display order", "from": 3, "variables": {"order": "19126"},
+ "repair": {"why": "SAP asks for the company code first",
+            "actions": [{"do": "set", "id": "ctxtBKPF-BUKRS", "value": "1000"}, {"do": "key", "key": 0}],
+            "place": "after"}}
+```
+
+`from` resumes at that step on the screen as it is, with the variables the
+failed run ended with. `place` says how the actions relate to the recorded
+action: `before` (do them, then the recorded action runs), `instead` (they
+replace it: its control has another id now), `after` (it already ran; they
+complete it: a popup it raised). The other kind of repair is a capture, for
+a number SAP makes anew when it saves:
+`{"why": "...", "capture": {"var": "order", "from": "status", "pattern": "Order (\\d+) has been saved"}}`.
+
+The server calls no model. It carries out the repair under rules the caller
+cannot change (`src/record/repair.ts`):
+
+- every action passes the guard, as in `sap_act`;
+- no write the recording does not have: an action that may write is refused
+  unless the recorded step is itself a write, the repair replaces or completes
+  it (not `before`), and it is the only one;
+- no leaving the transaction, no other app;
+- no invented data: a typed value is in the recording or on the screen;
+- a screen that offers a choice (availability control) is not answered;
+- at most 4 actions;
+- the step is still judged by the recording: the screen it led to and every
+  marked check. A capture is allowed on a step that writes only, its value is
+  one token of letters and digits, and with the recorded number replaced by
+  the variable every check of the step must hold.
+
+A repair that worked is in the result (`repaired:` under the step, `PASS ...
+REPAIRED at step N` in the first line) with a proposed change to the test.
+With `"format":"json"` the result is data: per step the outcome, the phase of
+a failure and the repair; the full screen; and `proposal` (the changes in
+words, the recording with them written in, and for each of its steps the
+step of the replayed recording it comes from). Nothing is saved: the person
+decides whether the proposed recording replaces the old one.
+
 The first failing step stops the run; later steps are reported as skipped.
 On the wrong screen or after an SAP error, the marked checks are not run:
 they would only repeat the failure. The result holds, per step, pass, fail or
@@ -477,6 +522,7 @@ Not run:
 | `src/record/checks.ts` | evaluates checks and captures |
 | `src/record/recorder.ts` | the recorder |
 | `src/record/replay.ts` | the replay, its text and JUnit output |
+| `src/record/repair.ts` | a repair of one step: its rules, the capture, the proposed test |
 | `src/record/tools.ts` | `sap_record` and `sap_replay` |
 | `src/record/cli.ts` | `replay` and `export` on the command line |
 | `src/record/export/` | `calm.ts`, `vbs.ts`, `playwright.ts`, `gherkin.ts`, and `words.ts` (a step in a tester's words) |

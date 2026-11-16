@@ -50,6 +50,11 @@ The first public version.
 
 ### Record and replay (prototype)
 
+- `sap_replay` can resume at a failed step with a repair for that one step
+  (`from`, `repair`, `"format":"json"`): a few actions or a capture, carried
+  out under fixed rules (no added write, no leaving, no invented data, the
+  recorded checks still judge), with a proposed change to the test in the
+  result. The server calls no model.
 - `sap_record` keeps a run as a test file; `sap_replay` and
   `sap-gui-mcp-server replay` run it again with no model.
 - `export` writes a SAP Cloud ALM manual test case, a SAP GUI script (VBS),
