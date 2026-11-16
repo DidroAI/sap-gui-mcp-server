@@ -509,6 +509,18 @@ describe("replay: windows the recording does not have", () => {
     expect(resultText(r).split("\n")[0]).not.toContain("WITH NOTES");
   });
 
+  test("a recording started with a popup open says that the popup is not part of it", async () => {
+    const s = await setup();
+    s.sap.popupsFor.set("5000", [info]);
+    await s.act({ do: "okcode", value: "/nZA03" });
+    await s.act({ do: "set", id: "ctxtZORD-VBELN", value: "5000" });
+    await s.act({ do: "key", key: 0 });
+    expect((await s.rec("start", { name: "late" })).text).toContain('A popup is open ("Information"): a replay closes any popup before its first step');
+    await s.rec("stop");
+    await s.act({ do: "press", id: "wnd[1]/tbar[0]/btn[0]" });
+    expect((await s.rec("start", { name: "clean" })).text).not.toContain("A popup is open");
+  });
+
   test("a popup the recording confirmed but SAP does not show this time: the step is skipped", async () => {
     const s = await setup();
     s.sap.popupsFor.set("5000", [info]);
