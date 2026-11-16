@@ -4,29 +4,70 @@
   "description": "MCP server that lets an agent see and drive SAP screens: SAP GUI for Windows, SAP GUI for HTML (Web GUI) and SAP Fiori, in a compact, complete text view",
   "license": "MIT",
   "author": "Didro",
-  "keywords": ["mcp", "model-context-protocol", "mcp-server", "sap", "sap-gui", "sap-gui-scripting", "webgui", "fiori", "ui5", "agent", "claude", "codex"],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "sap",
+    "sap-gui",
+    "sap-gui-scripting",
+    "sap-webgui",
+    "webgui",
+    "sap-fiori",
+    "fiori",
+    "ui5",
+    "sapui5",
+    "s4hana",
+    "test-automation",
+    "agent",
+    "claude",
+    "codex",
+    "cursor"
+  ],
   "homepage": "https://github.com/DidroAI/sap-gui-mcp-server#readme",
-  "bugs": { "url": "https://github.com/DidroAI/sap-gui-mcp-server/issues" },
-  "repository": { "type": "git", "url": "git+https://github.com/DidroAI/sap-gui-mcp-server.git" },
+  "bugs": {
+    "url": "https://github.com/DidroAI/sap-gui-mcp-server/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DidroAI/sap-gui-mcp-server.git"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
     "./package.json": "./package.json"
   },
-  "bin": { "sap-gui-mcp-server": "dist/cli.js" },
-  "files": ["dist", "!dist/**/*.map", "README.md", "CHANGELOG.md", "LICENSE"],
-  "engines": { "node": ">=22" },
+  "bin": {
+    "sap-gui-mcp-server": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.map",
+    "skills",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node scripts/copy-assets.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "bun test test",
+    "test": "bun test ./test",
     "start": "node dist/cli.js",
-    "prepublishOnly": "bun run typecheck && bun run test && bun run build"
+    "prepublishOnly": "bun run typecheck && bun run test && bun run build",
+    "test:bench": "cd bench && bun install --frozen-lockfile && node --test test/*.test.ts"
   },
-  "publishConfig": { "access": "public" },
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
     "playwright-core": "1.65.0",
