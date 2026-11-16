@@ -22,6 +22,7 @@
  */
 import { compact, controlBlock } from "../core/compact.js";
 import { shortIds } from "../core/ids.js";
+import { notationNote } from "../core/notation.js";
 import { readRows } from "../core/rows.js";
 import { ActionError, type Action, type Assessment, type LookOptions } from "../core/types.js";
 import { LOGON_REFUSAL, okcodeKind } from "../core/words.js";
@@ -408,7 +409,9 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       if (c.readonly) throw new ActionError(`${c.sid} is read-only`);
       // A text editor has lines; every other field has one.
       const said = await typeInto(session, loc, String(a.value ?? ""), c.type === "GuiTextEdit" || c.tag === "TEXTAREA");
-      return `set ${c.sid}${said}`;
+      // A number typed in the other decimal notation than the screen's: SAP would read another number, or none.
+      const notation = notationNote(String(a.value ?? ""), await freshView(session).catch(() => ""));
+      return `set ${c.sid}${said}${notation ? `\n(${notation})` : ""}`;
     }
     case "press":
       if (c.overflow) return pressOverflow(session, c);
