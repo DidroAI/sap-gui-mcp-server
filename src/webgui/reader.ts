@@ -25,8 +25,8 @@ import { compact, controlBlock } from "../core/compact.js";
 import { resolveId, severalText, shortIds } from "../core/ids.js";
 import { readRows } from "../core/rows.js";
 import { ActionError, type Action, type Assessment, type LookOptions } from "../core/types.js";
-import { LOGON_PROGRAM, LOGON_REFUSAL } from "../core/words.js";
-import { assessAction, type FocusFacts } from "./assess.js";
+import { LOGON_PROGRAM, LOGON_REFUSAL, okcodeKind } from "../core/words.js";
+import { assessAction, type FocusFacts, popupButton } from "./assess.js";
 import type { MarkedControl, Scrolled } from "./page.js";
 import { comboEntries, extractFacts, extractLook, extractMenus, extractViewer, focusedControl, markControl, markRow, markSelector, normalizeLsdata, scrollControl, viewerFocus } from "./page.js";
 import { endedText, IDLE_TIMEOUT_MS, MAX_IDLE_TIMEOUT_MS, noTiming, timingText, type WebGuiSession } from "./session.js";
@@ -146,6 +146,24 @@ async function clientPopupLines(f: Frame): Promise<string[]> {
 async function onLogon(session: WebGuiSession): Promise<boolean> {
   return (await session.frame.evaluate(extractFacts).catch(() => undefined))?.logon === true;
 }
+
+/**
+ * Is the tab on Web GUI's logoff page ("Goodbye. You have been logged off")?
+ * Then the logon is closed: no session is left in the tab, and Web GUI's page
+ * stays locked, so a wait for SAP would last until its timeout.
+ */
+export async function loggedOff(session: WebGuiSession): Promise<boolean> {
+  const page = session.page;
+  if (page.isClosed()) return true;
+  // A screen of Web GUI, in any frame (also one embedded in the Fiori launchpad without a command field), is not the logoff page.
+  for (const f of page.frames()) if ((await f.locator("#ToolbarOkCode, [lsdata], [data-ls]").count().catch(() => 0)) > 0) return false;
+  const title = await page.title().catch(() => "");
+  const body = await page.evaluate(() => document.body?.innerText ?? "").catch(() => "");
+  return /log\s*off|logged off|abgemeldet|déconnecté|desconectado/i.test(`${title} ${body}`);
+}
+
+export const LOGGED_OFF =
+  "The SAP logon of this tab is closed: Web GUI shows its logoff page. Every session of this logon is gone, with its unsaved input, and nothing more can be done here until the user logs on again.";
 
 /** This server never acts on a logon screen: not a key, not a click. */
 async function refuseLogon(session: WebGuiSession): Promise<void> {
@@ -465,6 +483,7 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
   const gone = await session.ended();
   if (gone) throw new ActionError(endedText(gone));
   await refuseLogon(session);
+  if (await loggedOff(session)) throw new ActionError(LOGGED_OFF);
   const w0 = Date.now();
   await session.wake();
   session.timing.wake = Date.now() - w0;
@@ -663,14 +682,52 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
   const page = session.page;
   const id = String(a.id ?? "");
   switch (a.do) {
-    case "okcode":
-      await session.okCode(String(a.value ?? ""));
-      return `okcode ${a.value}`;
+    case "okcode": {
+      const value = String(a.value ?? "");
+      if (okcodeKind(value).kind !== "closes") {
+        await session.okCode(value);
+        return `okcode ${value}`;
+      }
+      // /nex, /nend, /i: the guard let it run (SAP_ALLOW_LOGOFF=on). /nex logs off at once, and the
+      // logoff page never looks idle: the answer comes from the page itself, within seconds.
+      session.idleTimeoutMs = 15_000;
+      const sent = session.okCode(value).then(
+        () => "done" as const,
+        (e: unknown) => e as Error,
+      );
+      for (let i = 0; i < 150; i++) {
+        const r = await Promise.race([sent, page.waitForTimeout(100).then(() => undefined)]);
+        if (await loggedOff(session)) return `okcode ${value}: ${LOGGED_OFF}`;
+        if (r === "done") return `okcode ${value}`; // /i and /nend ask first: their Log Off popup is on the screen
+        if (r instanceof Error) throw r;
+      }
+      return `okcode ${value} (no answer from SAP within 15 s)`;
+    }
     case "key": {
-      const k = vkey(a.key ?? a.value);
+      const raw = a.key ?? a.value;
+      const k = vkey(raw);
       // In a popup, SAP binds toolbar button btn[N] to virtual key N ("Continue (Enter)" is btn[0]).
       // Pressing that button works whether or not the keyboard focus is in the popup.
-      const n = typeof (a.key ?? a.value) === "number" ? Number(a.key ?? a.value) : k === "Enter" ? 0 : k === "Escape" ? 12 : undefined;
+      const n = typeof raw === "number" ? Number(raw) : k === "Enter" ? 0 : k === "Escape" ? 12 : undefined;
+      if (n !== undefined && (typeof raw === "number" || typeof raw === "string")) {
+        // The button the key presses on the popup, as the guard judged it (assess.ts `popupButton`): it is
+        // pressed by its id and named in the answer, so the agent knows which answer SAP got.
+        const view = await freshView(session);
+        const hit = popupButton(view, raw, (await focusOf(session))?.sid);
+        const label = (c: { id: string; text: string }) => `${c.id} "${c.text.replace(/\s+/g, " ").trim()}"`;
+        if (hit?.control) {
+          await clickForRoundtrip(session, hit.control.id);
+          return `key ${k} (pressed ${label(hit.control)})`;
+        }
+        if (hit?.asksDefault) {
+          // Enter would press the popup's default answer, and the page does not tell which one that is:
+          // on "Do you wish to save your data first?" it is Yes. Pressing blind saved a document once.
+          const answers = hit.window.controls.filter((c) => c.kind === "button" && c.id.includes("/usr/"));
+          throw new ActionError(
+            `Enter on the popup "${hit.window.title}" would press its default answer, and the server cannot tell which one that is, so nothing was pressed. Press the answer you mean by its id: ${answers.map(label).join(", ")}.`,
+          );
+        }
+      }
       if (n !== undefined) {
         const f = await lsFrame(session);
         const top = await f.evaluate(topWindowOpen);

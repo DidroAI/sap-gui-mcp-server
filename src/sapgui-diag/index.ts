@@ -133,7 +133,8 @@ export function assessDiag(s: DiagScreen, action: Action, target?: Target): Asse
         case "safe":
           return { risk: "navigate", reason: how };
         case "closes":
-          return commit(`${how} ${CLOSES_SESSIONS}`);
+          // Ending the logon: the guard refuses it on its own rule (SAP_ALLOW_LOGOFF).
+          return { risk: "commit", reason: `${how} ${CLOSES_SESSIONS}`, closes: true };
         case "commit":
           return commit(`${how} (a function code that saves, posts or deletes)`);
         default:

@@ -179,3 +179,12 @@ describe("fiori actions", () => {
     expect(decide(policyFromEnv({ SAP_WRITE: "confirm" }), { do: "press", id: "Save" }, a)).toMatchObject({ run: false, confirm: expect.stringContaining("Save") });
   });
 });
+
+describe("Fiori: signing out is its own risk", () => {
+  test("Sign Out is flagged closes and refused even with writing on", () => {
+    const a = assessAction({ do: "press", id: "__button9" }, button("Sign Out"), EN);
+    expect(a).toMatchObject({ risk: "commit", closes: true });
+    expect(decide(policyFromEnv({ SAP_WRITE: "on" }), { do: "press", id: "__button9" }, a).run).toBe(false);
+    expect(assessAction({ do: "press", id: "__button4" }, button("Back"), EN).closes).toBeUndefined();
+  });
+});

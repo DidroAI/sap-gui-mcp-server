@@ -75,6 +75,13 @@ export interface Assessment {
   risk: Risk;
   /** Why, in a few words a user can confirm: 'button "Save (Ctrl+S)"', "okcode /11". */
   reason: string;
+  /**
+   * The action ends SAP sessions or the whole logon (/nex, /nend, /i, Log Off
+   * and Yes on its popup). Such an action is also rated "commit" (unsaved data
+   * is lost), but the guard refuses it on its own rule, SAP_ALLOW_LOGOFF,
+   * whatever SAP_WRITE allows (core/guard.ts `decide`).
+   */
+  closes?: boolean;
 }
 
 export interface LookOptions {

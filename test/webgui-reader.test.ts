@@ -226,10 +226,15 @@ describe.skipIf(!exe)("Web GUI reader in a browser", () => {
     const f = page.mainFrame();
     await page.locator("#B1").focus(); // "Delete item"
     expect(await page.evaluate(focusedControl)).toMatchObject({ sid: "wnd[0]/usr/btnBT_DEL", type: "GuiButton" });
-    for (const key of [0, "Enter", "Space"]) {
+    // Space presses the focused button. Enter goes to the popup that is open (a save question with its answers
+    // in its body, focus on neither): it would press the popup's default answer, still a commit, said as such.
+    const space = await webguiAssessInFrame(f, { do: "key", key: "Space" });
+    expect(space.risk).toBe("commit");
+    expect(space.reason).toContain("Delete item");
+    for (const key of [0, "Enter"]) {
       const a = await webguiAssessInFrame(f, { do: "key", key });
       expect([key, a.risk]).toEqual([key, "commit"]);
-      expect(a.reason).toContain("Delete item");
+      expect(a.reason).toContain("default answer of the popup");
     }
     await page.locator("#B2").focus(); // "Display item": safe, but the popup asks whether to save, so Enter stays a commit
     expect((await webguiAssessInFrame(f, { do: "key", key: "Space" })).risk).toBe("navigate");
@@ -242,6 +247,16 @@ describe.skipIf(!exe)("Web GUI reader in a browser", () => {
     expect((await webguiAssessInFrame(f, { do: "key", key: "Space" })).risk).toBe("commit"); // "Approve all"
     await page.frameLocator("#V1").locator("#l").focus();
     expect((await webguiAssessInFrame(f, { do: "key", key: "Space" })).risk).toBe("navigate"); // "Show details"
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  });
+
+  test("Enter on a Yes / No popup with the focus on no answer presses nothing, and names the answers", async () => {
+    const f = page.mainFrame();
+    await page.locator("#F1").focus();
+    const r = await refusal(webguiActInFrame(f, { do: "key", key: 0 }));
+    expect(r).toContain("would press its default answer");
+    expect(r).toContain('wnd[1]/usr/btnSPOP-OPTION1 "Yes"');
+    expect(r).toContain('wnd[1]/usr/btnSPOP-OPTION2 "No"');
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   });
 

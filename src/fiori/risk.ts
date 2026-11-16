@@ -20,7 +20,7 @@
  * (Save, Create) is.
  */
 import type { Action, Assessment, Risk } from "../core/types.js";
-import { commitWord, safeWord } from "../core/words.js";
+import { commitWord, endsLogon, safeWord } from "../core/words.js";
 import type { ControlFacts } from "./ui5.js";
 
 /** What the rules know beyond the control: the page's language ("en-US"), for the safe words. */
@@ -177,6 +177,10 @@ export function assessAction(action: Action, facts: ControlFacts | undefined, ct
     return where ? { risk: "read", reason: `${where} field` } : { risk: "navigate", reason: `unsaved input in ${label(facts)}` };
   }
   if (d === "focus") return { risk: "read", reason: "focus" };
-  if (d === "press" || d === "click" || d === "select" || d === "dblclick") return assessControl(facts, ctx);
+  if (d === "press" || d === "click" || d === "select" || d === "dblclick") {
+    const a = assessControl(facts, ctx);
+    // "Sign Out", "Log Off": ending the logon is refused on its own rule (core/guard.ts, SAP_ALLOW_LOGOFF).
+    return (isButton(facts) || isPressable(facts)) && endsLogon(facts.text) ? { ...a, risk: "commit", closes: true } : a;
+  }
   return { risk: "commit", reason: `action "${d}" is not one the Fiori surface knows` };
 }
