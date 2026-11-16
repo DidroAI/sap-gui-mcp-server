@@ -42,7 +42,8 @@ export type Resolved = { id: string } | { none: true } | { several: string[] };
  * 3. for a full id that is not on the screen: its last segment, by the same
  *    rule (models rebuild ids and get the path wrong), among the controls of
  *    the window the id names: `wnd[1]/tbar[0]/btn[12]` never means a button
- *    of the main window.
+ *    of the main window;
+ * 4. an id written nearly right (`nearly`), when it then names one control.
  */
 export function resolveId(ids: Iterable<string>, ident: string): Resolved {
   const all = [...new Set(ids)];
@@ -63,12 +64,68 @@ export function resolveId(ids: Iterable<string>, ident: string): Resolved {
     return hits.length === 1 ? { id: hits[0] as string } : { several: hits };
   };
   const found = pick(want);
-  if (!("none" in found) || !want.startsWith("wnd[")) return found;
-  const wnd = windowOf(want);
-  return pick(
-    want.slice(want.lastIndexOf("/") + 1),
-    all.filter((id) => windowOf(id) === wnd),
-  );
+  if (!("none" in found)) return found;
+  if (want.startsWith("wnd[")) {
+    const wnd = windowOf(want);
+    const inWindow = pick(
+      want.slice(want.lastIndexOf("/") + 1),
+      all.filter((id) => windowOf(id) === wnd),
+    );
+    if (!("none" in inWindow)) return inWindow;
+  }
+  return nearly(all, want);
+}
+
+/** The last segment of an id without its type prefix (ctxtVBAK-VBELN -> VBAK-VBELN), in lower case. */
+const bareName = (segment: string): string => segment.replace(/^[a-z]+/, "").toLowerCase();
+
+/**
+ * 4. An id that names nothing as written, and one control only when read
+ *    the way models miswrite ids (measured on agent runs):
+ *    - in another case (`likp-vbeln` for `ctxtLIKP-VBELN`): SAP names are upper case;
+ *    - a table cell with the column counted wrong (`ctxtRV45A-MABNR[3,0]`
+ *      where the screen has `ctxtRV45A-MABNR[1,0]`): the field's name and
+ *      the row say which cell it is, the column index only where it stands
+ *      in this layout of the table;
+ *    - a table's own id with a cell's place (`tblX[1,0]`): the cell of that
+ *      table at that column and row.
+ *    Several candidates are never guessed among: the id then names nothing.
+ */
+function nearly(all: string[], want: string): Resolved {
+  const wnd = want.startsWith("wnd[") ? windowOf(want) : -1;
+  const pool = wnd < 0 ? all : all.filter((id) => windowOf(id) === wnd);
+  const last = (id: string) => id.slice(id.lastIndexOf("/") + 1);
+  const tail = last(want);
+  const one = (hits: string[]): Resolved | undefined => {
+    let h = [...new Set(hits)];
+    if (h.length > 1) {
+      const top = Math.max(...h.map(windowOf));
+      h = h.filter((id) => windowOf(id) === top);
+    }
+    return h.length === 1 ? { id: h[0] as string } : undefined;
+  };
+  // Labels share their field's name (lblVBAK-VBELN): the field is meant.
+  const fields = pool.filter((id) => !/^lbl/.test(last(id)));
+  const low = tail.toLowerCase();
+  const sameName = one(fields.filter((id) => last(id).toLowerCase() === low || bareName(last(id)) === low));
+  if (sameName) return sameName;
+  const cell = /^(.*)\[(\d+),(\d+)\]$/.exec(tail);
+  if (cell) {
+    const [, name = "", col = "", row = ""] = cell;
+    if (/^tbl/.test(name)) {
+      const inTable = one(fields.filter((id) => id.includes(`/${name}/`) && last(id).endsWith(`[${col},${row}]`)));
+      if (inTable) return inTable;
+    }
+    const n = name.toLowerCase();
+    const sameRow = one(
+      fields.filter((id) => {
+        const m = /^(.*)\[\d+,(\d+)\]$/.exec(last(id));
+        return !!m && m[2] === row && ((m[1] ?? "").toLowerCase() === n || bareName(m[1] ?? "") === n || bareName(m[1] ?? "") === bareName(name));
+      }),
+    );
+    if (sameRow) return sameRow;
+  }
+  return { none: true };
 }
 
 /** The text of the error for a handle that names several controls. */

@@ -176,6 +176,10 @@ export async function chooseEntry(session: WebGuiSession, c: MarkedControl, loc:
   const after = again ? await comboShown(again.loc) : "";
   // SAP may show the chosen entry under another text (a role taken up shows as "Customer (New)"): the key says which entry it is.
   if (after && after !== chosen && key && again && (await comboKey(again.loc)) === key) return `${c.sid} = ${key} ${after} (chosen as "${chosen}"; SAP shows it as "${after}")`;
+  // The list may show an entry by its key alone ("F2") and the field by key and text ("F2 Invoice"), or the other
+  // way round: the entry is in the field when one starts with the other at a word's end.
+  const same = (a: string, b: string) => a === b || a.startsWith(`${b} `) || b.startsWith(`${a} `);
+  if (after && after !== chosen && same(after, chosen)) return `${c.sid} = ${key && !after.startsWith(key) ? `${key} ` : ""}${after}${before === after ? " (it was already chosen)" : ""}`;
   if (after && after !== chosen) throw new ActionError(`${c.sid} shows "${after}" after choosing "${chosen}" (it showed "${before}" before): SAP did not take the entry. Look at the screen.`);
   return `${c.sid} = ${key ? `${key} ` : ""}${chosen}${before === chosen ? " (it was already chosen)" : ""}`;
 }

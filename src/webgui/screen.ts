@@ -247,7 +247,7 @@ export async function menuLines(session: WebGuiSession): Promise<string> {
   for (const m of sorted) {
     const id = m.sid.replace(/^wnd\[0\]\/mbar\//, "");
     if (!id.startsWith("menu[")) continue;
-    out.push(`  ${"  ".repeat(path(m.sid).length - 1)}${m.text}${m.key ? ` (${m.key.replace(/_/g, "+")})` : ""}  {${id}}`);
+    out.push(`  ${"  ".repeat(path(m.sid).length - 1)}${m.text}${m.key ? ` (${m.key.replace(/_/g, "+")})` : ""}  {${id}}${m.disabled ? "  (greyed out: SAP does not offer it on this screen)" : ""}`);
   }
   return out.join("\n");
 }

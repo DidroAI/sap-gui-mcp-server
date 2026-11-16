@@ -8,7 +8,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { compact } from "../src/core/compact.js";
 import { webguiActInFrame, webguiLookInFrame } from "../src/webgui/index.js";
-import { view } from "../src/webgui/reader.js";
+import { coveredBy, view } from "../src/webgui/reader.js";
+import { menuLines } from "../src/webgui/screen.js";
 import { WebGuiSession } from "../src/webgui/session.js";
 
 const exe = process.env.SAP_TEST_CHROME;
@@ -84,6 +85,20 @@ const SHELL = `
 <div ct="PW" id="DS1" style="position:absolute;top:0;left:0;width:400px;height:200px;background:#fff" lsdata="{13:{ModalNo:1,SID:'wnd[0]/dialogshell',Type:'GuiDialogShell'},15:true}">
   <div id="DS1-ttltxt" class="urPWTitleText">Error Log</div><a id="DS1-close" title="Close" style="display:inline-block;width:20px;height:20px" onclick="document.getElementById('DS1').style.display='none'">x</a>
   <span lsdata="{3:'The\\x20number\\x20of\\x20seats\\x20exceeds\\x20the\\x20capacity',19:${sid("wnd[0]/shellcont/lblMSG", "GuiLabel", 1)}}">The number of seats exceeds the capacity</span></div>`;
+
+// Agent bench (2026-11): controls SAP greys out, a checkbox half under its neighbour, a dropdown whose list shows keys only.
+const GREY = `
+<div ct="B" id="GB1" class="lsButton lsButton--disabled" aria-disabled="true" style="display:inline-block;width:30px;height:20px" onclick="window.greyClicked=1" lsdata="{4:'Role\\x20Detail',5:false,27:${sid("wnd[0]/usr/btnZROLE", "GuiButton")}}"></div>
+<div ct="B" id="GB2" class="lsButton" style="display:inline-block;width:30px;height:20px" onclick="window.goClicked=1" lsdata="{0:'Go',27:${sid("wnd[0]/usr/btnZGO", "GuiButton")}}">Go</div>
+<div style="position:relative;width:300px;height:30px">
+  <div ct="ALC" id="LC1" class="lsAbapList__checkbox" style="position:absolute;top:5px;left:16px;width:16px;height:19px" onclick="this.firstChild.className=this.firstChild.className==='urCImgOn'?'urCImgOff':'urCImgOn'" lsdata="{3:${sid("wnd[0]/usr/chk[2,9]", "ABAPLISTCHECKBOX")}}"><img class="urCImgOff" style="width:6px;height:6px"></div>
+  <div ct="ALI" id="LI1" style="position:absolute;top:5px;left:24px;width:8px;height:19px;background:#ccc" onclick="window.neighbour=1" lsdata="{1:${sid("wnd[0]/usr/lbl[3,9]", "ABAPLISTIMAGE")}}"></div>
+</div>
+<input id="CB1" value="" onclick="document.getElementById('CB1_LB').style.display='block'" lsdata="{2:'CB1_LB',3:'',4:'',20:${sid("wnd[0]/usr/cmbZ-FKART", "GuiComboBox")}}">
+<div id="CB1_LB" style="display:none"><div ct="LIB_I" data-itemkey="F1" onclick="document.getElementById('CB1').value='F1 Invoice (F1)';this.parentElement.style.display='none'">F1</div><div ct="LIB_I" data-itemkey="F2" onclick="document.getElementById('CB1').value='F2 Invoice';this.parentElement.style.display='none'">F2</div></div>
+<div id="cua2sapmenu_btn" onclick="window.menuOpened=1">Menu</div>
+<div class="lsMnu--root"><xmp><table><tr lsdata="{1:'Partner',18:${sid("wnd[0]/mbar/menu[0]", "GuiMenu")}}"></tr></table></xmp>
+<xmp><table><tr lsdata="{1:'Open',15:'SHIFT_F5',18:${sid("wnd[0]/mbar/menu[0]/menu[0]", "GuiMenu")}}" id="wnd[0]/mbar/menu[0]/menu[0]" class="urMnuRowOff"></tr><tr lsdata="{1:'More\\x20Functions...',5:false,18:${sid("wnd[0]/mbar/menu[0]/menu[7]", "GuiMenu")}}" id="wnd[0]/mbar/menu[0]/menu[7]" aria-disabled="true" class="urMnuRowDsbl lsMnuItemHeight"></tr></table></xmp></div>`;
 
 const page0 = (body: string) => `<!doctype html><html lang="en"><head><title>Synthetic</title></head><body>${HEAD}${body}</body></html>`;
 
@@ -234,6 +249,39 @@ describe.skipIf(!exe)("Web GUI reader: edge cases of round 3, in a browser", () 
     // One click on that item of that node: no double-click (it would open the node).
     expect(await page.evaluate(() => (window as unknown as { item?: string }).item)).toBe("2/1 ");
   });
+
+  test("a greyed-out button or menu entry is said in the view and refused at once, not after a click has timed out", async () => {
+    const f = await show(GREY);
+    const v = await full();
+    expect(v).toContain("wnd[0]/usr/btnZROLE  button  Role Detail  (greyed out: SAP does not offer it now)");
+    expect(v).toContain("wnd[0]/usr/btnZGO  button  Go");
+    await expect(webguiActInFrame(f, { do: "press", id: "btnZROLE" })).rejects.toThrow("wnd[0]/usr/btnZROLE is greyed out: SAP does not offer it on this screen now");
+    await expect(webguiActInFrame(f, { do: "select", id: "menu[0]/menu[7]" })).rejects.toThrow('menu entry wnd[0]/mbar/menu[0]/menu[7] "More Functions..." is greyed out');
+    // Nothing was clicked: neither the button nor the Menu button that opens the menu.
+    expect(await page.evaluate(() => (window as unknown as { greyClicked?: number; menuOpened?: number }).greyClicked ?? (window as unknown as { menuOpened?: number }).menuOpened)).toBeUndefined();
+    const menus = (await menuLines(new WebGuiSession(f))).split("\n");
+    expect(menus).toContain("    Open (SHIFT+F5)  {menu[0]/menu[0]}");
+    expect(menus).toContain("    More Functions...  {menu[0]/menu[7]}  (greyed out: SAP does not offer it on this screen)");
+    expect(await webguiActInFrame(f, { do: "press", id: "btnZGO" })).toContain("pressed wnd[0]/usr/btnZGO");
+  }, 30_000);
+
+  test("a control half under its neighbour is clicked on the part that shows (a checkbox of a classic list)", async () => {
+    const f = await show(GREY);
+    expect(await webguiActInFrame(f, { do: "check", id: "wnd[0]/usr/chk[2,9]" })).toContain("wnd[0]/usr/chk[2,9] checked");
+    expect(await page.evaluate(() => (window as unknown as { neighbour?: number }).neighbour)).toBeUndefined();
+    expect(await page.locator("#LC1 img").getAttribute("class")).toBe("urCImgOn");
+    // What Playwright saw over a control that is covered whole is named.
+    expect(coveredBy('  - <div id="urPopupWindowBlockLayer" class="x"></div> intercepts pointer events')).toStartWith("A popup window covers this control");
+    expect(coveredBy('  - <tr ct="POMNI" id="wnd[0]/mbar/menu[0]">…</tr> intercepts pointer events')).toStartWith("An open menu covers this control");
+    expect(coveredBy(`  - <div ct="ALI" data-ls="{1:{SID:'wnd[1]/usr/lbl[3,9]',Type:'ABAPLISTIMAGE'}}"></div> intercepts pointer events`)).toContain("Another control of the screen is drawn over it (wnd[1]/usr/lbl[3,9])");
+  }, 30_000);
+
+  test("a dropdown whose list shows the key and whose field shows key and text has taken the entry", async () => {
+    const f = await show(GREY);
+    expect(await webguiActInFrame(f, { do: "combo", id: "cmbZ-FKART", key: "F2" })).toContain("wnd[0]/usr/cmbZ-FKART = F2 Invoice");
+    expect(await page.locator("#CB1").inputValue()).toBe("F2 Invoice");
+    expect(await webguiActInFrame(f, { do: "combo", id: "cmbZ-FKART", key: "F2" })).toContain("wnd[0]/usr/cmbZ-FKART = F2 Invoice (it was already chosen)");
+  }, 30_000);
 
   test("a popup without a button closes with the x in its title; an icon-only tab is named by its tooltip (ECCSCR-16)", async () => {
     const f = await show(SHELL);

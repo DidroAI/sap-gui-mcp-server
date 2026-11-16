@@ -100,6 +100,13 @@ describe("sap_look", () => {
     ]);
     expect((await call("sap_look", { diff: true })).text).toStartWith("NO CHANGE");
   });
+  test("cols without rows reads the first rows; cols without an id is refused", async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "XYZ", transaction: "ZT01" }, { view: screen() });
+    await call("sap_look", { id: "cntlGRID1/shell", cols: "VBELN, NETWR" });
+    expect(surface.log.filter((l) => l.options).map((l) => l.options)).toEqual([{ compact: true, id: "cntlGRID1/shell", rows: { from: 0, to: 49 }, cols: ["VBELN", " NETWR"] }]);
+    expect((await call("sap_look", { cols: "VBELN" })).text).toContain('"cols" needs "id"');
+  });
   test("rows without an id, or a range that is not one, is refused", async () => {
     const { surface, call } = await setup();
     surface.add({ id: "chrome:1", system: "XYZ", transaction: "ZT01" });

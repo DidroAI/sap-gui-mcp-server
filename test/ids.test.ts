@@ -87,6 +87,36 @@ describe("resolveId: which control an id means", () => {
     expect(resolveId(IDS, "wnd[0]/usr/wrong/path/ctxtZHDR-TYPE")).toEqual({ id: "wnd[0]/usr/ctxtZHDR-TYPE" });
     expect(resolveId(IDS, "wnd[0]/usr/wrong/shell")).toEqual({ several: [TREE, EDITOR] });
   });
+  test("an id written nearly right names its control when it then names one only (agent runs, 2026-11)", () => {
+    const T = "wnd[0]/usr/tabsTAB/tabpT\\01/ssubBODY:ZPROG:4400/tblZPROGTC_ITEMS";
+    const ids = [
+      "wnd[0]/usr/lblLIKP-VBELN",
+      "wnd[0]/usr/ctxtLIKP-VBELN",
+      T,
+      `${T}/txtZITM-POSNR[0,0]`,
+      `${T}/ctxtZITM-MATNR[1,0]`,
+      `${T}/txtZITM-MENGE[3,0]`,
+      `${T}/ctxtZITM-MATNR[1,1]`,
+      `${T}/txtZITM-MENGE[3,1]`,
+      "wnd[0]/tbar[0]/btn[11]",
+    ];
+    // Another case: SAP names are upper case.
+    expect(resolveId(ids, "likp-vbeln")).toEqual({ id: "wnd[0]/usr/ctxtLIKP-VBELN" });
+    expect(resolveId(ids, "ctxtlikp-vbeln")).toEqual({ id: "wnd[0]/usr/ctxtLIKP-VBELN" });
+    // A cell with its column counted wrong: the field's name and the row say which cell.
+    expect(resolveId(ids, "ctxtZITM-MATNR[3,0]")).toEqual({ id: `${T}/ctxtZITM-MATNR[1,0]` });
+    expect(resolveId(ids, "ZITM-MENGE[2,1]")).toEqual({ id: `${T}/txtZITM-MENGE[3,1]` });
+    // The table's own id with a cell's place: the cell of that table there.
+    expect(resolveId(ids, "tblZPROGTC_ITEMS[1,1]")).toEqual({ id: `${T}/ctxtZITM-MATNR[1,1]` });
+    // A row the screen does not hold, a field the table does not have: nothing, never another row's cell.
+    expect(resolveId(ids, "ctxtZITM-MATNR[1,7]")).toEqual({ none: true });
+    expect(resolveId(ids, "ctxtZITM-WERKS[4,0]")).toEqual({ none: true });
+    expect(resolveId(ids, "tblZPROGTC_ITEMS[2,0]")).toEqual({ none: true });
+    // Two candidates are never guessed among.
+    expect(resolveId([...ids, "wnd[0]/usr/subX/ctxtLIKP-VBELN"], "likp-vbeln")).toEqual({ none: true });
+    // An id of a window stays in that window.
+    expect(resolveId(ids, "wnd[1]/usr/ctxtlikp-vbeln")).toEqual({ none: true });
+  });
   test("an id of another screen names nothing", () => {
     expect(resolveId(IDS, "ctxtZOLD-FIELD")).toEqual({ none: true });
     expect(resolveId(IDS, "cntlGRID1/shell")).toEqual({ none: true });

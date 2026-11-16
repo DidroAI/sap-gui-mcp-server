@@ -382,7 +382,7 @@ describe("the answer to an action", () => {
     await call("sap_look");
     s.view = [...before.replace(/\(edit\)/g, "(read-only)").split("\n"), "sbar  status  W: The default date is not copied into existing schedule lines"].join("\n");
     const lines = (await call("sap_act", { action: { do: "key", key: 0 } })).text.split("\n");
-    expect(lines[1]).toBe("STATUS W: The default date is not copied into existing schedule lines  (warning: Enter accepts it and goes on; SAP may keep the fields closed until then)");
+    expect(lines[1]).toBe("STATUS W: The default date is not copied into existing schedule lines  (warning: Enter accepts it and goes on; another warning may follow, and each takes its own Enter. SAP may keep the fields closed until then, and fills nothing in before)");
     expect(lines[2]).toBe("");
     // The fields the warning closed are one line, not twelve.
     expect(lines.length).toBeLessThan(8);

@@ -172,6 +172,12 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
     // A control of a window behind a popup takes nothing: said at once, with the popup, not after a click has timed out.
     const covered = a.id === undefined ? undefined : behindPopup(before, (menuSid(String(a.id)) ?? String(resolved.id)), a.do);
     if (covered && a.do !== "scroll" && (await session.blocked())) throw new ActionError(covered);
+    // The same for a command: the popup in front is named with its buttons, so the answer is enough to close it.
+    const inFront = a.do === "okcode" ? topPopup(before) : undefined;
+    if (inFront && (await session.blocked()))
+      throw new ActionError(
+        `The command field is behind a popup, so okcode ${String(a.value ?? "")} was not run: ${popupName(before, inFront)} is open, and SAP takes no command while a popup is open (not /n either). Answer or close the popup first, then send the command again.`,
+      );
     const windows = session.windowsOpened;
     const done = await run(session, resolved);
     let nothing = session.posts === mark && !done.endsWith(NOTHING_TO_SAP) ? nothingSent(a) : undefined;
@@ -251,9 +257,23 @@ function tidy(e: unknown): Error {
   if (e instanceof ActionError) return e;
   const message = e instanceof Error ? e.message : String(e);
   const first = message.split("\n")[0] ?? message;
-  if (message.includes("intercepts pointer events"))
-    return new ActionError(`${first} Another window covers this control (a popup is open?): look at the screen and answer the popup first.`);
+  if (message.includes("intercepts pointer events")) return new ActionError(`${first} ${coveredBy(message)}`);
   return new ActionError(first);
+}
+
+/**
+ * What Playwright saw over the control it could not click, from its call log
+ * (`<div id="urPopupWindowBlockLayer" ...> intercepts pointer events`): a
+ * popup's layer, an open menu or list, or another control of the screen.
+ */
+export function coveredBy(log: string): string {
+  const tag = /<([^\n]*?)>(?:[^\n]*?<\/[a-z]+>)? (?:from <[^\n]*?> subtree )?intercepts pointer events/.exec(log)?.[1] ?? "";
+  if (/urPopupWindowBlockLayer|sesTimeoutPopupWindow/.test(tag)) return "A popup window covers this control: look at the screen and answer the popup first.";
+  if (/ct="POMN|lsMnu|urMnu|role="menu/.test(tag)) return 'An open menu covers this control: {"do":"key","key":"Escape"} closes the menu, then act again.';
+  if (/role="listbox"|lsListbox|ct="LIB/.test(tag)) return 'The open list of a dropdown or of a field\'s earlier entries covers this control: {"do":"key","key":"Escape"} closes the list, then act again.';
+  const sid = /SID:'((?:[^'\\]|\\.)*)'/.exec(tag)?.[1]?.replace(/\\\\/g, "\\");
+  if (sid) return `Another control of the screen is drawn over it (${sid}) and takes the click. Look at the screen: the control may be scrolled out of its table or area.`;
+  return "Something is drawn over this control and takes the click (a popup, an open menu or list, or another part of the screen): look at the screen first.";
 }
 
 async function run(session: WebGuiSession, a: Action): Promise<string> {
@@ -438,6 +458,7 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       }
       if (await clickMenuRow(session, id)) return `chose menu entry ${id}`;
       const { loc, c } = await locate(session, id);
+      if (c.disabled) throw new ActionError(greyedOut(`${c.sid}`));
       // A tab sends a request, and choosing it twice is choosing it once: a lost click is made again.
       // (Not `sure`: a tab strip that switches in the page sends nothing.)
       if (c.type === "GuiTab") await clickForRoundtrip(session, c.sid, false, true);
@@ -474,6 +495,8 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
   // A cell of a grid that takes input (an editable ALV) is named by the grid, a row and a column.
   if (a.do === "set" && a.row !== undefined && a.col !== undefined && a.col !== "" && kindIn(await freshView(session), id) === "grid") return setCell(session, a);
   const { loc, c } = await locate(session, id);
+  // A greyed-out button or tab takes no click: Playwright would wait for it for its whole timeout.
+  if (c.disabled && /^(press|click|select|dblclick)$/.test(a.do)) throw new ActionError(greyedOut(`${c.sid}`));
   switch (a.do) {
     case "set": {
       if (c.type === "GuiCalendar") {
@@ -587,6 +610,10 @@ async function messageHelp(session: WebGuiSession, sid: string): Promise<string>
   return `clicked the message of ${sid}: SAP shows its long text when it has one (a window with the text; close it to go on)`;
 }
 
+/** The refusal for a button, a tab or a menu entry SAP shows greyed out: a click would only wait for it and time out. */
+const greyedOut = (what: string): string =>
+  `${what} is greyed out: SAP does not offer it on this screen now (in this mode, or for this data), so nothing was clicked. Look at the screen for the function that is offered, or for what has to be chosen first.`;
+
 /** How long a menu entry may take to be drawn after its menu was opened. */
 const MENU_ROW_MS = 3000;
 
@@ -608,6 +635,9 @@ async function chooseMenu(session: WebGuiSession, id: string): Promise<string> {
   const known = await f.evaluate(extractMenus).catch(() => []);
   if (known.length && !known.some((m) => m.sid === full) && !(await isOpen(full)))
     throw new ActionError(`No menu entry "${id}" on this screen. {"id":"mbar"} with sap_look lists every entry of the menu bar with its path.`);
+  // An entry SAP greys out (or one below a greyed-out menu) takes no click: said at once, and the menu is not opened.
+  const grey = known.find((m) => m.disabled && (m.sid === full || full.startsWith(`${m.sid}/`)));
+  if (grey) throw new ActionError(greyedOut(`menu entry ${grey.sid} "${grey.text}"`));
   const before = session.posts;
   if (!(await isOpen(sids[0] as string))) await f.locator("#cua2sapmenu_btn").click({ timeout: 5000 });
   for (let i = 0; i < sids.length; i++) {
@@ -622,7 +652,15 @@ async function chooseMenu(session: WebGuiSession, id: string): Promise<string> {
       await session.pressKey("Escape").catch(() => {});
       throw new ActionError(`Menu entry ${sid} did not appear when its menu was opened (it may be hidden on this screen). Nothing was chosen. {"id":"mbar"} with sap_look lists the entries.`);
     }
-    await f.locator(`tr[id="${sid}"]`).filter({ visible: true }).first().click({ timeout: MENU_ROW_MS });
+    const row = f.locator(`tr[id="${sid}"]`).filter({ visible: true }).first();
+    // Greyed out, and only the drawn menu says so: nothing is clicked, and the menu is closed again (left open it covers the screen).
+    const dead = await row.evaluate((tr) => tr.getAttribute("aria-disabled") === "true" || /\burMnuRowDsbl\b/.test(tr.className)).catch(() => false);
+    const failed = dead ? new ActionError(greyedOut(`menu entry ${sid}`)) : await row.click({ timeout: MENU_ROW_MS }).then(() => undefined, (e: unknown) => e);
+    if (failed) {
+      for (let k = 0; k < 3 && (await f.evaluate(openOverlay).catch(() => "")); k++) await session.pressKey("Escape").catch(() => {});
+      if (await f.evaluate(openOverlay).catch(() => "")) await f.locator("#cua2sapmenu_btn").click({ timeout: 3000 }).catch(() => {});
+      throw failed instanceof ActionError ? failed : new ActionError(`Menu entry ${sid} could not be clicked (${(failed instanceof Error ? failed.message : String(failed)).split("\n")[0]}). Nothing was chosen, and the menu was closed again. {"id":"mbar"} with sap_look lists the entries.`);
+    }
     if (!last) await session.page.waitForTimeout(100);
   }
   // An entry with a submenu sends SAP nothing, and its entries show within a moment: then there is no request

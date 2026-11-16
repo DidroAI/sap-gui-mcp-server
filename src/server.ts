@@ -79,7 +79,7 @@ export function withStatus(shown: string, view: string): string {
 /** What to do about a message of the status bar, by its type. */
 const STATUS_HINT: Record<string, string> = {
   E: "error: correct the input it names, then Enter",
-  W: "warning: Enter accepts it and goes on; SAP may keep the fields closed until then",
+  W: "warning: Enter accepts it and goes on; another warning may follow, and each takes its own Enter. SAP may keep the fields closed until then, and fills nothing in before",
   A: "termination: SAP ended the transaction",
 };
 
@@ -172,6 +172,8 @@ export function parseRows(rows: string): { from: number; to: number } {
 }
 /** The most rows one sap_look reads by scrolling. */
 const MAX_ROWS = 200;
+/** The rows read when "cols" comes without "rows": from the first row on. */
+const COLS_ONLY_ROWS = { from: 0, to: 49 };
 
 export function createServer({ policy, surfaces, view = "diff", record }: ServerOptions) {
   const registry = new Registry(surfaces, policy);
@@ -252,14 +254,15 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
   diff=true   only what changed since the view you got last
   id="..."    one control, whole: all the entries of a dropdown, all the rows read of a grid, table, tree or list; id="mbar" lists every menu entry
   id="...", rows="120-180"   those rows of a grid, table control, tree or list (counted from 0; the control is scrolled there)
-  cols="VBELN,NETWR"         with id and rows: only these columns of a grid or table control (ids or titles)`,
+  cols="VBELN,NETWR"         with id: only these columns of a grid or table control (ids or titles);
+                             without rows, the first ${COLS_ONLY_ROWS.to + 1} rows`,
       inputSchema: {
         session,
         full: z.boolean().optional().describe("full view instead of compact"),
         diff: z.boolean().optional().describe("only what changed since your last view"),
         id: z.string().optional().describe("one control, whole (an id from the view)"),
         rows: z.string().optional().describe('with id: a range of rows counted from 0, e.g. "120-180"'),
-        cols: z.string().optional().describe('with id and rows, for a grid or a table control: only these columns, by id or title, e.g. "VBELN,NETWR"'),
+        cols: z.string().optional().describe('with id, for a grid or a table control: only these columns, by id or title, e.g. "VBELN,NETWR" (without rows: the first rows)'),
       },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -270,9 +273,11 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
   async function look(ref: string | undefined, full: boolean | undefined, diff: boolean | undefined, id: string | undefined, rows: string | undefined, cols: string | undefined): Promise<CallToolResult> {
         const { driver, info } = await registry.session(ref);
         if (rows !== undefined && !id) throw new ActionError('"rows" needs "id": the grid, table, tree or list to read.');
-        if (cols !== undefined && rows === undefined) throw new ActionError('"cols" goes with "id" and "rows": the columns to keep of the rows read.');
+        if (cols !== undefined && !id) throw new ActionError('"cols" needs "id": the grid or table control whose columns to keep.');
         if (id) {
-          const options: LookOptions = { compact: !full, id, ...(rows !== undefined ? { rows: parseRows(rows) } : {}), ...(cols !== undefined ? { cols: cols.split(",") } : {}) };
+          // Columns without rows: the rows from the first one on (a page of them; the answer says where it ends).
+          const range = rows !== undefined ? parseRows(rows) : cols !== undefined ? COLS_ONLY_ROWS : undefined;
+          const options: LookOptions = { compact: !full, id, ...(range ? { rows: range } : {}), ...(cols !== undefined ? { cols: cols.split(",") } : {}) };
           // One control is not the screen: what the agent holds of the screen stays as it is.
           return text(await driver.look(options));
         }
