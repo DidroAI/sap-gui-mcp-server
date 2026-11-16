@@ -147,9 +147,15 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
     // The id as the screen holds it now: a handle becomes its full id, one that names several controls is refused.
     const named = a.id !== undefined && String(a.id).trim() && !isMenuPath(String(a.id));
     const mark = session.posts;
+    const windows = session.windowsOpened;
     const done = await run(session, named ? { ...a, id: resolveIn(await freshView(session), String(a.id)) } : a);
     const nothing = session.posts === mark && !done.endsWith(NOTHING_TO_SAP) ? nothingSent(a) : undefined;
-    const note = nothing ? `${done}\n${nothing}` : done;
+    let note = nothing ? `${done}\n${nothing}` : done;
+    // SAP answered in another browser window (the Fiori launchpad, a document): the agent is told, this tab is the session still.
+    if (session.windowsOpened > windows) {
+      const address = session.openedAddress(session.windowsOpened - 1);
+      note = `${done}\n(SAP opened another browser window${address ? `: ${address}` : ""}. It is not this SAP session: the screen below is this session's, and sap_sessions lists what the server can drive.)`;
+    }
     return session.unsettled ? `${note}\n(Web GUI still showed its loading sign when the server stopped waiting: the step may not be over. If the screen below is not what the step should lead to, look again in a moment.)` : note;
   } catch (e) {
     throw tidy(e);

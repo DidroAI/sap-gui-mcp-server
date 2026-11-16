@@ -296,6 +296,14 @@ describe.skipIf(!exe)("Web GUI reader: SAP GUI for HTML of S/4HANA 2025, in a br
     expect(Date.now() - t0).toBeLessThan(2000);
   });
 
+  test("SAP opens another browser window: the answer says so, and the command field still takes a command", async () => {
+    await load(`${HEAD}${button("B9", "wnd[0]/usr/btnOPEN", "Open")}<script>document.getElementById('B9').addEventListener('click', function () { window.open('about:blank'); });</script></body></html>`);
+    const said = await webguiActInFrame(page.mainFrame(), { do: "press", id: "btnOPEN" });
+    expect(said).toContain("SAP opened another browser window");
+    expect(await act({ do: "okcode", value: "/nVA03" })).toBe("okcode /nVA03");
+    for (const p of page.context().pages()) if (p !== page) await p.close();
+  });
+
   test('a toolbar button behind the ">>" button of S/4HANA 2025 is pressed through its menu', async () => {
     await load(overflowPage(true));
     expect(await fullView()).toContain('wnd[0]/tbar[1]/btn[26]  button  Sales  (behind ">>")');
