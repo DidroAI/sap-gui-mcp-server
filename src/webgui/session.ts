@@ -472,7 +472,7 @@ export class WebGuiSession {
     const seen = Date.now();
     this.traffic.maxGap = 0;
     // Nothing left and nothing is under way: no round trip to wait for.
-    if (sent || this.traffic.inflight > 0 || this.traffic.posts > before) await this.waitIdle(this.quietMs, false, sent ? 0 : 100, true);
+    if (sent || this.traffic.inflight > 0 || this.traffic.posts > before) await this.waitIdle(this.quietMs, false, sent ? 0 : 100, "answer");
     this.started = this.traffic.posts > before;
     this.account(t0, seen, before);
     const failed = this.traffic.failed;
@@ -589,19 +589,36 @@ export class WebGuiSession {
    * that could send one (`PageState.calm`), seen on two looks in a row.
    * Measured on ECC over 16 kinds of step: the page changed nothing between
    * its unlock and the end of the old 300 ms, and sent nothing. Not in a tab
-   * Chrome draws once a second, and not after typing (the list of earlier
-   * entries is asked for 250 ms after the last key).
+   * Chrome draws once a second.
+   *
+   * `typed`: the wait follows typing into a field, which sends SAP nothing
+   * (the list of earlier entries is asked for on the side, half a second
+   * later, and waits for no one). Where the queue is watched, the page is
+   * ready for the next input when it is unlocked with no request under way,
+   * on two looks in a row; the lead and the quiet period were there for
+   * pages that do not say.
    */
-  async waitIdle(quietMs = this.quietMs, timed = true, leadMs = 100, answered = false): Promise<void> {
+  async waitIdle(quietMs = this.quietMs, timed = true, leadMs = 100, after?: "answer" | "typing"): Promise<void> {
     const start = Date.now();
     if (timed) {
       try {
-        return await this.waitIdle(quietMs, false, leadMs, answered);
+        return await this.waitIdle(quietMs, false, leadMs, after);
       } finally {
         this.timing.idle += Date.now() - start;
       }
     }
+    const answered = after === "answer";
     const deadline = start + this.idleTimeoutMs;
+    if (after === "typing" && !this.slow) {
+      const free = async () => {
+        const st = await this.state();
+        return st.queue !== undefined && st.locked === false && this.traffic.inflight === 0;
+      };
+      if (await free()) {
+        await this.pause(POLL_MS);
+        if (await free()) return;
+      }
+    }
     if (leadMs > 0) await this.pause(leadMs);
     let checked = 0;
     // The step was seen over on the look before (see `answered`).
@@ -688,7 +705,8 @@ export class WebGuiSession {
       throw new ActionError("A popup window is open and blocks the command field: answer or close the popup first (see the WINDOW lines of sap_look).");
     await ok.click();
     await ok.fill("");
-    await ok.pressSequentially(command, { delay: 20 });
+    // Typed as keys, one after the other without a pause (it was 20 ms a key); the check below catches a key that was lost.
+    await ok.pressSequentially(command);
     // What the field holds is what Enter sends: a command that did not arrive whole must not run as another one.
     const typed = await ok.inputValue().catch(() => command);
     if (typed.trim().toLowerCase() !== command.trim().toLowerCase()) {

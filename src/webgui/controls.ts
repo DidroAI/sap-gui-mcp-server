@@ -125,7 +125,7 @@ export async function typeInto(session: WebGuiSession, loc: Locator, value: stri
   await loc.press("ControlOrMeta+A");
   await loc.press("Delete");
   if (value) await loc.pressSequentially(value, { delay: 15 });
-  await session.waitIdle();
+  await session.waitIdle(session.quietMs, true, 100, "typing");
   await session.closeSuggestions();
 }
 
