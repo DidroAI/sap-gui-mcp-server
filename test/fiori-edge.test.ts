@@ -273,6 +273,16 @@ describe("FIORI-08, FIORI-09, FIORI-10", () => {
     expect(lines).toContain(`Input #a "a" {ctx:/Order('1')}`);
     expect(lines).toContain('Input #b "b"');
   });
+  test("compact: a context without the draft id and the active flag every active document has", () => {
+    const ctx = { getPath: () => "/C_Order(Order='1',DraftUUID=guid'00000000-0000-0000-0000-000000000000',IsActiveEntity=true)" };
+    const draft = { getPath: () => "/C_Order(Order='',DraftUUID=guid'0a1b2c3d-0000-0000-0000-000000000001',IsActiveEntity=false)" };
+    const field = (n: string, c: typeof ctx) => new FakeControl({ type: "sap.m.Input", id: `app::Obj--${n}`, isA: ["sap.m.InputBase"], props: { value: n, editable: true }, methods: { getBindingContext: () => c } });
+    installPage([field("a", ctx), field("d", draft)]);
+    const view = ui5Look({ compact: true });
+    expect(view).toContain(`Input #a "a" {ctx:/C_Order(Order='1')}`);
+    expect(view).toContain("DraftUUID=guid'0a1b2c3d-0000-0000-0000-000000000001',IsActiveEntity=false");
+    expect(ui5Look({ compact: false })).toContain("IsActiveEntity=true");
+  });
 });
 
 export { marked };
