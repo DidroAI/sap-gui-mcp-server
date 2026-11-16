@@ -26,14 +26,17 @@ const QUIET_MS = 300;
 const QUIET_SLOW_MS = 1300;
 const START_SLOW_MS = 2500;
 /**
- * After the page has handled a key or a click (two frames drawn), how long
- * its request may still take to leave before the action counts as one that
- * sends nothing. Web GUI starts its request in the key or click handler or
- * on a short timer after it; a page that is slow to draw is waited for by
- * the frames themselves, up to the caller's `startMs`. Not yet tuned on a
- * live system: "timing":true on an action shows the "start" part.
+ * Where Web GUI's own event queue cannot be watched (see `watchQueue`): after
+ * the page has handled a key or a click (two frames drawn), how long its
+ * request may still take to leave before the action counts as one that sends
+ * nothing. Web GUI with SAP Screen Personas holds every step for 300 ms
+ * before it sends it (measured on ECC: the request left 300 to 311 ms after
+ * the key, every time), so the guess must be well over that: 250 ms answered
+ * "nothing was sent" for steps that did go to SAP.
  */
-export const LEAVE_MS = 250;
+export const LEAVE_MS = 450;
+/** A step the queue has held for longer than this is no longer waited for: its timer is 300 ms at most. */
+const QUEUE_MAX_MS = 1500;
 /** A step still running when an action comes, for this long or more, makes the action stop: the screen it was chosen on is gone. */
 const BUSY_BEFORE_MS = 1000;
 /** How often a wait looks at the traffic and the page. */
@@ -234,13 +237,45 @@ export function timingText(t: Timing, total: number): string {
   return `${total} ms: ${parts.join(", ")} (${t.posts} request${t.posts === 1 ? "" : "s"}${t.gap ? `, longest pause between requests ${t.gap} ms` : ""})`;
 }
 
+/** What the waits read from the page on every poll. */
+export interface PageState {
+  /** Web GUI's loading sign is shown. */
+  busy: boolean;
+  /** Web GUI's lock (`oLS.bLocked()`); undefined when this Web GUI does not say. */
+  locked: boolean | undefined;
+  /**
+   * Web GUI's event queue: "waiting" while it holds a step it has not sent
+   * yet (or is about to put one there), "idle" when it holds none. Undefined
+   * when the queue is not watched: this Web GUI is built differently, or the
+   * watch was not there before the input.
+   */
+  queue: "waiting" | "idle" | undefined;
+}
+
 /**
- * Runs in the page: Web GUI's loading sign (BUSY) is shown, and its lock
- * (`oLS.bLocked()`, undefined when this Web GUI does not say). One round
- * trip for what the waits look at on every poll. "Shown" is Playwright's
- * `visible`: not hidden by style, and a box that is not empty.
+ * Runs in the page: Web GUI's loading sign (BUSY) is shown, its lock
+ * (`oLS.bLocked()`, undefined when this Web GUI does not say), and its event
+ * queue. One round trip for what the waits look at on every poll. "Shown" is
+ * Playwright's `visible`: not hidden by style, and a box that is not empty.
+ *
+ * The event queue. Web GUI does not send a step from the key or click
+ * handler: the handler puts an event in a queue (`enqueueEvent` of the
+ * object Lightspeed hands its events to), and a timer sends the queue: at
+ * once, or 300 ms later when SAP Screen Personas is on. Between the two the
+ * page is not locked and no request is under way, so a wait that looks only
+ * at those answered "nothing was sent" for steps that were about to go. The
+ * queue itself is private to Web GUI. With `watch`, the two functions around
+ * it are wrapped once per page: the wrapper notes when an event goes in and
+ * when the queue is processed, and calls the original. A key or a click
+ * that does nothing in SAP puts nothing in the queue: that is known as soon
+ * as the page has handled it.
+ *
+ * Lightspeed's delayed calls count as "waiting" too: a control that was
+ * scrolled puts its event in the queue 200 ms later (`fireScrollSync`). Two
+ * of them never lead to a request and stay for seconds: the loading
+ * animation (`show`) and the layout filter (`timedMassNotificationFilter`).
  */
-export function pageState(busySelector: string): { busy: boolean; locked: boolean | undefined } {
+export function pageState(arg: { busy: string; watch: boolean; maxMs: number }): PageState {
   const shown = (e: Element) => {
     const st = getComputedStyle(e);
     if (typeof (e as HTMLElement).checkVisibility === "function" && !(e as HTMLElement).checkVisibility()) return false;
@@ -250,20 +285,77 @@ export function pageState(busySelector: string): { busy: boolean; locked: boolea
   };
   let busy = false;
   try {
-    busy = Array.from(document.querySelectorAll(busySelector)).some(shown);
+    busy = Array.from(document.querySelectorAll(arg.busy)).some(shown);
   } catch {
     busy = false;
   }
-  let locked: boolean | undefined;
-  const ls = (window as unknown as { oLS?: { bLocked?: () => unknown } }).oLS;
-  if (typeof ls?.bLocked === "function") {
-    try {
-      locked = ls.bLocked() === true;
-    } catch {
-      locked = undefined;
-    }
+  const w = window as unknown as {
+    oLS?: { bLocked?: () => unknown };
+    UCF_System?: { oLS?: { oSemanticEventHandlerObject?: QueueOwner } };
+    UCF_JsUtil?: { mDelayedCalls?: Record<string, { sMethodName?: unknown } | undefined> };
+  };
+  interface QueueWatch {
+    /** When the oldest event still in the queue went in; 0 when the queue was processed since. */
+    at: number;
+    /** When the queue was last processed. */
+    done: number;
   }
-  return { busy, locked };
+  interface QueueOwner {
+    enqueueEvent?: (...a: unknown[]) => unknown;
+    processEventQueue?: (...a: unknown[]) => unknown;
+    sapGuiMcpWatch?: QueueWatch;
+  }
+  const isLocked = (): boolean | undefined => {
+    const ls = w.oLS;
+    if (typeof ls?.bLocked !== "function") return undefined;
+    try {
+      return ls.bLocked() === true;
+    } catch {
+      return undefined;
+    }
+  };
+  const locked = isLocked();
+  let queue: "waiting" | "idle" | undefined;
+  try {
+    const owner = w.UCF_System?.oLS?.oSemanticEventHandlerObject;
+    if (owner && typeof owner.enqueueEvent === "function" && typeof owner.processEventQueue === "function") {
+      const watch = owner.sapGuiMcpWatch;
+      if (!watch && arg.watch) {
+        const made: QueueWatch = { at: 0, done: 0 };
+        const enqueue = owner.enqueueEvent;
+        const process = owner.processEventQueue;
+        owner.enqueueEvent = function (this: unknown, ...a: unknown[]) {
+          try {
+            // As Web GUI decides it: a focus change is not queued, and an event that comes while a
+            // round trip runs is dropped (all but a grid's request for more rows).
+            const name = (a[0] as { sEvName?: unknown } | undefined)?.sEvName;
+            if (name !== "FocusChange" && !(isLocked() === true && name !== "RequestData") && !made.at) made.at = Date.now();
+          } catch {
+            // The watch must never break the page.
+          }
+          return enqueue.apply(this, a);
+        };
+        owner.processEventQueue = function (this: unknown, ...a: unknown[]) {
+          made.at = 0;
+          made.done = Date.now();
+          return process.apply(this, a);
+        };
+        owner.sapGuiMcpWatch = made;
+        // An event already in the queue is not known: this poll cannot say.
+      } else if (watch) {
+        const now = Date.now();
+        const held = watch.at > 0 && now - watch.at < arg.maxMs;
+        // Just processed: a Personas script may run before the request leaves (a timer of 1 ms).
+        const justDone = now - watch.done < 50;
+        const calls = w.UCF_JsUtil?.mDelayedCalls;
+        const delayed = calls ? Object.keys(calls).some((k) => !/^(show|timedMassNotificationFilter)$/.test(String(calls[k]?.sMethodName ?? ""))) : false;
+        queue = held || justDone || delayed ? "waiting" : "idle";
+      }
+    }
+  } catch {
+    queue = undefined;
+  }
+  return { busy, locked, queue };
 }
 
 export class WebGuiSession {
@@ -302,9 +394,19 @@ export class WebGuiSession {
     this.page.setDefaultTimeout(ACTION_TIMEOUT_MS);
   }
 
-  /** The loading sign and the lock, in one round trip; neither when the page cannot be read. */
-  private state(): Promise<{ busy: boolean; locked: boolean | undefined }> {
-    return this.frame.evaluate(pageState, BUSY).catch(() => ({ busy: false, locked: undefined }));
+  /**
+   * The loading sign, the lock and the event queue, in one round trip; none
+   * of them when the page cannot be read. `watch` starts the watch of the
+   * queue where there is none yet: only before an input, never after it (an
+   * event already in the queue would be missed).
+   */
+  private state(watch = false): Promise<PageState> {
+    return this.frame.evaluate(pageState, { busy: BUSY, watch, maxMs: QUEUE_MAX_MS }).catch(() => ({ busy: false, locked: undefined, queue: undefined }));
+  }
+
+  /** Before an input: Web GUI's event queue is watched from here on (see `pageState`). */
+  async watchQueue(): Promise<void> {
+    await this.state(true);
   }
 
   /**
@@ -318,14 +420,16 @@ export class WebGuiSession {
 
   /**
    * After an action that may cause a round trip (Enter, F-keys, clicks, OK-code):
-   * Web GUI sends the POST a little after the key event. The wait for it
-   * ends when the request leaves, or once the page has handled the input
-   * (it drew two frames after it) and `LEAVE_MS` more went by with no
-   * request, no loading sign and no lock: then nothing goes to SAP, and
-   * there is nothing to wait for. `startMs` is the most it waits when the
-   * page does not draw (a busy machine, a tab in the background). Then it
-   * waits for idle. First calls on a fresh system can take long (ABAP loads
-   * compile), hence the generous idle timeout.
+   * Web GUI sends the POST a little after the key event (300 ms after it
+   * with SAP Screen Personas on). The wait for it ends when the request
+   * leaves or the page locks. It also ends, with nothing sent, once the page
+   * has handled the input (it drew two frames after it) and Web GUI's event
+   * queue holds nothing: then nothing goes to SAP, and there is nothing to
+   * wait for. Where the queue cannot be watched, `LEAVE_MS` without a
+   * request, a loading sign or a lock stand in for it. `startMs` is the most
+   * it waits when the page does not draw (a busy machine, a tab in the
+   * background). Then it waits for idle. First calls on a fresh system can
+   * take long (ABAP loads compile), hence the generous idle timeout.
    */
   async waitRoundtrip(startMs = 1500, before = this.traffic.posts): Promise<void> {
     const t0 = Date.now();
@@ -337,6 +441,8 @@ export class WebGuiSession {
         if (drawn) handled = Date.now();
       });
     let sent = false;
+    // The queue was seen empty on the poll before: said twice, so a request that left in between has reached the count.
+    let empty = false;
     while (Date.now() - t0 < startMs) {
       if (this.traffic.posts > before) {
         sent = true;
@@ -347,7 +453,11 @@ export class WebGuiSession {
         sent = true;
         break;
       }
-      if (handled !== undefined && Date.now() - handled >= LEAVE_MS) break;
+      if (handled !== undefined) {
+        if (st.queue === undefined && Date.now() - handled >= LEAVE_MS) break;
+        if (st.queue === "idle" && empty && this.traffic.posts === before) break;
+      }
+      empty = handled !== undefined && st.queue === "idle";
       await this.pause(POLL_MS);
     }
     const seen = Date.now();
@@ -410,6 +520,8 @@ export class WebGuiSession {
    * waited the whole `startMs` for a POST that had already gone.
    */
   async roundtrip<T>(cause: () => Promise<T>, startMs = 1500): Promise<T> {
+    // The page may have been loaded anew since the action began (a step before this one in the same action).
+    await this.watchQueue();
     const before = this.traffic.posts;
     const result = await cause();
     await this.waitRoundtrip(startMs, before);
@@ -517,7 +629,8 @@ export class WebGuiSession {
     this.quietMs = this.slow ? QUIET_SLOW_MS : QUIET_MS;
     // The step before may still be running (it was given up on, or the user started one): input would be lost.
     const t0 = Date.now();
-    let busy = (await this.locked()) === true;
+    // The same look starts the watch of Web GUI's event queue, before any input of this action.
+    let busy = (await this.state(true)).locked === true;
     for (let i = 0; i < 100 && busy; i++) {
       await this.pause(100);
       busy = (await this.locked()) === true;

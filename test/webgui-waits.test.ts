@@ -37,7 +37,31 @@ const PAGE = `<!doctype html><html lang="en"><head><title>Synthetic</title></hea
     fetch('/sap/bc/gui/sap/its/webgui/post', { method: 'POST', body: JSON.stringify([{ post: what + '/ses[0]' }]) })
       .then(function () { window.oLS.n--; });
   }
+  // Web GUI's event queue, as with SAP Screen Personas on: a step waits 300 ms in it before it is sent.
+  window.makeQueue = function () {
+    var q = [], timer = null;
+    var owner = {
+      enqueueEvent: function (ev) {
+        if (window.oLS.bLocked() && ev.sEvName !== 'RequestData') return;
+        if (ev.sEvName === 'FocusChange') return;
+        q.push(ev);
+        if (!timer) timer = setTimeout(function () { owner.processEventQueue(true); }, 300);
+      },
+      processEventQueue: function () { timer = null; var ev; while ((ev = q.shift())) if (ev.post) post(ev.post); }
+    };
+    window.UCF_System = { oLS: { oSemanticEventHandlerObject: owner } };
+    window.UCF_JsUtil = { mDelayedCalls: {} };
+    window.queued = true;
+  };
   document.addEventListener('keydown', function (e) {
+    if (window.queued) {
+      var owner = window.UCF_System.oLS.oSemanticEventHandlerObject;
+      if (e.key === 'Enter') owner.enqueueEvent({ sEvName: 'Hotkey', post: 'vkey/0' });
+      // A field that scrolls into view tells SAP 200 ms later; here that sends nothing.
+      if (e.key === 'F7') { window.UCF_JsUtil.mDelayedCalls.d1 = { sMethodName: 'fireScrollSync' }; setTimeout(function () { delete window.UCF_JsUtil.mDelayedCalls.d1; owner.enqueueEvent({ sEvName: 'Scroll', post: 'action/scroll' }); }, 200); }
+      return;
+    }
+    if (e.key === 'Enter' && window.lateEnter) { setTimeout(function () { post('vkey/0'); }, 300); return; }
     if (e.key === 'Enter') {
       if (window.endOnEnter) {
         window.stuck = true;
@@ -115,6 +139,48 @@ describe.skipIf(!exe)("waits of a Web GUI action", () => {
     const r = await timed(() => act(session, { do: "key", key: 0 }));
     expect(r.note).toBe("key Enter");
     expect(session.started).toBe(true);
+  });
+
+  const posted = () => page.evaluate(() => (window as unknown as { posted: string[] }).posted);
+
+  test("a step Web GUI holds 300 ms in its event queue is waited for, never answered as nothing sent", async () => {
+    await open();
+    await page.evaluate(() => (window as unknown as { makeQueue: () => void }).makeQueue());
+    for (let i = 0; i < 5; i++) {
+      const r = await timed(() => act(session, { do: "key", key: 0, timing: true }));
+      expect(r.note).toBe("key Enter");
+      expect(session.started).toBe(true);
+      // The request left 300 ms after the key: "start" is the wait for it.
+      expect(session.timing.start).toBeGreaterThanOrEqual(250);
+    }
+    expect(await posted()).toEqual(["vkey/0", "vkey/0", "vkey/0", "vkey/0", "vkey/0"]);
+  });
+
+  test("with the queue watched, a key that puts nothing in it is answered as soon as the page has handled it", async () => {
+    await open();
+    await page.evaluate(() => (window as unknown as { makeQueue: () => void }).makeQueue());
+    const r = await timed(() => act(session, { do: "key", key: 2 }));
+    expect(r.note).toStartWith("key F2\nNothing was sent to SAP");
+    // No guess of how long a request may take to leave: the queue is empty.
+    expect(session.timing.start).toBeLessThan(250);
+    expect(r.ms).toBeLessThan(1500);
+  });
+
+  test("an event Lightspeed puts in the queue later (a scroll, 200 ms) is waited for too", async () => {
+    await open();
+    await page.evaluate(() => (window as unknown as { makeQueue: () => void }).makeQueue());
+    const r = await timed(() => act(session, { do: "key", key: 7 }));
+    expect(r.note).toBe("key F7");
+    expect(await posted()).toEqual(["action/scroll"]);
+  });
+
+  test("where the queue cannot be watched, a request that leaves 300 ms after the key is still waited for", async () => {
+    await open();
+    await page.evaluate(() => {
+      (window as unknown as { lateEnter: boolean }).lateEnter = true;
+    });
+    for (let i = 0; i < 3; i++) expect(await act(session, { do: "key", key: 0 })).toBe("key Enter");
+    expect(await posted()).toEqual(["vkey/0", "vkey/0", "vkey/0"]);
   });
 
   test("a key that moves in the page is cheap and says that nothing went to SAP", async () => {
