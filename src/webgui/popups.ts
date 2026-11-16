@@ -106,18 +106,16 @@ export function statusMessage(view: string): { type: "E" | "W"; text: string } |
 }
 
 /**
- * Why a field is closed for input while the status bar shows a warning or
- * an error: SAP closes every field of the screen (all but the wrong one, for
- * an error) until the message is answered. Undefined when the screen still
- * has several open fields: the field is then read-only by itself.
+ * Why a field that takes no input may be closed, while the status bar shows
+ * a warning or an error: SAP closes the fields of the screen (all but the
+ * ones the message is about) until the message is answered. The view cannot
+ * tell a field the message closed from one that is read-only by itself, so
+ * this says what is on screen and what opens the fields if it is the cause.
  */
 export function closedByMessage(view: string): string | undefined {
   const s = statusMessage(view);
   if (!s) return undefined;
-  const main = view.split(/\nWINDOW wnd\[[1-9]/)[0] ?? view;
-  const open = main.split("\n").filter((l) => / {2}\(edit\)/.test(l)).length;
-  if (open > 1) return undefined;
   return s.type === "W"
-    ? `SAP shows the warning "${s.text}" and keeps the fields closed until it is answered: Enter ({"do":"key","key":0}) accepts the warning, then the fields open again.`
-    : `SAP shows the error "${s.text}" and keeps every field closed but the one it is about (marked "cursor here"): correct that field, then Enter.`;
+    ? `the status bar shows the warning "${s.text}", and SAP keeps fields closed until a warning is answered: Enter ({"do":"key","key":0}) accepts it, then set the field.`
+    : `the status bar shows the error "${s.text}", and SAP keeps fields closed until an error is corrected: correct the field it is about (marked "cursor here"), then Enter.`;
 }
