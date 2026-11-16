@@ -115,7 +115,8 @@ export function parseView(view: string): ViewWindow[] {
       windows.push(current);
       continue;
     }
-    if (!current || !line.startsWith("wnd[")) continue;
+    // A row of an open popup menu may be named by its DOM id (u1234) when the page gives it no scripting id.
+    if (!current || !(line.startsWith("wnd[") || /^\S+ {2}menu {2}/.test(line))) continue;
     const [id = "", kind = "", ...rest] = line.split("  ");
     current.controls.push({ id, window: current.number, kind, text: rest.join("  ") });
   }

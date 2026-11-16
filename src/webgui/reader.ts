@@ -26,10 +26,10 @@ import { readRows } from "../core/rows.js";
 import { ActionError, type Action, type Assessment, type LookOptions } from "../core/types.js";
 import { LOGON_REFUSAL, okcodeKind } from "../core/words.js";
 import { assessAction, popupButton } from "./assess.js";
-import { checkedNow, clean, clickForRoundtrip, clickMenuRow, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlLook, pressOverflow, setRefusal, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
+import { checkedNow, clean, clickForRoundtrip, clickListLine, clickMenuRow, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlLook, pressOverflow, setCalendar, setRefusal, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
 import { LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
 import { chooseEntry, entriesOf, markScrolled, notOnScreen, scrollTo, selectRow } from "./lists.js";
-import { extractFacts, markControl, markRow, markSelector, scrollControl, topWindowOpen } from "./page.js";
+import { extractFacts, markControl, markRow, markSelector, menuRowOpen, scrollControl, topWindowOpen } from "./page.js";
 import { checkBeforeAct, focusOf, freshView, guardFacts, isDropdown, kindIn, LOGGED_OFF, loggedOff, look, lookRead, menuLines, readViewer, resolveIn, type ScreenRead, scrollables, viewerFrames } from "./screen.js";
 import { IDLE_TIMEOUT_MS, MAX_IDLE_TIMEOUT_MS, noTiming, timingText, type WebGuiSession } from "./session.js";
 
@@ -63,7 +63,7 @@ export async function assess(session: WebGuiSession, action: Action): Promise<As
     // Only when the page has none either is it "no such control" rather than "may write".
     if (verdict.risk === "commit" && verdict.reason.includes("not on the screen the server read") && action.id) {
       const found = await session.frame.evaluate(markControl, String(action.id)).catch(() => "unreadable");
-      if (typeof found === "string") throw noControlLook(String(action.id));
+      if (typeof found === "string" && !(await session.frame.evaluate(menuRowOpen, String(action.id)).catch(() => ""))) throw noControlLook(String(action.id));
     }
     return verdict;
   } catch (e) {
@@ -150,6 +150,15 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
     session.view = undefined;
     session.idleTimeoutMs = IDLE_TIMEOUT_MS;
   }
+}
+
+/** The lines of one window of the full view, its WINDOW line first: "" when the window is not open. */
+function windowBlock(view: string, n: number): string {
+  const lines = view.split("\n");
+  const start = lines.findIndex((l) => l.startsWith(`WINDOW wnd[${n}]`));
+  if (start < 0) return "";
+  const next = lines.findIndex((l, i) => i > start && l.startsWith("WINDOW wnd["));
+  return lines.slice(start, next < 0 ? lines.length : next).join("\n");
 }
 
 const isMenuPath = (id: string) => /\/mbar\/menu\[/.test(id) || /^menu\[/.test(id);
@@ -248,7 +257,7 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       if (typeof r === "string") return r;
       const last = Math.min(r.first + r.visible, r.total) - 1;
       if (to === "right" || to === "left" || to === "rightmost" || to === "leftmost")
-        return r.first === r.from ? `${r.sid} cannot move further ${to.replace(/most$/, "")}` : `scrolled ${r.sid} sideways: the columns on screen changed (the view lists them)`;
+        return r.first === r.from ? `${r.sid} cannot move further ${to.replace(/most$/, "")}` : `scrolled ${r.sid} sideways: the view lists the columns on screen now`;
       return r.first === r.from ? `${r.sid} is already there: rows ${r.first} to ${last} of ${r.total}` : `scrolled ${r.sid}: rows ${r.first} to ${last} of ${r.total}`;
     }
     case "tree":
@@ -355,6 +364,12 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
   const { loc, c } = await locate(session, id);
   switch (a.do) {
     case "set": {
+      if (c.type === "GuiCalendar") {
+        const wanted = String(a.value ?? "");
+        const holds = await setCalendar(session, loc, wanted);
+        if (holds !== clean(wanted)) throw new ActionError(`${c.sid} holds "${holds}" after "${wanted}" was typed: the calendar did not take it as a date (the view gives the format).`);
+        return `set ${c.sid}`;
+      }
       if (c.type === "GuiCheckBox") return run(session, { ...a, do: "check" });
       if (c.type === "GuiComboBox")
         return run(session, { ...a, do: "combo", key: a.value });
@@ -374,15 +389,20 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       return `focus ${c.sid}`;
     case "dblclick": {
       const inPopup = windowOf(c.sid) > 0;
-      await session.roundtrip(() => loc.dblclick(), 1200);
-      // In a popup's list the first double-click can only give the list the cursor: Web GUI draws the
-      // row again under the pointer, the second click of the pair lands on the new element, and SAP
-      // gets nothing. It is made once more when nothing went and the control is still there.
-      if (inPopup && !session.started && (await stillThere(session, c.sid))) {
-        await session.roundtrip(() => marked(session).dblclick(), 1200);
-        if (session.started) return `double-clicked ${c.sid} (twice: the first double-click only gave the list the cursor)`;
+      if (!inPopup || !c.type.startsWith("ABAPLIST")) {
+        await session.roundtrip(() => loc.dblclick(), 1200);
+        return `double-clicked ${c.sid}`;
       }
-      return `double-clicked ${c.sid}`;
+      // A line of a list in a popup. Its click reaches SAP late (clickListLine), and the first one can do
+      // no more than give the line the cursor: SAP answers, and the popup stays as it was (measured on
+      // "Partner selection" of VA01: the line that has the cursor when the popup opens). So the popup is
+      // compared with what it showed before, and when nothing in it changed the double-click is made once more.
+      const n = windowOf(c.sid);
+      const before = windowBlock(await freshView(session), n);
+      await clickListLine(session, () => loc.dblclick());
+      if (!(await stillThere(session, c.sid)) || windowBlock(await look(session), n) !== before) return `double-clicked ${c.sid}`;
+      await clickListLine(session, () => marked(session).dblclick());
+      return `double-clicked ${c.sid} (twice: the first double-click only gave the list the cursor)`;
     }
     case "f4":
       if (!FIELD_TYPES.has(c.type) && c.type !== "GuiComboBox") throw new ActionError(`${c.sid} is a ${typeName(c.type)}: value help works on fields.`);

@@ -99,7 +99,7 @@ export async function clickForRoundtrip(session: WebGuiSession, sid: string, sur
 export const windowOf = (sid: string): number => Number(/^wnd\[(\d+)\]/.exec(sid)?.[1] ?? 0);
 
 /** Controls a value can be typed into. A password field is not one: this server never types a password. */
-export const FIELD_TYPES = new Set(["GuiTextField", "GuiCTextField", "GuiTextEdit"]);
+export const FIELD_TYPES = new Set(["GuiTextField", "GuiCTextField", "GuiTextEdit", "GuiSearchHelpPageItem"]);
 /** "GuiRadioButton" as the answers name it: "radio button". */
 export const typeName = (type: string): string => type.replace(/^Gui/, "").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase() || "control";
 
@@ -132,13 +132,49 @@ export async function typeInto(session: WebGuiSession, loc: Locator, value: stri
 /**
  * Clicks a row of an open popup menu (a context menu, the menu of a
  * dropdown button, the ">>" menu of a toolbar) named by its DOM id, as the
- * view lists it. False when no such row is open.
+ * view lists it (the scripting id for a dropdown button's menu). False when
+ * no such row is open.
  */
 export async function clickMenuRow(session: WebGuiSession, id: string): Promise<boolean> {
   const f = session.frame;
-  if (!(await f.evaluate(menuRowOpen, id).catch(() => false))) return false;
-  await session.roundtrip(() => f.locator(`tr[id="${id.replace(/"/g, '\\"')}"]`).first().click({ timeout: 10000 }), 1200);
+  const dom = await f.evaluate(menuRowOpen, id).catch(() => "");
+  if (!dom) return false;
+  await session.roundtrip(() => f.locator(`tr[id="${dom.replace(/"/g, '\\"')}"]`).first().click({ timeout: 10000 }), 1200);
   return true;
+}
+
+/**
+ * How long Web GUI holds a click on a line of a classic list before it
+ * sends it (measured on ECC: the request leaves 300 ms after the click; it
+ * waits to see whether a second click follows), with a margin.
+ */
+const LIST_CLICK_MS = 600;
+
+/**
+ * Clicks a line of a classic list and waits for its round trip. The request
+ * leaves late (see LIST_CLICK_MS), after the page has long drawn its frames:
+ * the wait for it ends when the request is seen, not when the page is calm.
+ */
+export async function clickListLine(session: WebGuiSession, click: () => Promise<void>): Promise<void> {
+  const before = session.posts;
+  await click();
+  const t0 = Date.now();
+  while (session.posts === before && Date.now() - t0 < LIST_CLICK_MS) await session.page.waitForTimeout(25);
+  await session.waitRoundtrip(1200, before);
+}
+
+/**
+ * Sets the date of a calendar (the value help of a date field): its own date
+ * field takes the date as the format says; Continue then copies it. The
+ * field is filled, not typed into key by key: it keeps the parts of the old
+ * date a key does not replace. Answers the date the calendar holds after.
+ */
+export async function setCalendar(session: WebGuiSession, loc: Locator, value: string): Promise<string> {
+  await loc.fill(value.replace(/[\r\n]+/g, " "), { timeout: 10000 });
+  // Leaving the field makes the calendar take the date (Tab stays in the popup).
+  await loc.press("Tab");
+  await session.waitIdle();
+  return clean(await loc.inputValue().catch(() => ""));
 }
 
 /**
