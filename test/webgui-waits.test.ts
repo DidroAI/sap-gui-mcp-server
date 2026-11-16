@@ -182,6 +182,20 @@ describe.skipIf(!exe)("waits of a Web GUI action", () => {
     expect(settles.sort((a, b) => a - b)[2]).toBeLessThan(200);
   });
 
+  test("with the queue watched, typing into a field waits for no quiet period", async () => {
+    await open();
+    await page.evaluate(() => (window as unknown as { makeQueue: () => void }).makeQueue());
+    // Right after an answer: the 300 ms of quiet since the last request are not waited for.
+    await act(session, { do: "key", key: 0 });
+    expect(await act(session, { do: "set", id: "ctxtZ-ORDER", value: "4990" })).toBe("set wnd[0]/usr/ctxtZ-ORDER");
+    expect(await page.locator("#F1").inputValue()).toBe("4990");
+    expect(session.timing.idle).toBeLessThan(100);
+    // Where the queue is not watched, the lead and the quiet period stay.
+    await open();
+    await act(session, { do: "set", id: "ctxtZ-ORDER", value: "4990" });
+    expect(session.timing.idle).toBeGreaterThanOrEqual(100);
+  });
+
   test("a second round trip the answer starts through the queue belongs to the step", async () => {
     await open();
     await page.evaluate(() => (window as unknown as { makeQueue: () => void }).makeQueue());
