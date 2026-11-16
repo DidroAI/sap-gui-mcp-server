@@ -11,10 +11,10 @@ import type { Frame, Page } from "playwright-core";
 import { chromeDoctor, chromeTabs, type ChromeTab, sapTabs, stillOwned } from "../browser/chrome.js";
 import { isWebguiUrl, tabWhere, WEBGUI_PATH } from "../browser/classify.js";
 import { compact } from "../core/compact.js";
-import type { Action, Assessment, Driver, LookOptions, SessionInfo, Surface } from "../core/types.js";
+import { type Action, ActionError, type Assessment, type Driver, type LookOptions, type SessionInfo, type Surface } from "../core/types.js";
 import { extractFacts, type PageFacts } from "./page.js";
 import { act, assess, look, view } from "./reader.js";
-import { WebGuiSession } from "./session.js";
+import { endedText, WebGuiSession } from "./session.js";
 
 export { assessAction } from "./assess.js";
 
@@ -103,6 +103,28 @@ async function discover(env: Env): Promise<{ tab: ChromeTab; info: SessionInfo }
   return Promise.all(mine.map(async ({ tab }) => ({ tab, info: await describe(tab.page, `chrome:${tab.id}`, await facts(tab.page.mainFrame())) })));
 }
 
+/** The last line of a view read while Web GUI is still busy with a step. */
+export const STILL_WORKING =
+  "NOTE SAP is still working on a step (Web GUI has locked the page until its answer is drawn): this screen is from before that step and will change. Look again in a moment; an action now would wait for the step to end.";
+
+/** The view of a tab whose SAP session has ended. */
+export function endedView(said: string): string {
+  return ["TRANSACTION   PROGRAM   SCREEN ", `WINDOW wnd[0]  "${said.slice(0, 60).replace(/"/g, "'")}"`, `NOTE ${endedText(said)}`].join("\n");
+}
+
+/**
+ * The screen as sap_look shows it, and what it is: the page of a session
+ * that has ended says so; a screen read while Web GUI is still busy with a
+ * step (one given up on after its timeout) says that it is from before it.
+ */
+export async function webguiView(session: WebGuiSession, options: LookOptions): Promise<string> {
+  const gone = await session.ended();
+  if (gone) return endedView(gone);
+  const text = await view(session, options);
+  if ((await session.locked()) === true) return `${text}\n${STILL_WORKING}`;
+  return text;
+}
+
 class WebGuiDriver implements Driver {
   constructor(
     public info: SessionInfo,
@@ -129,15 +151,21 @@ class WebGuiDriver implements Driver {
   }
 
   look(options: LookOptions): Promise<string> {
-    return view(sessionOf(this.frame), options);
+    return webguiView(sessionOf(this.frame), options);
   }
 
-  assess(action: Action): Promise<Assessment> {
+  async assess(action: Action): Promise<Assessment> {
+    const gone = await sessionOf(this.frame).ended();
+    if (gone) throw new ActionError(endedText(gone));
     return webguiAssessInFrame(this.frame, action);
   }
 
   act(action: Action): Promise<string> {
     return act(sessionOf(this.frame), action);
+  }
+
+  timing(): string | undefined {
+    return this.page.isClosed() ? undefined : sessionOf(this.frame).timingText;
   }
 
   async screenshot(): Promise<Buffer> {

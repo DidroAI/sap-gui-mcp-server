@@ -174,7 +174,7 @@ export class Recorder {
     this.skipped = 0;
     await this.save();
     const t = screen.transaction;
-    const clean = !t || HOME.has(t.toUpperCase()) ? `Begin with {"do":"okcode","value":"/n<transaction>"} so the replay starts clean.` : `The session is in ${t}: the replay will start with /n${t}. Begin with an okcode instead if the test should not depend on that.`;
+    const clean = !t || HOME.has(t.toUpperCase()) ? `Begin with {"do":"okcode","value":"/n<transaction>"} so the replay starts clean.` : `The session is in ${t}: if the first step is not an okcode, the replay will start with /n${t}. Begin with {"do":"okcode","value":"/n<transaction>"} so the test does not depend on that.`;
     return `Recording "${name}" on ${info.surface} ${info.system ?? "?"}${info.client ? `/${info.client}` : ""}, to ${path}. Every sap_act that works is now a step. ${clean}`;
   }
 

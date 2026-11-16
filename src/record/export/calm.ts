@@ -1,8 +1,8 @@
 /**
  * SAP Cloud ALM manual test case.
  *
- * The output is the input of `calm_create_test_case`, the write tool of
- * cloud-alm-mcp-server: a title and activities, each with steps (title,
+ * The output is the input of a `calm_create_test_case` tool, as a Cloud ALM
+ * MCP server offers it: a title and activities, each with steps (title,
  * description, expected result, evidence). That tool turns it into the body
  * of `POST calm-testmanagement/v1/ManualTestCases` (toActivities, toActions)
  * and adds the project and scope. Nothing here calls Cloud ALM.

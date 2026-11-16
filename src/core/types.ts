@@ -114,6 +114,8 @@ export interface Driver {
   assess(action: Action): Promise<Assessment>;
   /** Run one action, the same normalised object `assess` saw; returns a one-line note of what was done. Throws ActionError when it cannot. */
   act(action: Action): Promise<string>;
+  /** Where the time of the last `act` went, as one line ("1306 ms: sap 812, start 40, ..."); surfaces that do not measure have none. */
+  timing?(): string | undefined;
   /** PNG of the session's window or tab. */
   screenshot(): Promise<Buffer>;
   close(): Promise<void>;

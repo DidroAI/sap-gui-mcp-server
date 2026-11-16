@@ -6,7 +6,7 @@ import { exportPlaywright } from "./playwright.js";
 import { exportVbs } from "./vbs.js";
 
 export const TARGETS = {
-  calm: { suffix: ".calm.json", what: "SAP Cloud ALM manual test case, as the input of calm_create_test_case (cloud-alm-mcp-server)", run: exportCalm },
+  calm: { suffix: ".calm.json", what: "SAP Cloud ALM manual test case, as the input of a Cloud ALM MCP server's calm_create_test_case tool", run: exportCalm },
   vbs: { suffix: ".vbs", what: "SAP GUI scripting (VBScript), for SAP GUI for Windows", run: exportVbs },
   playwright: { suffix: ".spec.ts", what: "Playwright test for Web GUI (@playwright/test)", run: (t: SapTest) => exportPlaywright(t) },
   "playwright-sap": { suffix: ".psap.spec.ts", what: "Playwright test with playwright-sap's locateSID", run: (t: SapTest) => exportPlaywright(t, { flavor: "playwright-sap" }) },

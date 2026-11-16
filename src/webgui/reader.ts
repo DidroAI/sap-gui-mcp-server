@@ -29,7 +29,7 @@ import { LOGON_PROGRAM, LOGON_REFUSAL } from "../core/words.js";
 import { assessAction, type FocusFacts } from "./assess.js";
 import type { MarkedControl, Scrolled } from "./page.js";
 import { comboEntries, extractFacts, extractLook, extractMenus, extractViewer, focusedControl, markControl, markRow, markSelector, normalizeLsdata, scrollControl, viewerFocus } from "./page.js";
-import { IDLE_TIMEOUT_MS, MAX_IDLE_TIMEOUT_MS, type WebGuiSession } from "./session.js";
+import { endedText, IDLE_TIMEOUT_MS, MAX_IDLE_TIMEOUT_MS, noTiming, timingText, type WebGuiSession } from "./session.js";
 
 const MAX_GRID_ROWS = 50;
 const MAX_TREE_NODES = 300;
@@ -341,6 +341,8 @@ async function read(session: WebGuiSession): Promise<string> {
 export function vkey(k: unknown): string {
   // "Back" is SAP's Back (F3), as on the other surfaces.
   if (typeof k === "string" && /^back$/i.test(k)) return "F3";
+  // F12 is Cancel; Web GUI takes it as Escape (the browser keeps F12 for itself), as key 12 is sent.
+  if (typeof k === "string" && /^f12$/i.test(k)) return "Escape";
   if (typeof k === "string" && !/^\d+$/.test(k)) return k;
   const n = Number(k);
   const f = (i: number) => `F${i}`;
@@ -410,6 +412,25 @@ async function clickForRoundtrip(session: WebGuiSession, sid: string, sure = tru
   }
 }
 
+/** The window a control id is in: 0 for the main window, 1 and up for popups. */
+const topWindow = (sid: string) => Number(/^wnd\[(\d+)\]/.exec(sid)?.[1] ?? 0);
+
+/** Runs in the page: the highest window number on screen (0 when no popup is open). */
+function topWindowOpen(): number {
+  let max = 0;
+  for (const el of Array.from(document.querySelectorAll("[lsdata*='wnd[']"))) {
+    const m = /wnd\[(\d+)\]/.exec(el.getAttribute("lsdata") ?? "");
+    if (m && (el as HTMLElement).offsetWidth > 0) max = Math.max(max, Number(m[1]));
+  }
+  return max;
+}
+
+/** Is the control still on screen, marked for the next click? */
+async function stillThere(session: WebGuiSession, sid: string): Promise<boolean> {
+  const r = await (await lsFrame(session)).evaluate(markControl, sid).catch(() => "gone");
+  return typeof r !== "string" && r.sid === sid;
+}
+
 /** Controls a value can be typed into. A password field is not one: this server never types a password. */
 const FIELD_TYPES = new Set(["GuiTextField", "GuiCTextField", "GuiTextEdit"]);
 const typeName = (type: string) => type.replace(/^Gui/, "").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase() || "control";
@@ -429,8 +450,24 @@ export function setRefusal(c: MarkedControl): string | undefined {
 
 /** One action. Returns a one-line note of what was done; throws ActionError when it cannot. */
 export async function act(session: WebGuiSession, a: Action): Promise<string> {
+  const t0 = Date.now();
+  session.timing = noTiming();
+  session.timingText = undefined;
+  try {
+    return await actTimed(session, a);
+  } finally {
+    session.timingText = timingText(session.timing, Date.now() - t0);
+  }
+}
+
+async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
+  // A session that has ended takes nothing more: said at once, not after a wait.
+  const gone = await session.ended();
+  if (gone) throw new ActionError(endedText(gone));
   await refuseLogon(session);
+  const w0 = Date.now();
   await session.wake();
+  session.timing.wake = Date.now() - w0;
   // A long step (a report started with F8) can be given more time: "timeout" in seconds.
   const t = Number(a.timeout);
   session.idleTimeoutMs = Number.isFinite(t) && t > 0 ? Math.min(Math.round(t * 1000), MAX_IDLE_TIMEOUT_MS) : IDLE_TIMEOUT_MS;
@@ -440,7 +477,10 @@ export async function act(session: WebGuiSession, a: Action): Promise<string> {
   try {
     // The id as the screen holds it now: a handle becomes its full id, one that names several controls is refused.
     const named = a.id !== undefined && String(a.id).trim() && !isMenuPath(String(a.id));
-    const note = await run(session, named ? { ...a, id: resolveIn(await freshView(session), String(a.id)) } : a);
+    const mark = session.posts;
+    const done = await run(session, named ? { ...a, id: resolveIn(await freshView(session), String(a.id)) } : a);
+    const nothing = session.posts === mark ? nothingSent(a) : undefined;
+    const note = nothing ? `${done}\n${nothing}` : done;
     return session.unsettled ? `${note}\n(Web GUI still showed its loading sign when the server stopped waiting: the step may not be over. If the screen below is not what the step should lead to, look again in a moment.)` : note;
   } catch (e) {
     throw tidy(e);
@@ -448,6 +488,24 @@ export async function act(session: WebGuiSession, a: Action): Promise<string> {
     session.view = undefined;
     session.idleTimeoutMs = IDLE_TIMEOUT_MS;
   }
+}
+
+/** Keys that only move in the page (the focus, the cursor, a checkbox): Web GUI sends SAP nothing for them. */
+export const LOCAL_KEY = /^(Shift\+)?(Tab|Arrow(Up|Down|Left|Right)|Space|Home|End|Backspace|Delete|Insert)$/;
+
+/**
+ * What the answer says when an action sent no request with a step to SAP:
+ * SAP did nothing, whatever the page shows. Undefined for actions that
+ * never send one (typing, the focus, listing a dropdown's entries).
+ */
+export function nothingSent(a: Action): string | undefined {
+  if (a.do === "set" || a.do === "focus" || a.do === "scroll" || (a.do === "combo" && a.key === undefined && a.value === undefined)) return undefined;
+  if (a.do === "key") {
+    const k = vkey(a.key ?? a.value);
+    if (LOCAL_KEY.test(k)) return "(A key that moves in the page: nothing was sent to SAP.)";
+    return "Nothing was sent to SAP: this key does nothing on this screen (or the browser kept it). The screen is as it was.";
+  }
+  return "Nothing was sent to SAP for this action: what changed (if anything) changed only in the page.";
 }
 
 const isMenuPath = (id: string) => /\/mbar\/menu\[/.test(id) || /^menu\[/.test(id);
@@ -612,18 +670,13 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       const k = vkey(a.key ?? a.value);
       // In a popup, SAP binds toolbar button btn[N] to virtual key N ("Continue (Enter)" is btn[0]).
       // Pressing that button works whether or not the keyboard focus is in the popup.
-      const n = typeof (a.key ?? a.value) === "number" ? Number(a.key ?? a.value) : k === "Enter" ? 0 : undefined;
+      const n = typeof (a.key ?? a.value) === "number" ? Number(a.key ?? a.value) : k === "Enter" ? 0 : k === "Escape" ? 12 : undefined;
       if (n !== undefined) {
         const f = await lsFrame(session);
-        const top = await f.evaluate(() => {
-          let max = 0;
-          for (const el of Array.from(document.querySelectorAll("[lsdata*='wnd[']"))) {
-            const m = /wnd\[(\d+)\]/.exec(el.getAttribute("lsdata") ?? "");
-            if (m && (el as HTMLElement).offsetWidth > 0) max = Math.max(max, Number(m[1]));
-          }
-          return max;
-        });
-        if (top > 0)
+        const top = await f.evaluate(topWindowOpen);
+        // Cancel (12) on the main window is its Cancel button: the browser's Escape in a field typed into
+        // only takes the typing back, and sends SAP nothing.
+        if (top > 0 || n === 12)
           for (const bar of [0, 1]) {
             const sid = `wnd[${top}]/tbar[${bar}]/btn[${n}]`;
             const r = await f.evaluate(markControl, sid);
@@ -638,7 +691,7 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       }
       // An SAP function key always sends a request: it is waited for, also when the browser is slow to
       // hand the key on. Keys that only move in the page (Tab, arrows) send none.
-      await session.roundtrip(() => session.pressKey(k), n !== undefined || /^((Shift|Control|Alt)\+)*(Enter|Escape|F\d{1,2})$/i.test(k) ? SURE_START_MS : 800);
+      await session.roundtrip(() => session.pressKey(k), LOCAL_KEY.test(k) ? 800 : SURE_START_MS);
       return `key ${k}`;
     }
     case "scroll": {
@@ -719,8 +772,8 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
         // Menu path: open the Menu button, then each level by its scripting id.
         const f = await lsFrame(session);
         const full = id.startsWith("wnd[") ? id : `wnd[0]/mbar/${id}`;
+        const before = session.posts;
         await f.locator("#cua2sapmenu_btn").click();
-        await page.waitForTimeout(300);
         const parts = full.split("/").slice(2);
         for (let i = 1; i <= parts.length; i++) {
           const sid = `wnd[0]/mbar/${parts.slice(0, i).join("/")}`;
@@ -728,10 +781,11 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
             .locator(`tr[id="${sid}"]`)
             .filter({ visible: true })
             .first();
+          // The click waits for the entry to be drawn: a submenu opens a moment after its parent is clicked.
           await row.click({ timeout: 10000 });
-          await page.waitForTimeout(300);
+          if (i < parts.length) await page.waitForTimeout(100);
         }
-        await session.waitRoundtrip();
+        await session.waitRoundtrip(SURE_START_MS, before);
         return `menu ${full}`;
       }
       if (a.row !== undefined && /^(table|grid)$/.test(kindIn(await freshView(session), id)))
@@ -786,9 +840,18 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
     case "focus":
       await loc.focus();
       return `focus ${c.sid}`;
-    case "dblclick":
+    case "dblclick": {
+      const top = topWindow(c.sid);
       await session.roundtrip(() => loc.dblclick(), 1200);
+      // In a popup's list the first double-click can only give the list the cursor: Web GUI draws the
+      // row again under the pointer, the second click of the pair lands on the new element, and SAP
+      // gets nothing. It is made once more when nothing went and the control is still there.
+      if (top > 0 && !session.started && (await stillThere(session, c.sid))) {
+        await session.roundtrip(() => session.frame.locator("[data-sap-act]").first().dblclick(), 1200);
+        if (session.started) return `double-clicked ${c.sid} (twice: the first double-click only gave the list the cursor)`;
+      }
       return `double-clicked ${c.sid}`;
+    }
     case "f4":
       if (!FIELD_TYPES.has(c.type) && c.type !== "GuiComboBox") throw new ActionError(`${c.sid} is a ${typeName(c.type)}: value help works on fields.`);
       await loc.focus();
