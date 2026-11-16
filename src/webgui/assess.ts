@@ -24,7 +24,7 @@
  * The words and codes are tables in core/words.ts, shared with the other
  * surfaces. To cover a new case, add a word or a code there.
  */
-import { resolveId } from "../core/ids.js";
+import { menuSid, resolveId } from "../core/ids.js";
 import type { Action, Assessment } from "../core/types.js";
 import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayTitle, endsLogon, isGotoMenu, languageCovered, listTitle, MENU_PROGRAMS, okcodeKind, runSwitch, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
 import type { MenuEntry } from "./page.js";
@@ -664,9 +664,9 @@ export function assessAction(action: Action, view: string, menus: MenuEntry[], c
       if (action.do === "combo" && action.key === undefined && action.value === undefined) return READ;
       if (action.do === "dblclick" && (action.node !== undefined || action.row !== undefined)) return NAVIGATE;
       const acts = ["press", "select", "click", "dblclick"].includes(action.do);
-      if (/\/mbar\/menu\[/.test(id) || /^menu\[/.test(id)) {
+      const full = menuSid(id);
+      if (full) {
         if (!acts) return { risk: BASE_RISK[action.do] ?? "navigate", reason: "" };
-        const full = id.startsWith("wnd[") ? id : `wnd[0]/mbar/${id}`;
         const entry = menus.find((m) => m.sid === full);
         if (!entry) return commit(`menu entry ${full} is not known, so what it does is unknown`);
         return assessMenu(entry, menus, ctx, scene);

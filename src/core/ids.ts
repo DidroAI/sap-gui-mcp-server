@@ -134,3 +134,14 @@ export function shortIds(ids: Iterable<string>): Map<string, string> {
   }
   return out;
 }
+
+/**
+ * The scripting id of a menu bar entry named the way an agent writes it:
+ * "menu[2]/menu[1]" (the view's handle), "mbar/menu[2]/menu[1]" or the whole
+ * "wnd[0]/mbar/menu[2]/menu[1]". undefined when the id names no menu entry.
+ */
+export function menuSid(id: string): string | undefined {
+  const m = /^(?:(wnd\[\d+\])\/)?(?:mbar\/)?(menu\[\d+\](?:\/menu\[\d+\])*)$/.exec(id.trim());
+  if (!m || (m[1] && !id.includes("/mbar/"))) return undefined;
+  return `${m[1] ?? "wnd[0]"}/mbar/${m[2]}`;
+}
