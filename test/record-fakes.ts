@@ -46,6 +46,9 @@ export class FakeSap implements Surface {
   private stale: { view: string; left: number } | undefined;
   /** ZA01: a quantity above this shows the availability control screen after Enter. */
   available = Number.POSITIVE_INFINITY;
+  /** ZA01: Save first answers with this warning in the status bar and saves nothing; the Enter that acknowledges it saves. */
+  saveWarning: string | undefined;
+  private warned = false;
 
   constructor(name: SurfaceName = "webgui", system = "ABA") {
     this.name = name;
@@ -134,6 +137,9 @@ export class FakeSap implements Surface {
       throw new ActionError(`cannot ${a.do} ${a.id ?? ""} while the popup "${p.title}" is open`);
     }
     this.status = "";
+    // The Enter that acknowledges a warning raised by Save carries the save through.
+    if (a.do === "key" && a.key === 0 && this.warned) return this.save();
+    if (a.do !== "key" || a.key !== 11) this.warned = false;
     if (a.do === "okcode") {
       const t = /^\/n(\S*)$/i.exec(String(a.value))?.[1]?.toUpperCase();
       if (t === undefined) throw new ActionError(`unknown command ${String(a.value)}`);
@@ -170,12 +176,12 @@ export class FakeSap implements Surface {
     }
     if (a.do === "key" && a.key === 11) {
       if (this.transaction !== "ZA01" || this.screen !== "200") throw new ActionError("nothing to save here");
-      const n = String(this.next++);
-      this.orders.set(n, { customer: this.fields["ctxtZORD-KUNNR"] ?? "", quantity: this.fields["txtZORD-MENGE"] ?? "", rush: this.rush });
-      this.screen = "100";
-      this.fields = {};
-      this.status = `S: Order ${n} has been saved`;
-      return "key Control+s";
+      if (this.saveWarning && !this.warned) {
+        this.warned = true;
+        this.status = `W: ${this.saveWarning}`;
+        return "key Control+s";
+      }
+      return this.save();
     }
     const id = this.find(String(a.id ?? ""));
     const seg = id.slice(id.lastIndexOf("/") + 1);
@@ -193,6 +199,16 @@ export class FakeSap implements Surface {
       return `selected ${id}`;
     }
     throw new ActionError(`cannot ${a.do} ${id}`);
+  }
+
+  private save(): string {
+    this.warned = false;
+    const n = String(this.next++);
+    this.orders.set(n, { customer: this.fields["ctxtZORD-KUNNR"] ?? "", quantity: this.fields["txtZORD-MENGE"] ?? "", rush: this.rush });
+    this.screen = "100";
+    this.fields = {};
+    this.status = `S: Order ${n} has been saved`;
+    return "key Control+s";
   }
 
   driver(): Driver {
