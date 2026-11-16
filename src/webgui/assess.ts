@@ -10,21 +10,40 @@
  *   Back, Exit, Cancel, F4, find, paging);
  * - its function key, from the tooltip ("Back (F3)");
  * - its function code (the standard functions of ALV grids: sort, filter...);
- * - its text, when the session's logon language is covered (core/words.ts).
+ * - its text, when the session's logon language is covered (core/words.ts);
+ * - its place: the Goto menu, a value help, a message popup, a report's
+ *   selection screen (each rule below says why that place writes nothing).
  * A control the view does not show cannot be ruled safe either.
+ *
+ * A key is judged as what it triggers: on a popup the button the reader
+ * presses for it (reader.ts, "key"), elsewhere the button or menu entry that
+ * carries it. Closing the logon (/nex, Log Off) is flagged `closes`: the guard
+ * treats it on its own (core/guard.ts).
  *
  * The words and codes are tables in core/words.ts, shared with the other
  * surfaces. To cover a new case, add a word or a code there.
  */
 import { resolveId } from "../core/ids.js";
 import type { Action, Assessment } from "../core/types.js";
-import { CLOSES_SESSIONS, commitCode, commitWord, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
+import { CLOSES_SESSIONS, commitCode, commitWord, discardsInput, endsLogon, isGotoMenu, languageCovered, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
 import type { MenuEntry } from "./page.js";
 import { vkey } from "./reader.js";
 
-/** Keys that never write, whatever the screen: the safe SAP function keys, and keys that only move the focus. */
+/**
+ * Keys that never write, whatever the screen: the safe SAP function keys
+ * (SAFE_VKEYS, by the keyboard key the reader sends for each, so the two
+ * lists cannot drift apart: F8 was in one and not the other), their other
+ * names (F12 for Cancel, Ctrl+G for find next), and keys that only move the focus.
+ */
 export const SAFE_KEYS = new Set([
-  "ENTER", "F1", "F2", "F3", "F4", "ESCAPE", "F12", "SHIFT_F3", "CTRL_F", "CTRL_G", "CTRL_PAGEUP", "PAGEUP", "PAGEDOWN", "CTRL_PAGEDOWN",
+  ...[...SAFE_VKEYS].flatMap((n) => {
+    try {
+      return [keyName(vkey(n))];
+    } catch {
+      return [];
+    }
+  }),
+  "F12", "CTRL_G",
   "TAB", "SHIFT_TAB", "ARROWUP", "ARROWDOWN", "ARROWLEFT", "ARROWRIGHT", "HOME", "END",
 ]);
 
@@ -159,24 +178,66 @@ const quote = (s: string) => `"${s.replace(/\s+/g, " ").slice(0, 80)}"`;
 const commit = (reason: string): Assessment => ({ risk: "commit", reason });
 const NAVIGATE: Assessment = { risk: "navigate", reason: "" };
 const READ: Assessment = { risk: "read", reason: "" };
+const navigate = (reason: string): Assessment => ({ risk: "navigate", reason });
 const notSafe = (what: string) => commit(`${what} is not known to be safe, so it is treated as a write`);
+/** Ending the logon: a commit (unsaved data is lost) that the guard also refuses on its own rule. */
+const closes = (reason: string): Assessment => ({ risk: "commit", reason, closes: true });
 
-/** The topmost popup, when it asks whether to save, post, delete...: its question, shortened. */
+/** What one action is judged on: the windows of the full view, the screen's header, the menu entries. */
+interface Scene {
+  windows: ViewWindow[];
+  menus: MenuEntry[];
+  program: string;
+  /** The screen number from the header ("1000"). */
+  dynpro: string;
+}
+
+const topOf = (windows: ViewWindow[]) => windows.reduce<ViewWindow | undefined>((a, w) => (!a || w.number > a.number ? w : a), undefined);
+const windowOf = (scene: Scene, c: ViewControl) => scene.windows.find((w) => w.number === c.window);
+/** A button's text without its shortcut and without the "..." that announces a dialog: "Data (F7)" -> "data". */
+const bareText = (t: string) =>
+  t
+    .replace(/\([^()]*\)\s*$/, "")
+    .replace(/\.\.\.|…/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+const INPUT_KINDS = new Set(["field", "dropdown", "checkbox", "radio", "table", "grid", "tree", "text-editor"]);
+
+/** The question of the topmost popup, when it asks whether to save, post, delete...: its question, shortened. */
 function commitQuestion(windows: ViewWindow[]): string | undefined {
-  const top = windows.reduce<ViewWindow | undefined>((a, w) => (!a || w.number > a.number ? w : a), undefined);
+  const top = topOf(windows);
   if (!top || top.number === 0) return undefined;
   // A value-help hit list (list lines or a grid, no button of its own) is not a question, whatever its entries say.
   const usrButton = top.controls.some((c) => c.kind === "button" && c.id.includes("/usr/"));
   const hitList = top.controls.some((c) => /\/lbl\[\d+,\d+\]$/.test(c.id) || c.kind === "grid");
   if (hitList && !usrButton) return undefined;
+  const choices = new Set(top.controls.filter((c) => c.kind === "checkbox" || c.kind === "radio").map((c) => c.text));
+  const whole = [top.title, ...top.controls.filter((c) => c.kind === "label" && !choices.has(c.text)).map((c) => c.text)].join(" ");
   // The title alone can ask ("Save Data"). Otherwise a question is text with answer buttons in the popup body
   // (Yes / No of POPUP_TO_CONFIRM): a popup whose only buttons sit in its toolbar is a dialog, and a checkbox
   // label such as MM03's "Create views selected" asks nothing.
-  if (commitWord(top.title)) return top.title;
-  if (!usrButton) return undefined;
-  const choices = new Set(top.controls.filter((c) => c.kind === "checkbox" || c.kind === "radio").map((c) => c.text));
-  const asked = [top.title, ...top.controls.filter((c) => c.kind === "label" && !choices.has(c.text)).map((c) => c.text)].join(" ");
-  return commitWord(asked) ? asked : undefined;
+  const asked = commitWord(top.title) ? top.title : usrButton && commitWord(whole) ? whole : undefined;
+  if (!asked) return undefined;
+  // "Cancel Customer / Data will be lost. Do you want to cancel processing?": "cancel" followed by a word
+  // reads as "cancel a document" (a reversal), but a popup that says the input will be lost asks whether to
+  // stop editing, and Yes discards. A real commit word in it (save, post) still makes it a commit question.
+  if (commitWord(asked) === "cancel a document" && commitWord(whole) === "cancel a document" && discardsInput(whole)) return undefined;
+  return asked;
+}
+
+/**
+ * The topmost popup, when it asks whether to throw unsaved input away ("Data
+ * will be lost. Do you want to cancel processing?") and nothing else: no
+ * commit question (commitQuestion), answers in its body. Each answer either
+ * discards the input or goes back to it; none writes.
+ */
+function discardQuestion(windows: ViewWindow[]): string | undefined {
+  const top = topOf(windows);
+  if (!top || top.number === 0 || commitQuestion(windows)) return undefined;
+  if (!top.controls.some((c) => c.kind === "button" && c.id.includes("/usr/"))) return undefined;
+  const whole = [top.title, ...top.controls.filter((c) => c.kind === "label").map((c) => c.text)].join(" ");
+  return discardsInput(whole) ? whole : undefined;
 }
 
 /** Does this button of a popup decline what the popup asks? Cancel by its id, or No, Cancel, Back... by its text. */
@@ -189,8 +250,70 @@ function declines(control: ViewControl, text: string, ctx: AssessContext): boole
   return means === "no" || means === "cancel" || means === "back" || means === "exit" || means === "help" || means === "display";
 }
 
+/**
+ * A message popup: the window SAP shows an error, warning or information
+ * message in ("Error", "Information": message lines, a Continue or Confirm
+ * button on Enter, Help). It has no input field and no button in its body,
+ * and its text holds no commit word. Its Enter button only acknowledges the
+ * message, whatever it is called: "Confirm (Enter)" there confirms having
+ * read it, not a document.
+ */
+function isMessagePopup(w: ViewWindow | undefined): boolean {
+  if (!w || w.number === 0) return false;
+  if (w.controls.some((c) => INPUT_KINDS.has(c.kind) || (c.kind === "button" && c.id.includes("/usr/")))) return false;
+  const lines = w.controls.filter((c) => c.kind === "label").map((c) => c.text);
+  return lines.length > 0 && !commitWord(w.title, ...lines);
+}
+
+/**
+ * A value help (F4): Web GUI's search help page, with its restriction tab and
+ * hit list. It only puts a value into a field of the screen behind it, so its
+ * buttons (Copy the chosen entry, Find, Print the hit list) write nothing.
+ */
+function isValueHelp(w: ViewWindow | undefined): boolean {
+  return !!w && w.number > 0 && w.controls.some((c) => /\/shell\/(gridRESULT|critcol)(\/|$)/.test(c.id));
+}
+
+/**
+ * A report's selection screen: select-options (their buttons carry SAP's
+ * generated ids `%_<name>_%_APP_%-...`), or screen 1000 with Execute (F8).
+ * Its pushbuttons (multiple selection, select options, the report's own
+ * SELECTION-SCREEN PUSHBUTTON) change the selection; they do at most what
+ * Execute does, and F8 is counted safe on purpose (core/words.ts SAFE_VKEYS).
+ */
+function isSelectionScreen(scene: Scene): boolean {
+  const main = scene.windows.find((w) => w.number === 0);
+  if (!main) return false;
+  if (main.controls.some((c) => /%_APP_%-/.test(c.id))) return true;
+  return scene.dynpro === "1000" && main.controls.some((c) => c.id === "wnd[0]/tbar[1]/btn[8]");
+}
+
+/** The top menu ("Goto") an entry sits in. */
+function topMenuOf(entry: MenuEntry, menus: MenuEntry[]): MenuEntry | undefined {
+  const top = /^wnd\[0\]\/mbar\/menu\[\d+\]/.exec(entry.sid)?.[0];
+  return top ? menus.find((m) => m.sid === top) : undefined;
+}
+
+/**
+ * Is this button the same function as an entry of the Goto menu? Matched by
+ * its shortcut ("Org. Levels (F6)" and "Organizational Levels... (F6)") or by
+ * its text ("Company Code Data (Ctrl+F2)" and "Company Code Data"). A popup's
+ * button that repeats a button of the main window (same text, same key) is
+ * that button again (MM03's Select View(s) popup repeats "Data (F7)").
+ */
+function inGotoMenu(control: ViewControl, text: string, scene: Scene, ctx: AssessContext): boolean {
+  if (control.window > 0) {
+    const twin = scene.windows.find((w) => w.number === 0)?.controls.find((c) => c.kind === "button" && c.text === text);
+    return !!twin && inGotoMenu(twin, twin.text, scene, ctx);
+  }
+  const sc = shortcutOf(text);
+  const want = bareText(text);
+  const twins = scene.menus.filter((m) => /\/mbar\/menu\[\d+\]\/menu\[/.test(m.sid) && ((sc && m.key && keyName(m.key) === sc) || (want && bareText(m.text) === want)));
+  return twins.length > 0 && twins.every((m) => isGotoMenu(ctx.language, topMenuOf(m, scene.menus)?.text));
+}
+
 /** A button, an open menu row, or a link or button of an HTML viewer: what pressing it may do. */
-function assessFunction(what: string, text: string, control: ViewControl | undefined, windows: ViewWindow[], ctx: AssessContext): Assessment {
+function assessFunction(what: string, text: string, control: ViewControl | undefined, scene: Scene, ctx: AssessContext): Assessment {
   const named = `${what} ${quote(text)}`;
   const key = control ? buttonKey(control.id) : undefined;
   // The Save button of the system toolbar, whatever the language.
@@ -200,14 +323,28 @@ function assessFunction(what: string, text: string, control: ViewControl | undef
   const code = control ? toolbarCode(control.id) : undefined;
   if (code && safeCode(code)) return NAVIGATE;
   if (code && commitCode(code)) return commit(`${named} {${code}}`);
+  if (endsLogon(text)) return closes(named);
+  const win = control ? windowOf(scene, control) : undefined;
+  // The Enter button of a message popup acknowledges the message (isMessagePopup), also when it says "Confirm".
+  if (control && key === 0 && isMessagePopup(win)) return navigate(`${named} acknowledges the message`);
   if (commitWord(text)) return commit(named);
   if (control && control.window > 0 && control.kind === "button") {
-    const asked = commitQuestion(windows);
-    if (asked && !declines(control, text, ctx)) return commit(`${named} on the popup ${quote(asked)}`);
+    const asked = commitQuestion(scene.windows);
+    if (asked && !declines(control, text, ctx)) return endsLogon(asked) ? closes(`${named} on the popup ${quote(asked)}`) : commit(`${named} on the popup ${quote(asked)}`);
   }
   if (key !== undefined && SAFE_VKEYS.has(key)) return NAVIGATE;
   if (sc && SAFE_KEYS.has(sc)) return NAVIGATE;
   if (safeWord(ctx.language, text)) return NAVIGATE;
+  // An answer to "Data will be lost..." (discardQuestion) discards the input or keeps it.
+  if (control && control.window > 0 && control.kind === "button" && control.window === topOf(scene.windows)?.number && discardQuestion(scene.windows))
+    return navigate(`${named} on a popup that asks whether to discard unsaved input`);
+  // Where the button sits can say it writes nothing (each rule above its function). These rules lean on the
+  // commit words to keep "Delete from personal list" or a "Post" pushbutton a commit, so they hold only where
+  // the words are read (a covered logon language).
+  const placed = languageCovered(ctx.language);
+  if (placed && control && isValueHelp(win)) return navigate(`${named} of a value help`);
+  if (placed && control && control.window === 0 && control.id.includes("/usr/") && isSelectionScreen(scene)) return navigate(`${named} of a selection screen`);
+  if (control && inGotoMenu(control, text, scene, ctx)) return navigate(`${named} is in the Goto menu`);
   return notSafe(named);
 }
 
@@ -216,35 +353,78 @@ function assessMenu(entry: MenuEntry, menus: MenuEntry[], ctx: AssessContext): A
   if (menus.some((m) => m.sid.startsWith(`${entry.sid}/`))) return NAVIGATE;
   const key = entry.key ? keyName(entry.key) : "";
   if (key && SAVE_KEYS.has(key)) return commit(`menu entry ${quote(entry.text)}`);
+  if (endsLogon(entry.text)) return closes(`menu entry ${quote(entry.text)}`);
   if (commitWord(entry.text)) return commit(`menu entry ${quote(entry.text)}`);
   if (key && SAFE_KEYS.has(key)) return NAVIGATE;
   if (safeWord(ctx.language, entry.text)) return NAVIGATE;
+  // SAP's Goto menu moves between the screens of an object (isGotoMenu).
+  if (isGotoMenu(ctx.language, topMenuOf(entry, menus)?.text)) return navigate(`menu entry ${quote(entry.text)} is in the Goto menu`);
   return notSafe(`menu entry ${quote(entry.text)}`);
 }
 
 /** Enter and Space press the control that has the focus: what would that do? Undefined when the focus is on nothing that can be pressed. */
-function assessFocus(windows: ViewWindow[], menus: MenuEntry[], ctx: AssessContext, what: string): Assessment | undefined {
+function assessFocus(scene: Scene, ctx: AssessContext, what: string): Assessment | undefined {
+  const { windows, menus } = scene;
   const f = ctx.focus;
   if (!f) return undefined;
   if (f.type === "html" || f.type === "browser") {
     if (!f.pressable) return undefined;
-    const a = assessFunction(`${what} would press`, f.text ?? "", undefined, windows, ctx);
+    const a = assessFunction(`${what} would press`, f.text ?? "", undefined, scene, ctx);
     return a.risk === "commit" ? a : undefined;
   }
   if (f.type === "GuiMenu") {
     const entry = menus.find((m) => m.sid === f.sid);
     if (!entry) return commit(`${what} would choose a menu entry the server could not read`);
     const a = assessMenu(entry, menus, ctx);
-    return a.risk === "commit" ? commit(`${what} would choose the ${a.reason}`) : undefined;
+    return a.risk === "commit" ? { ...a, reason: `${what} would choose the ${a.reason}` } : undefined;
   }
   if (!/Button$/.test(f.type) || f.type === "GuiRadioButton") return undefined;
   const control = f.sid ? findControl(windows, f.sid) : undefined;
   if (!control) return commit(`${what} would press the button that has the focus (${f.sid || "no id"}), which the view does not show`);
-  const a = assessFunction(`${what} would press the button`, control.text, control, windows, ctx);
+  const a = assessFunction(`${what} would press the button`, control.text, control, scene, ctx);
   return a.risk === "commit" ? a : undefined;
 }
 
-function assessKey(raw: unknown, windows: ViewWindow[], menus: MenuEntry[], what: string, ctx: AssessContext): Assessment {
+/**
+ * The button of a popup that a key presses, as the reader presses it
+ * (reader.ts `run`, "key"): for a key number N, or Enter (0), the popup's
+ * toolbar button btn[N]; for Enter on a popup without btn[0] whose answers sit
+ * in its body (Yes / No), the answer button that has the focus. `undefined`
+ * when the key does not go to a button of the popup.
+ */
+export function popupButton(view: string, key: number | string, focusSid?: string): PopupKey | undefined {
+  return popupButtonIn(parseView(view), key, focusSid);
+}
+
+export interface PopupKey {
+  /** The button the key presses; absent when it is the popup's default answer, which the page does not tell. */
+  control?: ViewControl;
+  window: ViewWindow;
+  /** Enter on a popup whose answers sit in its body and that has no btn[0]. */
+  asksDefault: boolean;
+}
+
+function popupButtonIn(windows: ViewWindow[], key: number | string, focusSid?: string): PopupKey | undefined {
+  const top = topOf(windows);
+  if (!top || top.number === 0) return undefined;
+  let k: string;
+  try {
+    k = vkey(key);
+  } catch {
+    return undefined;
+  }
+  const n = typeof key === "number" ? key : k === "Enter" ? 0 : undefined;
+  if (n === undefined) return undefined;
+  const bar = top.controls.find((c) => c.kind === "button" && new RegExp(`^wnd\\[${top.number}\\]/tbar\\[[01]\\]/btn\\[${n}\\]$`).test(c.id));
+  if (bar) return { control: bar, window: top, asksDefault: false };
+  const answers = top.controls.filter((c) => c.kind === "button" && c.id.includes("/usr/"));
+  if (n !== 0 || !answers.length) return undefined;
+  const focused = focusSid ? findControl([top], focusSid) : undefined;
+  return { ...(focused && answers.includes(focused) ? { control: focused } : {}), window: top, asksDefault: true };
+}
+
+function assessKey(raw: unknown, scene: Scene, what: string, ctx: AssessContext): Assessment {
+  const { windows, menus } = scene;
   let name: string;
   try {
     name = keyName(vkey(raw));
@@ -252,47 +432,64 @@ function assessKey(raw: unknown, windows: ViewWindow[], menus: MenuEntry[], what
     return commit(`${what} is not a key the server knows`);
   }
   if (SAVE_KEYS.has(name)) return commit(`${what} is Save`);
+  const top = Math.max(0, ...windows.map((w) => w.number));
+  // On a popup a key is the button it presses (popupButton): judged, and named, as that button.
+  if (top > 0 && (typeof raw === "number" || typeof raw === "string")) {
+    const hit = popupButtonIn(windows, raw, ctx.focus?.sid);
+    if (hit?.control) {
+      const a = assessFunction(`${what} presses the button`, hit.control.text, hit.control, scene, ctx);
+      return { ...a, reason: a.reason || `${what} presses the button ${quote(hit.control.text)}` };
+    }
+    if (hit?.asksDefault) {
+      // Enter on Yes / No without the focus on an answer: SAP would press the popup's default answer, which
+      // the page does not tell. The reader refuses it and lists the answers; for the guard it may be any of them.
+      const asked = commitQuestion(windows);
+      if (asked) return (endsLogon(asked) ? closes : commit)(`${what} (Enter) would press the default answer of the popup ${quote(asked)}, which the server cannot tell`);
+      return navigate(`${what} (Enter) would press the default answer of the popup, which the server cannot tell`);
+    }
+  }
   if (PRESS_KEYS.has(name)) {
-    const pressed = assessFocus(windows, menus, ctx, what);
+    const pressed = assessFocus(scene, ctx, what);
     if (pressed) return pressed;
     // Space on a field types a blank, on a checkbox ticks it; with the focus unknown it cannot be ruled safe.
     if (name === "SPACE") return ctx.focus ? NAVIGATE : commit(`${what} presses whatever has the focus, and the server could not read the focus`);
   }
-  const top = Math.max(0, ...windows.map((w) => w.number));
   // Enter on a popup presses its default button.
   if (name === "ENTER" && top > 0) {
     const asked = commitQuestion(windows);
-    if (asked) return commit(`${what} (Enter) answers the popup ${quote(asked)}`);
+    if (asked) return (endsLogon(asked) ? closes : commit)(`${what} (Enter) answers the popup ${quote(asked)}`);
   }
-  // What the key does here: the button or the menu entry that carries it.
+  // What the key does here: the button or the menu entry that carries it, by its shortcut or, on the main
+  // window, by its id (btn[N] is bound to virtual key N).
+  const n = typeof raw === "number" ? raw : undefined;
   const button = windows
     .filter((w) => w.number === top)
     .flatMap((w) => w.controls)
-    .find((c) => c.kind === "button" && shortcutOf(c.text) === name);
-  if (button) return assessFunction(`${what} is the button`, button.text, button, windows, ctx);
+    .find((c) => c.kind === "button" && (shortcutOf(c.text) === name || (n !== undefined && /\/tbar\[[01]\]\//.test(c.id) && buttonKey(c.id) === n)));
+  if (button) return assessFunction(`${what} is the button`, button.text, button, scene, ctx);
   const entry = top === 0 ? menus.find((m) => m.key && keyName(m.key) === name) : undefined;
   if (entry) {
     const a = assessMenu(entry, menus, ctx);
-    return a.risk === "commit" ? commit(`${what} is the ${a.reason}`) : a;
+    return a.risk === "commit" ? { ...a, reason: `${what} is the ${a.reason}` } : a;
   }
   if (SAFE_KEYS.has(name)) return NAVIGATE;
   return commit(`${what} has no button or menu entry on this screen, so what it does is unknown`);
 }
 
-function assessOkcode(value: string, view: string, windows: ViewWindow[], menus: MenuEntry[], ctx: AssessContext): Assessment {
+function assessOkcode(value: string, view: string, scene: Scene, ctx: AssessContext): Assessment {
   const v = value.replace(/^\s+|\s+$/g, "");
   const how = `okcode ${v}`;
   const k = okcodeKind(v);
   switch (k.kind) {
     case "empty":
-      return assessKey(0, windows, menus, how, ctx);
+      return assessKey(0, scene, how, ctx);
     case "key":
-      return assessKey(k.key, windows, menus, how, ctx);
+      return assessKey(k.key, scene, how, ctx);
     case "transaction":
       // /nXXXX, /oXXXX, /*XXXX: unsaved input is dropped, nothing is written.
       return NAVIGATE;
     case "closes":
-      return commit(`${how} ${CLOSES_SESSIONS}`);
+      return closes(`${how} ${CLOSES_SESSIONS}`);
     case "commit":
       return commit(`${how} (a function code that saves, posts or deletes)`);
     case "safe":
@@ -312,12 +509,13 @@ function assessOkcode(value: string, view: string, windows: ViewWindow[], menus:
  */
 export function assessAction(action: Action, view: string, menus: MenuEntry[], ctx: AssessContext = {}): Assessment {
   const windows = parseView(view);
+  const scene: Scene = { windows, menus, program: programOf(view), dynpro: /  SCREEN (\S+)/.exec(view.split("\n", 1)[0] ?? "")?.[1] ?? "" };
   const id = String(action.id ?? "");
   switch (action.do) {
     case "okcode":
-      return assessOkcode(String(action.value ?? ""), view, windows, menus, ctx);
+      return assessOkcode(String(action.value ?? ""), view, scene, ctx);
     case "key":
-      return assessKey(action.key ?? action.value, windows, menus, `key ${String(action.key ?? action.value)}`, ctx);
+      return assessKey(action.key ?? action.value, scene, `key ${String(action.key ?? action.value)}`, ctx);
     case "tree":
     case "grid":
       return action.how === "expand" || action.how === "collapse" ? READ : NAVIGATE;
@@ -326,7 +524,7 @@ export function assessAction(action: Action, view: string, menus: MenuEntry[], c
       if (safeCode(button)) return NAVIGATE;
       if (commitCode(button)) return commit(`toolbar button ${button}`);
       const control = findControl(windows, `${id}/${button}`) ?? findControl(windows, button);
-      return control ? assessFunction("toolbar button", control.text, control, windows, ctx) : notSafe(`toolbar button ${button}, which the view does not show,`);
+      return control ? assessFunction("toolbar button", control.text, control, scene, ctx) : notSafe(`toolbar button ${button}, which the view does not show,`);
     }
     case "press":
     case "select":
@@ -363,7 +561,7 @@ export function assessAction(action: Action, view: string, menus: MenuEntry[], c
         const entry = menus.find((m) => m.sid === control.id);
         if (entry) return assessMenu(entry, menus, ctx);
       }
-      return assessFunction(FUNCTION_KINDS.has(control.kind) ? (control.kind === "menu" ? "menu entry" : control.kind) : control.kind, control.text, control, windows, ctx);
+      return assessFunction(FUNCTION_KINDS.has(control.kind) ? (control.kind === "menu" ? "menu entry" : control.kind) : control.kind, control.text, control, scene, ctx);
     }
     case "scroll":
       // Moves a list; nothing is chosen or changed.

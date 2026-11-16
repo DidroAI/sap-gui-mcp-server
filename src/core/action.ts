@@ -59,6 +59,13 @@ const NAMED_KEYS: Record<string, string> = {
   back: "Back",
 };
 
+/**
+ * Verbs that act on one control. Without an id a surface would act on
+ * whatever control its lookup matches first: a press without id once opened
+ * Web GUI's Menu button. So the id is required here, before the guard.
+ */
+const NEEDS_ID: ReadonlySet<Verb> = new Set(["set", "press", "click", "select", "check", "combo", "f4", "focus", "dblclick", "tree", "grid", "toolbar"]);
+
 const KEY_HELP =
   'key needs "key": an SAP virtual key number from 0 to 99 (0 Enter, 3 Back, 4 F4, 8 F8, 11 Save, 12 Cancel), or a key name (Enter, Escape, Tab, Shift+Tab, F1 to F24, ArrowDown, PageDown, Home, End, Back, Control+S).';
 
@@ -125,6 +132,8 @@ export function normalizeAction(input: unknown): NormalizedAction {
       else throw new ActionError(`"${k}" must be a string.`);
     }
   }
+  if (NEEDS_ID.has(verb as Verb) && (typeof out.id !== "string" || !out.id.trim()))
+    throw new ActionError(`${verb} needs "id": the id of a control from sap_look, e.g. {"do":"${verb}","id":"btn[8]"}.`);
   if (out.row !== undefined && out.row !== null && !(typeof out.row === "number" && Number.isInteger(out.row) && out.row >= 0))
     throw new ActionError('"row" must be a whole number, 0 or more.');
 
