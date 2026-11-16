@@ -120,6 +120,33 @@ const overflowPage = (withMenu: boolean) => `${HEAD}
 <script>document.addEventListener('keydown', function (e) { if (e.key === 'F2' && e.ctrlKey) window.pressed = ['CTRL+F2']; });</script>
 </body></html>`;
 
+const mrow = (sid: string, text: string, sub: string, click: string) =>
+  `<tr id="${sid}" ct="POMNI" role="menuitem" lsdata="${ls({ "1": text, "18": { SID: sid, Type: "GuiMenu" } })}" onclick="${click}"><td>${text}</td></tr>${sub}`;
+/** The menu bar behind the Menu button: templates for every entry (Web GUI keeps them while the menu is closed), and the open menus as tables. */
+const MENU = `${HEAD}
+<div id="cua2sapmenu_btn" ct="B" role="button" style="width:60px;height:24px" lsdata="${ls({ "0": "Menu", "27": { SID: "wnd[0]/tbar[0]/[0]", Type: "GuiButton" } })}"
+  onclick="window.toggled=(window.toggled||0)+1;var m=document.getElementById('M1');var open=m.style.top!=='-9999px';m.style.top=open?'-9999px':'100px';if(!open)document.querySelector('.lsMnu--root xmp').textContent='';if(open)document.getElementById('M2').style.top='-9999px'">Menu</div>
+<span class="lsMnu--root"><xmp><tr lsdata='${JSON.stringify({ "1": "Edit", "18": { SID: "wnd[0]/mbar/menu[0]", Type: "GuiMenu" } })}'></tr>
+  <tr lsdata='${JSON.stringify({ "1": "System", "18": { SID: "wnd[0]/mbar/menu[1]", Type: "GuiMenu" } })}'></tr>
+  <tr lsdata='${JSON.stringify({ "1": "Status...", "18": { SID: "wnd[0]/mbar/menu[1]/menu[0]", Type: "GuiMenu" } })}'></tr></xmp></span>
+<table id="M1" style="position:absolute;top:-9999px;left:10px;background:#fff">
+  ${mrow("wnd[0]/mbar/menu[0]", "Edit", "", "")}
+  ${mrow("wnd[0]/mbar/menu[1]", "System", "", "setTimeout(function(){document.getElementById('M2').style.top='130px'},150)")}
+  <tr id="tbmnuentryAbout" ct="POMNI" role="menuitem" lsdata="${ls({ "1": "About SAP GUI for HTML", "18": { SID: "wnd[0]/mbar/[3]", Type: "GuiMenu" } })}"><td>About SAP GUI for HTML</td></tr>
+</table>
+<table id="M2" style="position:absolute;top:-9999px;left:200px;background:#fff">
+  ${mrow("wnd[0]/mbar/menu[1]/menu[0]", "Status...", "", "window.pressed=(window.pressed||[]).concat('Status');document.getElementById('M1').style.top='-9999px';document.getElementById('M2').style.top='-9999px'")}
+</table>
+<script>
+  // One level closes per Escape, the submenu first.
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    var m2 = document.getElementById('M2'), m1 = document.getElementById('M1');
+    if (m2.style.top !== '-9999px') m2.style.top = '-9999px'; else if (!window.keepFirstLevel) m1.style.top = '-9999px';
+  });
+</script>
+</body></html>`;
+
 const refusal = (p: Promise<unknown>): Promise<string> =>
   p.then(
     () => "",
@@ -231,6 +258,42 @@ describe.skipIf(!exe)("Web GUI reader: SAP GUI for HTML of S/4HANA 2025, in a br
     expect(await act({ do: "set", id: "crit1805", value: "*ALPHA*" })).toBe("set wnd[2]/shell/critcol/crit1805");
     expect(await fullView()).toContain('wnd[2]/shell/critcol/crit1805  field  Name = "*ALPHA*"  (edit)');
     expect(await page.locator("[ct='TOKEN']").count()).toBe(0);
+  });
+
+  test("a menu: an entry with a submenu opens it; the next select goes on in the open menu; Escape closes all of it", async () => {
+    await load(MENU);
+    expect(await act({ do: "select", id: "menu[1]" })).toBe('opened menu wnd[0]/mbar/menu[1]: its entries are listed below; choose one with "select" (nothing was sent to SAP)');
+    expect(await fullView()).toContain("wnd[0]/mbar/menu[1]/menu[0]  menu  Status...");
+    // Web GUI's own entries under the menu bar are not listed.
+    expect((await fullView()).some((l) => l.includes("About SAP GUI"))).toBe(false);
+    // The Menu button is not clicked again (it would close the menu): the entry is clicked in the open menu.
+    expect(await act({ do: "select", id: "menu[1]/menu[0]" })).toBe("menu wnd[0]/mbar/menu[1]/menu[0]");
+    expect(await pressed()).toEqual(["Status"]);
+    expect(await page.evaluate(() => (window as unknown as { toggled?: number }).toggled)).toBe(1);
+    // From a closed menu, the whole path.
+    expect(await act({ do: "select", id: "menu[1]/menu[0]" })).toBe("menu wnd[0]/mbar/menu[1]/menu[0]");
+    expect(await pressed()).toEqual(["Status", "Status"]);
+    // Two levels open: Escape closes both, and says that SAP got nothing.
+    await act({ do: "select", id: "menu[1]" });
+    expect(await act({ do: "key", key: 12 })).toContain("closed the open menu");
+    expect((await fullView()).some((l) => l.includes("  menu  "))).toBe(false);
+  }, 30_000);
+
+  test("a menu whose first level stays after Escape (ECC) is closed with its Menu button", async () => {
+    await load(MENU);
+    await page.evaluate(() => {
+      (window as unknown as { keepFirstLevel?: boolean }).keepFirstLevel = true;
+    });
+    await act({ do: "select", id: "menu[1]" });
+    expect(await act({ do: "key", key: 12 })).toContain("closed the open menu");
+    expect((await fullView()).some((l) => l.includes("  menu  "))).toBe(false);
+  }, 20_000);
+
+  test("a menu entry the menu bar does not have is said at once", async () => {
+    await load(MENU);
+    const t0 = Date.now();
+    expect(await refusal(act({ do: "select", id: "menu[1]/menu[7]" }))).toContain('No menu entry "menu[1]/menu[7]" on this screen');
+    expect(Date.now() - t0).toBeLessThan(2000);
   });
 
   test('a toolbar button behind the ">>" button of S/4HANA 2025 is pressed through its menu', async () => {

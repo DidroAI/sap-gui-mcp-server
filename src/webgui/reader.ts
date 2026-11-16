@@ -29,7 +29,7 @@ import { assessAction, popupButton, questionRefusal } from "./assess.js";
 import { checkedNow, clean, clickForRoundtrip, clickListLine, clickMenuRow, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlLook, openTextCell, pressOverflow, setCalendar, setTokenField, setRefusal, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
 import { LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
 import { chooseEntry, entriesOf, markScrolled, notOnScreen, scrollTo, selectRow } from "./lists.js";
-import { extractFacts, markControl, markRow, markSelector, menuRowOpen, openOverlay, scrollControl, topWindowOpen } from "./page.js";
+import { extractFacts, extractMenus, markControl, markRow, markSelector, menuRowOpen, openOverlay, scrollControl, topWindowOpen } from "./page.js";
 import { checkBeforeAct, focusOf, freshView, guardFacts, isDropdown, kindIn, LOGGED_OFF, loggedOff, look, lookRead, menuLines, readViewer, resolveIn, type ScreenRead, scrollables, viewerFrames } from "./screen.js";
 import { IDLE_TIMEOUT_MS, LEAVE_MS, MAX_IDLE_TIMEOUT_MS, noTiming, timingText, type WebGuiSession } from "./session.js";
 
@@ -231,7 +231,18 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
         const overlay = await session.frame.evaluate(openOverlay).catch(() => "" as const);
         if (overlay) {
           await session.roundtrip(() => session.pressKey("Escape"), 800);
-          const still = await session.frame.evaluate(openOverlay).catch(() => "" as const);
+          let still = await session.frame.evaluate(openOverlay).catch(() => "" as const);
+          // A menu with a submenu open closes one level per Escape (the Menu button's menu of S/4HANA 2025).
+          for (let i = 0; i < 4 && still === "menu" && overlay === "menu" && !session.started; i++) {
+            await session.roundtrip(() => session.pressKey("Escape"), 800);
+            still = await session.frame.evaluate(openOverlay).catch(() => "" as const);
+          }
+          // The menu bar's menu keeps its first level when Escape went to a submenu (ECC): its Menu button closes it, as a click does.
+          if (still === "menu" && !session.started && (await session.frame.evaluate(menuRowOpen, "wnd[0]/mbar/menu[0]").catch(() => ""))) {
+            await session.frame.locator("#cua2sapmenu_btn").click({ timeout: 3000 }).catch(() => {});
+            await session.page.waitForTimeout(200);
+            still = await session.frame.evaluate(openOverlay).catch(() => "" as const);
+          }
           const what = overlay === "menu" ? "menu" : "list";
           if (still) throw new ActionError(`Escape did not close the open ${what}. Nothing else was pressed: look at the screen.`);
           if (session.started) return `key ${k} (a ${what} was open: Escape went to it)`;
@@ -343,20 +354,47 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
         // Menu path: open the Menu button, then each level by its scripting id.
         const f = session.frame;
         const full = id.startsWith("wnd[") ? id : `wnd[0]/mbar/${id}`;
-        const before = session.posts;
-        await f.locator("#cua2sapmenu_btn").click();
         const parts = full.split("/").slice(2);
+        const path = (n: number) => `wnd[0]/mbar/${parts.slice(0, n).join("/")}`;
+        const open = async (sid: string) => (await f.evaluate(menuRowOpen, sid).catch(() => "")) !== "";
+        const menuOpen = async () => (await f.evaluate(openOverlay).catch(() => "")) === "menu";
+        // An entry the menu bar does not have is said at once, with where the entries are listed. (Web GUI
+        // keeps the entries as templates only while the menu is closed: an open menu is asked itself.)
+        const wasOpen = await open(path(1));
+        const menus = wasOpen ? [] : await f.evaluate(extractMenus).catch(() => []);
+        if (menus.length && !menus.some((m) => m.sid === full)) throw new ActionError(`No menu entry "${id}" on this screen. {"id":"mbar"} in sap_look lists every entry with its id.`);
+        // Web GUI's event queue is watched from before the clicks: an entry that only opens its submenu puts nothing there.
+        await session.watchQueue();
+        const before = session.posts;
+        // The Menu button opens the menu, and closes one that is open: it is clicked only when the menu is closed.
+        if (!wasOpen) await f.locator("#cua2sapmenu_btn").click({ timeout: 5000 });
         for (let i = 1; i <= parts.length; i++) {
-          const sid = `wnd[0]/mbar/${parts.slice(0, i).join("/")}`;
-          const row = f
-            .locator(`tr[id="${sid}"]`)
-            .filter({ visible: true })
-            .first();
-          // The click waits for the entry to be drawn: a submenu opens a moment after its parent is clicked.
-          await row.click({ timeout: 10000 });
+          const sid = path(i);
+          // A level that already shows its entries (opened by an earlier "select") is not clicked again.
+          if (i < parts.length && (await open(path(i + 1)))) continue;
+          // A submenu opens a moment after its parent is clicked: the entry is waited for, not long.
+          let shown = false;
+          for (let k = 0; k < 30 && !(shown = await open(sid)); k++) await page.waitForTimeout(100);
+          if (!shown) {
+            for (let k = 0; k < 4 && (await menuOpen()); k++) await session.pressKey("Escape").catch(() => {});
+            if (await open(path(1))) await f.locator("#cua2sapmenu_btn").click({ timeout: 3000 }).catch(() => {});
+            throw new ActionError(`The menu did not show its entry ${sid.replace(/^wnd\[0\]\/mbar\//, "")} within 3 s: this screen has no such entry (or it is hidden here). Nothing was chosen, and the menu is closed again. {"id":"mbar"} in sap_look lists every entry with its id.`);
+          }
+          await f.locator(`tr[id="${sid}"]`).filter({ visible: true }).first().click({ timeout: 5000 });
           if (i < parts.length) await page.waitForTimeout(100);
         }
-        await session.waitRoundtrip(SURE_START_MS, before);
+        // An entry with a submenu only opens it, and sends SAP nothing: its entries show within a moment
+        // (they are in the view). Any other entry sends its request, which is waited for as a button's is.
+        const prefix = `${full}/`;
+        let submenu = false;
+        for (let k = 0; k < 8 && session.posts === before && !submenu; k++) {
+          submenu = await f
+            .evaluate((p) => Array.from(document.querySelectorAll("tr[ct^='POMN']")).some((tr) => tr.id.startsWith(p) && tr.getBoundingClientRect().height > 0 && tr.getBoundingClientRect().bottom > 0), prefix)
+            .catch(() => false);
+          if (!submenu) await page.waitForTimeout(100);
+        }
+        await session.waitRoundtrip(submenu ? 300 : SURE_START_MS, before);
+        if (!session.started && (await menuOpen())) return `opened menu ${full}: its entries are listed below; choose one with "select" (${NOTHING_TO_SAP}`;
         return `menu ${full}`;
       }
       if (a.row !== undefined && /^(table|grid)$/.test(kindIn(await freshView(session), id)))
