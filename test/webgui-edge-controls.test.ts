@@ -8,6 +8,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { compact } from "../src/core/compact.js";
 import { webguiActInFrame, webguiLookInFrame } from "../src/webgui/index.js";
+import { view } from "../src/webgui/reader.js";
+import { WebGuiSession } from "../src/webgui/session.js";
 
 const exe = process.env.SAP_TEST_CHROME;
 const sid = (id: string, type: string, modal = 0) => `{ModalNo:${modal},SID:'${id}',Type:'${type}'}`;
@@ -25,6 +27,10 @@ const SELOPT = `
 <label id="SL1" f="SF1" lsdata="{1:'SF1',3:'Material',19:${sid("wnd[0]/usr/txt%_MATNR_%_APP_%-TEXT", "GuiLabel")}}">Material</label>
 <span ct="L" id="SI1" title="Select: Not equal to" tabindex="0" style="display:inline-block;width:16px;height:16px" lsdata="{0:'Select\\x3a\\x20Not\\x20equal\\x20to',8:true,19:${sid("wnd[0]/usr/txt%_MATNR_%_APP_%-OPTI_PUSH", "GuiLabel")}}"></span>
 <input id="SF1" value="M-17" lsdata="{0:'x',20:${sid("wnd[0]/usr/ctxtMATNR-LOW", "GuiCTextField")}}">`;
+
+// F1 help (Performance Assistant): headings, paragraphs with links, a small table.
+const HELP = `<iframe id="V1" style="width:500px;height:200px" lsdata="{0:'x',20:${sid("wnd[0]/usr/cntlHELP/shellcont/shell", "GuiHtmlViewer")}}"
+  srcdoc="<h3>Sales Document Type</h3><p>A classification that distinguishes between different types of <a href='#e2'><b>sales document</b></a>.</p><h3>Use</h3><p>${"The type decides the screens that follow. ".repeat(60)}</p><table><tr><th>Sales document type</th><th>Parameter ID</th></tr><tr><td>Order</td><td>AAT</td></tr></table><a href='#x'>Glossary</a><button>Close</button>"></iframe>`;
 
 const page0 = (body: string) => `<!doctype html><html lang="en"><head><title>Synthetic</title></head><body>${HEAD}${body}</body></html>`;
 
@@ -75,5 +81,24 @@ describe.skipIf(!exe)("Web GUI reader: edge cases of round 3, in a browser", () 
     const view = await full();
     expect(view).toContain('wnd[0]/usr/txt%_MATNR_%_APP_%-OPTI_PUSH  label  icon "Select: Not equal to"');
     expect(compact(view)).toContain('txt%_MATNR_%_APP_%-OPTI_PUSH  label  icon "Select: Not equal to"\nctxtMATNR-LOW  field  Material = "M-17"  (edit)');
+  });
+
+  test("ECCSCR-07: the text of an HTML viewer is read, bounded in the screen's view and whole by its id", async () => {
+    await show(HELP);
+    const V = "wnd[0]/usr/cntlHELP/shellcont/shell";
+    const lines = (await full()).split("\n");
+    const at = lines.indexOf(`${V}  html-viewer`);
+    expect(lines.slice(at + 1, at + 4)).toEqual(["  Sales Document Type", "  A classification that distinguishes between different types of sales document.", "  Use"]);
+    // The long paragraph is cut, and the line after it says how to get the rest; the controls follow.
+    expect(lines[at + 4]?.endsWith("...")).toBe(true);
+    expect(lines[at + 5]).toMatch(/^ {2}\.\.\. \d+ more characters of text: sap_look with this viewer's id shows it$/);
+    expect(lines.slice(at + 6, at + 9)).toEqual([`${V}/html[1]  link  sales document`, `${V}/html[2]  link  Glossary`, `${V}/html[3]  button  Close`]);
+    expect(lines.slice(at + 1, at + 6).join("\n").length).toBeLessThan(2300);
+    // By its id: the whole text, the table's rows with their cells, no line for a button or a link that stands alone.
+    const whole = await view(new WebGuiSession(page.mainFrame()), { compact: true, id: V });
+    expect(whole).toContain("  Sales document type | Parameter ID\n  Order | AAT");
+    expect(whole).not.toContain("more characters");
+    expect(whole).not.toContain("\n  Glossary");
+    expect(whole).toContain("html[1]  link  sales document");
   });
 });

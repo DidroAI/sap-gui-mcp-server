@@ -31,7 +31,7 @@ import { checkedNow, clean, clickForRoundtrip, clickListLine, clickMenuRow, eval
 import { LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
 import { chooseEntry, entriesOf, markScrolled, notOnScreen, scrollTo, selectRow } from "./lists.js";
 import { extractFacts, markControl, markRow, markSelector, menuRowOpen, openOverlay, scrollControl, topWindowOpen } from "./page.js";
-import { checkBeforeAct, focusOf, freshView, guardFacts, isDropdown, kindIn, LOGGED_OFF, loggedOff, look, lookRead, menuLines, readViewer, resolveIn, type ScreenRead, scrollables, viewerFrames } from "./screen.js";
+import { checkBeforeAct, focusOf, freshView, guardFacts, isDropdown, kindIn, LOGGED_OFF, loggedOff, look, lookRead, menuLines, readViewer, resolveIn, type ScreenRead, scrollables, VIEWER_TEXT_WHOLE, viewerFrames } from "./screen.js";
 import { IDLE_TIMEOUT_MS, LEAVE_MS, MAX_IDLE_TIMEOUT_MS, noTiming, timingText, type WebGuiSession } from "./session.js";
 
 export { setRefusal } from "./controls.js";
@@ -112,6 +112,16 @@ export async function view(session: WebGuiSession, options: LookOptions): Promis
   }
   let block = controlBlock(full, sid);
   if (!block) throw noControlLook(options.id);
+  if (kindIn(full, sid) === "html-viewer") {
+    // The viewer alone: its text whole (the view of the screen holds the start of it).
+    const v = (await viewerFrames(session)).find((x) => x.sid === sid);
+    if (v) {
+      const r = await readViewer(v.frame, VIEWER_TEXT_WHOLE);
+      const head = block.split("\n").filter((l) => !l.startsWith("  "));
+      const at = head.findIndex((l) => l.startsWith(`${sid}  `));
+      block = [...head.slice(0, at + 1), ...r.text, ...head.slice(at + 1)].join("\n");
+    }
+  }
   if (isDropdown(block, sid)) {
     // Every entry, also those the view cuts and those Web GUI loads only when the list opens.
     const entries = await entriesOf(session, sid);
