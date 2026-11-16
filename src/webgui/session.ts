@@ -234,6 +234,38 @@ export function timingText(t: Timing, total: number): string {
   return `${total} ms: ${parts.join(", ")} (${t.posts} request${t.posts === 1 ? "" : "s"}${t.gap ? `, longest pause between requests ${t.gap} ms` : ""})`;
 }
 
+/**
+ * Runs in the page: Web GUI's loading sign (BUSY) is shown, and its lock
+ * (`oLS.bLocked()`, undefined when this Web GUI does not say). One round
+ * trip for what the waits look at on every poll. "Shown" is Playwright's
+ * `visible`: not hidden by style, and a box that is not empty.
+ */
+export function pageState(busySelector: string): { busy: boolean; locked: boolean | undefined } {
+  const shown = (e: Element) => {
+    const st = getComputedStyle(e);
+    if (typeof (e as HTMLElement).checkVisibility === "function" && !(e as HTMLElement).checkVisibility()) return false;
+    if (st.visibility !== "visible") return false;
+    const r = e.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+  let busy = false;
+  try {
+    busy = Array.from(document.querySelectorAll(busySelector)).some(shown);
+  } catch {
+    busy = false;
+  }
+  let locked: boolean | undefined;
+  const ls = (window as unknown as { oLS?: { bLocked?: () => unknown } }).oLS;
+  if (typeof ls?.bLocked === "function") {
+    try {
+      locked = ls.bLocked() === true;
+    } catch {
+      locked = undefined;
+    }
+  }
+  return { busy, locked };
+}
+
 export class WebGuiSession {
   readonly page: Page;
   private readonly traffic: Traffic;
@@ -270,14 +302,18 @@ export class WebGuiSession {
     this.page.setDefaultTimeout(ACTION_TIMEOUT_MS);
   }
 
-  private async busyShown(): Promise<boolean> {
-    return (
-      (await this.frame
-        .locator(BUSY)
-        .filter({ visible: true })
-        .count()
-        .catch(() => 0)) > 0
-    );
+  /** The loading sign and the lock, in one round trip; neither when the page cannot be read. */
+  private state(): Promise<{ busy: boolean; locked: boolean | undefined }> {
+    return this.frame.evaluate(pageState, BUSY).catch(() => ({ busy: false, locked: undefined }));
+  }
+
+  /**
+   * Waits `ms` between two looks at the page. The wait itself needs no round
+   * trip to the browser; on a closed page it fails as Playwright's does.
+   */
+  private async pause(ms: number): Promise<void> {
+    if (this.page.isClosed()) return this.page.waitForTimeout(ms);
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
@@ -302,12 +338,17 @@ export class WebGuiSession {
       });
     let sent = false;
     while (Date.now() - t0 < startMs) {
-      if (this.traffic.posts > before || (await this.busyShown()) || (await this.locked()) === true) {
+      if (this.traffic.posts > before) {
+        sent = true;
+        break;
+      }
+      const st = await this.state();
+      if (st.busy || st.locked === true) {
         sent = true;
         break;
       }
       if (handled !== undefined && Date.now() - handled >= LEAVE_MS) break;
-      await this.page.waitForTimeout(POLL_MS);
+      await this.pause(POLL_MS);
     }
     const seen = Date.now();
     this.traffic.maxGap = 0;
@@ -427,7 +468,7 @@ export class WebGuiSession {
       }
     }
     const deadline = start + this.idleTimeoutMs;
-    if (leadMs > 0) await this.page.waitForTimeout(leadMs);
+    if (leadMs > 0) await this.pause(leadMs);
     let checked = 0;
     while (Date.now() < deadline) {
       // A round trip that failed on the network never ends: the caller reports it.
@@ -440,13 +481,12 @@ export class WebGuiSession {
       }
       const quiet = this.traffic.inflight === 0 && Date.now() - this.traffic.lastChange >= quietMs;
       if (quiet) {
-        const locked = await this.locked();
+        const { locked, busy } = await this.state();
         if (locked === false) {
           await this.frame.waitForLoadState("domcontentloaded").catch(() => {});
           return;
         }
         if (locked === undefined) {
-          const busy = await this.busyShown();
           // The loading sign can outlast its round trip; after 5 s without traffic the wait ends, and says so.
           if (!busy || Date.now() - this.traffic.lastChange > 5000) {
             if (busy) this.unsettled = true;
@@ -455,7 +495,7 @@ export class WebGuiSession {
           }
         }
       }
-      await this.page.waitForTimeout(POLL_MS);
+      await this.pause(POLL_MS);
     }
     throw new ActionError(
       `SAP was still working after ${Math.round(this.idleTimeoutMs / 1000)} s. The step may still finish: look at the screen again in a moment (sap_look), or give a long step more time with "timeout" (seconds, up to ${MAX_IDLE_TIMEOUT_MS / 1000}).`,
@@ -468,15 +508,19 @@ export class WebGuiSession {
    * the front, which is the one way left that works.
    */
   async wake(): Promise<void> {
-    if (!(await keepAwake(this.page)) || (await hidden(this.frame))) {
-      if (await hidden(this.frame)) await this.page.bringToFront().catch(() => {});
-    }
+    // A tab Chrome still sees as hidden is brought to the front, whether focus emulation took or not.
+    await keepAwake(this.page);
+    if (await hidden(this.frame)) await this.page.bringToFront().catch(() => {});
     this.slow = await this.framesSlow();
     this.quietMs = this.slow ? QUIET_SLOW_MS : QUIET_MS;
     // The step before may still be running (it was given up on, or the user started one): input would be lost.
     const t0 = Date.now();
-    for (let i = 0; i < 100 && (await this.locked()) === true; i++) await this.page.waitForTimeout(100);
-    if ((await this.locked()) === true) {
+    let busy = (await this.locked()) === true;
+    for (let i = 0; i < 100 && busy; i++) {
+      await this.pause(100);
+      busy = (await this.locked()) === true;
+    }
+    if (busy) {
       const gone = await this.ended();
       if (gone) throw new ActionError(endedText(gone));
       throw new ActionError(
@@ -494,10 +538,7 @@ export class WebGuiSession {
   async okCode(command: string): Promise<void> {
     const ok = this.frame.locator("#ToolbarOkCode");
     // A popup blocks the main window: the click would wait for its timeout.
-    if (
-      (await this.frame.locator("#urPopupWindowBlockLayer").filter({ visible: true }).count().catch(() => 0)) ||
-      (await this.frame.locator("#sesTimeoutPopupWindow").filter({ visible: true }).count().catch(() => 0))
-    )
+    if ((await this.frame.locator("#urPopupWindowBlockLayer, #sesTimeoutPopupWindow").filter({ visible: true }).count().catch(() => 0)) > 0)
       throw new ActionError("A popup window is open and blocks the command field: answer or close the popup first (see the WINDOW lines of sap_look).");
     await ok.click();
     await ok.fill("");
@@ -521,7 +562,7 @@ export class WebGuiSession {
     const list = this.frame.locator("[role='listbox'],.lsListbox,[ct='LIB']").filter({ visible: true });
     if ((await list.count().catch(() => 0)) > 0) {
       await this.page.keyboard.press("Tab");
-      await this.page.waitForTimeout(150);
+      await this.pause(150);
     }
   }
 
