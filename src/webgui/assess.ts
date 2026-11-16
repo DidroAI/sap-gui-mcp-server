@@ -26,7 +26,7 @@
  */
 import { menuSid, resolveId } from "../core/ids.js";
 import type { Action, Assessment } from "../core/types.js";
-import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayTitle, endsLogon, isGotoMenu, languageCovered, listTitle, MENU_PROGRAMS, okcodeKind, runSwitch, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
+import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayTitle, endsLogon, isGotoMenu, languageCovered, listChoice, listTitle, MENU_PROGRAMS, okcodeKind, runSwitch, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
 import type { MenuEntry } from "./page.js";
 import { vkey } from "./keys.js";
 
@@ -304,6 +304,9 @@ function isSelectionScreen(scene: Scene): boolean {
  * - its title names what it does ("Deletion of Jobs", "Batch Input: Process
  *   All Sessions", "Close Period for Material Master Records") and not that
  *   it lists something. Read where the words are known (a covered language).
+ *   Not read on a screen of a dialog program, whose title names an object,
+ *   nor on a selection screen that asks how the report's list is to look
+ *   ("Scope of List", a layout): that report ends in a list.
  * A report that updates without either sign is not caught: SAP_BLOCK_TCODES
  * is the tool for known update programs (README).
  */
@@ -323,6 +326,17 @@ function updateRun(scene: Scene, ctx: AssessContext): string | undefined {
   const tests = switches.filter((x) => x.is === "test");
   if (tests.length && !tests.some((x) => x.on)) return `this report can update SAP and ${quote(tests[0]?.label ?? "")} is not chosen: choose it to run the report without writing`;
   if (tests.some((x) => x.on)) return undefined;
+  // The title of an executable report names the report. A screen of a dialog program (a module pool SAPM...,
+  // a function group SAPL...) with an Execute button is titled after its object ("Update Requests: Initial
+  // Screen"), which says nothing about what Execute does.
+  if (/^SAP[ML]/i.test(scene.program)) return undefined;
+  // A report that asks how its list is to look ends in a list.
+  const asksForList = main.controls.some((c) => {
+    if (!["field", "checkbox", "radio", "dropdown"].includes(c.kind) || !c.id.includes("/usr/")) return false;
+    const name = c.id.slice(c.id.lastIndexOf("/") + 1).replace(/^(ctxt|txt|chk|rad|cmb)/, "").replace(/-(LOW|HIGH)$/, "");
+    return listChoice(name, c.text.replace(/^\[[x ]\] ?/, "").replace(/ = ".*$/, ""));
+  });
+  if (asksForList) return undefined;
   if (languageCovered(ctx.language) && !listTitle(main.title)) {
     const does = commitWord(main.title) ?? actWord(main.title);
     if (does) return `the title of this selection screen, ${quote(main.title)}, names something the report does (${does}), not a list it shows`;
