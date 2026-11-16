@@ -551,9 +551,11 @@ export function extractLook(limits: {
           .filter(Boolean)
           .map((x) => unesc(x.replace(/^'|'$/g, "")));
         const m = matrix(el);
-        const colIdx = [
+        const inRows = [
           ...new Set(m.rows.flatMap(([, r]) => [...r.cells.keys()])),
         ].sort((a, b) => a - b);
+        // A grid without rows still has its columns: its header names them.
+        const colIdx = inRows.length ? inRows : [...m.heads.keys()].sort((a, b) => a - b);
         const names = colIdx.map((c, i) => {
           const th = m.heads.get(c);
           const name =
@@ -567,7 +569,7 @@ export function extractLook(limits: {
         const total = Number.isNaN(s.total) ? m.rows.length : s.total;
         out(
           modal,
-          `${sid}  grid  ${total} rows${m.selectable ? "; rows can be selected" : ""}; columns: ${names.join(" | ")}`,
+          `${sid}  grid  ${total} rows${total === 0 ? " (the list is empty: SAP found no data for it)" : ""}${m.selectable ? "; rows can be selected" : ""}; columns: ${names.join(" | ")}`,
         );
         for (const [r, row] of shown.slice(0, limits.grid))
           out(

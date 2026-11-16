@@ -241,18 +241,34 @@ const WARNED = `<!doctype html><html lang="en"><head><title>Synthetic</title></h
 <input id="ToolbarOkCode" lsdata="{0:'FREETEXT',20:${sid("wnd[0]/tbar[0]/okcd", "GuiOKCodeField")}}">
 <span class="lsField lsField--readonly"><input id="F1" title="PO date" value="20.11.2026" readonly lsdata="{0:'x',20:${sid("wnd[0]/usr/ctxtZVBKD-BSTDK", "GuiCTextField")}}"></span>
 <span class="lsField lsField--readonly"><input id="F2" title="Material" value="" readonly lsdata="{0:'x',20:${sid("wnd[0]/usr/ctxtZRV45A-MABNR", "GuiCTextField")}}"></span>
-<div id="msgarea"><span id="wnd[0]/sbar_msg" lsdata="{0:'The\\x20purchase\\x20order\\x20date\\x20lies\\x20in\\x20the\\x20future',1:'WARNING'}">The purchase order date lies in the future</span></div>
+<table id="grid#9" ct="STCS" lsdata="{29:{ColumnIDs:['MATNR','WERKS'],${sid("wnd[0]/usr/cntlGRID1/shellcont/shell", "GuiGridView").slice(1)}}" style="width:300px">
+  <thead><tr><th lsmatrixrowindex="0" lsmatrixcolindex="0" lsdata="{7:'Material',17:${sid("wnd[0]/usr/cntlGRID1/shellcont/shell/colMATNR", "GuiTableColumn")}}">Material</th>
+    <th lsmatrixrowindex="0" lsmatrixcolindex="1" lsdata="{7:'Plant',17:${sid("wnd[0]/usr/cntlGRID1/shellcont/shell/colWERKS", "GuiTableColumn")}}">Plant</th></tr></thead>
+</table>
+<div id="grid#9_vscroll" ct="SCB" style="width:16px;height:40px" lsdata="{0:1,3:10,6:'grid\\x239',10:0}">&nbsp;</div>
+<table id="msgarea" lsdata="{0:'32px',6:${sid("wnd[0]/sbar", "GuiStatusBar")}}" style="width:900px"><tr>
+<td><div id="wnd[0]/sbar_msg" ct="MB" lsdata="{0:'The\\x20purchase\\x20order\\x20date\\x20lies\\x20in\\x20the\\x20future',1:'WARNING',11:{applicationText:'The purchase  order date lies in the future'}}"><span id="wnd[0]/sbar_msg-txt" onclick="msgClick(this)">The purchase &nbsp;order date lies in the future</span></div></td>
+<td style="width:500px"><img id="LOGO" alt="Service Request" style="width:38px;height:20px" ondblclick="window.support=1"></td></tr></table>
+<script>
+  window.oLS = { n: 0, bLocked: function () { return this.n > 0; } };
+  // Web GUI sends the click on the message only when the text it drew is the text SAP sent.
+  function msgClick(span) {
+    if (span.innerHTML !== 'The purchase  order date lies in the future') { window.held = 1; return; }
+    window.oLS.n++;
+    fetch('/sap/bc/gui/sap/its/webgui/post', { method: 'POST', body: JSON.stringify([{ post: 'action/1/wnd[0]/sbar' }]) }).then(function () { window.help = 1; window.oLS.n--; });
+  }
+</script>
 <div id="sysInfoAreaMenuItemSAPITS_MBAR_TRANSACTION" lsdata="{13:'ZT01'}"></div>
 <div id="sysInfoAreaMenuItemSAPITS_MBAR_DYNPRO" lsdata="{13:'ZPROG/0100'}"></div>
 </body></html>`;
 
-describe.skipIf(!exe)("a field closed by a warning, in a browser", () => {
+describe.skipIf(!exe)("a warning in the status bar and an empty grid, in a browser", () => {
   let browser: Browser;
   let page: Page;
   beforeAll(async () => {
     browser = await chromium.launch({ executablePath: exe as string, headless: true, args: ["--no-sandbox"] });
     page = await (await browser.newContext({ viewport: { width: 1200, height: 900 } })).newPage();
-    await page.route("**/*", (r) => r.fulfill({ contentType: "text/html", body: WARNED }));
+    await page.route("**/*", (r) => (r.request().method() === "POST" ? r.fulfill({ contentType: "text/plain", body: "ok" }) : r.fulfill({ contentType: "text/html", body: WARNED })));
     await page.goto("http://sap.test/sap/bc/gui/sap/its/webgui?sap-client=100");
   }, 60_000);
   afterAll(async () => {
@@ -265,5 +281,10 @@ describe.skipIf(!exe)("a field closed by a warning, in a browser", () => {
     expect((e as Error).message).toBe(
       'wnd[0]/usr/ctxtZRV45A-MABNR is read-only for now: SAP shows the warning "The purchase order date lies in the future" and keeps the fields closed until it is answered: Enter ({"do":"key","key":0}) accepts the warning, then the fields open again.',
     );
+  }, 30_000);
+
+  test("a grid without rows keeps its columns and says that it is empty", async () => {
+    const view = (await webguiLookInFrame(page.mainFrame(), false)) ?? "";
+    expect(view).toContain("wnd[0]/usr/cntlGRID1/shellcont/shell  grid  0 rows (the list is empty: SAP found no data for it); columns: MATNR=Material | WERKS=Plant");
   }, 30_000);
 });
