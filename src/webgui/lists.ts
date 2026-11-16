@@ -77,10 +77,9 @@ export async function selectRow(session: WebGuiSession, sid: string, row: number
 
 /** The visible entries of an open list, as key and text. */
 async function listed(items: Locator): Promise<{ key: string; text: string }[]> {
-  const n = await items.count();
-  const out: { key: string; text: string }[] = [];
-  for (let i = 0; i < n; i++) out.push({ key: (await items.nth(i).getAttribute("data-itemkey")) ?? "", text: clean(await items.nth(i).innerText()) });
-  return out;
+  // One round trip for the whole list (two per entry before).
+  const raw = await items.evaluateAll((els) => els.map((e) => ({ key: e.getAttribute("data-itemkey") ?? "", text: (e as HTMLElement).innerText ?? "" })));
+  return raw.map((e) => ({ key: e.key, text: clean(e.text) }));
 }
 
 /** Every entry of a dropdown: from the page when it holds them, else by opening the list and closing it again. */
