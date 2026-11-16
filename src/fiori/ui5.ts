@@ -390,6 +390,8 @@ export function ui5Look(opts: Ui5LookOptions): string {
     /^(sap\.m\.(FlexBox|HBox|VBox|ScrollContainer|Page|App|NavContainer|Shell|Bar|Toolbar|OverflowToolbar|ToolbarSpacer|ToolbarSeparator|Panel|IconTabHeader|SplitContainer|SplitApp|FlexibleColumnLayout|Wizard|Image|BusyIndicator|HeaderContainer|Column|Avatar|CustomListItem)|sap\.ui\.core\.(mvc\.\w+View|ComponentContainer|UIComponent|Icon|InvisibleText|HTML|Fragment)|sap\.ui\.layout\..*|sap\.f\.(DynamicPage|DynamicPageHeader|GridContainer|FlexibleColumnLayout|ShellBar)|sap\.uxap\.(ObjectPageLayout|ObjectPageHeaderContent|AnchorBar|BlockBase|.*Block)|sap\.ui\.comp\.smartform\.(Group|Layout|SmartForm)|sap\.ui\.comp\.variants\..*|sap\.ushell\.ui\.launchpad\.(Page|Section|VizInstance.*|TileContainer)|sap\.ui\.table\.(Column|RowAction|RowActionItem)|sap\.ui\.mdc\.(Field|FilterField|table\.Column|table\.\w+TableType)|sap\.fe\.core\.controls\..*|sap\.fe\.macros\.controls\.FieldWrapper)$/;
 
   let lastContext = "";
+  /** Tables whose first row already says what a press on a row does. */
+  const hinted = new Set<unknown>();
   /** One control's line. A control that throws while it is read costs its own line only, never the view. */
   const readControl = (el: Element): void => {
       if (!visible(el)) return;
@@ -418,7 +420,8 @@ export function ui5Look(opts: Ui5LookOptions): string {
       }
       const pr = props(c);
       const st = state(c);
-      const lab = labelFor(c);
+      // A link in a table row: its column is on the table's line, in order.
+    const lab = opts.compact && isA(c, "sap.m.Link") && insideRow(el) ? "" : labelFor(c);
       const hasContent = Object.keys(pr).length > 0 || st.length > 0;
       const popup = isPopup(c);
       const row = rowLine(c);
@@ -492,20 +495,13 @@ export function ui5Look(opts: Ui5LookOptions): string {
         const hiddenTokens = (c.getTokens() as C[]).filter((t) => !visible(t.getDomRef?.())).map((t) => `"${norm(t.getText?.())}"`);
         if (hiddenTokens.length) bits.push(`(and ${hiddenTokens.length} token${hiddenTokens.length > 1 ? "s" : ""} not shown: ${hiddenTokens.slice(0, 20).join(", ")}${hiddenTokens.length > 20 ? ", ..." : ""})`);
       }
-      // What a link does: real links name their target; a link inside a row that
-      // opens on click has its own action (a quick view, in F1873), not the row's.
+      // What a link does: real links name their target, a link with a popup says so. A link inside a row
+      // has its own action (a quick view, in F1873), not the row's: the table's first row says that once.
       if (opts.compact && (isA(c, "sap.m.Link") || isA(c, "sap.m.ObjectIdentifier"))) {
         const href = isA(c, "sap.m.Link") ? String(c.getHref?.() ?? "") : "";
         const pop = c.getAriaHasPopup?.();
-        let navRow = false;
-        for (let r = c.getParent?.(), i = 0; r && i < 4; r = r.getParent?.(), i++)
-          if (isA(r, "sap.m.ListItemBase") && /Navigation|Active/.test(r.getType?.() ?? "")) {
-            navRow = true;
-            break;
-          }
         if (href && href !== "#") bits.push(`(goes to ${href.slice(0, 80)})`);
         else if (pop && pop !== "None") bits.push("(opens a popup)");
-        else if (navRow) bits.push("(own action, not the row's)");
       }
       if (isTable) {
         const head = tableHead(c);
@@ -523,7 +519,13 @@ export function ui5Look(opts: Ui5LookOptions): string {
         const grid = isA(c, "sap.ui.table.Row") ? gridRowSelected(tbl, c) : undefined;
         const picked = c.getSelected?.() ?? grid;
         const sel = picked ? "[x] " : grid === false || tbl?.getMode?.()?.includes?.("Multi") ? "[ ] " : "";
-        bits.push(`row: ${sel}${row}${/Navigation|Active/.test(c.getType?.() ?? "") ? "  (press the row to open it)" : ""}`);
+        // What a press on a row does, said on the first such row of each table.
+      let hint = "";
+      if (/Navigation|Active/.test(c.getType?.() ?? "") && !hinted.has(tbl)) {
+        hinted.add(tbl);
+        hint = "  (press a row to open it; a link in a row has its own action)";
+      }
+      bits.push(`row: ${sel}${row}${hint}`);
       }
       if (popup) bits.unshift("POPUP");
       const b = binding(c);
