@@ -391,20 +391,24 @@ function assessFocus(scene: Scene, ctx: AssessContext, what: string): Assessment
 /**
  * The button of a popup that a key presses, as the reader presses it
  * (reader.ts `run`, "key"): for a key number N, or Enter (0), the popup's
- * toolbar button btn[N]; for Enter on a popup without btn[0] whose answers sit
- * in its body (Yes / No), the answer button that has the focus. `undefined`
- * when the key does not go to a button of the popup.
+ * toolbar button btn[N]. Enter on a popup without btn[0] whose answers sit
+ * in its body (Yes / No / Cancel) presses no button here: it would be the
+ * popup's default answer, and the agent must press the answer it means
+ * (`asksDefault`, `questionRefusal`). `undefined` when the key does not go
+ * to a button of the popup.
  */
 export function popupButton(view: string, key: number | string, focusSid?: string): PopupKey | undefined {
   return popupButtonIn(parseView(view), key, focusSid);
 }
 
 export interface PopupKey {
-  /** The button the key presses; absent when it is the popup's default answer, which the page does not tell. */
+  /** The toolbar button the key presses; absent for Enter on a question popup. */
   control?: ViewControl;
   window: ViewWindow;
-  /** Enter on a popup whose answers sit in its body and that has no btn[0]. */
+  /** Enter on a popup whose answers sit in its body and that has no btn[0]: a question popup. */
   asksDefault: boolean;
+  /** On a question popup: the answer SAP has put the focus on, which Enter would press. */
+  focused?: ViewControl;
 }
 
 function popupButtonIn(windows: ViewWindow[], key: number | string, focusSid?: string): PopupKey | undefined {
@@ -420,10 +424,26 @@ function popupButtonIn(windows: ViewWindow[], key: number | string, focusSid?: s
   if (n === undefined) return undefined;
   const bar = top.controls.find((c) => c.kind === "button" && new RegExp(`^wnd\\[${top.number}\\]/tbar\\[[01]\\]/btn\\[${n}\\]$`).test(c.id));
   if (bar) return { control: bar, window: top, asksDefault: false };
-  const answers = top.controls.filter((c) => c.kind === "button" && c.id.includes("/usr/"));
+  const answers = answersOf(top);
   if (n !== 0 || !answers.length) return undefined;
   const focused = focusSid ? findControl([top], focusSid) : undefined;
-  return { ...(focused && answers.includes(focused) ? { control: focused } : {}), window: top, asksDefault: true };
+  return { ...(focused && answers.includes(focused) ? { focused } : {}), window: top, asksDefault: true };
+}
+
+/** The answers of a popup that sit in its body: Yes, No, Cancel. */
+const answersOf = (w: ViewWindow): ViewControl[] => w.controls.filter((c) => c.kind === "button" && c.id.includes("/usr/"));
+
+/**
+ * What Enter on a question popup is answered with, in every write mode:
+ * nothing is pressed, and the answers are listed by id. Enter presses the
+ * popup's default answer; on "Do you want to save your data first?" that is
+ * Yes, and an agent that meant "go on" has then saved. SAP putting the focus
+ * on an answer does not make it the one the agent means.
+ */
+export function questionRefusal(hit: PopupKey): string {
+  const label = (c: ViewControl) => `${c.id} "${c.text.replace(/\s+/g, " ").replace(/^ | $/g, "")}"`;
+  const would = hit.focused ? `would press the answer SAP has put the focus on (${label(hit.focused)})` : "would press its default answer, and the server cannot tell which one that is";
+  return `Enter on the popup "${hit.window.title}" ${would}. The popup asks a question, so nothing was pressed: press the answer you mean by its id: ${answersOf(hit.window).map(label).join(", ")}.`;
 }
 
 function assessKey(raw: unknown, scene: Scene, what: string, ctx: AssessContext): Assessment {
@@ -442,6 +462,12 @@ function assessKey(raw: unknown, scene: Scene, what: string, ctx: AssessContext)
     if (hit?.control) {
       const a = assessFunction(`${what} presses the button`, hit.control.text, hit.control, scene, ctx);
       return { ...a, reason: a.reason || `${what} presses the button ${quote(hit.control.text)}` };
+    }
+    if (hit?.focused) {
+      // Enter on Yes / No with the focus on an answer would press that one. The reader refuses it all the
+      // same (questionRefusal); the guard rates what it would do.
+      const a = assessFunction(`${what} presses the button`, hit.focused.text, hit.focused, scene, ctx);
+      return { ...a, reason: a.reason || `${what} presses the button ${quote(hit.focused.text)}` };
     }
     if (hit?.asksDefault) {
       // Enter on Yes / No without the focus on an answer: SAP would press the popup's default answer, which

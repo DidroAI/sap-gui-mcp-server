@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { normalizeAction } from "../src/core/action.js";
 import { decide, policyFromEnv } from "../src/core/guard.js";
 import type { Action, Assessment } from "../src/core/types.js";
-import { type AssessContext, assessAction, popupButton, SAFE_KEYS } from "../src/webgui/assess.js";
+import { type AssessContext, assessAction, popupButton, questionRefusal, SAFE_KEYS } from "../src/webgui/assess.js";
 import type { MenuEntry } from "../src/webgui/page.js";
 
 // Regression tests for the guard, built from full views saved from live screens of the bench of
@@ -310,7 +310,10 @@ describe("a key on a popup is the button it presses (KEY-03)", () => {
     expect(judge({ do: "key", key: 5 }, WARNING_POPUP).reason).toContain('"New entry (F5)"');
   });
   test("Enter on Yes / No is the answer that has the focus", () => {
-    expect(popupButton(SAVE_QUESTION, 0, "wnd[1]/usr/btnSPOP-OPTION1")?.control?.id).toBe("wnd[1]/usr/btnSPOP-OPTION1");
+    // Rated as that answer; the reader presses nothing all the same (questionRefusal).
+    const hit = popupButton(SAVE_QUESTION, 0, "wnd[1]/usr/btnSPOP-OPTION1");
+    expect([hit?.control, hit?.asksDefault, hit?.focused?.id]).toEqual([undefined, true, "wnd[1]/usr/btnSPOP-OPTION1"]);
+    expect(hit && questionRefusal(hit)).toMatch(/^Enter on the popup ".*" would press the answer SAP has put the focus on \(wnd\[1\]\/usr\/btnSPOP-OPTION1 "Yes"\)\. The popup asks a question, so nothing was pressed: press the answer you mean by its id: wnd\[1\]\/usr\/btnSPOP-OPTION1 "Yes", wnd\[1\]\/usr\/btnSPOP-OPTION2 "No"/);
     const yes = judge({ do: "key", key: 0 }, SAVE_QUESTION, [], { ...EN, focus: { sid: "wnd[1]/usr/btnSPOP-OPTION1", type: "GuiButton" } });
     expect(yes.risk).toBe("commit");
     expect(yes.reason).toContain('"Yes"');
