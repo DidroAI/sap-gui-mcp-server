@@ -528,7 +528,14 @@ export function ui5Look(opts: Ui5LookOptions): string {
       if (popup) bits.unshift("POPUP");
       const b = binding(c);
       if (b && (!opts.compact || row || isA(c, "sap.m.InputBase") || /ObjectPage/.test(t))) {
-      const shownBinding = opts.compact ? b.replace(/^.*\bctx:/, "ctx:") : b;
+      // Compact: the context only, without the key parts every active document shares (no draft id, "active").
+      const shownBinding = opts.compact
+        ? b
+            .replace(/^.*\bctx:/, "ctx:")
+            .replace(/,?DraftUUID=(guid')?00000000-0000-0000-0000-000000000000'?/g, "")
+            .replace(/,?IsActiveEntity=true/g, "")
+            .replace(/\(,/g, "(")
+        : b;
       // The fields of one object share its context: said on the first of them, not on each.
       if (!opts.compact || row || shownBinding !== lastContext) bits.push(`{${shownBinding}}`);
       if (opts.compact && !row) lastContext = shownBinding;
