@@ -29,6 +29,8 @@ export const TARGET_ATTR = "data-sap-mcp-target";
 
 export interface Ui5LookOptions {
   compact: boolean;
+  /** Only this control and what is inside it (an id of the view), whole: also the part below the fold. */
+  id?: string;
 }
 
 export function ui5Look(opts: Ui5LookOptions): string {
@@ -43,11 +45,13 @@ export function ui5Look(opts: Ui5LookOptions): string {
       .replace(/^ +| +$/g, "");
   const W = innerWidth;
   const H = innerHeight;
+  // One control, whole: what is rendered counts, in the viewport or not.
+  const whole = !!opts.id;
   const visible = (el: Element | null) => {
     if (!el) return false;
     const r = el.getBoundingClientRect();
     // Some containers have zero width while their content shows (NumericContent in OVP cards).
-    if (!((r.width > 0 || r.height > 0) && r.bottom > 0 && r.right > 0 && r.top < H && r.left < W)) return false;
+    if (!(r.width > 0 || r.height > 0) || (!whole && !(r.bottom > 0 && r.right > 0 && r.top < H && r.left < W))) return false;
     return (el as C).checkVisibility?.({ visibilityProperty: true, opacityProperty: true }) !== false;
   };
   const typeName = (c: C): string => c.getMetadata().getName();
@@ -240,7 +244,21 @@ export function ui5Look(opts: Ui5LookOptions): string {
   };
 
   // ---- walk the visible controls in document order
-  const doms = Array.from(document.querySelectorAll("[data-sap-ui]"));
+  let doms = Array.from(document.querySelectorAll("[data-sap-ui]"));
+  if (opts.id) {
+    const h = opts.id.replace(/^#/, "").replace(/^id=/, "");
+    let root: C = allControls.find((x) => x.getId() === h);
+    if (!root) {
+      const hits = allControls.filter((x) => {
+        const id: string = x.getId();
+        return id.endsWith(`--${h}`) || id.endsWith(`::${h}`);
+      });
+      root = hits.find((x) => x.getDomRef?.()?.getBoundingClientRect?.().width > 0) ?? hits[0];
+    }
+    const rd: Element | null = root?.getDomRef?.() ?? null;
+    if (!rd) return "";
+    doms = [rd, ...Array.from(rd.querySelectorAll("[data-sap-ui]"))];
+  }
   const shown = new Map<Element, number>(); // emitted DOM element -> depth
   const shownField = new Set<Element>();
   const lines: string[] = [];
@@ -288,6 +306,21 @@ export function ui5Look(opts: Ui5LookOptions): string {
     if (txt.every((t) => !t)) return null;
     return txt.join(" | ");
   };
+  /**
+   * Is this grid-table row selected? A table with a selection plugin (every
+   * Fiori elements V4 grid table, value help tables) answers through the
+   * plugin: its own getSelectedIndices() and isIndexSelected() throw then.
+   */
+  const gridRowSelected = (tbl: C, row: C): boolean | undefined => {
+    try {
+      const plugin = [...(tbl?.getDependents?.() ?? []), ...(tbl?.getPlugins?.() ?? [])].find((p: C) => isA(p, "sap.ui.table.plugins.SelectionPlugin"));
+      if (plugin) return plugin.isSelected ? !!plugin.isSelected(row) : !!plugin.isIndexSelected?.(row.getIndex?.());
+      if (!tbl?.getSelectionMode?.() || tbl.getSelectionMode() === "None") return undefined;
+      return !!tbl.isIndexSelected?.(row.getIndex?.());
+    } catch {
+      return undefined;
+    }
+  };
   const tableHead = (c: C): string => {
     try {
       if (isA(c, "sap.m.Table")) {
@@ -302,6 +335,16 @@ export function ui5Look(opts: Ui5LookOptions): string {
       /* no header */
     }
     return "";
+  };
+  /** A table greyed out because the filter bar changed and Go was not pressed: its rows are the old ones. */
+  const staleTable = (c: C, el: Element): boolean => {
+    try {
+      for (let p = c, i = 0; p && i < 4; p = p.getParent?.(), i++) if (p.getShowOverlay?.() === true || p._oTable?.getShowOverlay?.() === true) return true;
+      const over = (el.closest(".sapUiMdcTable, .sapUiCompSmartTable") ?? el).querySelector(".sapUiOverlay, .sapUiTableOverlayArea, .sapUiMdcTableOverlay");
+      return !!over && visible(over);
+    } catch {
+      return false;
+    }
   };
   const chartData = (c: C): string => {
     if (!/viz\.ui5\.controls\.VizFrame$|sap\.chart\.Chart$/.test(typeName(c))) return "";
@@ -346,112 +389,165 @@ export function ui5Look(opts: Ui5LookOptions): string {
   const LAYOUT =
     /^(sap\.m\.(FlexBox|HBox|VBox|ScrollContainer|Page|App|NavContainer|Shell|Bar|Toolbar|OverflowToolbar|ToolbarSpacer|ToolbarSeparator|Panel|IconTabHeader|SplitContainer|SplitApp|FlexibleColumnLayout|Wizard|Image|BusyIndicator|HeaderContainer|Column|Avatar|CustomListItem)|sap\.ui\.core\.(mvc\.\w+View|ComponentContainer|UIComponent|Icon|InvisibleText|HTML|Fragment)|sap\.ui\.layout\..*|sap\.f\.(DynamicPage|DynamicPageHeader|GridContainer|FlexibleColumnLayout|ShellBar)|sap\.uxap\.(ObjectPageLayout|ObjectPageHeaderContent|AnchorBar|BlockBase|.*Block)|sap\.ui\.comp\.smartform\.(Group|Layout|SmartForm)|sap\.ui\.comp\.variants\..*|sap\.ushell\.ui\.launchpad\.(Page|Section|VizInstance.*|TileContainer)|sap\.ui\.table\.(Column|RowAction|RowActionItem)|sap\.ui\.mdc\.(Field|FilterField|table\.Column|table\.\w+TableType)|sap\.fe\.core\.controls\..*|sap\.fe\.macros\.controls\.FieldWrapper)$/;
 
-  for (const el of doms) {
-    if (!visible(el)) continue;
-    const c = byId(el.id);
-    if (!c) continue;
-    const t = typeName(c);
-    // depth: the nearest emitted ancestor
-    let depth = 0;
-    for (let p = el.parentElement; p; p = p.parentElement) {
-      const d = shown.get(p);
-      if (d !== undefined) {
-        depth = d + 1;
-        break;
+  let lastContext = "";
+  /** One control's line. A control that throws while it is read costs its own line only, never the view. */
+  const readControl = (el: Element): void => {
+      if (!visible(el)) return;
+      const c = byId(el.id);
+      if (!c) return;
+      const t = typeName(c);
+      // The launchpad's shell bar is a web component: its search, notification and other buttons are drawn
+      // inside it, not as controls. They get a line each, under an id of their own ("shellbar:<name>").
+      if (/webcomponents.*\.ShellBar$/.test(t) && (el as C).shadowRoot) {
+        for (const b of Array.from((el as C).shadowRoot.querySelectorAll("[data-ui5-stable].ui5-shellbar-button")) as Element[]) {
+          const name = b.getAttribute("data-ui5-stable") ?? "";
+          // The profile button is the avatar's line; a custom item has a generated name, so its text names it.
+          if (!name || name === "profile" || !(b.getBoundingClientRect().width > 0)) continue;
+          const tip = norm(b.getAttribute("tooltip") ?? b.getAttribute("accessible-name") ?? b.getAttribute("title") ?? "");
+          lines.push(`${opts.compact ? "ShellBarButton #" : "sap.ushell.ShellBarButton id="}shellbar:${/-stable-dom-ref$/.test(name) ? tip.toLowerCase().replace(/[^a-z0-9]+/g, "-") : name}${opts.compact ? ` "${tip}"` : ` text="${tip}"`}`);
+        }
       }
-    }
-    const pr = props(c);
-    const st = state(c);
-    const lab = labelFor(c);
-    const hasContent = Object.keys(pr).length > 0 || st.length > 0;
-    const popup = isPopup(c);
-    const row = rowLine(c);
-    const isTable = isA(c, "sap.m.Table") || isA(c, "sap.ui.table.Table") || isA(c, "sap.m.List");
-    const inter = interactive(c);
-    if (opts.compact) {
-      // Inside a table row only inputs and states carry what the row line does not.
-      if (
-        insideRow(el) &&
-        !row &&
-        !(isA(c, "sap.m.InputBase") && c.getEditable?.() !== false) &&
-        !isA(c, "sap.m.CheckBox") &&
-        !isA(c, "sap.m.Switch") &&
-        !isA(c, "sap.m.Button") &&
-        !isA(c, "sap.m.Link")
-      )
-        continue;
-      if (labelIds.has(c.getId())) continue; // printed on its field's line
-      if (/-(selectMulti|selectSingle|imgNav|imgDel)$/.test(c.getId())) continue; // part of the row line
-      // Column headers are on the table's line already.
-      if (el.closest("th, .sapMListTblHeaderCell, .sapUiTableColHdrCnt") && !isA(c, "sap.m.CheckBox") && !isA(c, "sap.m.Button")) continue;
-      const field = isA(c, "sap.m.InputBase") || isA(c, "sap.m.Select") || isA(c, "sap.m.CheckBox") || isA(c, "sap.m.Switch") || isA(c, "sap.m.DynamicDateRange");
-      // A field inside a field (DynamicDateRange's input, a SmartField's inner input) is the same field.
-      if (field) {
-        let outer = false;
-        for (let p = el.parentElement; p && !outer; p = p.parentElement) if (shownField.has(p)) outer = true;
-        if (outer) continue;
-        shownField.add(el);
-      }
-      const layoutOnly = !field && LAYOUT.test(t) && !popup && !isTable && !Object.keys(pr).some((k) => k === "title" || k === "text" || k === "heading");
-      if (layoutOnly || (!field && !hasContent && !popup && !isTable && !row && !lab && !(inter && (pr.tooltip || c.getIcon?.())))) continue;
-    }
-    shown.set(el, depth);
-    const h = handleOf(c.getId());
-    const bits: string[] = [];
-    bits.push(opts.compact ? short(t) : t);
-    bits.push(opts.compact ? `#${h}` : `id=${c.getId()}`);
-    if (lab) bits.push(`"${lab}":`);
-    const shownProps = { ...pr };
-    // A tooltip that repeats the text ("Open details for X") or is a long description adds nothing.
-    if (opts.compact && shownProps.tooltip) {
-      const tip = String(shownProps.tooltip);
-      const others = Object.entries(shownProps)
-        .filter(([k]) => k !== "tooltip")
-        .map(([, v]) => String(v));
-      if (others.some((v) => v && tip.includes(v)) || (others.length > 0 && tip.length > 60)) delete shownProps.tooltip;
-    }
-    for (const [k, v] of Object.entries(shownProps)) {
-      if (opts.compact && (k === "text" || k === "title" || k === "value" || k === "heading")) bits.push(`"${v}"`);
-      else bits.push(`${k}="${v}"`);
-    }
-    if (opts.compact && !pr.text && !pr.title && !pr.tooltip && typeof c.getIcon?.() === "string" && c.getIcon() && inter)
-      bits.push(`icon=${String(c.getIcon()).replace("sap-icon://", "")}`);
-    bits.push(...st);
-    // What a link does: real links name their target; a link inside a row that
-    // opens on click has its own action (a quick view, in F1873), not the row's.
-    if (opts.compact && (isA(c, "sap.m.Link") || isA(c, "sap.m.ObjectIdentifier"))) {
-      const href = isA(c, "sap.m.Link") ? String(c.getHref?.() ?? "") : "";
-      const pop = c.getAriaHasPopup?.();
-      let navRow = false;
-      for (let r = c.getParent?.(), i = 0; r && i < 4; r = r.getParent?.(), i++)
-        if (isA(r, "sap.m.ListItemBase") && /Navigation|Active/.test(r.getType?.() ?? "")) {
-          navRow = true;
+      // depth: the nearest emitted ancestor
+      let depth = 0;
+      for (let p = el.parentElement; p; p = p.parentElement) {
+        const d = shown.get(p);
+        if (d !== undefined) {
+          depth = d + 1;
           break;
         }
-      if (href && href !== "#") bits.push(`(goes to ${href.slice(0, 80)})`);
-      else if (pop && pop !== "None") bits.push("(opens a popup)");
-      else if (navRow) bits.push("(its own action, not the row's: to open the row, click the row)");
+      }
+      const pr = props(c);
+      const st = state(c);
+      const lab = labelFor(c);
+      const hasContent = Object.keys(pr).length > 0 || st.length > 0;
+      const popup = isPopup(c);
+      const row = rowLine(c);
+      const isTable = isA(c, "sap.m.Table") || isA(c, "sap.ui.table.Table") || isA(c, "sap.m.List");
+      const inter = interactive(c);
+      if (opts.compact) {
+        // Inside a table row only inputs and states carry what the row line does not.
+        if (
+          insideRow(el) &&
+          !row &&
+          !(isA(c, "sap.m.InputBase") && c.getEditable?.() !== false) &&
+          !isA(c, "sap.m.CheckBox") &&
+          !isA(c, "sap.m.Switch") &&
+          !isA(c, "sap.m.Button") &&
+          !isA(c, "sap.m.Link")
+        )
+          return;
+        if (labelIds.has(c.getId())) return; // printed on its field's line
+        if (/-(selectMulti|selectSingle|imgNav|imgDel)$/.test(c.getId())) return; // part of the row line
+      // A launchpad tile is one line: the tile's, with its header and subheader. Not its wrapper, not its texts again.
+      if (/VizInstance/.test(t) && el.querySelector(".sapMGT")) return;
+      if (isA(c, "sap.m.Text")) {
+        let tile: C = c.getParent?.();
+        for (let i = 0; tile && i < 3 && !isA(tile, "sap.m.GenericTile"); i++) tile = tile.getParent?.();
+        if (tile && isA(tile, "sap.m.GenericTile") && [norm(tile.getHeader?.()), norm(tile.getSubheader?.())].includes(norm(c.getText?.()))) return;
+      }
+      // The one button a menu button renders is the menu button again.
+      if (/-internalBtn$/.test(c.getId()) && isA(c.getParent?.(), "sap.m.MenuButton") && (pr.text || pr.tooltip || c.getParent().getTooltip_AsString?.())) return;
+        // Column headers are on the table's line already.
+        if (el.closest("th, .sapMListTblHeaderCell, .sapUiTableColHdrCnt") && !isA(c, "sap.m.CheckBox") && !isA(c, "sap.m.Button")) return;
+        const field = isA(c, "sap.m.InputBase") || isA(c, "sap.m.Select") || isA(c, "sap.m.CheckBox") || isA(c, "sap.m.Switch") || isA(c, "sap.m.DynamicDateRange");
+        // A field inside a field (DynamicDateRange's input, a SmartField's inner input) is the same field.
+        if (field) {
+          let outer = false;
+          for (let p = el.parentElement; p && !outer; p = p.parentElement) if (shownField.has(p)) outer = true;
+          if (outer) return;
+          shownField.add(el);
+        }
+        const layoutOnly = !field && LAYOUT.test(t) && !popup && !isTable && !Object.keys(pr).some((k) => k === "title" || k === "text" || k === "heading");
+        if (layoutOnly || (!field && !hasContent && !popup && !isTable && !row && !lab && !(inter && (pr.tooltip || c.getIcon?.())))) return;
+      }
+      shown.set(el, depth);
+      const h = handleOf(c.getId());
+      const bits: string[] = [];
+      bits.push(opts.compact ? short(t) : t);
+      bits.push(opts.compact ? `#${h}` : `id=${c.getId()}`);
+      if (lab) bits.push(`"${lab}":`);
+      const shownProps = { ...pr };
+      // A tooltip that repeats the text ("Open details for X") or is a long description adds nothing.
+      if (opts.compact && shownProps.tooltip) {
+        const tip = String(shownProps.tooltip);
+        const others = Object.entries(shownProps)
+          .filter(([k]) => k !== "tooltip")
+          .map(([, v]) => String(v));
+        if (others.some((v) => v && tip.includes(v)) || (others.length > 0 && tip.length > 60)) delete shownProps.tooltip;
+      }
+      // A field whose value is not a text property (a date range): what its input shows.
+      if (shownProps.value === undefined && isA(c, "sap.m.DynamicDateRange")) {
+        const inp = el.querySelector("input") as HTMLInputElement | null;
+        if (inp && inp.type !== "password" && norm(inp.value)) shownProps.value = norm(inp.value);
+      }
+      for (const [k, v] of Object.entries(shownProps)) {
+        if (opts.compact && (k === "text" || k === "title" || k === "value" || k === "heading")) bits.push(`"${v}"`);
+        else bits.push(`${k}="${v}"`);
+      }
+      if (opts.compact && !pr.text && !pr.title && !pr.tooltip && typeof c.getIcon?.() === "string" && c.getIcon() && inter)
+        bits.push(`icon=${String(c.getIcon()).replace("sap-icon://", "")}`);
+      bits.push(...st);
+      // Tokens a field holds but does not show (folded behind "1 more"): the shown ones have lines of their own.
+      if (typeof c.getTokens === "function" && isA(c, "sap.m.MultiInput")) {
+        const hiddenTokens = (c.getTokens() as C[]).filter((t) => !visible(t.getDomRef?.())).map((t) => `"${norm(t.getText?.())}"`);
+        if (hiddenTokens.length) bits.push(`(and ${hiddenTokens.length} token${hiddenTokens.length > 1 ? "s" : ""} not shown: ${hiddenTokens.slice(0, 20).join(", ")}${hiddenTokens.length > 20 ? ", ..." : ""})`);
+      }
+      // What a link does: real links name their target; a link inside a row that
+      // opens on click has its own action (a quick view, in F1873), not the row's.
+      if (opts.compact && (isA(c, "sap.m.Link") || isA(c, "sap.m.ObjectIdentifier"))) {
+        const href = isA(c, "sap.m.Link") ? String(c.getHref?.() ?? "") : "";
+        const pop = c.getAriaHasPopup?.();
+        let navRow = false;
+        for (let r = c.getParent?.(), i = 0; r && i < 4; r = r.getParent?.(), i++)
+          if (isA(r, "sap.m.ListItemBase") && /Navigation|Active/.test(r.getType?.() ?? "")) {
+            navRow = true;
+            break;
+          }
+        if (href && href !== "#") bits.push(`(goes to ${href.slice(0, 80)})`);
+        else if (pop && pop !== "None") bits.push("(opens a popup)");
+        else if (navRow) bits.push("(own action, not the row's)");
+      }
+      if (isTable) {
+        const head = tableHead(c);
+        const n = c.getBinding?.("items")?.getLength?.() ?? c.getBinding?.("rows")?.getLength?.();
+        if (head) bits.push(`columns: ${head}`);
+        if (n != null) bits.push(`(${n} rows)`);
+        if (staleTable(c, el)) bits.push("(STALE: the filters changed after these rows were read; press Go to read them again)");
+      }
+      // Charts: the data points behind the bars (the SVG only carries axis labels).
+      const data = chartData(c);
+      if (data) bits.push(`data: ${data}`);
+      if (row) {
+        const tbl = c.getParent?.();
+        // A grid-table row is selected through its table.
+        const grid = isA(c, "sap.ui.table.Row") ? gridRowSelected(tbl, c) : undefined;
+        const picked = c.getSelected?.() ?? grid;
+        const sel = picked ? "[x] " : grid === false || tbl?.getMode?.()?.includes?.("Multi") ? "[ ] " : "";
+        bits.push(`row: ${sel}${row}${/Navigation|Active/.test(c.getType?.() ?? "") ? "  (press the row to open it)" : ""}`);
+      }
+      if (popup) bits.unshift("POPUP");
+      const b = binding(c);
+      if (b && (!opts.compact || row || isA(c, "sap.m.InputBase") || /ObjectPage/.test(t))) {
+      const shownBinding = opts.compact ? b.replace(/^.*\bctx:/, "ctx:") : b;
+      // The fields of one object share its context: said on the first of them, not on each.
+      if (!opts.compact || row || shownBinding !== lastContext) bits.push(`{${shownBinding}}`);
+      if (opts.compact && !row) lastContext = shownBinding;
     }
-    if (isTable) {
-      const head = tableHead(c);
-      const n = c.getBinding?.("items")?.getLength?.() ?? c.getBinding?.("rows")?.getLength?.();
-      if (head) bits.push(`columns: ${head}`);
-      if (n != null) bits.push(`(${n} rows)`);
+      lines.push(`${"  ".repeat(Math.min(depth, opts.compact ? 6 : 40))}${bits.join(" ")}`);
+  };
+  for (const el of doms) {
+    try {
+      readControl(el);
+    } catch (e) {
+      let who = el.id;
+      try {
+        const c = byId(el.id);
+        who = `${opts.compact ? short(typeName(c)) : typeName(c)} ${opts.compact ? `#${handleOf(el.id)}` : `id=${el.id}`}`;
+      } catch {
+        /* the id alone */
+      }
+      lines.push(`${who} [not read: ${norm((e as Error)?.message ?? e).slice(0, 120)}]`);
     }
-    // Charts: the data points behind the bars (the SVG only carries axis labels).
-    const data = chartData(c);
-    if (data) bits.push(`data: ${data}`);
-    if (row) {
-      const tbl = c.getParent?.();
-      // A grid-table row is selected through its table.
-      const picked = c.getSelected?.() ?? (tbl?.getSelectionMode?.() && tbl.getSelectionMode() !== "None" ? (tbl.getSelectedIndices?.() ?? []).includes(c.getIndex?.()) : undefined);
-      const sel = picked ? "[x] " : tbl?.getMode?.()?.includes?.("Multi") ? "[ ] " : "";
-      bits.push(`row: ${sel}${row}${/Navigation|Active/.test(c.getType?.() ?? "") ? "  (click the row to open it)" : ""}`);
-    }
-    if (popup) bits.unshift("POPUP");
-    const b = binding(c);
-    if (b && (!opts.compact || row || isA(c, "sap.m.InputBase") || /ObjectPage/.test(t))) bits.push(`{${opts.compact ? b.replace(/^.*\bctx:/, "ctx:") : b}}`);
-    lines.push(`${"  ".repeat(Math.min(depth, opts.compact ? 6 : 40))}${bits.join(" ")}`);
   }
   // Message toasts are plain DOM, not controls.
   for (const t of Array.from(document.querySelectorAll(".sapMMessageToast"))) if (visible(t)) lines.push(`TOAST "${norm((t as HTMLElement).innerText)}"`);
@@ -476,7 +572,9 @@ export function ui5Look(opts: Ui5LookOptions): string {
     if (more.length) lines.push(`SCROLL shown ${top}-${end} of ${best.scrollHeight} px, more ${more.join(" and ")}: {"do":"scroll","how":"${more.includes("below") ? "down" : "up"}"}`);
   }
   const title = norm(document.title);
-  return `PAGE ${title} (${location.hash.slice(0, 120)})\n${lines.join("\n")}`;
+  // The launchpad's state keys change on every filter edit and say nothing: left out, so the line stays the same.
+  const hash = location.hash.replace(/([?&])sap-[ix]app-state(--history)?=[^&/]*&?/g, "$1").replace(/[?&]$/, "");
+  return `PAGE ${title} (${hash.slice(0, 120)})\n${lines.join("\n")}`;
 }
 
 /** What the risk rule needs to know about a control (see risk.ts). */
@@ -497,7 +595,9 @@ export interface ControlFacts {
   inFilterBar?: boolean;
   inValueHelp?: boolean;
   /** The dialog or popover the control sits in. */
-  dialog?: { type: string; title: string; text: string };
+  dialog?: { type: string; title: string; text: string; openedBy?: string };
+  /** A sap.m.MenuButton whose press only opens its menu (not the split kind, whose main part runs an action). */
+  menuOnly?: boolean;
   /** Names of the control's press handlers, where the page shows them. */
   handlers?: string[];
   /** An input of type Password. */
@@ -515,9 +615,10 @@ export interface ControlRequest {
 export interface ControlResult {
   /**
    * TARGET: the element to act on is marked. DONE: the action is done (API).
-   * TWOSTEP: marked, open it and pick the option. Others: why not.
+   * TWOSTEP: marked, open it and pick the option. FOCUSENTER: marked, focus
+   * it and press Enter. Others: why not.
    */
-  status: "TARGET" | "DONE" | "TWOSTEP" | "FACTS" | "NOUI5" | "NOTFOUND" | "NODOM" | "NOITEM" | "DISABLED" | "NOTFIT";
+  status: "TARGET" | "DONE" | "TWOSTEP" | "FOCUSENTER" | "FACTS" | "NOUI5" | "NOTFOUND" | "NODOM" | "NOITEM" | "DISABLED" | "NOTFIT";
   note: string;
   facts?: ControlFacts;
   /** For Enter: the default button of the open dialog. */
@@ -592,6 +693,9 @@ export function ui5Control(a: ControlRequest): ControlResult {
     const icon = prop(c, "icon");
     if (icon) f.icon = String(icon).replace("sap-icon://", "");
     if (isA(c, "sap.m.Button")) f.buttonType = String(prop(c, "type") ?? "");
+    // A menu button, or the one button it renders: in Regular mode a press only opens the menu.
+    const menuButton = isA(c, "sap.m.MenuButton") ? c : isA(c, "sap.m.Button") && isA(c.getParent?.(), "sap.m.MenuButton") ? c.getParent() : null;
+    if (menuButton) f.menuOnly = prop(menuButton, "buttonMode") !== "Split";
     const href = prop(c, "href");
     if (href && href !== "#") f.href = String(href);
     if (prop(c, "enabled") === false) f.enabled = false;
@@ -607,6 +711,15 @@ export function ui5Control(a: ControlRequest): ControlResult {
           title: text(p.getTitle?.() ?? ""),
           text: text(d?.innerText ?? "").slice(0, 400),
         };
+        // The control a popover was opened by (the footer's Cancel, for the question "Discard all changes?").
+        let by: C = null;
+        try {
+          by = p._oOpenBy ?? p.getAggregation?.("_popup")?._oOpenBy ?? null;
+        } catch {
+          /* optional */
+        }
+        const byId_: string = by?.getId?.() ?? by?.id ?? "";
+        if (byId_) f.dialog.openedBy = String(byId_);
       }
     }
     const names: string[] = [];
@@ -649,6 +762,37 @@ export function ui5Control(a: ControlRequest): ControlResult {
   const h = String(a.handle ?? "")
     .replace(/^#/, "")
     .replace(/^id=/, "");
+  // Marks set inside the shell bar's shadow tree are not found by the document's own query.
+  const shellBars = (): Element[] =>
+    all
+      .filter((x) => /webcomponents.*\.ShellBar$/.test(name(x)))
+      .map((x) => x.getDomRef?.() as Element | null)
+      .filter((d): d is Element => !!(d as C)?.shadowRoot);
+  // A button the launchpad's shell bar draws inside itself (search, notifications): "shellbar:<name>" in the view.
+  if (h.startsWith("shellbar:")) {
+    const want = h.slice("shellbar:".length);
+    let hit: Element | null = null;
+    for (const bar of shellBars())
+      for (const b of Array.from((bar as C).shadowRoot.querySelectorAll("[data-ui5-stable].ui5-shellbar-button")) as Element[]) {
+        const stable = b.getAttribute("data-ui5-stable") ?? "";
+        const tip = text(b.getAttribute("tooltip") ?? b.getAttribute("accessible-name") ?? b.getAttribute("title") ?? "");
+        if (!hit && b.getBoundingClientRect().width > 0 && (stable === want || (/-stable-dom-ref$/.test(stable) && tip.toLowerCase().replace(/[^a-z0-9]+/g, "-") === want))) hit = b;
+      }
+    if (!hit) return { status: "NOTFOUND", note: h };
+    const found: Element = hit;
+    const tip = text(found.getAttribute("tooltip") ?? found.getAttribute("accessible-name") ?? found.getAttribute("title") ?? "");
+    if (a.op === "facts") {
+      const lang = language();
+      return { status: "FACTS", note: "", facts: { type: "sap.ushell.ShellBarButton", id: h, text: tip }, ...(lang ? { language: lang } : {}) };
+    }
+    if (a.op !== "click") return { status: "NOTFIT", note: `${h} is a button of the launchpad's shell bar: press it` };
+    for (const old of Array.from(document.querySelectorAll(`[${ATTR}]`))) old.removeAttribute(ATTR);
+    for (const bar of shellBars()) for (const old of Array.from((bar as C).shadowRoot.querySelectorAll(`[${ATTR}]`)) as Element[]) old.removeAttribute(ATTR);
+    found.setAttribute(ATTR, "1");
+    // The driver's own clean-up does not reach into the shell bar: the mark goes by itself.
+    setTimeout(() => found.removeAttribute(ATTR), 10_000);
+    return { status: "TARGET", note: `shell bar button "${tip}"` };
+  }
   let c: C = null;
   if (!h) c = controlOf(document.activeElement);
   else {
@@ -670,8 +814,19 @@ export function ui5Control(a: ControlRequest): ControlResult {
   }
 
   for (const old of Array.from(document.querySelectorAll(`[${ATTR}]`))) old.removeAttribute(ATTR);
+  for (const bar of shellBars()) for (const old of Array.from((bar as C).shadowRoot.querySelectorAll(`[${ATTR}]`)) as Element[]) old.removeAttribute(ATTR);
   const mark = (dom: Element | null | undefined, note: string, status: ControlResult["status"] = "TARGET"): ControlResult => {
     if (!dom) return { status: "NODOM", note: `${name(c)} ${c.getId()} is not on screen` };
+    // A table greyed out after a filter change takes no click until Go is pressed: said at once, not after a click that waits.
+    const grey = dom.closest(".sapUiMdcTable, .sapUiCompSmartTable, .sapMList, .sapUiTable")?.querySelector(".sapUiOverlay");
+    if (grey) {
+      const o = grey.getBoundingClientRect();
+      const r = dom.getBoundingClientRect();
+      const x = r.left + r.width / 2;
+      const y = r.top + r.height / 2;
+      if (o.width > 0 && x >= o.left && x <= o.right && y >= o.top && y <= o.bottom)
+        return { status: "NOTFIT", note: `${name(c)} ${c.getId()} is in a table that is greyed out: the filters changed and its rows are the old ones. Press Go in the filter bar first, then act on the table.` };
+    }
     dom.setAttribute(ATTR, "1");
     return { status, note };
   };
@@ -727,6 +882,13 @@ export function ui5Control(a: ControlRequest): ControlResult {
     if (!listLike) return mark(c.getFocusDomRef?.() ?? c.getDomRef?.(), what, "TWOSTEP");
     if (prop(c, "editable") === false) return { status: "DISABLED", note: `${what} is read-only` };
     const items: C[] = (c.getSelectableItems?.() ?? c.getItems?.() ?? []).filter((x: C) => x.getEnabled?.() !== false);
+    if (a.op === "combo" && !pick) {
+      const list = items
+        .slice(0, 60)
+        .map((x: C) => `${x.getKey?.() ?? ""}:${text(x.getText?.())}`)
+        .join(", ");
+      return { status: "DONE", note: `${what}: nothing chosen. Entries (key:text): ${list}${items.length > 60 ? `, ... (${items.length} in all)` : ""}` };
+    }
     const it =
       items.find((x: C) => norm(x.getKey?.()) === norm(pick) || norm(x.getText?.()) === norm(pick)) ??
       (pick ? items.find((x: C) => norm(x.getText?.()).startsWith(norm(pick))) : undefined) ??
@@ -785,7 +947,13 @@ export function ui5Control(a: ControlRequest): ControlResult {
     } else if (isA(c, "sap.ui.table.Row")) {
       const t = c.getParent?.();
       const i = (t?.getRows?.() ?? []).indexOf(c);
-      cur = !!t?.isIndexSelected?.(c.getIndex?.());
+      // With a selection plugin the table's own isIndexSelected() throws: ask the plugin.
+      try {
+        const plugin = [...(t?.getDependents?.() ?? []), ...(t?.getPlugins?.() ?? [])].find((p: C) => isA(p, "sap.ui.table.plugins.SelectionPlugin"));
+        cur = plugin ? (plugin.isSelected ? !!plugin.isSelected(c) : !!plugin.isIndexSelected?.(c.getIndex?.())) : !!t?.isIndexSelected?.(c.getIndex?.());
+      } catch {
+        return { status: "NOTFIT", note: `${what}: the table does not say whether this row is selected; use select on the row` };
+      }
       dom = document.getElementById(`${t?.getId()}-rowsel${i}`) ?? dom;
     }
     if (cur === null) return { status: "NOTFIT", note: `${what} is not a checkbox or switch` };
@@ -800,6 +968,34 @@ export function ui5Control(a: ControlRequest): ControlResult {
     if (vhi) return mark(vhi, `value help of ${what}`);
     return mark(c.getFocusDomRef?.() ?? c.getDomRef?.(), `value help of ${what}`, "TWOSTEP");
   }
+
+  /**
+   * Where to click a table row so that the row itself is pressed: a cell that
+   * holds no link, button or input (the centre of a row can be a link with
+   * its own action). The navigation arrow's cell when the row has one.
+   */
+  const quietCell = (row: C): Element | null => {
+    const d: Element | null = row.getDomRef?.() ?? null;
+    if (!d) return null;
+    const busy = "a, button, input, textarea, select, [role='button'], [role='link'], [role='checkbox'], [role='switch'], [role='combobox'], .sapMLnk, .sapMBtn, .sapMObjStatusActive, .sapMObjectNumberActive";
+    const pressable = (cell: Element) => {
+      if (cell.querySelector(busy)) return true;
+      for (const e of Array.from(cell.querySelectorAll("[data-sap-ui]"))) {
+        try {
+          if (byId(e.id)?.hasListeners?.("press")) return true;
+        } catch {
+          /* not a control */
+        }
+      }
+      return false;
+    };
+    const cells = Array.from(d.querySelectorAll("td, [role='gridcell']")).filter((cell) => {
+      const r = cell.getBoundingClientRect();
+      return r.width >= 12 && r.height > 0 && r.left >= 0 && r.right <= innerWidth && !cell.matches(".sapMListTblSelCol, .sapMListTblHighlightCell, .sapMListTblNavigatedCell, .sapUiTableRowSelectionCell, .sapUiTableRowActionCell");
+    });
+    const nav = cells.find((cell) => cell.matches(".sapMListTblNavCol") && cell.querySelector("[id$='-imgNav']"));
+    return nav ?? cells.find((cell) => !cell.matches(".sapMListTblNavCol") && !pressable(cell)) ?? null;
+  };
 
   let dom: Element | null = null;
   if (isA(c, "sap.ui.table.Row")) {
@@ -820,6 +1016,11 @@ export function ui5Control(a: ControlRequest): ControlResult {
       return { status: "DONE", note: `scrolled to section "${text(c.getTitle?.())}"` };
     }
   } else if (isA(c, "sap.m.SegmentedButtonItem")) dom = c.getDomRef?.() ?? c.oButton?.getDomRef?.() ?? null;
+  // Pressing a table row: a place in it that is the row's own. Without one, Enter on the row presses it.
+  if (!dom && a.op === "click" && (isA(c, "sap.m.ColumnListItem") || isA(c, "sap.ui.table.Row"))) {
+    dom = quietCell(c);
+    if (!dom && isA(c, "sap.m.ColumnListItem") && /Navigation|Active|Detail/.test(c.getType?.() ?? "")) return mark(c.getDomRef?.(), what, "FOCUSENTER");
+  }
   return mark(dom ?? c.getDomRef?.(), what);
 }
 
@@ -853,11 +1054,27 @@ export async function ui5Idle(o: IdleOptions): Promise<string> {
     } catch {
       /* next */
     }
-    const b = Array.from(document.querySelectorAll(".sapUiLocalBusyIndicator, .sapMBusyDialog, .sapMBusyIndicator"));
     // The block layer behind a modal dialog (.sapUiBLy) is not a busy sign.
-    if (b.some((e) => (e as HTMLElement).offsetWidth > 0 && getComputedStyle(e).visibility !== "hidden" && !(e as HTMLElement).closest(".sapUiHidden"))) return "busy control";
-    return "";
+    const b = Array.from(document.querySelectorAll(".sapUiLocalBusyIndicator, .sapMBusyDialog, .sapMBusyIndicator")).filter(
+      (e) => (e as HTMLElement).offsetWidth > 0 && getComputedStyle(e).visibility !== "hidden" && !(e as HTMLElement).closest(".sapUiHidden"),
+    );
+    // With a popup open, only what is busy inside it holds the user up (a footer button stays busy behind its own popover).
+    const popups = Array.from(document.querySelectorAll(".sapMDialog, .sapMPopover")).filter((e) => (e as HTMLElement).offsetWidth > 0);
+    const top = popups[popups.length - 1];
+    const held = top && !top.classList.contains("sapMBusyDialog") ? b.filter((e) => top.contains(e) || e.classList.contains("sapMBusyDialog")) : b;
+    busyIds = held
+      .map((e) => (e.closest("[data-sap-ui]") as HTMLElement | null)?.id ?? "")
+      .filter(Boolean)
+      .slice(0, 3)
+      .join(", ");
+    return held.length ? "busy control" : "";
   };
+  /** The controls that show a busy sign now (their ids), for the note. */
+  let busyIds = "";
+  /** A busy sign that stays the same this long, with nothing else pending, is not waited for: a tile that never loads, a button kept busy. */
+  const SAME_BUSY_MS = 5000;
+  let sameSince = 0;
+  let sameIds = "";
   let how = "busy state";
   if (o.recordReplay) {
     const RR: C = await new Promise((res) => {
@@ -886,9 +1103,68 @@ export async function ui5Idle(o: IdleOptions): Promise<string> {
     last = busyNow();
     quiet = last ? 0 : quiet + 1;
     if (quiet >= need) return `idle (${how}, ${Date.now() - t0} ms)`;
-    if (Date.now() - t0 > o.timeoutMs) return `busy: ${last || "not settled"} after ${Date.now() - t0} ms`;
+    if (last === "busy control") {
+      if (busyIds !== sameIds || !sameSince) {
+        sameIds = busyIds;
+        sameSince = Date.now();
+      } else if (Date.now() - sameSince >= SAME_BUSY_MS) return `idle (${how}, ${Date.now() - t0} ms; still shown as busy and not waited for: ${busyIds || "a busy indicator"})`;
+    } else sameSince = 0;
+    if (Date.now() - t0 > o.timeoutMs) return `busy: ${last === "busy control" && busyIds ? `${busyIds} is busy` : last || "not settled"} after ${Date.now() - t0} ms`;
     await new Promise((r) => setTimeout(r, 150));
   }
+}
+
+/**
+ * Opens a launchpad app by its intent ("#SalesOrder-manage"): sets the
+ * launchpad's hash, as a bookmark of the app does. The page and its origin
+ * stay; the launchpad asks before unsaved input is lost, as on any navigation.
+ */
+export function ui5Open(hash: string): "OK" | "SAME" | "NOSHELL" {
+  const sap = (window as C).sap;
+  let container: C = null;
+  try {
+    container = sap?.ui?.require?.("sap/ushell/Container") ?? sap?.ushell?.Container ?? null;
+  } catch {
+    /* no launchpad */
+  }
+  if (!container) return "NOSHELL";
+  if (decodeURIComponent(location.hash) === decodeURIComponent(hash)) return "SAME";
+  location.hash = hash;
+  return "OK";
+}
+
+/**
+ * Back in a launchpad: marks the shell's back button when it shows (the
+ * driver clicks it). Without one: "HISTORY" when the tab has an earlier
+ * launchpad page, else the home page is opened ("HOME"), so that Back never
+ * leaves SAP for whatever the tab showed before.
+ */
+export async function ui5Back(attr: string): Promise<"BUTTON" | "HISTORY" | "HOME" | "ATHOME"> {
+  const sap = (window as C).sap;
+  let container: C = null;
+  try {
+    container = sap?.ui?.require?.("sap/ushell/Container") ?? sap?.ushell?.Container ?? null;
+  } catch {
+    /* no launchpad */
+  }
+  if (!container) return "HISTORY";
+  for (const old of Array.from(document.querySelectorAll(`[${attr}]`))) old.removeAttribute(attr);
+  const btn = document.getElementById("backBtn");
+  if (btn && btn.getBoundingClientRect().width > 0 && (btn as C).checkVisibility?.() !== false) {
+    btn.setAttribute(attr, "1");
+    return "BUTTON";
+  }
+  let first = false;
+  try {
+    const nav: C = await Promise.race([container.getServiceAsync?.("CrossApplicationNavigation"), new Promise((r) => setTimeout(() => r(null), 2000))]);
+    first = (await nav?.isInitialNavigationAsync?.()) ?? nav?.isInitialNavigation?.() ?? false;
+  } catch {
+    first = false;
+  }
+  if (!first) return "HISTORY";
+  if (/^#?(Shell-home)?$/.test(location.hash)) return "ATHOME";
+  location.hash = "#Shell-home";
+  return "HOME";
 }
 
 export interface Ui5Info {

@@ -89,6 +89,70 @@ describe("fiori driver: the logon page", () => {
   });
 });
 
+describe("fiori driver: open, Back and unknown keys", () => {
+  /** A launchpad tab whose page answers each in-page function by name. */
+  function shellTab(answers: Record<string, unknown>, ran: string[], clicks: string[]): ChromeTab {
+    const frame = {
+      isDetached: () => false,
+      url: () => "https://host/sap/bc/ui2/flp",
+      evaluate: async (fn: (...a: unknown[]) => unknown, arg?: unknown) => {
+        ran.push(`${fn.name || "inline"}${typeof arg === "string" ? `(${arg})` : ""}`);
+        if (fn.name in answers) return answers[fn.name];
+        if (fn.name === "ui5Idle") return "idle (busy state, 1 ms)";
+        if (fn.name === "ui5Logon") return false;
+        // The frame check: a UI5 frame.
+        return fn.name ? undefined : "ui5";
+      },
+      waitForLoadState: async () => {},
+      locator: () => ({ first: () => ({ click: async () => void clicks.push("target") }) }),
+    };
+    const page = {
+      frames: () => [frame],
+      mainFrame: () => frame,
+      url: () => "https://host/sap/bc/ui2/flp",
+      title: async () => "Home",
+      keyboard: { press: async (k: string) => void clicks.push(k) },
+      waitForTimeout: async () => {},
+      waitForLoadState: async () => {},
+    };
+    return { id: "T1", title: "Home", url: page.url(), page } as unknown as ChromeTab;
+  }
+  const on = (answers: Record<string, unknown>) => {
+    const ran: string[] = [];
+    const clicks: string[] = [];
+    return { d: new FioriDriver(shellTab(answers, ran, clicks), INFO, 1, { recordReplay: false, idleTimeoutMs: 2000 }), ran, clicks };
+  };
+
+  test("open sets the launchpad's hash and is rated before any control is looked up", async () => {
+    const { d, ran } = on({ ui5Open: "OK" });
+    expect(await d.assess({ do: "open", app: "#SalesOrder-manage" })).toMatchObject({ risk: "navigate" });
+    expect(ran).toEqual(["ui5Logon"]);
+    expect(await d.act({ do: "open", app: "SalesOrder-manage" })).toContain("open #SalesOrder-manage; idle");
+    expect(ran).toContain("ui5Open(#SalesOrder-manage)");
+  });
+  test("open refuses a URL, in assess and in act, and a tab without a launchpad", async () => {
+    const { d, ran } = on({ ui5Open: "NOSHELL" });
+    for (const app of ["https://evil.example/sap/bc/ui2/flp#SalesOrder-manage", "//evil.example", "javascript:alert(1)"]) {
+      await expect(d.assess({ do: "open", app })).rejects.toThrow("never a URL");
+      await expect(d.act({ do: "open", app })).rejects.toThrow("never a URL");
+    }
+    expect(ran.some((r) => r.startsWith("ui5Open"))).toBe(false);
+    await expect(d.act({ do: "open", app: "#SalesOrder-manage" })).rejects.toThrow("launchpad tab only");
+  });
+  test("a key the surface does not have fails in assess: the user is not asked to confirm it", async () => {
+    const { d } = on({});
+    await expect(d.assess({ do: "key", key: "F9" })).rejects.toThrow('Unknown key "F9". Fiori keys: Enter');
+  });
+  test("Back presses the launchpad's back button; without one it opens the home page, never the browser's earlier site", async () => {
+    const shell = on({ ui5Back: "BUTTON" });
+    expect(await shell.d.act({ do: "key", key: "Back" })).toContain("key Back: the launchpad's back button");
+    expect(shell.clicks).toEqual(["target"]);
+    const first = on({ ui5Back: "HOME" });
+    expect(await first.d.act({ do: "key", key: 3 })).toContain("the launchpad's home page was opened");
+    expect(first.clicks).toEqual([]);
+  });
+});
+
 describe("fiori driver: screenshot", () => {
   test("a tab in the background is brought to the front, then tried once more", async () => {
     const fake = fresh({ background: true });

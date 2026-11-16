@@ -18,9 +18,12 @@
  *   {"do":"check","id":"…","value":true}   checkbox, switch, toggle button, selectable row; without value: toggle
  *   {"do":"combo","id":"…","key":"…"}      entry of sap.m.Select, ComboBox or MultiComboBox by key or text, through the
  *                                          control's API; other dropdowns in two steps (open, pick the option).
- *                                          An unknown entry answers with the list of entries.
- *   {"do":"key","key":"Enter"}             Enter, Escape, Tab, Shift+Tab, F4, arrows, PageUp/PageDown, Home, End, Back,
- *                                          Control+S, Control+Enter; SAP GUI's numbers 0, 3, 4, 11, 12 mean the same
+ *                                          An unknown entry, or no key at all, answers with the list of entries
+ *                                          and chooses nothing.
+ *   {"do":"key","key":"Enter"}             Enter, Space, Escape, Tab, Shift+Tab, F4, Delete, Backspace, arrows,
+ *                                          PageUp/PageDown, Home, End, Back, Control+S, Control+Enter; SAP GUI's
+ *                                          numbers 0, 3, 4, 11, 12 mean the same. Back is the launchpad's back
+ *                                          button; it never leaves the launchpad for another site.
  *
  * Extra actions, beyond the shared vocabulary:
  *
@@ -29,6 +32,10 @@
  *   {"do":"scroll","how":"down"}           down, up, top or bottom in the open popup or the page's main area; with an
  *                                          id, in the scroll area around that control ("how":"to" brings it into view).
  *                                          The view holds what the viewport shows and says when there is more.
+ *   {"do":"open","app":"#SalesOrder-manage"}  open a launchpad app by its intent (with parameters: "#SalesOrder-display?SalesOrder=4711").
+ *                                          The launchpad's hash is set, as a bookmark does: the tab, its origin and the
+ *                                          logon stay. Never a URL. Rated as navigation; SAP_ALLOW_TCODES and
+ *                                          SAP_BLOCK_TCODES apply to the intent before it is opened.
  *   "fill" and "double"                    the original reader's names for set and dblclick, still accepted
  *
  * okcode, tree, grid and toolbar exist only on SAP GUI screens: they go to the
