@@ -536,6 +536,7 @@ Every setting is an environment variable of the server process.
 | `SAP_VIEW` | `diff` | `full`: every action answers with the whole screen |
 | `SAP_FIORI_WAIT` | full waits | `busy`: faster Fiori waits (busy indicators only, without UI5's RecordReplay) |
 | `SAP_RECORD_DIR` | `./sap-tests` | where recordings and exports are written |
+| `SAP_DOWNLOAD_DIR` | `downloads` in `SAP_RECORD_DIR` when that is set, else `./sap-downloads` | Web GUI: where a file SAP writes "to a local file" (List > Export > Local File) is copied. Web GUI keeps such a file inside the browser; the answer of the action names the copy |
 | `SAP_RECORD` | `off` | `on`: record every session from its first action |
 
 `sap-gui-mcp-server --help` lists the commands and the main settings.

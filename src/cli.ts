@@ -40,6 +40,7 @@ Environment:
                                         or always the whole screen
   SAP_FIORI_WAIT=busy                   faster Fiori waits (busy indicators only, skips UI5 RecordReplay)
   SAP_RECORD_DIR=./sap-tests            where sap_record writes recordings and exports (default: sap-tests in the working directory)
+  SAP_DOWNLOAD_DIR=./sap-downloads     Web GUI: where a file SAP exports "to a local file" is copied (default: downloads in SAP_RECORD_DIR when set)
   SAP_RECORD=on                         record every session from its first action, without sap_record start`;
 
 async function main(argv: string[]): Promise<number> {

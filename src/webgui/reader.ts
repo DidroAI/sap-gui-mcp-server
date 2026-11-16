@@ -27,6 +27,7 @@ import { ActionError, type Action, type Assessment, type LookOptions } from "../
 import { LOGON_REFUSAL, okcodeKind } from "../core/words.js";
 import { assessAction, popupButton, questionRefusal } from "./assess.js";
 import { checkedNow, clean, clickForRoundtrip, clickListLine, clickMenuRow, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlLook, pressOverflow, setCalendar, setRefusal, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
+import { collectFiles, watchFiles } from "./files.js";
 import { LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
 import { chooseEntry, entriesOf, markScrolled, notOnScreen, scrollTo, selectRow } from "./lists.js";
 import { extractFacts, markControl, markRow, markSelector, menuRowOpen, openOverlay, scrollControl, topWindowOpen } from "./page.js";
@@ -147,9 +148,12 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
     // The id as the screen holds it now: a handle becomes its full id, one that names several controls is refused.
     const named = a.id !== undefined && String(a.id).trim() && !isMenuPath(String(a.id));
     const mark = session.posts;
+    await watchFiles(session).catch(() => {});
     const done = await run(session, named ? { ...a, id: resolveIn(await freshView(session), String(a.id)) } : a);
     const nothing = session.posts === mark && !done.endsWith(NOTHING_TO_SAP) ? nothingSent(a) : undefined;
-    const note = nothing ? `${done}\n${nothing}` : done;
+    // A file SAP wrote with this step (an export to a "local file") is copied out of the browser and named (files.ts).
+    const files = await collectFiles(session).catch(() => [] as string[]);
+    const note = [done, ...(nothing ? [nothing] : []), ...files].join("\n");
     return session.unsettled ? `${note}\n(Web GUI still showed its loading sign when the server stopped waiting: the step may not be over. If the screen below is not what the step should lead to, look again in a moment.)` : note;
   } catch (e) {
     throw tidy(e);
