@@ -186,7 +186,7 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
     }
     // What the agent set in this transaction counts as unsaved until SAP says it saved; a command that
     // leaves the transaction drops it without a question, and the answer says so.
-    if (/^(set|check|combo)$/.test(a.do) && !/(nothing changed|already chosen|entries: |has no entries)/.test(done)) session.unsaved.typed();
+    if (/^(set|check|combo)$/.test(a.do) && !/(nothing changed|already chosen|entries: |has no entries)/.test(done)) session.unsaved.typed(before);
     if (a.do === "okcode" && /^\/n/i.test(String(a.value ?? "")) && session.posts !== mark) {
       const lost = session.unsaved.left();
       if (lost) note = `${note}\n${lost}`;
