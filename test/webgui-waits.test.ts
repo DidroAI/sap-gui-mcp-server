@@ -40,11 +40,15 @@ const PAGE = `<!doctype html><html lang="en"><head><title>Synthetic</title></hea
     else if (list.style.display !== 'none') { list.style.display = 'none'; e.stopImmediatePropagation(); }
   }, true);
   window.oLS = { n: 0, bLocked: function () { return this.n > 0 || window.stuck === true; } };
-  function post(what) {
+  function post(what, then) {
     window.oLS.n++;
     window.posted.push(what);
     fetch('/sap/bc/gui/sap/its/webgui/post', { method: 'POST', body: JSON.stringify([{ post: what + '/ses[0]' }]) })
-      .then(function () { window.oLS.n--; });
+      .then(function () {
+        window.oLS.n--;
+        // The answer makes the page ask for more (a grid's rows): a second round trip, through the queue.
+        if (then) window.UCF_System.oLS.oSemanticEventHandlerObject.enqueueEvent({ sEvName: 'RequestData', post: then });
+      });
   }
   // Web GUI's event queue, as with SAP Screen Personas on: a step waits 300 ms in it before it is sent.
   window.makeQueue = function () {
@@ -56,7 +60,7 @@ const PAGE = `<!doctype html><html lang="en"><head><title>Synthetic</title></hea
         q.push(ev);
         if (!timer) timer = setTimeout(function () { owner.processEventQueue(true); }, 300);
       },
-      processEventQueue: function () { timer = null; var ev; while ((ev = q.shift())) if (ev.post) post(ev.post); }
+      processEventQueue: function () { timer = null; var ev; while ((ev = q.shift())) if (ev.post) post(ev.post, ev.then); }
     };
     window.UCF_System = { oLS: { oSemanticEventHandlerObject: owner } };
     window.UCF_JsUtil = { mDelayedCalls: {} };
@@ -66,6 +70,7 @@ const PAGE = `<!doctype html><html lang="en"><head><title>Synthetic</title></hea
     if (window.queued) {
       var owner = window.UCF_System.oLS.oSemanticEventHandlerObject;
       if (e.key === 'Enter') owner.enqueueEvent({ sEvName: 'Hotkey', post: 'vkey/0' });
+      if (e.key === 'F8') owner.enqueueEvent({ sEvName: 'Hotkey', post: 'vkey/8', then: 'action/rows' });
       // A field that scrolls into view tells SAP 200 ms later; here that sends nothing.
       if (e.key === 'F7') { window.UCF_JsUtil.mDelayedCalls.d1 = { sMethodName: 'fireScrollSync' }; setTimeout(function () { delete window.UCF_JsUtil.mDelayedCalls.d1; owner.enqueueEvent({ sEvName: 'Scroll', post: 'action/scroll' }); }, 200); }
       return;
@@ -163,6 +168,28 @@ describe.skipIf(!exe)("waits of a Web GUI action", () => {
       expect(session.timing.start).toBeGreaterThanOrEqual(250);
     }
     expect(await posted()).toEqual(["vkey/0", "vkey/0", "vkey/0", "vkey/0", "vkey/0"]);
+  });
+
+  test("with the queue watched, the step is over when the page is unlocked and the queue is empty: no 300 ms of quiet", async () => {
+    await open();
+    await page.evaluate(() => (window as unknown as { makeQueue: () => void }).makeQueue());
+    const settles: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      expect(await act(session, { do: "key", key: 0 })).toBe("key Enter");
+      settles.push(session.timing.settle);
+    }
+    // It was 300 ms and more each time.
+    expect(settles.sort((a, b) => a - b)[2]).toBeLessThan(200);
+  });
+
+  test("a second round trip the answer starts through the queue belongs to the step", async () => {
+    await open();
+    await page.evaluate(() => (window as unknown as { makeQueue: () => void }).makeQueue());
+    expect(await act(session, { do: "key", key: 8 })).toBe("key F8");
+    // Both were sent, and the second one answered, when the action returned.
+    expect(await posted()).toEqual(["vkey/8", "action/rows"]);
+    expect(await page.evaluate(() => (window as unknown as { oLS: { bLocked(): boolean } }).oLS.bLocked())).toBe(false);
+    expect(session.timing.posts).toBe(2);
   });
 
   test("with the queue watched, a key that puts nothing in it is answered as soon as the page has handled it", async () => {
