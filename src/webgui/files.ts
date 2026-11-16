@@ -133,14 +133,19 @@ export function localName(path: string): string {
 interface Watch {
   /** The files seen so far, by store and path: what a later look compares with. Undefined until the first look. */
   seen: Map<string, string> | undefined;
-  /** Browser downloads under way or done, with the line to say about each. */
-  downloads: Promise<string>[];
+  /** Browser downloads under way or done, with where each was saved and the line to say about it. */
+  downloads: Promise<Saved>[];
 }
 const watches = new WeakMap<Page, Watch>();
 
+interface Saved {
+  target: string;
+  line: string;
+}
+
 const stamp = (f: StoredFile) => `${f.blobId}|${f.size}|${f.modified}`;
 
-async function saveDownload(d: Download, dir: string): Promise<string> {
+async function saveDownload(d: Download, dir: string): Promise<Saved> {
   const name = d.suggestedFilename() || "download";
   const target = join(dir, localName(name));
   try {
@@ -150,9 +155,9 @@ async function saveDownload(d: Download, dir: string): Promise<string> {
       timer = setTimeout(() => rej(new Error("the browser did not hand the file over within 30 s")), 30_000);
     });
     await Promise.race([d.saveAs(target), late]).finally(() => clearTimeout(timer));
-    return `The browser downloaded a file, "${name}": saved as ${target}.`;
+    return { target, line: `The browser downloaded a file, "${name}": saved as ${target}.` };
   } catch (e) {
-    return `The browser downloaded a file, "${name}", but the server could not save it (${(e as Error).message.split("\n")[0]}): it did not reach this machine, or it is in the browser's own download folder.`;
+    return { target: "", line: `The browser downloaded a file, "${name}", but the server could not save it (${(e as Error).message.split("\n")[0]}): it did not reach this machine, or it is in the browser's own download folder.` };
   }
 }
 
@@ -186,6 +191,7 @@ export async function collectFiles(session: WebGuiSession, env: Env = process.en
   const dir = downloadDir(env);
   const w = watchOf(session.page, dir);
   const lines: string[] = [];
+  const copied = new Set<string>();
   const now = await session.frame.evaluate(listStoredFiles).catch(() => undefined);
   if (now) {
     const before = w.seen;
@@ -201,6 +207,7 @@ export async function collectFiles(session: WebGuiSession, env: Env = process.en
         if ("error" in got) throw new Error(got.error);
         await mkdir(dir, { recursive: true });
         await writeFile(target, Buffer.from(got.base64, "base64"));
+        copied.add(target);
         lines.push(`${what}: the server copied it to ${target}.`);
       } catch (e) {
         lines.push(`${what}, and the server could not copy it out (${(e as Error).message.split("\n")[0]}): the file did not reach this machine. Read the data from the screen instead (sap_look with "id" and "rows").`);
@@ -211,9 +218,10 @@ export async function collectFiles(session: WebGuiSession, env: Env = process.en
   if (w.downloads.length) {
     const pending = w.downloads.splice(0);
     const done = await Promise.all(pending.map((p) => Promise.race([p, new Promise<undefined>((res) => setTimeout(() => res(undefined), 5000))])));
-    done.forEach((line, i) => {
-      if (line) lines.push(line);
-      else w.downloads.push(pending[i] as Promise<string>);
+    done.forEach((saved, i) => {
+      if (!saved) w.downloads.push(pending[i] as Promise<Saved>);
+      // Web GUI can hand the same file to the browser as a download too: one line for one file.
+      else if (!copied.has(saved.target)) lines.push(saved.line);
     });
   }
   return lines;
