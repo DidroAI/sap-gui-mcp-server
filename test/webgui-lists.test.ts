@@ -143,12 +143,12 @@ describe.skipIf(!exe)("Web GUI reader: lists, dropdowns and handles, in a browse
 
   test("a dropdown shows its entry and the count; its entries come on request and nothing is chosen", async () => {
     const f = page.mainFrame();
-    expect(await fullView()).toContain('wnd[0]/usr/cmbZHDR-BLOCK  dropdown  Delivery block = "01" Credit limit  3 options: :No block, 01:Credit limit, 02:Political reasons');
-    expect(await compactView()).toContain('cmbZHDR-BLOCK  dropdown  Delivery block = "01" Credit limit  (3 options)');
+    expect(await fullView()).toContain('wnd[0]/usr/cmbZHDR-BLOCK  dropdown  Delivery block = "01" Credit limit  (edit)  3 options: :No block, 01:Credit limit, 02:Political reasons');
+    expect(await compactView()).toContain('cmbZHDR-BLOCK  dropdown  Delivery block = "01" Credit limit  (edit)  (3 options)');
     expect((await webguiAssessInFrame(f, { do: "combo", id: "cmbZHDR-BLOCK" })).risk).toBe("read");
     expect(await webguiActInFrame(f, { do: "combo", id: "cmbZHDR-BLOCK" })).toBe("wnd[0]/usr/cmbZHDR-BLOCK has 3 entries: :No block, 01:Credit limit, 02:Political reasons");
     expect(await page.locator("#C1").inputValue()).toBe("Credit limit");
-    expect((await look({ compact: true, id: "cmbZHDR-BLOCK" })).split("\n").at(-1)).toBe('cmbZHDR-BLOCK  dropdown  Delivery block = "01" Credit limit  3 options: :No block, 01:Credit limit, 02:Political reasons');
+    expect((await look({ compact: true, id: "cmbZHDR-BLOCK" })).split("\n").at(-1)).toBe('cmbZHDR-BLOCK  dropdown  Delivery block = "01" Credit limit  (edit)  3 options: :No block, 01:Credit limit, 02:Political reasons');
   });
 
   test("two controls that share their last segment get handles, and every action resolves them", async () => {

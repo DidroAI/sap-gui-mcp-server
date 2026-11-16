@@ -92,7 +92,7 @@ export function normalizeKey(raw: unknown): number | string | undefined {
 
 /** What `scroll` takes as "to", besides a row number. Fiori's own words (down, up, top, bottom) mean the same. */
 const SCROLL_ALIASES: Readonly<Record<string, string>> = { down: "next", up: "prev", top: "first", bottom: "last", previous: "prev", start: "first", end: "last" };
-const SCROLL_WORDS = new Set(["next", "prev", "first", "last", ...Object.keys(SCROLL_ALIASES)]);
+const SCROLL_WORDS = new Set(["next", "prev", "first", "last", "right", "left", "rightmost", "leftmost", ...Object.keys(SCROLL_ALIASES)]);
 
 const stripBreaks = (s: string) => s.replace(/[\r\n]+/g, "");
 const scalar = (v: unknown) => v === undefined || v === null || typeof v === "string" || typeof v === "number" || typeof v === "boolean";
@@ -132,7 +132,7 @@ export function normalizeAction(input: unknown): NormalizedAction {
     // A row counted from 0, or a direction.
     const to = typeof out.to === "string" && /^\d+$/.test(out.to.trim()) ? Number(out.to.trim()) : typeof out.to === "string" ? out.to.trim().toLowerCase() : out.to;
     if (!(typeof to === "number" && Number.isInteger(to) && to >= 0) && !(typeof to === "string" && SCROLL_WORDS.has(to)))
-      throw new ActionError('scroll "to" is a row number counted from 0, or "next", "prev", "first" or "last".');
+      throw new ActionError('scroll "to" is a row number counted from 0, or "next", "prev", "first" or "last"; sideways (a table control\'s columns) "right", "left", "rightmost" or "leftmost".');
     out.to = SCROLL_ALIASES[String(to)] ?? to;
   }
 

@@ -113,7 +113,7 @@ const actionSchema = z
     row: z.number().int().optional(),
     col: z.string().optional(),
     button: z.string().optional(),
-    to: z.union([z.number().int(), z.string()]).optional().describe('scroll: a row counted from 0, or "next", "prev", "first", "last"'),
+    to: z.union([z.number().int(), z.string()]).optional().describe('scroll: a row counted from 0, or "next", "prev", "first", "last"; sideways "right", "left"'),
   })
   .passthrough();
 
@@ -190,22 +190,25 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
   full=true   every id, every column, each toolbar button and its key on a line of its own (larger)
   diff=true   only what changed since the view you got last
   id="..."    one control, whole: all the entries of a dropdown, all the rows read of a grid, table, tree or list; id="mbar" lists every menu entry
-  id="...", rows="120-180"   those rows of a grid, table control, tree or list (counted from 0; the control is scrolled there)`,
+  id="...", rows="120-180"   those rows of a grid, table control, tree or list (counted from 0; the control is scrolled there)
+  cols="VBELN,NETWR"         with id and rows: only these columns of a grid or table control (ids or titles)`,
       inputSchema: {
         session,
         full: z.boolean().optional().describe("full view instead of compact"),
         diff: z.boolean().optional().describe("only what changed since your last view"),
         id: z.string().optional().describe("one control, whole (an id from the view)"),
         rows: z.string().optional().describe('with id: a range of rows counted from 0, e.g. "120-180"'),
+        cols: z.string().optional().describe('with id and rows, for a grid or a table control: only these columns, by id or title, e.g. "VBELN,NETWR"'),
       },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    ({ session: ref, full, diff, id, rows }) =>
+    ({ session: ref, full, diff, id, rows, cols }) =>
       answer(async () => {
         const { driver, info } = await registry.session(ref);
         if (rows !== undefined && !id) throw new ActionError('"rows" needs "id": the grid, table, tree or list to read.');
+        if (cols !== undefined && rows === undefined) throw new ActionError('"cols" goes with "id" and "rows": the columns to keep of the rows read.');
         if (id) {
-          const options: LookOptions = { compact: !full, id, ...(rows !== undefined ? { rows: parseRows(rows) } : {}) };
+          const options: LookOptions = { compact: !full, id, ...(rows !== undefined ? { rows: parseRows(rows) } : {}), ...(cols !== undefined ? { cols: cols.split(",") } : {}) };
           // One control is not the screen: what the agent holds of the screen stays as it is.
           return text(await driver.look(options));
         }
@@ -357,16 +360,17 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
   {"do":"set","id":"ctxtVBAK-AUART","value":"OR"}   type into a field (Fiori: an input)
   {"do":"press","id":"btn[8]"}                      button (Fiori: "click" works too)
   {"do":"key","key":0}                              0 Enter, 3 Back, 4 F4, 8 F8, 11 Save, 12 Cancel
-  {"do":"select","id":"tabpT\\08"}                tab, radio button, menu entry, list item
-  {"do":"check","id":"...","value":true}            checkbox
+  {"do":"select","id":"tabpT\\08"}                tab, radio button, menu entry, list item, an open menu's entry (its id from the view)
+  {"do":"select","id":"<table or grid>","row":2}    select that row (its row selector); "value":false deselects
+  {"do":"check","id":"...","value":true}            checkbox (also a list's chk[col,row]); answers the state it has after
   {"do":"combo","id":"...","key":"PROG"}            dropdown entry, by key or shown text; without "key": lists the entries, changes nothing
   {"do":"okcode","value":"/nVA03"}                  command field (SAP GUI, Web GUI)
   {"do":"f4","id":"..."}                            value help
   {"do":"dblclick","id":"..."}                      list entry or label
-  {"do":"tree","id":"...","node":"<key>","how":"double|select|expand"}
-  {"do":"grid","id":"...","row":0,"col":"VBELN","how":"double|select"}   any row of the grid: one that is not on screen is scrolled to first
+  {"do":"tree","id":"...","node":"<key>","how":"double|select|expand|collapse"}
+  {"do":"grid","id":"...","row":0,"col":"VBELN","how":"double|select|cell"}   any row of the grid: one that is not on screen is scrolled to first; "select" selects the row, "cell" only puts the cursor on the cell
   {"do":"toolbar","id":"...","button":"<id>"}
-  {"do":"scroll","id":"...","to":120}               grid, table control, tree or list: to a row counted from 0, or "next", "prev", "first", "last" (Fiori: scrolls a table or the page when the view ends with SCROLL)
+  {"do":"scroll","id":"...","to":120}               grid, table control, tree or list: to a row counted from 0, or "next", "prev", "first", "last"; a table control's columns: "right", "left" (Fiori: scrolls a table or the page when the view ends with SCROLL)
 Ids: use them as the view shows them. A toolbar button btn[N] is function key N: press it, or send the key. A handle such as cntlGRID1/shell or shellcont[1]/shell is a shortened id; an id that names several controls is refused with the list of them, and an id from an earlier screen is refused with the screen you are on.
 For "key", "key" is an SAP virtual key number (0 to 99) or a key name (Enter, Escape, Tab, F4, Control+S). The command field takes commands through "okcode" only.
 An action that may write to SAP is refused, run, or held for the user's yes, as the user set it up. When held, the client asks the user itself if it can, and the answer here is the result; if it cannot, the answer holds a token for sap_confirm.`,

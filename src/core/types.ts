@@ -40,8 +40,9 @@ export interface SessionInfo {
  *   {"do": "okcode", "value": "/nVA03"}                     command field
  *   {"do": "f4", "id": "..."}                               value help on a field
  *   {"do": "dblclick", "id": "..."}                         list entry or label
- *   {"do": "tree", "id": "...", "node": "<key>", "how": "double|select|expand"}
- *   {"do": "grid", "id": "...", "row": 0, "col": "VBELN", "how": "double|select"}
+ *   {"do": "tree", "id": "...", "node": "<key>", "how": "double|select|expand|collapse"}
+ *   {"do": "grid", "id": "...", "row": 0, "col": "VBELN", "how": "double|select|cell"}
+ *   {"do": "select", "id": "<table or grid>", "row": 2}          select a row by its row selector
  *   {"do": "toolbar", "id": "...", "button": "<button id>"}
  *   {"do": "scroll", "id": "...", "to": 120}                grid, table control, tree or list: to a row (from 0), "next", "prev", "first" or "last"
  *   {"do": "click", "id": "..."}                            Fiori: any control by UI5 id tail
@@ -56,7 +57,7 @@ export interface Action {
   row?: number;
   col?: string;
   button?: string;
-  /** scroll: a row counted from 0, or "next", "prev", "first", "last". */
+  /** scroll: a row counted from 0, or "next", "prev", "first", "last"; sideways "right", "left", "rightmost", "leftmost". */
   to?: number | string;
   [k: string]: unknown;
 }
@@ -91,6 +92,8 @@ export interface LookOptions {
    * control stays scrolled to the last rows read.
    */
   rows?: { from: number; to: number };
+  /** With `rows`, for a grid or a table control: only these columns (column ids or titles). */
+  cols?: string[];
 }
 
 /** A live connection to one session. */

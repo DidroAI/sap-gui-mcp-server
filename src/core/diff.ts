@@ -50,6 +50,15 @@ function rowKey(row: string): string {
   return /^ +(row \d+)[ :(]/.exec(row)?.[1] ?? /\{node ([^}]*)\}$/.exec(row)?.[0] ?? row;
 }
 
+/**
+ * A control's line given only for context (`=`, its rows changed): the
+ * agent has it from the view before, so a grid's or tree's column list is
+ * left out; it can be long (100 columns), and it did not change.
+ */
+function contextHead(head: string): string {
+  return / {2}(grid|tree) {2}/.test(head) ? head.replace(/; columns: .*$/, "; columns as before") : head;
+}
+
 /** The lines that say where the agent is: the header and the windows. */
 function frame(view: string): string {
   return view
@@ -132,7 +141,7 @@ export function diffViews(prev: string, next: string, since = ""): ViewDiff {
       changed += 1 + b.rows.length;
       continue;
     }
-    out.push(`${headChanged ? "~" : "="} ${b.head}`, ...rowLines, ...gone.map((r) => `- ${r}`));
+    out.push(headChanged ? `~ ${b.head}` : `= ${contextHead(b.head)}`, ...rowLines, ...gone.map((r) => `- ${r}`));
     changed += rowChanges + (headChanged ? 1 : 0);
   }
   for (const [k, b] of before)
