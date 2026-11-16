@@ -82,6 +82,16 @@ describe("compact", () => {
     expect(compact(t).split("\n")[2]).toBe("  row 0: ZX-A=1");
   });
 
+  test("two columns with one title are told apart by their number in the rows", () => {
+    const t = [
+      "wnd[0]/usr/tblTAX  table  rows 1 (visible 1); columns: Country | Country | Tax category",
+      'wnd[0]/usr/tblTAX/txtT005T-LANDX[1,0]  field  Country = "Argentina"  (read-only)',
+      'wnd[0]/usr/tblTAX/ctxtZTAX-ALAND[0,0]  field  Country = "AR"  (read-only)',
+      'wnd[0]/usr/tblTAX/ctxtZTAX-TATYP[2,0]  field  Tax category = "J1AU"  (read-only)',
+    ].join("\n");
+    expect(compact(t).split("\n")).toContain("  row 0: Country [col 1]=Argentina; Country [col 0]=AR; Tax category=J1AU");
+  });
+
   test("a table control that is scrolled says which row its row 0 is", () => {
     const t = ['wnd[0]/usr/tblT  table  rows 171 (visible 13, first 60); columns: A', 'wnd[0]/usr/tblT/txtZX-A[0,0]  field  A = "1"  (edit)'].join("\n");
     expect(compact(t).split("\n")[0]).toBe("tblT  table  rows 171 (visible 13, first 60)  (cell id: <id>[col,row], e.g. txtZX-A[0,0]; row 0 here is row 60 of the table)");
