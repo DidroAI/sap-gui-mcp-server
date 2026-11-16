@@ -605,7 +605,9 @@ export function extractLook(limits: {
             ].join(" | ");
           // Web GUI keeps empty placeholder rows below the last node: not nodes.
           if (!key && !text.replace(/[ |]/g, "")) continue;
-          nodes.push(`  ${"  ".repeat(depth)}${state}${text}  {node ${key}}`);
+          // The node that was clicked last: Web GUI marks its hierarchy cell (urST4Sel2).
+          const picked = /\burST\d+Sel\d*\b/.test(typeof hier?.className === "string" ? hier.className : "");
+          nodes.push(`  ${"  ".repeat(depth)}${state}${text}${picked ? " (selected)" : ""}  {node ${key}}`);
         }
         out(
           modal,
@@ -1244,8 +1246,13 @@ export function markRow(a: { sid: string; row?: number | undefined; node?: strin
   const hicCell = inRow.find((td) => td.getAttribute("subct") === "HIC");
   const isTree = /Type:'GuiTree'/.test(root.getAttribute("data-ls") ?? "");
   // A tree node is opened on its text (in the hierarchy cell); a grid row on its first filled cell.
+  // (The first text element of the cell is an empty one without a size: a click on it waited 5 s and hit nothing.)
   if (!cell && isTree && hicCell)
-    cell = hicCell.querySelector("[ct='TV']") ?? hicCell;
+    cell =
+      Array.from(hicCell.querySelectorAll("[ct='TV']")).find((e) => {
+        const r = e.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      }) ?? hicCell;
   cell ??=
     inRow.find(
       (td) =>

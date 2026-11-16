@@ -16,7 +16,9 @@
  * - the calendar of a date's value help holds its date in a field of its own;
  * - the text SAP writes after a field (the description of its value) points
  *   at the field as its label does, and a label can point at a button;
- * - a grid's column is selected by a click on its header.
+ * - a grid's column is selected by a click on its header;
+ * - a tree node's first text element is empty and has no size; the node
+ *   clicked last has a class on its hierarchy cell.
  *
  * Needs a Chrome: SAP_TEST_CHROME=/path/to/chrome. Without it the tests are skipped.
  */
@@ -58,6 +60,11 @@ const PAGE = `<!doctype html><html lang="en"><head><title>Synthetic</title></hea
   <thead><tr><th lsmatrixrowindex="0" lsmatrixcolindex="1" onclick="window.header='WERKS'" lsdata="{17:${sid("wnd[0]/usr/cntlRESULT/shell/colWERKS", "GuiTableColumn")}}">Plant</th>
     <th lsmatrixrowindex="0" lsmatrixcolindex="2" onclick="window.header='ORT01'" lsdata="{17:${sid("wnd[0]/usr/cntlRESULT/shell/colORT01", "GuiTableColumn")}}">City</th></tr></thead>
   <tbody><tr><td lsmatrixrowindex="1" lsmatrixcolindex="1" ondblclick="window.opened='0001'">0001</td><td lsmatrixrowindex="1" lsmatrixcolindex="2">Walldorf</td></tr></tbody>
+</table>
+
+<table id="tree#5" ct="STCS" lsdata="{29:{${sid("wnd[0]/usr/cntlIMAGE/shell", "GuiTree").slice(1, -1)},nodeindexes:[0,['Favo',2,-1],['F00003',1,2]]}}" style="position:absolute;left:600px;top:200px;width:300px">
+  <tr iidx="0" dddata="Favo#2#1#1"><td lsmatrixrowindex="0" lsmatrixcolindex="0" subct="HIC" lsdata="{5:'EXPANDED'}"><span ct="TV"></span><span ct="TV" onclick="pickNode(this,'Favo')">Favorites</span></td></tr>
+  <tr iidx="1" dddata="F00003#1#2#2"><td lsmatrixrowindex="1" lsmatrixcolindex="0" subct="HIC" lv="1"><span ct="TV"></span><span ct="TV" onclick="pickNode(this,'F00003')">Default Workbook</span></td></tr>
 </table>
 
 <table id="menu_1_1" ct="POMN" style="position:absolute;top:500px;left:700px;background:#fff">
@@ -125,6 +132,12 @@ const PAGE = `<!doctype html><html lang="en"><head><title>Synthetic</title></hea
         document.getElementById('P1').style.display = 'none';
       });
     }, 300);
+  }
+  // A tree marks the node clicked last on its hierarchy cell.
+  function pickNode(span, key) {
+    Array.prototype.forEach.call(document.getElementById('tree#5').querySelectorAll('td'), function (td) { td.className = 'urSTC urST3TDHic'; });
+    span.parentElement.className = 'urSTC urST3TDHic urST4CellActive urST4Sel2';
+    window.node = key;
   }
   function openPanel(tgl) {
     tgl.className = 'lsPnstTglIcon lsPnstHdExp lsPnstTglIconExp';
@@ -227,6 +240,18 @@ describe.skipIf(!exe)("Web GUI reader: controls that answer late or hide their p
     expect(await inPage<string>("window.header")).toBe("ORT01");
     expect(await act({ do: "grid", id: "cntlRESULT/shell", row: 0, col: "WERKS", how: "double" })).toBe("grid double row 0 column WERKS");
     expect(await inPage<string>("window.opened")).toBe("0001");
+  });
+
+  test("a tree node is clicked on its text, not on the empty element before it, and the view marks it", async () => {
+    await open();
+    const t0 = Date.now();
+    expect(await act({ do: "tree", id: "cntlIMAGE/shell", node: "F00003", how: "select" })).toBe("tree select F00003");
+    // The click on the element without a size waited 5 s.
+    expect(Date.now() - t0).toBeLessThan(3000);
+    expect(await inPage<string>("window.node")).toBe("F00003");
+    const full = await fullView();
+    expect(full).toContain("    Default Workbook (selected)  {node F00003}");
+    expect(full).toContain("  [-] Favorites  {node Favo}");
   });
 
   test("a wrong dropdown key is answered with the entries as the list writes them", async () => {
