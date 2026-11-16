@@ -31,7 +31,7 @@ import { LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
 import { chooseEntry, entriesOf, markScrolled, notOnScreen, scrollTo, selectRow } from "./lists.js";
 import { extractFacts, markControl, markRow, markSelector, openOverlay, scrollControl, topWindowOpen } from "./page.js";
 import { checkBeforeAct, focusOf, freshView, guardFacts, isDropdown, kindIn, LOGGED_OFF, loggedOff, look, lookRead, menuLines, readViewer, resolveIn, type ScreenRead, scrollables, viewerFrames } from "./screen.js";
-import { IDLE_TIMEOUT_MS, MAX_IDLE_TIMEOUT_MS, noTiming, timingText, type WebGuiSession } from "./session.js";
+import { IDLE_TIMEOUT_MS, LEAVE_MS, MAX_IDLE_TIMEOUT_MS, noTiming, timingText, type WebGuiSession } from "./session.js";
 
 export { setRefusal } from "./controls.js";
 export { LOCAL_KEY, nothingSent, vkey } from "./keys.js";
@@ -475,12 +475,13 @@ async function actHtml(session: WebGuiSession, a: Action): Promise<string> {
   const { tag, type } = await loc.evaluate((e) => ({ tag: e.tagName, type: e.tagName === "INPUT" ? (e as HTMLInputElement).type || "text" : "" }));
   const refusal = htmlRefusal(a.do, tag, type, id);
   if (refusal) throw new ActionError(refusal);
+  const before = session.posts;
   if (a.do === "combo" || (a.do === "set" && tag === "SELECT")) {
     const want = String(a.key ?? a.value ?? "");
     const r = await loc
       .selectOption(want)
       .catch(() => loc.selectOption({ label: want }));
-    await session.waitRoundtrip(1500);
+    await session.waitRoundtrip(1500, before, LEAVE_MS);
     return `selected ${r.join(",")} in ${id}`;
   }
   if (a.do === "set") await loc.fill(String(a.value ?? ""));
@@ -488,6 +489,7 @@ async function actHtml(session: WebGuiSession, a: Action): Promise<string> {
   else if (a.do === "check")
     await loc.setChecked(wantsOn(a.value));
   else await loc.click();
-  await session.waitRoundtrip(1200);
+  // The viewer's frame tells Web GUI by a message: its event reaches the queue a moment after the click.
+  await session.waitRoundtrip(1200, before, LEAVE_MS);
   return `${a.do} ${id}`;
 }

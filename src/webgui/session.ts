@@ -439,8 +439,12 @@ export class WebGuiSession {
    * it waits when the page does not draw (a busy machine, a tab in the
    * background). Then it waits for idle. First calls on a fresh system can
    * take long (ABAP loads compile), hence the generous idle timeout.
+   *
+   * `leaveMs`: for input that reaches Web GUI's queue by another way than
+   * its own handlers (a click inside an HTML viewer's frame is posted to the
+   * page as a message), the least time before "nothing was sent" is said.
    */
-  async waitRoundtrip(startMs = 1500, before = this.traffic.posts): Promise<void> {
+  async waitRoundtrip(startMs = 1500, before = this.traffic.posts, leaveMs = 0): Promise<void> {
     const t0 = Date.now();
     if (this.slow) startMs = Math.max(startMs, START_SLOW_MS);
     // A tab Chrome draws once a second hands input on late: there, only the long wait is safe.
@@ -464,7 +468,7 @@ export class WebGuiSession {
       }
       if (handled !== undefined) {
         if (st.queue === undefined && Date.now() - handled >= LEAVE_MS) break;
-        if (st.queue === "idle" && empty && this.traffic.posts === before) break;
+        if (st.queue === "idle" && empty && this.traffic.posts === before && Date.now() - handled >= leaveMs) break;
       }
       empty = handled !== undefined && st.queue === "idle";
       await this.pause(POLL_MS);
