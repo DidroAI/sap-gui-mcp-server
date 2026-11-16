@@ -498,7 +498,7 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
  */
 async function closedText(session: WebGuiSession, refusal: string): Promise<string> {
   const why = closedByMessage(await freshView(session).catch(() => ""));
-  return why ? `${refusal.replace(/\.$/, "")} for now: ${why}` : refusal;
+  return why ? `${refusal.replace(/\.$/, "")} now: ${why}` : refusal;
 }
 
 /**

@@ -78,7 +78,7 @@ export function withStatus(shown: string, view: string): string {
 
 /** What to do about a message of the status bar, by its type. */
 const STATUS_HINT: Record<string, string> = {
-  E: "error: SAP did not take the step. Correct the input it names, then Enter",
+  E: "error: correct the input it names, then Enter",
   W: "warning: Enter accepts it and goes on; SAP may keep the fields closed until then",
   A: "termination: SAP ended the transaction",
 };

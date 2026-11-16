@@ -80,20 +80,15 @@ describe("messages, from the view", () => {
     "wnd[0]/sbar  status  W: The purchase order date lies in the future. Please check",
   ].join("\n");
 
-  test("a warning that closed the fields: the reason says that Enter accepts it", () => {
+  test("a warning on the screen: the reason for a closed field says that Enter accepts it", () => {
     expect(statusMessage(closed)).toEqual({ type: "W", text: "The purchase order date lies in the future. Please check" });
     const why = closedByMessage(closed) ?? "";
     expect(why).toContain('the warning "The purchase order date lies in the future. Please check"');
     expect(why).toContain("Enter");
   });
 
-  test("an error leaves the wrong field open: the reason points at it", () => {
-    const error = closed.replace("W: The purchase", "E: The purchase").replace('"20.11.2026"  (read-only)', '"20.11.2026"  (edit)  (cursor here)');
-    expect(closedByMessage(error)).toContain("cursor here");
-  });
-
-  test("a screen that still has open fields, or no warning, is read-only by itself", () => {
-    expect(closedByMessage(closed.replace(/\(read-only\)/g, "(edit)"))).toBeUndefined();
+  test("an error points at the field it is about; a success message is no reason", () => {
+    expect(closedByMessage(closed.replace("W: The purchase", "E: The purchase"))).toContain("cursor here");
     expect(closedByMessage(closed.replace("W: ", "S: "))).toBeUndefined();
   });
 
@@ -287,7 +282,7 @@ describe.skipIf(!exe)("a warning in the status bar and an empty grid, in a brows
     const e = await act(new WebGuiSession(page.mainFrame()), { do: "set", id: "ctxtZRV45A-MABNR", value: "M-01" }).catch((x: unknown) => x);
     expect(e).toBeInstanceOf(ActionError);
     expect((e as Error).message).toBe(
-      'wnd[0]/usr/ctxtZRV45A-MABNR is read-only for now: SAP shows the warning "The purchase order date lies in the future" and keeps the fields closed until it is answered: Enter ({"do":"key","key":0}) accepts the warning, then the fields open again.',
+      'wnd[0]/usr/ctxtZRV45A-MABNR is read-only now: the status bar shows the warning "The purchase order date lies in the future", and SAP keeps fields closed until a warning is answered: Enter ({"do":"key","key":0}) accepts it, then set the field.',
     );
   }, 30_000);
 

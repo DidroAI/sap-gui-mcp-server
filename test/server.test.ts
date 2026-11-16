@@ -394,7 +394,7 @@ describe("the answer to an action", () => {
     expect(statusTop("NO CHANGE on the screen.\n= sbar  status  E: SD document 9 is not in the database", view)).toBeUndefined();
     expect(statusTop(view.replace("E: ", "S: "), view.replace("E: ", "S: "))).toBeUndefined();
     expect(statusTop(`${view.split("\n")[0]}\na\n${view.split("\n")[1]}`, view)).toBe(
-      "STATUS E: SD document 9 is not in the database  (error: SAP did not take the step. Correct the input it names, then Enter)",
+      "STATUS E: SD document 9 is not in the database  (error: correct the input it names, then Enter)",
     );
   });
 
