@@ -81,6 +81,7 @@ function fromWebGui(r: Request): boolean {
  * instead of it, and the wait took them for the round trip.
  *   [{"post":"focus/wnd[1]/usr/ctxtX","logic":"ignore"},{"post":"typeahead/..."}]   on the side
  *   [{"content":"1000","post":"value/wnd[1]/usr/ctxtX"},{"post":"action/304/..."}]  a step
+ *   [{"post":"focus/...","logic":"ignore"},{"content":"A04","post":"value/.../cmbX"},{"get":"state/ur"}]  a step (a dropdown)
  * A body that cannot be read counts as a step.
  */
 export function carriesStep(body: string | null | undefined): boolean {
@@ -92,11 +93,16 @@ export function carriesStep(body: string | null | undefined): boolean {
     return true;
   }
   if (!Array.isArray(posts)) return true;
+  // The request asks for the screen back: SAP then works on what it was sent.
+  const asksScreen = posts.some((p) => (p as { get?: unknown } | null)?.get === "state/ur");
   return posts.some((p) => {
     const post = (p as { post?: unknown } | null)?.post;
     if (typeof post !== "string") return false;
     if ((p as { logic?: unknown }).logic === "ignore") return false;
-    return !/^(value\/|focus\/|typea)/.test(post);
+    // A value that is not marked "ignore", sent with a request for the screen, is a step: a dropdown
+    // whose choice SAP acts on sends just that (the role of a business partner, the action of MIGO).
+    if (/^value\//.test(post)) return asksScreen;
+    return !/^(focus\/|typea)/.test(post);
   });
 }
 
