@@ -351,6 +351,8 @@ export function extractLook(limits: {
         )
           break;
         if (t) out(modal, `${sid}  label  ${t}`);
+        // A label that is an icon (the operator of a selection criterion, a status light): its tooltip says what it shows.
+        else if (tip || prop(ls, 0)) out(modal, `${sid}  label  icon "${tip || prop(ls, 0)}"`);
         break;
       }
       case "GuiCheckBox":

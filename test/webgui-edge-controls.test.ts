@@ -20,6 +20,12 @@ const FIELDS = `
 <input id="F2" title="Name" value="" lsdata="{0:'x',20:${sid("wnd[0]/usr/txtZHDR-NAME", "GuiTextField")}}" onkeydown="if(event.key==='Enter')window.entered=(window.entered||0)+1">
 <textarea id="TE1" ct="TE" rows="4" cols="40" onkeydown="if(event.key==='Enter')window.entered=(window.entered||0)+1" lsdata="{17:true,19:${sid("wnd[0]/usr/cntlTEXT/shellcont/shell", "GuiTextEdit")}}"></textarea>`;
 
+// MB51 after "Not equal to" was chosen for Material: the operator is an icon label before the field.
+const SELOPT = `
+<label id="SL1" f="SF1" lsdata="{1:'SF1',3:'Material',19:${sid("wnd[0]/usr/txt%_MATNR_%_APP_%-TEXT", "GuiLabel")}}">Material</label>
+<span ct="L" id="SI1" title="Select: Not equal to" tabindex="0" style="display:inline-block;width:16px;height:16px" lsdata="{0:'Select\\x3a\\x20Not\\x20equal\\x20to',8:true,19:${sid("wnd[0]/usr/txt%_MATNR_%_APP_%-OPTI_PUSH", "GuiLabel")}}"></span>
+<input id="SF1" value="M-17" lsdata="{0:'x',20:${sid("wnd[0]/usr/ctxtMATNR-LOW", "GuiCTextField")}}">`;
+
 const page0 = (body: string) => `<!doctype html><html lang="en"><head><title>Synthetic</title></head><body>${HEAD}${body}</body></html>`;
 
 describe.skipIf(!exe)("Web GUI reader: edge cases of round 3, in a browser", () => {
@@ -62,5 +68,12 @@ describe.skipIf(!exe)("Web GUI reader: edge cases of round 3, in a browser", () 
       'set wnd[0]/usr/ctxtZHDR-TYPE (the field takes 4 characters: it holds "ORDE", the last 1 of the 5 typed are cut)',
     );
     expect(await webguiActInFrame(f, { do: "set", id: "ctxtZHDR-TYPE", value: "OR" })).toBe("set wnd[0]/usr/ctxtZHDR-TYPE");
+  });
+
+  test("ECCSCR-06: the operator of a selection criterion, an icon before the field, is a line of the view", async () => {
+    await show(SELOPT);
+    const view = await full();
+    expect(view).toContain('wnd[0]/usr/txt%_MATNR_%_APP_%-OPTI_PUSH  label  icon "Select: Not equal to"');
+    expect(compact(view)).toContain('txt%_MATNR_%_APP_%-OPTI_PUSH  label  icon "Select: Not equal to"\nctxtMATNR-LOW  field  Material = "M-17"  (edit)');
   });
 });

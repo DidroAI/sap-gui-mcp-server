@@ -89,7 +89,7 @@ describe("compact", () => {
       'wnd[0]/usr/tblTAX/ctxtZTAX-ALAND[0,0]  field  Country = "AR"  (read-only)',
       'wnd[0]/usr/tblTAX/ctxtZTAX-TATYP[2,0]  field  Tax category = "J1AU"  (read-only)',
     ].join("\n");
-    expect(compact(t).split("\n")).toContain("  row 0: Country [col 1]=Argentina; Country [col 0]=AR; Tax category=J1AU");
+    expect(compact(t).split("\n")).toContain("  row 0: Country [col 0]=AR; Country [col 1]=Argentina; Tax category=J1AU");
   });
 
   test("a table control that is scrolled says which row its row 0 is", () => {
@@ -301,5 +301,38 @@ describe("compact: the screen behind a popup", () => {
   test("leaves a screen without popup alone", () => {
     const one = full.split("\n").slice(0, 6).join("\n");
     expect(compact(one)).toContain("btn[3]  button  Back (F3)");
+  });
+});
+
+describe("buttons in table cells (ECCSCR-06)", () => {
+  const T = "wnd[1]/usr/tblSEL";
+  const POPUP = [
+    "TRANSACTION ZT  PROGRAM ZP  SCREEN 1",
+    'WINDOW wnd[1]  "Multiple Selection"',
+    `${T}  table  rows 3 (visible 3); columns: Selection Options | Single value`,
+    `${T}/btnSOP_I[0,0]  button  Select: Not equal to`,
+    `${T}/ctxtSLOW_I[1,0]  field   = "M-17"  (edit)`,
+    `${T}/btnSOP_I[0,1]  button  Select: Include pattern`,
+    `${T}/ctxtSLOW_I[1,1]  field   = "M-1*"  (edit)`,
+    `${T}/btnSOP_I[0,2]  button  Selection of Selection Options`,
+    `${T}/ctxtSLOW_I[1,2]  field   = ""  (edit)`,
+  ].join("\n");
+
+  test("a button cell shows its text in a row that holds a value, when the column's buttons differ", () => {
+    const out = compact(POPUP).split("\n");
+    expect(out).toContain("  row 0: Selection Options=Select: Not equal to; Single value=M-17");
+    expect(out).toContain("  row 1: Selection Options=Select: Include pattern; Single value=M-1*");
+    // A row with its button only stays an empty row.
+    expect(out).toContain("  row 2: (empty)");
+  });
+
+  test("a column of equal buttons is not repeated in the rows", () => {
+    const same = POPUP.replace("Select: Not equal to", "Details").replace("Select: Include pattern", "Details").replace("Selection of Selection Options", "Details");
+    expect(compact(same).split("\n")).toContain("  row 0: Single value=M-17");
+  });
+
+  test("the cells of a row come in the order of the columns", () => {
+    const view = ["TRANSACTION ZT  PROGRAM ZP  SCREEN 1", 'WINDOW wnd[0]  "T"', "wnd[0]/usr/tblX  table  rows 1 (visible 1); columns: Item | Material | Next", 'wnd[0]/usr/tblX/txtN[2,0]  field  Next = "0"  (edit)', 'wnd[0]/usr/tblX/txtI[0,0]  field  Item = "10"  (edit)'].join("\n");
+    expect(compact(view).split("\n")).toContain("  row 0: Item=10; Next=0");
   });
 });
