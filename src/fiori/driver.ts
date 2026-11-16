@@ -50,6 +50,20 @@ const OPEN_HELP = 'open takes the intent of a launchpad app, e.g. {"do":"open","
 const within = <T>(p: Promise<T>, ms: number, otherwise: T): Promise<T> =>
   Promise.race([p.catch(() => otherwise), new Promise<T>((r) => setTimeout(() => r(otherwise), ms))]);
 
+/** Is the iframe of this frame drawn (not hidden by the launchpad, not of zero size)? A frame that cannot say counts as shown. */
+export async function frameShown(f: Pick<Frame, "frameElement">): Promise<boolean> {
+  const ask = async () => {
+    const el = await f.frameElement();
+    return el.evaluate((node) => {
+      const e = node as Element;
+      const s = getComputedStyle(e);
+      const r = e.getBoundingClientRect();
+      return s.visibility !== "hidden" && s.display !== "none" && r.width > 0 && r.height > 0;
+    });
+  };
+  return within(Promise.resolve().then(ask), 3000, true);
+}
+
 /** What the top frame knows about itself; never throws, never waits long. */
 export async function pageInfo(page: Page): Promise<Ui5Info> {
   const none: Ui5Info = { ui5: false, launchpad: false, title: "", sources: {} };
@@ -122,8 +136,10 @@ export class FioriDriver implements Driver {
         5000,
         "",
       );
-      if (!top && (isWebguiUrl(f.url()) || kind === "webgui")) webguiFrames.push(f);
-      else if (kind === "ui5") ui5.push(f);
+      if (!top && (isWebguiUrl(f.url()) || kind === "webgui")) {
+        // The launchpad keeps the frame of a Web GUI app it left, hidden: that screen is not on screen, and no key may go to it.
+        if (await frameShown(f)) webguiFrames.push(f);
+      } else if (kind === "ui5") ui5.push(f);
     }
     return { ui5, webgui: webguiFrames };
   }

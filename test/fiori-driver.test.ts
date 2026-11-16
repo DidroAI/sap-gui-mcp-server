@@ -153,6 +153,17 @@ describe("fiori driver: open, Back and unknown keys", () => {
   });
 });
 
+describe("fiori driver: a Web GUI frame the launchpad keeps hidden", () => {
+  const frame = (answer: boolean | "throws") => ({ frameElement: async () => ({ evaluate: async () => (answer === "throws" ? Promise.reject(new Error("detached")) : answer) }) }) as never;
+  test("is not a screen: keys and looks do not go there", async () => {
+    const { frameShown } = await import("../src/fiori/driver.js");
+    expect(await frameShown(frame(false))).toBe(false);
+    expect(await frameShown(frame(true))).toBe(true);
+    // a frame that cannot say is treated as before
+    expect(await frameShown(frame("throws"))).toBe(true);
+  });
+});
+
 describe("fiori driver: screenshot", () => {
   test("a tab in the background is brought to the front, then tried once more", async () => {
     const fake = fresh({ background: true });
