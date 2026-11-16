@@ -28,6 +28,7 @@ import { LOGON_REFUSAL, okcodeKind } from "../core/words.js";
 import { assessAction, popupButton, questionRefusal } from "./assess.js";
 import { checkedNow, clean, clickForRoundtrip, clickListLine, clickMenuRow, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlLook, pressOverflow, setCalendar, setRefusal, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
 import { collectFiles, watchFiles } from "./files.js";
+import { GAVE_UP, gaveUpOn, NO_CANCEL, stillRunning } from "./running.js";
 import { LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
 import { chooseEntry, entriesOf, markScrolled, notOnScreen, scrollTo, selectRow } from "./lists.js";
 import { extractFacts, markControl, markRow, markSelector, menuRowOpen, openOverlay, scrollControl, topWindowOpen } from "./page.js";
@@ -135,6 +136,9 @@ export async function act(session: WebGuiSession, a: Action): Promise<string> {
 async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
   await checkBeforeAct(session);
   const w0 = Date.now();
+  // A step an earlier action gave up on is still running: said at once, not after waiting for it (running.ts).
+  const busy = stillRunning(session, await session.locked().catch(() => undefined));
+  if (busy) throw new ActionError(busy);
   await session.wake();
   session.timing.wake = Date.now() - w0;
   // A long step (a report started with F8) can be given more time: "timeout" in seconds.
@@ -156,11 +160,22 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
     const note = [done, ...(nothing ? [nothing] : []), ...files].join("\n");
     return session.unsettled ? `${note}\n(Web GUI still showed its loading sign when the server stopped waiting: the step may not be over. If the screen below is not what the step should lead to, look again in a moment.)` : note;
   } catch (e) {
+    // SAP outlasted the wait: the step goes on, and the next action is told so without waiting (running.ts).
+    if (e instanceof ActionError && e.message.startsWith(GAVE_UP)) {
+      gaveUpOn(session, actionLabel(a), w0);
+      throw new ActionError(`${e.message} ${NO_CANCEL}`);
+    }
     throw tidy(e);
   } finally {
     session.view = undefined;
     session.idleTimeoutMs = IDLE_TIMEOUT_MS;
   }
+}
+
+/** An action in a few words, for a message about it: `key 8`, `press wnd[0]/tbar[1]/btn[8]`, `okcode /nVA05`. */
+function actionLabel(a: Action): string {
+  const arg = a.do === "key" ? (a.key ?? a.value) : a.do === "okcode" ? a.value : a.id;
+  return `${a.do}${arg === undefined ? "" : ` ${String(arg)}`}`.slice(0, 80);
 }
 
 /** Is the action the Escape key (also as key 12 or F12, Cancel)? */
