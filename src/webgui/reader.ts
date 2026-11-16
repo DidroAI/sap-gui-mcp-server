@@ -27,7 +27,7 @@ import { readRows } from "../core/rows.js";
 import { ActionError, type Action, type Assessment, type LookOptions } from "../core/types.js";
 import { LOGON_REFUSAL, okcodeKind } from "../core/words.js";
 import { assessAction, popupButton, questionRefusal } from "./assess.js";
-import { checkedNow, clean, clickForRoundtrip, clickListLine, clickMenuRow, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlAct, noControlLook, openTextCell, pressOverflow, setCalendar, setRefusal, setTokenField, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
+import { checkedNow, clean, clickForRoundtrip, clickListLine, clickMenuRow, MenuGone, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlAct, noControlLook, openTextCell, pressOverflow, setCalendar, setRefusal, setTokenField, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
 import { collectFiles, watchFiles } from "./files.js";
 import { GAVE_UP, gaveUpOn, NO_CANCEL, stillRunning } from "./running.js";
 import { LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
@@ -336,8 +336,10 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
             await clickForRoundtrip(session, sid, true, true);
             return `key ${k} (pressed ${sid})`;
           }
-        // A popup without a Cancel button (it has no button at all): Cancel is the x in its title.
-        if (top > 0 && n === 12 && (await closeWindow(session))) return `key ${k} (the popup has no Cancel button: closed it with the x in its title)`;
+        // A popup whose toolbar has no Cancel (no button at all, or its answers sit in its body: Yes / No /
+        // Cancel): the x in its title is SAP's Cancel for a popup. The answer says what was done, and claims
+        // nothing about the popup's buttons.
+        if (top > 0 && n === 12 && (await closeWindow(session))) return `key ${k} (closed the popup with the x in its title, which cancels it: nothing was answered)`;
         // No such button in the popup: give the popup the keyboard focus (a click on its title bar
         // does nothing else), so the key reaches it and not the screen behind.
         if (top > 0) {
@@ -661,18 +663,32 @@ async function chooseSearchHelp(session: WebGuiSession, sid: string, wanted: unk
   if (!hit) throw new ActionError(`no search help "${clean(String(wanted))}" in ${sid}: ${listed}`);
   if (hit.selected) return `${sid} already shows "${hit.text}": nothing changed`;
   // The menu opens a moment after the click (300 ms was not always enough, measured on ECC): its row is waited
-  // for (0.6 s, then 1.5 s), and the button is clicked once more when the first click opened nothing.
+  // for (0.6 s, then 1.5 s), and the button is clicked once more when the first click opened nothing. A first
+  // click that was only late makes the second one close the menu again (the button is a toggle): the row was
+  // seen open and is gone when it is clicked (measured: 1 choice of 14). Then the menu is opened again.
   const row = `${hit.dom}-menuItem`;
-  let open = false;
-  for (let attempt = 0; attempt < 2 && !open; attempt++) {
-    await session.frame.locator(`[id="${helps.opener}"]`).first().click({ timeout: 3000 });
-    // The first click is often lost right after the popup was drawn again (measured: about every second time).
-    for (let i = 0; i < (attempt === 0 ? 6 : 15) && !open; i++) {
-      await session.page.waitForTimeout(100);
-      open = !!(await session.frame.evaluate(menuRowOpen, row).catch(() => ""));
+  const rowOpen = async () => !!(await session.frame.evaluate(menuRowOpen, row).catch(() => ""));
+  let chosen = false;
+  for (let round = 0; round < 3 && !chosen; round++) {
+    let open = await rowOpen();
+    for (let attempt = 0; attempt < 2 && !open; attempt++) {
+      await session.frame.locator(`[id="${helps.opener}"]`).first().click({ timeout: 3000 });
+      // The first click is often lost right after the popup was drawn again (measured: about every second time).
+      for (let i = 0; i < (attempt === 0 ? 6 : 15) && !open; i++) {
+        await session.page.waitForTimeout(100);
+        open = await rowOpen();
+      }
     }
+    if (!open) break;
+    // Still open a moment later: a menu that a late click is closing is not clicked into.
+    await session.page.waitForTimeout(150);
+    if (!(await rowOpen())) continue;
+    chosen = await clickMenuRow(session, row).catch((e: unknown) => {
+      if (e instanceof MenuGone) return false;
+      throw e;
+    });
   }
-  if (!open || !(await clickMenuRow(session, row))) {
+  if (!chosen) {
     if (await session.frame.evaluate(openOverlay).catch(() => "")) await session.page.keyboard.press("Escape");
     throw new ActionError(`the menu of search helps of ${sid} did not open, so nothing was chosen. Look at the screen.`);
   }
