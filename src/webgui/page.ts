@@ -799,6 +799,8 @@ export function extractLook(limits: {
     if (!visible(tr) || !inView(tr) || tr.id.startsWith("sysInfoArea")) continue;
     const text = norm((tr as HTMLElement).innerText);
     const own = tr.id.startsWith("wnd[") ? "" : info(tr).sid;
+    // Web GUI's own entries under the menu bar of S/4HANA 2025 (Expand menu, File Browser, Settings, About) are not SAP's.
+    if (/^wnd\[\d+\]\/mbar\/(\[\d+\])?$/.test(own)) continue;
     if (text || own) out(0, `${own.startsWith("wnd[") ? own : tr.id}  menu  ${text}`);
   }
 
