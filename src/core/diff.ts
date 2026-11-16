@@ -16,7 +16,8 @@
  * line that is gone, `=` an unchanged line shown for context: the control
  * whose rows follow. A line is a control (keyed by its id) or a row of the
  * control above it. A control whose rows changed for the most part is given
- * whole: `~` its line, then all its rows as they are now.
+ * whole: `~` its line, then all its rows as they are now. Four or more fields
+ * that only closed for input (or opened again) share one line.
  */
 
 /** The id of a control line: everything before the first two spaces. */
@@ -82,6 +83,46 @@ export function sameScreen(a: string, b: string): boolean {
   return frame(a) === frame(b);
 }
 
+interface Flip {
+  /** Where the control's line is in the diff. */
+  at: number;
+  id: string;
+}
+
+const CURSOR = "  (cursor here)";
+
+/**
+ * Did this control only close for input ("closed") or open again ("opened")?
+ * SAP closes every field of a screen while it shows a warning or an error,
+ * and opens them when the message is answered: the value did not change.
+ */
+function inputFlip(before: string, after: string): "closed" | "opened" | undefined {
+  const a = before.replace(CURSOR, "");
+  const b = after.replace(CURSOR, "");
+  if (a.includes("  (edit)") && a.replace("  (edit)", "  (read-only)") === b) return "closed";
+  if (a.includes("  (read-only)") && a.replace("  (read-only)", "  (edit)") === b) return "opened";
+  return undefined;
+}
+
+/** From this many fields on, fields that only closed or opened share one line of the diff. */
+const FOLD_FROM = 4;
+
+/**
+ * Many fields that only closed for input (or opened again) become one line
+ * that counts and names them, in place of the first: twenty lines that say
+ * "read-only" hide the message that closed them.
+ */
+function foldFlips(out: string[], flips: Flip[], what: string): string[] {
+  if (flips.length < FOLD_FROM) return out;
+  const drop = new Set(flips.map((f) => f.at));
+  const first = flips[0]?.at;
+  const ids = flips.map((f) => f.id.replace(/#\d+$/, ""));
+  const line = `~ ${flips.length} fields ${what}: ${ids.slice(0, 3).join(", ")}${ids.length > 3 ? ", ..." : ""}`;
+  // Indexes are kept (a second fold counts in the same lines): a folded line leaves GONE, removed at the end.
+  return out.map((l, i) => (i === first ? line : drop.has(i) ? GONE : l));
+}
+const GONE = "\u0000";
+
 export interface ViewDiff {
   /** The diff as text, with its header line. */
   text: string;
@@ -100,6 +141,9 @@ export function diffViews(prev: string, next: string, since = ""): ViewDiff {
   const out: string[] = [];
   let changed = 0;
   const seen = new Set<string>();
+  // Fields whose only change is that they closed for input, or opened again (see foldFlips).
+  const closed: Flip[] = [];
+  const opened: Flip[] = [];
   for (const b of blocks(next)) {
     seen.add(b.key);
     const old = before.get(b.key);
@@ -112,6 +156,8 @@ export function diffViews(prev: string, next: string, since = ""): ViewDiff {
     const rowsSame = old.rows.length === b.rows.length && old.rows.every((r, i) => r === b.rows[i]);
     if (!headChanged && rowsSame) continue;
     if (rowsSame) {
+      const flip = inputFlip(old.head, b.head);
+      if (flip) (flip === "closed" ? closed : opened).push({ at: out.length, id: b.key });
       out.push(`~ ${b.head}`);
       changed++;
       continue;
@@ -149,5 +195,6 @@ export function diffViews(prev: string, next: string, since = ""): ViewDiff {
       out.push(`- ${b.head}`);
       changed += 1 + b.rows.length;
     }
-  return { text: [`CHANGED ${changed} of ${total} lines${since} (same screen; sap_look shows all of it):`, ...out].join("\n"), changed };
+  const lines = foldFlips(foldFlips(out, closed, "closed for input (read-only now), values as before"), opened, "open for input again (edit), values as before").filter((l) => l !== GONE);
+  return { text: [`CHANGED ${changed} of ${total} lines${since} (same screen; sap_look shows all of it):`, ...lines].join("\n"), changed };
 }

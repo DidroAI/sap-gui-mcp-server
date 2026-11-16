@@ -4,7 +4,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { policyFromEnv } from "../src/core/guard.js";
 import type { Action, Assessment } from "../src/core/types.js";
-import { createServer, withStatus } from "../src/server.js";
+import { createServer, statusTop, withStatus } from "../src/server.js";
 import { FakeSurface } from "./fakes.js";
 
 /** Save (key 11) commits; everything else navigates. */
@@ -372,6 +372,30 @@ describe("the answer to an action", () => {
     const r = await call("sap_act", { action: { do: "key", key: 0 } });
     expect(r.text).toContain("NO CHANGE");
     expect(r.text).toContain("= sbar  status  E: SD document 9 is not in the database");
+  });
+
+  test("a warning or an error of the status bar is the second line of the answer, with what to do", async () => {
+    const fields = Array.from({ length: 12 }, (_, i) => `ctxtZ-F${i}  field  F${i} = "v"  (edit)`);
+    const before = ["TRANSACTION VA02  PROGRAM SAPMV45A  SCREEN 4001", ...fields].join("\n");
+    const { surface, call } = await setup();
+    const s = surface.add({ id: "chrome:1", system: "ABA" }, { view: before });
+    await call("sap_look");
+    s.view = [...before.replace(/\(edit\)/g, "(read-only)").split("\n"), "sbar  status  W: The default date is not copied into existing schedule lines"].join("\n");
+    const lines = (await call("sap_act", { action: { do: "key", key: 0 } })).text.split("\n");
+    expect(lines[1]).toBe("STATUS W: The default date is not copied into existing schedule lines  (warning: Enter accepts it and goes on; SAP may keep the fields closed until then)");
+    expect(lines[2]).toBe("");
+    // The fields the warning closed are one line, not twelve.
+    expect(lines.length).toBeLessThan(8);
+    expect(lines.join("\n")).toContain("~ 12 fields closed for input");
+  });
+
+  test("statusTop: nothing for a success message, or when the status line is already at the top of the answer", () => {
+    const view = "TRANSACTION VA03  PROGRAM SAPMV45A  SCREEN 102\nsbar  status  E: SD document 9 is not in the database";
+    expect(statusTop("NO CHANGE on the screen.\n= sbar  status  E: SD document 9 is not in the database", view)).toBeUndefined();
+    expect(statusTop(view.replace("E: ", "S: "), view.replace("E: ", "S: "))).toBeUndefined();
+    expect(statusTop(`${view.split("\n")[0]}\na\n${view.split("\n")[1]}`, view)).toBe(
+      "STATUS E: SD document 9 is not in the database  (error: SAP did not take the step. Correct the input it names, then Enter)",
+    );
   });
 
   test('"timing": true adds where the time went, and is not part of the action', async () => {

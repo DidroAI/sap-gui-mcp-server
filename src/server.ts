@@ -76,6 +76,26 @@ export function withStatus(shown: string, view: string): string {
   return `${shown}\n= ${status}`;
 }
 
+/** What to do about a message of the status bar, by its type. */
+const STATUS_HINT: Record<string, string> = {
+  E: "error: SAP did not take the step. Correct the input it names, then Enter",
+  W: "warning: Enter accepts it and goes on; SAP may keep the fields closed until then",
+  A: "termination: SAP ended the transaction",
+};
+
+/**
+ * An error, a warning or a termination in the status bar is the first thing
+ * the answer says, with what to do about it: in the view the status bar is
+ * the last line, after every field the message closed. This is that line,
+ * to go right under the action's note; undefined when there is no such
+ * message, or the answer already has the status line within its first lines.
+ */
+export function statusTop(shown: string, view: string): string | undefined {
+  const m = /^(?:wnd\[0\]\/)?sbar {2}status {2}([EWA]): (.*)$/m.exec(view);
+  if (!m || shown.split("\n").slice(0, 2).some((l) => l.endsWith(m[0]))) return undefined;
+  return `STATUS ${m[1]}: ${m[2]}  (${STATUS_HINT[m[1] as string]})`;
+}
+
 /** What the user was shown when asked to confirm: the action runs only if all of it still holds. */
 interface Shown {
   session: string;
@@ -323,7 +343,9 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
       return fail(`${done}\nThis led to a transaction the agent may not work in: ${landed}. ${left}\n\n${screen}`);
     }
     const { v, n } = await note(() => d.look({ compact: true }));
-    return text(`${n}\n\n${withStatus(views.present(session, v, whole), v)}`);
+    const shown = withStatus(views.present(session, v, whole), v);
+    const top = statusTop(shown, v);
+    return text(`${n}${top ? `\n${top}` : ""}\n\n${shown}`);
   }
 
   /** The session as it is now, and what the guard says about this action on it. */

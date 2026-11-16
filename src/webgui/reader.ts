@@ -29,7 +29,7 @@ import { assessAction, popupButton, questionRefusal } from "./assess.js";
 import { checkedNow, clean, clickForRoundtrip, clickListLine, clickMenuRow, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlLook, pressOverflow, setCalendar, setRefusal, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
 import { LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
 import { chooseEntry, entriesOf, markScrolled, notOnScreen, scrollTo, selectRow } from "./lists.js";
-import { behindPopup, popupName, terminationIn, topPopup, transactionOf } from "./popups.js";
+import { behindPopup, closedByMessage, popupName, terminationIn, topPopup, transactionOf } from "./popups.js";
 import { extractFacts, extractMenus, markControl, markRow, markSelector, menuRowOpen, openOverlay, submenuOpen, scrollControl, topWindowOpen } from "./page.js";
 import { checkBeforeAct, focusOf, freshView, guardFacts, isDropdown, kindIn, LOGGED_OFF, loggedOff, look, lookRead, menuLines, readViewer, resolveIn, type ScreenRead, scrollables, viewerFrames } from "./screen.js";
 import { IDLE_TIMEOUT_MS, LEAVE_MS, MAX_IDLE_TIMEOUT_MS, noTiming, timingText, type WebGuiSession } from "./session.js";
@@ -416,7 +416,7 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
         return run(session, { ...a, do: "combo", key: a.value });
       const refusal = setRefusal(c);
       if (refusal) throw new ActionError(refusal);
-      if (c.readonly) throw new ActionError(`${c.sid} is read-only`);
+      if (c.readonly) throw new ActionError(await closedText(session, `${c.sid} is read-only`));
       await typeInto(session, loc, String(a.value ?? ""));
       return `set ${c.sid}`;
     }
@@ -454,7 +454,7 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       if (c.type !== "GuiCheckBox" && c.type !== "GuiRadioButton" && c.type !== "ABAPLISTCHECKBOX")
         throw new ActionError(`${c.sid} is a ${typeName(c.type)}, not a checkbox: use "press" for a button, "select" for a tab, {"do":"select","id":<table>,"row":N} for a row.`);
       const on = wantsOn(a.value);
-      if (c.readonly) throw new ActionError(`${c.sid} cannot be changed here: it is greyed out (read-only). It stays ${c.checked ? "checked" : "unchecked"}.`);
+      if (c.readonly) throw new ActionError(await closedText(session, `${c.sid} cannot be changed here: it is greyed out (read-only). It stays ${c.checked ? "checked" : "unchecked"}.`));
       if (c.type === "GuiRadioButton" && !on) throw new ActionError(`${c.sid} is a radio button: it is turned off by selecting another one of its group.`);
       if (c.checked === on) return `${c.sid} was already ${on ? "checked" : "unchecked"}: nothing changed`;
       await session.roundtrip(() => loc.click(), 800);
@@ -474,12 +474,22 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
         const entries = await entriesOf(session, c.sid);
         return entries.length ? `${c.sid} has ${entries.length} entries: ${entries.map((e) => `${e.key}:${e.text}`).join(", ")}` : `${c.sid} has no entries`;
       }
-      if (c.readonly) throw new ActionError(`${c.sid} is read-only: its entry cannot be changed here.`);
+      if (c.readonly) throw new ActionError(await closedText(session, `${c.sid} is read-only: its entry cannot be changed here.`));
       return chooseEntry(session, c, loc, a.key ?? a.value);
     }
     default:
       throw new ActionError(`unknown action ${a.do}`);
   }
+}
+
+/**
+ * The refusal for a control that takes no input, with the reason when it is
+ * a message: SAP closes the fields of a screen while its status bar shows a
+ * warning or an error, and the agent must know that Enter (or a correction) opens them.
+ */
+async function closedText(session: WebGuiSession, refusal: string): Promise<string> {
+  const why = closedByMessage(await freshView(session).catch(() => ""));
+  return why ? `${refusal.replace(/\.$/, "")} for now: ${why}` : refusal;
 }
 
 /** How long a menu entry may take to be drawn after its menu was opened. */
