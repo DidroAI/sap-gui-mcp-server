@@ -47,6 +47,14 @@ describe("the popup in front, from the view", () => {
     expect(behindPopup(VIEW.split("\nWINDOW wnd[1]")[0] as string, "wnd[0]/tbar[0]/btn[11]", "press")).toBeUndefined();
   });
 
+  test("a control of the popup whose id names the main window is not behind the popup", () => {
+    // The Performance Assistant: window 1, buttons with ids of window 0.
+    const view = `${VIEW.split("\nWINDOW wnd[1]")[0]}\nWINDOW wnd[1]  "Performance Assistant"\nwnd[0]/dialogshell/shell/shellcont[0]/shell/btnCLOSE  button  Close`;
+    expect(behindPopup(view, "wnd[0]/dialogshell/shell/shellcont[0]/shell/btnCLOSE", "press")).toBeUndefined();
+    expect(behindPopup(view, "wnd[0]/tbar[0]/btn[11]", "press")).toContain('wnd[1] "Performance Assistant" (its buttons: btnCLOSE "Close")');
+    expect(behindPopup(view, "wnd[0]/mbar/menu[0]/menu[1]", "select")).toContain("is behind a popup");
+  });
+
   test("the popup's name lists its buttons by the handles of the view", () => {
     expect(popupName(VIEW, topPopup(VIEW)!)).toBe('wnd[1] "Exit delivery processing" (its buttons: btnSPOP-OPTION1 "Yes", btnSPOP-OPTION2 "No", btnSPOP-OPTION_CAN "Cancel")');
   });
