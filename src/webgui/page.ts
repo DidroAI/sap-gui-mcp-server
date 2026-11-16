@@ -65,11 +65,12 @@ export function extractLook(limits: {
       /SID:'((?:[^'\\]|\\.)*)'/.exec(ls)?.[1];
     const type = /[{,]Type:'([^']*)'/.exec(ls)?.[1] ?? "";
     // lsdata escapes a backslash twice (tabpT\\08 is the id tabpT\08).
+    // S/4HANA 2025 writes ModalNo only on the window itself: a control's window is then the one its id names.
     return {
       ls,
       sid: raw ? raw.replace(/\\\\/g, "\\") : "",
       type,
-      modal: Number(/ModalNo:(\d+)/.exec(ls)?.[1] ?? 0),
+      modal: Number(/ModalNo:(\d+)/.exec(ls)?.[1] ?? /^wnd\[(\d+)\]/.exec(raw ?? "")?.[1] ?? 0),
     };
   };
   const visible = (el: Element) => {
@@ -234,18 +235,25 @@ export function extractLook(limits: {
       1,
     ) || norm(document.title),
   );
+  // A popup window is ct="PW" on ECC and ct="PW_standards" on S/4HANA 2025 (its title in the new header):
+  // any ct that starts with PW, and any element that says it is a modal window.
   for (const el of Array.from(
-    document.querySelectorAll("[ct='PW'][data-ls]"),
+    document.querySelectorAll("[ct^='PW'][data-ls],[data-ls*=\"Type:'GuiModalWindow'\"]"),
   )) {
     const i = info(el);
     if (!i.modal || !visible(el)) continue;
     const t = norm(
-      (document.getElementById(`${el.id}-ttltxt`) as HTMLElement | null)
-        ?.innerText,
+      (
+        (document.getElementById(`${el.id}-ttltxt`) ??
+          document.getElementById(`${el.id}-header-title-txt`) ??
+          el.querySelector(".urPWTitleText,[role='heading']")) as HTMLElement | null
+      )?.innerText,
     );
     if (t && !titles.has(i.modal)) titles.set(i.modal, t);
     const x = document.getElementById(`${el.id}-close`);
     if (x && visible(x)) closable.add(i.modal);
+    // A popup with nothing the view lists (a text only) is still a window that blocks the screen.
+    if (!lines.has(i.modal)) lines.set(i.modal, []);
   }
 
   /** A row selector cell (subct SC) shows a selected row with a "Sel" icon class, an unselected one with "UnSel". */
@@ -319,8 +327,10 @@ export function extractLook(limits: {
       : "";
 
   for (const el of Array.from(document.querySelectorAll("[data-ls]"))) {
-    const { ls, sid, type, modal } = info(el);
-    if (!sid || !type) continue;
+    const { ls, sid, type: ownType, modal } = info(el);
+    if (!sid || !ownType) continue;
+    // The value help dialog of S/4HANA 2025 types its OK and Cancel buttons as the dialog (GuiSearchHelp, SubType toolbar).
+    const type = ownType === "GuiSearchHelp" && el.getAttribute("ct") === "B" ? "GuiButton" : ownType;
     const button = type === "GuiButton" || type === "GuiToggleButton" || type === "GuiDropDownButton";
     // A grid is read whole, except its own toolbar: those buttons are controls of their own.
     if (inHandled(el) && !(button && /\/tbar\/[^/]+$/.test(sid))) continue;
@@ -334,13 +344,23 @@ export function extractLook(limits: {
       case "GuiCTextField":
       case "GuiTextField":
       case "GuiPasswordField": {
-        if (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA") break;
+        // S/4HANA 2025 draws a table cell as a text box that is not an input (<span role="textbox">) until it
+        // is clicked: it is the field all the same, with its value as its text.
+        const drawnAsText = el.tagName !== "INPUT" && el.tagName !== "TEXTAREA";
+        if (drawnAsText && el.getAttribute("role") !== "textbox") break;
+        let colTitle = "";
         if (/\/tbl[^/]+\/[^/]+\[\d+,\d+\]$/.test(sid)) {
           // A table-control cell (the input inside the cell).
           const tbl = el.closest("[data-ls*=\"Type:'GuiTableControl'\"]");
           if (tbl && !inView(el, tbl.getBoundingClientRect())) break;
+          // S/4HANA 2025 gives a cell no tooltip: it is named by its column's title.
+          if (tbl && !tip) {
+            const c = el.closest("td[lsmatrixcolindex]")?.getAttribute("lsmatrixcolindex");
+            const th = c ? Array.from(tbl.querySelectorAll("th[lsmatrixcolindex]")).find((x) => x.getAttribute("lsmatrixcolindex") === c) : undefined;
+            colTitle = headTitle(th);
+          }
         }
-        const lab = nameOf(el, sid);
+        const lab = nameOf(el, sid) || (tip ? "" : colTitle);
         if (lab) usedLabels.add(el.id);
         const described = describedBy.get(el.id);
         const ro = fieldLocked(el);
@@ -348,7 +368,7 @@ export function extractLook(limits: {
         const secret =
           type === "GuiPasswordField" ||
           (h as HTMLInputElement).type === "password";
-        const val = secret ? (h.value ? "***" : "") : norm(h.value ?? "");
+        const val = secret ? (h.value ? "***" : "") : norm(drawnAsText ? h.innerText : (h.value ?? ""));
         // A required entry: Web GUI marks the field or its label (aria-required, a --required class); SAP GUI draws a "?" in it.
         const lbl = labelEl.get(el.id);
         const required =
@@ -357,7 +377,7 @@ export function extractLook(limits: {
             /--required\b|Required\b|urEdf2Req/.test(`${el.closest(".lsField")?.className ?? ""} ${el.className} ${lbl?.className ?? ""} ${lbl?.firstElementChild?.className ?? ""}`));
         out(
           modal,
-          `${sid}  field  ${lab || tip} = "${val}"${described && !secret ? ` ${described}` : ""}  (${ro ? "read-only" : "edit"})${required ? "  required" : ""}${cursorTold && document.activeElement === el ? "  (cursor here)" : ""}`,
+          `${sid}  field  ${lab || tip || norm(el.getAttribute("aria-label")) || norm(el.getAttribute("placeholder"))} = "${val}"${described && !secret ? ` ${described}` : ""}  (${ro ? "read-only" : "edit"})${required ? "  required" : ""}${cursorTold && document.activeElement === el ? "  (cursor here)" : ""}`,
         );
         break;
       }
@@ -540,8 +560,9 @@ export function extractLook(limits: {
           el.querySelectorAll("td[data-ls*=\"Type:'SAPTABLECSCELL'\"]"),
         )) {
           const ci = info(td);
+          // A cell that holds a control of its own (an input, a checkbox, the text box of S/4HANA 2025) is listed as that control.
           if (
-            td.querySelector("input,[data-ls*='GuiCheckBox']") ||
+            td.querySelector("input,[data-ls*='GuiCheckBox'],[role='textbox'][data-ls*='SID:']") ||
             !inView(td, box)
           )
             continue;
@@ -555,6 +576,7 @@ export function extractLook(limits: {
         break;
       }
       case "GuiGridView":
+      case "GuiValueHelpResult":
       case "GuiSearchHelpResult": {
         handled.push(el);
         const colIds = (/ColumnI[dD]s:\[([^\]]*)\]/.exec(ls)?.[1] ?? "")
@@ -788,6 +810,20 @@ export function extractLook(limits: {
         out(modal, `${sid}  field  ${norm((lab as HTMLElement | undefined)?.innerText) || tip} = "${norm(h.value ?? "")}"  (${ro ? "read-only" : "edit"})`);
         break;
       }
+      case "GuiSearchHelpHeaderItem": {
+        // A filter of the value help dialog of S/4HANA 2025: a token field, named in its lsdata (LabelledBy).
+        // Its frame carries the same id: the innermost element is the field.
+        if (el.querySelector("[data-ls*=\"Type:'GuiSearchHelpHeaderItem'\"]")) break;
+        // While the dialog draws, a filter can be in the page twice: it is listed once.
+        if (lines.get(modal)?.some((l) => l.startsWith(`${sid}  `))) break;
+        // While it holds a value as a token it has no input: the token is its value.
+        const inp = el.querySelector("input") as HTMLInputElement | null;
+        const lab = unesc(/LabelledBy:'((?:[^'\\]|\\.)*)'/.exec(ls)?.[1] ?? "") || tip;
+        const tokens = Array.from(el.querySelectorAll("[ct='TOKEN']")).map((t) => norm((t as HTMLElement).innerText)).filter(Boolean);
+        const val = [...tokens, norm(inp?.value)].filter(Boolean).join(", ");
+        out(modal, `${sid}  field  ${lab} = "${val}"  (${fieldLocked(inp ?? el) ? "read-only" : "edit"})`);
+        break;
+      }
       case "GuiCalendar": {
         // The calendar of a date's value help: the date it holds is in its own field, which can be typed into.
         const date = el.querySelector("input[ct='I']") as HTMLInputElement | null;
@@ -951,13 +987,14 @@ export interface ClientPopup {
 export function extractClientPopups(): ClientPopup[] {
   const out: ClientPopup[] = [];
   const clean = (t: string | null | undefined) => (t ?? "").replace(/\s+/g, " ").replace(/^ | $/g, "");
-  for (const el of Array.from(document.querySelectorAll<HTMLElement>("div[ct='PW']"))) {
+  for (const el of Array.from(document.querySelectorAll<HTMLElement>("div[ct^='PW']"))) {
     const st = getComputedStyle(el);
     if (st.display === "none" || st.visibility === "hidden" || el.offsetWidth === 0) continue;
     // An SAP popup window holds controls with scripting ids; those are read by extractLook.
     if (el.querySelector("[lsdata*='wnd[']")) continue;
-    const title = clean(el.querySelector(".urPWTitleText")?.textContent);
-    const body = el.querySelector<HTMLElement>(".urPWContent");
+    // ECC, then the popup of S/4HANA 2025 (ct="PW_standards": a header with a heading, a content section).
+    const title = clean(el.querySelector(".urPWTitleText,[id$='-header-title-txt'],[role='heading']")?.textContent);
+    const body = el.querySelector<HTMLElement>(".urPWContent,.lsPWNewContentSection");
     const buttons = Array.from(el.querySelectorAll<HTMLElement>("[ct='B'],button,[role='button']"))
       .map((b) => clean(b.textContent))
       .filter((t) => t.length > 0);
@@ -1153,8 +1190,17 @@ export function extractViewer(a: { start: number; text: number }): {
  */
 export function normalizeLsdata(): number {
   const lit = (v: unknown): string => {
-    if (typeof v === "string")
+    if (typeof v === "string") {
+      // S/4HANA 2025 writes the ids of a table cell's input as JSON inside a string ("21":"{\"SID\":...}").
+      if (v.startsWith('{"SID":')) {
+        try {
+          return lit(JSON.parse(v));
+        } catch {
+          /* a text that only looks like it */
+        }
+      }
       return `'${v.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
+    }
     if (Array.isArray(v)) return `[${v.map(lit).join(",")}]`;
     if (v && typeof v === "object")
       return `{${Object.entries(v as Record<string, unknown>)
@@ -1190,10 +1236,12 @@ export interface MarkedControl {
   tag: string;
   /** For an input element: its type ("text", "password", ...); "" otherwise. */
   inputType: string;
-  /** A toolbar button behind the toolbar's ">>" button: the DOM id of that ">>" button; "" otherwise. */
+  /** A toolbar button behind the toolbar's ">>" button: the DOM id of that ">>" button (of the toolbar when it shows none); "" otherwise. */
   overflow: string;
   /** The button's DOM id ("" when not a button): its entry in the ">>" menu is "<id>-BtnMenu". */
   dom: string;
+  /** A field drawn as text until it is clicked (a table cell of S/4HANA 2025, <span role="textbox">): a click makes it an input. */
+  drawnAsText: boolean;
 }
 
 /** Runs in the Web GUI frame: marks the control an id names and describes it. */
@@ -1208,7 +1256,8 @@ export function markControl(ident: string): MarkedControl | string {
     return {
       sid: raw ? raw.replace(/\\\\/g, "\\") : "",
       type: /[{,]Type:'([^']*)'/.exec(ls)?.[1] ?? "",
-      modal: Number(/ModalNo:(\d+)/.exec(ls)?.[1] ?? 0),
+      // S/4HANA 2025 writes ModalNo only on the window itself: the control's window is the one its id names.
+      modal: Number(/ModalNo:(\d+)/.exec(ls)?.[1] ?? /^wnd\[(\d+)\]/.exec(raw ?? "")?.[1] ?? 0),
     };
   };
   const visible = (el: Element) => {
@@ -1225,7 +1274,12 @@ export function markControl(ident: string): MarkedControl | string {
     if (!el.closest(".lsToolbar--item-hidden")) return null;
     const bar = el.closest("[ct='T']");
     if (!bar || !visible(bar)) return null;
-    return document.getElementById(`${bar.id}-hiddenOpener`);
+    // ECC names the ">>" button <toolbar>-hiddenOpener; S/4HANA 2025 puts a button in an item of its own
+    // (lsToolbar--overflowButton). A toolbar that shows neither still hides the button: the toolbar stands in.
+    const named = document.getElementById(`${bar.id}-hiddenOpener`);
+    if (named && visible(named)) return named;
+    const own = Array.from(bar.querySelectorAll(".lsToolbar--overflowButton [ct='B'],.lsToolbar--overflowButton [role='button']")).find(visible);
+    return own ?? named ?? bar;
   };
   const all = Array.from(document.querySelectorAll("[data-ls*='SID:']"))
     .map((el) => ({ el, ...info(el) }))
@@ -1280,7 +1334,8 @@ export function markControl(ident: string): MarkedControl | string {
     return !list && i.readOnly === true;
   };
   hits.sort((a, b) => Number(ro(a.el)) - Number(ro(b.el)));
-  const h = hits[0]!;
+  // A filter of the value help dialog of S/4HANA 2025 and its frame share the id: the token field itself is meant.
+  const h = hits.find((x) => x.type === "GuiSearchHelpHeaderItem" && x.el.getAttribute("ct") === "TOKENIZER") ?? hits[0]!;
   // What a click or typing goes to. The closed restrictions panel of a value help opens with the arrow
   // left of its title (a click on the title does nothing); a calendar is typed into in its date field.
   let target = h.el;
@@ -1300,6 +1355,9 @@ export function markControl(ident: string): MarkedControl | string {
     if (txt && sent !== undefined && txt.innerHTML !== sent && txt.innerHTML.replace(/&nbsp;/g, " ") === sent) txt.textContent = sent;
     target = txt ?? msg ?? h.el;
   }
+  // A filter of the value help dialog of S/4HANA 2025 is a token field: its input is typed into.
+  else if (h.type === "GuiSearchHelpHeaderItem") target = h.el.querySelector("input") ?? h.el;
+  const typed = h.type === "GuiSearchHelpHeaderItem" ? target : h.el;
   target.setAttribute("data-sap-act", "1");
   const cls = clsOf(h.el);
   // The class says the state the page shows; the hidden input keeps what the server drew.
@@ -1316,12 +1374,13 @@ export function markControl(ident: string): MarkedControl | string {
     type: h.type,
     modal: h.modal,
     checked,
-    readonly: ro(h.el),
-    tag: h.el.tagName,
+    readonly: ro(typed),
+    tag: typed.tagName,
     inputType:
-      h.el.tagName === "INPUT" ? (h.el as HTMLInputElement).type || "text" : "",
+      typed.tagName === "INPUT" ? (typed as HTMLInputElement).type || "text" : "",
     overflow: opener && !visible(h.el) ? opener.id : "",
     dom: h.el.id,
+    drawnAsText: h.el.tagName !== "INPUT" && h.el.tagName !== "TEXTAREA" && h.el.getAttribute("role") === "textbox" && /^Gui(C?Text|Password)Field$/.test(h.type),
   };
 }
 
@@ -1353,7 +1412,7 @@ export function markRow(a: { sid: string; row?: number | undefined; node?: strin
   };
   const roots = Array.from(
     document.querySelectorAll(
-      "[data-ls*=\"Type:'GuiGridView'\"],[data-ls*=\"Type:'GuiTree'\"],[data-ls*=\"Type:'GuiSearchHelpResult'\"]",
+      "[data-ls*=\"Type:'GuiGridView'\"],[data-ls*=\"Type:'GuiTree'\"],[data-ls*=\"Type:'GuiSearchHelpResult'\"],[data-ls*=\"Type:'GuiValueHelpResult'\"]",
     ),
   ).filter((el) => el.getBoundingClientRect().width > 0);
   const want = a.sid;
@@ -1493,7 +1552,7 @@ export function markSelector(a: { sid: string; row: number }): { selected: boole
   };
   const root = Array.from(
     document.querySelectorAll(
-      "[data-ls*=\"Type:'GuiGridView'\"],[data-ls*=\"Type:'GuiTableControl'\"],[data-ls*=\"Type:'GuiSearchHelpResult'\"]",
+      "[data-ls*=\"Type:'GuiGridView'\"],[data-ls*=\"Type:'GuiTableControl'\"],[data-ls*=\"Type:'GuiSearchHelpResult'\"],[data-ls*=\"Type:'GuiValueHelpResult'\"]",
     ),
   ).find((el) => el.getBoundingClientRect().width > 0 && sidOf(el) === a.sid);
   if (!root) return `no grid or table named ${a.sid} on this screen`;
@@ -1759,7 +1818,7 @@ export function scrollControl(a: { sid: string; to: number | string }): Scrolled
     const ls = el.getAttribute("data-ls") ?? "";
     return (/OrigID:'((?:[^'\\]|\\.)*)'/.exec(ls)?.[1] ?? /SID:'((?:[^'\\]|\\.)*)'/.exec(ls)?.[1] ?? "").replace(/\\\\/g, "\\");
   };
-  const KINDS = /Type:'(GuiTableControl|GuiGridView|GuiTree|GuiSearchHelpResult|ABAPLIST)'/;
+  const KINDS = /Type:'(GuiTableControl|GuiGridView|GuiTree|GuiSearchHelpResult|GuiValueHelpResult|ABAPLIST)'/;
   const roots = Array.from(document.querySelectorAll("[data-ls*='SID:']")).filter((el) => KINDS.test(el.getAttribute("data-ls") ?? "") && el.getBoundingClientRect().width > 0);
   const root = roots.find((el) => sidOf(el) === a.sid);
   if (!root) return `no grid, table, tree or list named ${a.sid}`;

@@ -27,7 +27,7 @@ import { readRows } from "../core/rows.js";
 import { ActionError, type Action, type Assessment, type LookOptions } from "../core/types.js";
 import { LOGON_REFUSAL, okcodeKind } from "../core/words.js";
 import { assessAction, popupButton, questionRefusal } from "./assess.js";
-import { checkedNow, clean, clickForRoundtrip, clickListLine, clickMenuRow, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlAct, noControlLook, pressOverflow, setCalendar, setRefusal, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
+import { checkedNow, clean, clickForRoundtrip, clickListLine, clickMenuRow, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlAct, noControlLook, openTextCell, pressOverflow, setCalendar, setRefusal, setTokenField, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
 import { collectFiles, watchFiles } from "./files.js";
 import { GAVE_UP, gaveUpOn, NO_CANCEL, stillRunning } from "./running.js";
 import { LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
@@ -170,6 +170,7 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
     // A control of a window behind a popup takes nothing: said at once, with the popup, not after a click has timed out.
     const covered = a.id === undefined ? undefined : behindPopup(before, isMenuPath(String(a.id)) ? `wnd[0]/mbar/${String(a.id).replace(/^wnd\[0\]\/mbar\//, "")}` : String(resolved.id), a.do);
     if (covered && a.do !== "scroll" && (await session.blocked())) throw new ActionError(covered);
+    const windows = session.windowsOpened;
     const done = await run(session, resolved);
     let nothing = session.posts === mark && !done.endsWith(NOTHING_TO_SAP) ? nothingSent(a) : undefined;
     // A key the popup in front has no function for: the answer names the popup, the key did not reach the window behind it.
@@ -178,6 +179,11 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
     // A file SAP wrote with this step (an export to a "local file") is copied out of the browser and named (files.ts).
     const files = await collectFiles(session).catch(() => [] as string[]);
     let note = [done, ...(nothing ? [nothing] : []), ...files].join("\n");
+    // SAP answered in another browser window (the Fiori launchpad, a document): the agent is told, this tab is the session still.
+    if (session.windowsOpened > windows) {
+      const address = session.openedAddress(session.windowsOpened - 1);
+      note = `${[done, ...files].join("\n")}\n(SAP opened another browser window${address ? `: ${address}` : ""}. It is not this SAP session: the screen below is this session's, and sap_sessions lists what the server can drive.)`;
+    }
     // What the agent set in this transaction counts as unsaved until SAP says it saved; a command that
     // leaves the transaction drops it without a question, and the answer says so.
     if (/^(set|check|combo)$/.test(a.do) && !/(nothing changed|already chosen|entries: |has no entries)/.test(done)) session.unsaved.typed();
@@ -337,7 +343,7 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
         if (top > 0) {
           // Said, so the agent knows the key went to the popup and that no button of it is bound to this key by id.
           const title = /^WINDOW wnd\[\d+\]  "(.*)"$/m.exec(windowBlock(await freshView(session).catch(() => ""), top))?.[1];
-          await f.locator(".urPWTitleText").filter({ visible: true }).last().click({ timeout: 3000 }).catch(() => {});
+          await f.locator(".urPWTitleText, .lsPWNewHeader [role='heading']").filter({ visible: true }).last().click({ timeout: 3000 }).catch(() => {});
           await session.roundtrip(() => session.pressKey(k), LOCAL_KEY.test(k) ? 800 : SURE_START_MS);
           return `key ${k} (sent to the popup${title === undefined ? "" : ` "${title}"`}, which has no toolbar button for it)`;
         }
@@ -475,11 +481,15 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       if (c.type === "GuiCheckBox") return run(session, { ...a, do: "check" });
       if (c.type === "GuiComboBox")
         return run(session, { ...a, do: "combo", key: a.value });
+      if (c.type === "GuiSearchHelpHeaderItem" && !c.readonly) {
+        await setTokenField(session, c, String(a.value ?? ""));
+        return `set ${c.sid}`;
+      }
       const refusal = setRefusal(c);
       if (refusal) throw new ActionError(refusal);
       if (c.readonly) throw new ActionError(await closedText(session, `${c.sid} is read-only`));
       // A text editor has lines; every other field has one.
-      const said = await typeInto(session, loc, String(a.value ?? ""), c.type === "GuiTextEdit" || c.tag === "TEXTAREA");
+      const said = await typeInto(session, c.drawnAsText ? await openTextCell(session, c, loc) : loc, String(a.value ?? ""), c.type === "GuiTextEdit" || c.tag === "TEXTAREA");
       // A number typed in the other decimal notation than the screen's: SAP would read another number, or none.
       const notation = notationNote(String(a.value ?? ""), await freshView(session).catch(() => ""));
       return `set ${c.sid}${said}${notation ? ` (${notation})` : ""}`;
@@ -611,7 +621,14 @@ async function chooseMenu(session: WebGuiSession, id: string): Promise<string> {
     await f.locator(`tr[id="${sid}"]`).filter({ visible: true }).first().click({ timeout: MENU_ROW_MS });
     if (!last) await session.page.waitForTimeout(100);
   }
-  await session.waitRoundtrip(SURE_START_MS, before);
+  // An entry with a submenu sends SAP nothing, and its entries show within a moment: then there is no request
+  // to wait for (on S/4HANA 2025 that wait lasted its 5 s). Any other entry sends its request at once.
+  let submenu = false;
+  for (let k = 0; k < 8 && session.posts === before && !submenu; k++) {
+    submenu = await f.evaluate(submenuOpen, full).catch(() => false);
+    if (!submenu) await session.page.waitForTimeout(100);
+  }
+  await session.waitRoundtrip(submenu ? 300 : SURE_START_MS, before);
   // An entry with a submenu only opens it: its entries are in the view now, each with its path.
   if (session.posts === before && (await isOpen(full)) && (await f.evaluate(submenuOpen, full).catch(() => false)))
     return `menu ${full} opened: its entries are in the view, choose one by its id (the menu stays open until then or Escape; ${NOTHING_TO_SAP}`;

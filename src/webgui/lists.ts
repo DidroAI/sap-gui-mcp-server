@@ -116,6 +116,18 @@ async function comboShown(loc: Locator): Promise<string> {
   return clean(await loc.inputValue().catch(() => ""));
 }
 
+/** The key of the entry a dropdown holds, as the server drew it (ECC: lsdata key 3; S/4HANA 2025: key 4, key 3 names the field): "" when it cannot be read. */
+async function comboKey(loc: Locator): Promise<string> {
+  return loc
+    .evaluate((e) => {
+      const ls = e.getAttribute("data-ls") ?? "";
+      const k = (n: number) => (new RegExp(`[{,]${n}:'((?:[^'\\\\]|\\\\.)*)'`).exec(ls)?.[1] ?? "").replace(/\\x([0-9a-fA-F]{2})/g, (_m, h) => String.fromCharCode(parseInt(h, 16))).replace(/\\(.)/g, "$1");
+      const k3 = k(3);
+      return /^[A-Z0-9_/]+-[A-Z0-9_]+/.test(k3) ? k(4) : k3;
+    })
+    .catch(() => "");
+}
+
 /**
  * Chooses an entry of a dropdown, by key or by shown text (whole, then the
  * start, then a part), from the dropdown's own list; and answers with what
@@ -162,6 +174,8 @@ export async function chooseEntry(session: WebGuiSession, c: MarkedControl, loc:
   // The answer says what the dropdown shows now, not what was asked for (the screen may have been drawn again).
   const again = await locate(session, c.sid).catch(() => undefined);
   const after = again ? await comboShown(again.loc) : "";
+  // SAP may show the chosen entry under another text (a role taken up shows as "Customer (New)"): the key says which entry it is.
+  if (after && after !== chosen && key && again && (await comboKey(again.loc)) === key) return `${c.sid} = ${key} ${after} (chosen as "${chosen}"; SAP shows it as "${after}")`;
   if (after && after !== chosen) throw new ActionError(`${c.sid} shows "${after}" after choosing "${chosen}" (it showed "${before}" before): SAP did not take the entry. Look at the screen.`);
   return `${c.sid} = ${key ? `${key} ` : ""}${chosen}${before === chosen ? " (it was already chosen)" : ""}`;
 }

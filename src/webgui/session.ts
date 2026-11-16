@@ -40,6 +40,8 @@ export const LEAVE_MS = 450;
 const QUEUE_MAX_MS = 1500;
 /** A step still running when an action comes, for this long or more, makes the action stop: the screen it was chosen on is gone. */
 const BUSY_BEFORE_MS = 1000;
+/** After SAP opened another browser window: how long until this page, brought back to the front, takes keys again (measured on S/4HANA 2025, /n/UI2/FLP: not at once, within 1.5 s). */
+const FRONT_MS = 1500;
 /** How often a wait looks at the traffic and the page. */
 const POLL_MS = 25;
 /** How long a click, a focus or a key may wait for its control. */
@@ -58,6 +60,10 @@ interface Traffic {
   lastEnd: number;
   /** The longest pause between one request ending and the next starting, since it was last reset. */
   maxGap: number;
+  /** Browser windows this page opened (SAP starts the Fiori launchpad or a document in a new window), in order. */
+  opened: Page[];
+  /** When the last of them was opened; 0 once this page has been brought back to the front after it. */
+  openedAt: number;
 }
 const trafficOf = new WeakMap<Page, Traffic>();
 
@@ -82,6 +88,7 @@ function fromWebGui(r: Request): boolean {
  * instead of it, and the wait took them for the round trip.
  *   [{"post":"focus/wnd[1]/usr/ctxtX","logic":"ignore"},{"post":"typeahead/..."}]   on the side
  *   [{"content":"1000","post":"value/wnd[1]/usr/ctxtX"},{"post":"action/304/..."}]  a step
+ *   [{"post":"focus/...","logic":"ignore"},{"content":"A04","post":"value/.../cmbX"},{"get":"state/ur"}]  a step (a dropdown)
  * A body that cannot be read counts as a step.
  */
 export function carriesStep(body: string | null | undefined): boolean {
@@ -93,11 +100,16 @@ export function carriesStep(body: string | null | undefined): boolean {
     return true;
   }
   if (!Array.isArray(posts)) return true;
+  // The request asks for the screen back: SAP then works on what it was sent.
+  const asksScreen = posts.some((p) => (p as { get?: unknown } | null)?.get === "state/ur");
   return posts.some((p) => {
     const post = (p as { post?: unknown } | null)?.post;
     if (typeof post !== "string") return false;
     if ((p as { logic?: unknown }).logic === "ignore") return false;
-    return !/^(value\/|focus\/|typea)/.test(post);
+    // A value that is not marked "ignore", sent with a request for the screen, is a step: a dropdown
+    // whose choice SAP acts on sends just that (the role of a business partner, the action of MIGO).
+    if (/^value\//.test(post)) return asksScreen;
+    return !/^(focus\/|typea)/.test(post);
   });
 }
 
@@ -117,7 +129,7 @@ function valueOnly(r: Request): boolean {
 function watch(page: Page): Traffic {
   let t = trafficOf.get(page);
   if (t) return t;
-  const traffic: Traffic = { inflight: 0, posts: 0, lastChange: Date.now(), failed: undefined, postAt: [], lastEnd: 0, maxGap: 0 };
+  const traffic: Traffic = { inflight: 0, posts: 0, lastChange: Date.now(), failed: undefined, postAt: [], lastEnd: 0, maxGap: 0, opened: [], openedAt: 0 };
   t = traffic;
   page.on("request", (r) => {
     if (!fromWebGui(r)) return;
@@ -133,6 +145,10 @@ function watch(page: Page): Traffic {
     traffic.lastChange = Date.now();
     traffic.lastEnd = traffic.lastChange;
   };
+  page.on("popup", (p) => {
+    traffic.opened.push(p);
+    traffic.openedAt = Date.now();
+  });
   page.on("requestfinished", done);
   page.on("requestfailed", (r) => {
     done(r);
@@ -533,6 +549,21 @@ export class WebGuiSession {
     return Promise.race([drawn, late]).finally(() => clearTimeout(timer));
   }
 
+  /** How many browser windows this page has opened so far. */
+  get windowsOpened(): number {
+    return this.traffic.opened.length;
+  }
+
+  /** The address of the n-th window this page opened (without its query), "" when it has none or is closed. */
+  openedAddress(n: number): string {
+    try {
+      const url = this.traffic.opened[n]?.url() ?? "";
+      return /^https?:/.test(url) ? url.replace(/[?#].*$/, "") : "";
+    } catch {
+      return "";
+    }
+  }
+
   /** Requests that carried a step so far: an action that ends with the same count sent nothing to SAP. */
   get posts(): number {
     return this.traffic.posts;
@@ -706,7 +737,16 @@ export class WebGuiSession {
   async wake(): Promise<void> {
     // A tab Chrome still sees as hidden is brought to the front, whether focus emulation took or not.
     await keepAwake(this.page);
-    if (await hidden(this.frame)) await this.page.bringToFront().catch(() => {});
+    // A window this page opened (the Fiori launchpad, a document) is in front of it now, and the browser
+    // hands typed keys to no page behind another: the command field then took nothing (S/4HANA, /n/UI2/FLP).
+    // The page is brought back to the front, which the browser does a moment later (measured: keys were
+    // lost right after bringToFront, and taken 1.5 s later): the first action after the window waits for it.
+    if (this.traffic.openedAt) {
+      const since = Date.now() - this.traffic.openedAt;
+      this.traffic.openedAt = 0;
+      await this.page.bringToFront().catch(() => {});
+      await this.pause(Math.max(FRONT_MS - since, 300));
+    } else if (await hidden(this.frame)) await this.page.bringToFront().catch(() => {});
     this.slow = await this.framesSlow();
     this.quietMs = this.slow ? QUIET_SLOW_MS : QUIET_MS;
     // The step before may still be running (it was given up on, or the user started one): input would be lost.
@@ -747,7 +787,17 @@ export class WebGuiSession {
     // Typed as keys, one after the other without a pause (it was 20 ms a key); the check below catches a key that was lost.
     await ok.pressSequentially(command);
     // What the field holds is what Enter sends: a command that did not arrive whole must not run as another one.
-    const typed = await ok.inputValue().catch(() => command);
+    let typed = await ok.inputValue().catch(() => command);
+    // The keys went elsewhere: another browser window is in front (one SAP opened a moment ago). Typed again
+    // from the front, for as long as the browser takes to hand the keyboard back.
+    for (let i = 0; i < 6 && typed.trim().toLowerCase() !== command.trim().toLowerCase(); i++) {
+      await this.page.bringToFront().catch(() => {});
+      await this.pause(i === 0 ? 100 : 500);
+      await ok.click();
+      await ok.fill("");
+      await ok.pressSequentially(command);
+      typed = await ok.inputValue().catch(() => command);
+    }
     if (typed.trim().toLowerCase() !== command.trim().toLowerCase()) {
       await ok.fill("").catch(() => {});
       throw new ActionError(`The command field took "${typed}" instead of "${command}", so nothing was sent. Look at the screen and try again.`);

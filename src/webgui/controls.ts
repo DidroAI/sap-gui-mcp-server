@@ -7,7 +7,7 @@ import type { Locator } from "playwright-core";
 import { ONE_LINE_NOTE, oneLine } from "../core/action.js";
 import { ActionError } from "../core/types.js";
 import { vkey } from "./keys.js";
-import { type MarkedControl, markControl, menuRowOpen, normalizeLsdata } from "./page.js";
+import { type MarkedControl, markControl, menuRowOpen, normalizeLsdata, openOverlay } from "./page.js";
 import type { WebGuiSession } from "./session.js";
 
 /**
@@ -100,7 +100,7 @@ export async function clickForRoundtrip(session: WebGuiSession, sid: string, sur
 export const windowOf = (sid: string): number => Number(/^wnd\[(\d+)\]/.exec(sid)?.[1] ?? 0);
 
 /** Controls a value can be typed into. A password field is not one: this server never types a password. */
-export const FIELD_TYPES = new Set(["GuiTextField", "GuiCTextField", "GuiTextEdit", "GuiSearchHelpPageItem"]);
+export const FIELD_TYPES = new Set(["GuiTextField", "GuiCTextField", "GuiTextEdit", "GuiSearchHelpPageItem", "GuiSearchHelpHeaderItem"]);
 /** "GuiRadioButton" as the answers name it: "radio button". */
 export const typeName = (type: string): string => type.replace(/^Gui/, "").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase() || "control";
 
@@ -114,8 +114,51 @@ export function setRefusal(c: MarkedControl): string | undefined {
   if (c.type === "GuiOKCodeField") return 'The command field takes {"do":"okcode","value":"..."}, not "set".';
   if (c.type === "GuiGridView") return `${c.sid} is a grid: to type into one of its cells add "row" and "col", e.g. {"do":"set","id":"...","row":0,"col":"<column id>","value":"..."} (the grid's line names the columns whose cells take input).`;
   if (!FIELD_TYPES.has(c.type)) return `${c.sid} is a ${typeName(c.type)}, not a field: "set" types into fields only. Use "press" for a button, "select" for a tab or a menu entry.`;
-  if (c.tag !== "INPUT" && c.tag !== "TEXTAREA" && c.type !== "GuiTextEdit") return `${c.sid} cannot be typed into (it is shown as text).`;
+  if (c.tag !== "INPUT" && c.tag !== "TEXTAREA" && c.type !== "GuiTextEdit" && !c.drawnAsText) return `${c.sid} cannot be typed into (it is shown as text).`;
   return undefined;
+}
+
+/**
+ * A field drawn as text until it is clicked (a table cell of S/4HANA 2025):
+ * clicks it and gives the input Web GUI puts in its place, marked. Throws
+ * when no input comes.
+ */
+export async function openTextCell(session: WebGuiSession, c: MarkedControl, loc: Locator): Promise<Locator> {
+  await session.closeSuggestions();
+  await loc.click({ timeout: 5000 });
+  for (let i = 0; i < 40; i++) {
+    const now = await evalLs(session, markControl, c.sid).catch(() => "gone");
+    if (isExactly(now, c.sid) && !now.drawnAsText && (now.tag === "INPUT" || now.tag === "TEXTAREA")) return marked(session);
+    await session.page.waitForTimeout(50);
+  }
+  throw new ActionError(`${c.sid} did not open for typing after a click: the cell stays shown as text. Look at the screen (a message may have to be answered first).`);
+}
+
+/**
+ * Sets a filter of the value help dialog of S/4HANA 2025, a token field: a
+ * value it holds is a token, and the field has an input only while it holds
+ * none. The tokens are removed as a person does (a click on the token, then
+ * Backspace), then the value is typed into the input that comes back.
+ */
+export async function setTokenField(session: WebGuiSession, c: MarkedControl, value: string): Promise<void> {
+  const field = session.frame.locator(`[id="${c.dom}"]`).first();
+  const tokens = field.locator("[ct='TOKEN']");
+  await session.closeSuggestions();
+  for (let i = 0; i < 20 && (await tokens.count()) > 0; i++) {
+    await tokens.last().click({ timeout: 3000 });
+    await session.page.keyboard.press("Backspace");
+    await session.page.waitForTimeout(150);
+  }
+  if ((await tokens.count()) > 0) throw new ActionError(`${c.sid} still holds its old value: it could not be removed. Look at the screen.`);
+  for (let i = 0; i < 40; i++) {
+    const now = await evalLs(session, markControl, c.sid).catch(() => "gone");
+    if (isExactly(now, c.sid) && now.tag === "INPUT") {
+      await typeInto(session, marked(session), value);
+      return;
+    }
+    await session.page.waitForTimeout(50);
+  }
+  if (value) throw new ActionError(`${c.sid} did not open for typing. Look at the screen.`);
 }
 
 /** Above this many characters a text editor's text is put in at once: typed key by key, 300 characters took 4.8 s (measured on ECC). */
@@ -228,14 +271,21 @@ export async function setCalendar(session: WebGuiSession, loc: Locator, value: s
  */
 export async function pressOverflow(session: WebGuiSession, c: MarkedControl): Promise<string> {
   const opener = session.frame.locator(`[id="${c.overflow}"]`).first();
-  await opener.click({ timeout: 5000 });
-  // Not tuned: the time the ">>" menu takes to open.
-  await session.page.waitForTimeout(300);
-  if (await clickMenuRow(session, `${c.dom}-BtnMenu`)) return `pressed ${c.sid} (from the ">>" menu of its toolbar)`;
+  // A toolbar without a ">>" button of its own (the id is then the toolbar's): only the function key is left.
+  const opens = await opener.evaluate((e) => e.getAttribute("ct") !== "T").catch(() => false);
+  if (opens) {
+    await opener.click({ timeout: 5000 });
+    // The ">>" menu opens a moment after the click: its entry is looked for until it is there.
+    for (let i = 0; i < 10; i++) {
+      if (await clickMenuRow(session, `${c.dom}-BtnMenu`)) return `pressed ${c.sid} (from the ">>" menu of its toolbar)`;
+      if ((await session.frame.evaluate(openOverlay).catch(() => "")) === "menu" && i >= 2) break;
+      await session.page.waitForTimeout(100);
+    }
+    // The menu did not show the entry: close it (Escape goes to an open menu only; else ">>" again), then send the button's function key.
+    if ((await session.frame.evaluate(openOverlay).catch(() => "")) === "menu") await session.pressKey("Escape");
+    await session.page.waitForTimeout(150);
+  }
   const k = /\/tbar\[\d\]\/btn\[(\d+)\]$/.exec(c.sid)?.[1];
-  // The menu did not show the entry: close it (">>" again; Escape would be Cancel if it is not open), then send the button's function key.
-  await opener.click({ timeout: 5000 }).catch(() => {});
-  await session.page.waitForTimeout(150);
   if (k === undefined) throw new ActionError(`${c.sid} is behind the toolbar's ">>" button and its entry could not be found there. Look at the screen.`);
   await session.roundtrip(() => session.pressKey(vkey(Number(k))), SURE_START_MS);
   return `pressed ${c.sid} (behind ">>": sent as its key ${vkey(Number(k))})`;
