@@ -213,11 +213,14 @@ function commitQuestion(windows: ViewWindow[]): string | undefined {
   const hitList = top.controls.some((c) => /\/lbl\[\d+,\d+\]$/.test(c.id) || c.kind === "grid");
   if (hitList && !usrButton) return undefined;
   const choices = new Set(top.controls.filter((c) => c.kind === "checkbox" || c.kind === "radio").map((c) => c.text));
-  const whole = [top.title, ...top.controls.filter((c) => c.kind === "label" && !choices.has(c.text)).map((c) => c.text)].join(" ");
+  // A popup titled like the main window ("Customer Create: Initial Screen" over XD01) carries the transaction's
+  // name, not a question: its title then asks nothing.
+  const own = top.title.trim() !== (windows.find((w) => w.number === 0)?.title ?? "").trim();
+  const whole = [own ? top.title : "", ...top.controls.filter((c) => c.kind === "label" && !choices.has(c.text)).map((c) => c.text)].join(" ");
   // The title alone can ask ("Save Data"). Otherwise a question is text with answer buttons in the popup body
   // (Yes / No of POPUP_TO_CONFIRM): a popup whose only buttons sit in its toolbar is a dialog, and a checkbox
   // label such as MM03's "Create views selected" asks nothing.
-  const asked = commitWord(top.title) ? top.title : usrButton && commitWord(whole) ? whole : undefined;
+  const asked = own && commitWord(top.title) ? top.title : usrButton && commitWord(whole) ? whole : undefined;
   if (!asked) return undefined;
   // "Cancel Customer / Data will be lost. Do you want to cancel processing?": "cancel" followed by a word
   // reads as "cancel a document" (a reversal), but a popup that says the input will be lost asks whether to
