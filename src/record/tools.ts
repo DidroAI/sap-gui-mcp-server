@@ -140,11 +140,15 @@ A check or capture is tried on the screen as it is now and refused if it does no
     {
       title: "Replay a recorded SAP test",
       description:
-        'Runs a recording made with sap_record again on the active session, step by step, with no model: the same actions on the same ids, under the same write setting and transaction lists as sap_act. Answers pass or fail per step; on a failure, the screen there (the session stays on it). Give "variables" to run it on other data, e.g. {"order":"4711"}. Steps that may write need SAP_WRITE=on.',
+        'Runs a recording made with sap_record again on the active session, step by step, with no model: the same actions on the same ids, under the same write setting and transaction lists as sap_act. Answers pass or fail per step; on a failure, the screen there (the session stays on it). A window SAP shows that the recording does not have is confirmed only when it just informs, and the first line then says PASS WITH NOTES; a question or a choice fails the step. Give "variables" to run it on other data, e.g. {"order":"4711"}. Steps that may write need SAP_WRITE=on.',
       inputSchema: {
         name: z.string().optional().describe("the recording (default: the one just stopped)"),
         variables: z.record(z.string(), z.string()).optional(),
         screens: z.enum(["strict", "loose"]).optional().describe("loose: landing on another screen than recorded is a note, not a failure"),
+        choices: z
+          .enum(["stop", "continue"])
+          .optional()
+          .describe('a screen with a choice the recording does not have (availability control). stop (default): the step fails and names the ways on. continue: press its neutral Continue and say so'),
         session,
       },
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
@@ -158,7 +162,7 @@ A check or capture is tried on the screen as it is now and refused if it does no
         // The whole replay is one turn of the session: no other call acts in between.
         return serial(a.session, `sap_replay ${test.name}`, async () => {
           const { driver } = await registry.session(a.session);
-          const r = await replay(driver, policy, test, { ...(a.variables ? { variables: a.variables } : {}), ...(a.screens ? { screens: a.screens } : {}), leaveOnFailure: false });
+          const r = await replay(driver, policy, test, { ...(a.variables ? { variables: a.variables } : {}), ...(a.screens ? { screens: a.screens } : {}), ...(a.choices ? { choices: a.choices } : {}), leaveOnFailure: false });
           const needs = inputsOf(test);
           const out = `${resultText(r)}${r.aborted && needs.length ? `\nThe test takes: ${needs.join(", ")}.` : ""}`;
           return r.passed ? text(out) : fail(out);

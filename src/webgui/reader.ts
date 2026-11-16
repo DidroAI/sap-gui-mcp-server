@@ -27,6 +27,8 @@ import { ActionError, type Action, type Assessment, type LookOptions } from "../
 import { LOGON_REFUSAL, okcodeKind } from "../core/words.js";
 import { assessAction, popupButton, questionRefusal } from "./assess.js";
 import { checkedNow, clean, clickForRoundtrip, clickListLine, clickMenuRow, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlLook, pressOverflow, setCalendar, setRefusal, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
+import { collectFiles, watchFiles } from "./files.js";
+import { GAVE_UP, gaveUpOn, NO_CANCEL, stillRunning } from "./running.js";
 import { LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
 import { chooseEntry, entriesOf, markScrolled, notOnScreen, scrollTo, selectRow } from "./lists.js";
 import { behindPopup, closedByMessage, popupName, terminationIn, topPopup, transactionOf } from "./popups.js";
@@ -135,6 +137,9 @@ export async function act(session: WebGuiSession, a: Action): Promise<string> {
 async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
   await checkBeforeAct(session);
   const w0 = Date.now();
+  // A step an earlier action gave up on is still running: said at once, not after waiting for it (running.ts).
+  const busy = stillRunning(session, await session.locked().catch(() => undefined));
+  if (busy) throw new ActionError(busy);
   await session.wake();
   session.timing.wake = Date.now() - w0;
   // A long step (a report started with F8) can be given more time: "timeout" in seconds.
@@ -148,6 +153,7 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
     // The id as the screen holds it now: a handle becomes its full id, one that names several controls is refused.
     const named = a.id !== undefined && String(a.id).trim() && !isMenuPath(String(a.id));
     const mark = session.posts;
+    await watchFiles(session).catch(() => {});
     const before = named ? await freshView(session) : await freshView(session).catch(() => "");
     const resolved = named ? { ...a, id: resolveIn(before, String(a.id)) } : a;
     // A control of a window behind a popup takes nothing: said at once, with the popup, not after a click has timed out.
@@ -158,7 +164,9 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
     // A key the popup in front has no function for: the answer names the popup, the key did not reach the window behind it.
     const front = nothing && a.do === "key" && !LOCAL_KEY.test(vkey(a.key ?? a.value)) ? topPopup(before) : undefined;
     if (front) nothing = `Nothing was sent to SAP: the popup ${popupName(before, front)} is open and this key does nothing on it.`;
-    let note = nothing ? `${done}\n${nothing}` : done;
+    // A file SAP wrote with this step (an export to a "local file") is copied out of the browser and named (files.ts).
+    const files = await collectFiles(session).catch(() => [] as string[]);
+    let note = [done, ...(nothing ? [nothing] : []), ...files].join("\n");
     // What the agent set in this transaction counts as unsaved until SAP says it saved; a command that
     // leaves the transaction drops it without a question, and the answer says so.
     if (/^(set|check|combo)$/.test(a.do) && !/(nothing changed|already chosen|entries: |has no entries)/.test(done)) session.unsaved.typed();
@@ -176,11 +184,22 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
     }
     return session.unsettled ? `${note}\n(Web GUI still showed its loading sign when the server stopped waiting: the step may not be over. If the screen below is not what the step should lead to, look again in a moment.)` : note;
   } catch (e) {
+    // SAP outlasted the wait: the step goes on, and the next action is told so without waiting (running.ts).
+    if (e instanceof ActionError && e.message.startsWith(GAVE_UP)) {
+      gaveUpOn(session, actionLabel(a), w0);
+      throw new ActionError(`${e.message} ${NO_CANCEL}`);
+    }
     throw tidy(e);
   } finally {
     session.view = undefined;
     session.idleTimeoutMs = IDLE_TIMEOUT_MS;
   }
+}
+
+/** An action in a few words, for a message about it: `key 8`, `press wnd[0]/tbar[1]/btn[8]`, `okcode /nVA05`. */
+function actionLabel(a: Action): string {
+  const arg = a.do === "key" ? (a.key ?? a.value) : a.do === "okcode" ? a.value : a.id;
+  return `${a.do}${arg === undefined ? "" : ` ${String(arg)}`}`.slice(0, 80);
 }
 
 /** Is the action the Escape key (also as key 12 or F12, Cancel)? */
@@ -301,7 +320,13 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
           }
         // No such button in the popup: give the popup the keyboard focus (a click on its title bar
         // does nothing else), so the key reaches it and not the screen behind.
-        if (top > 0) await f.locator(".urPWTitleText").filter({ visible: true }).last().click({ timeout: 3000 }).catch(() => {});
+        if (top > 0) {
+          // Said, so the agent knows the key went to the popup and that no button of it is bound to this key by id.
+          const title = /^WINDOW wnd\[\d+\]  "(.*)"$/m.exec(windowBlock(await freshView(session).catch(() => ""), top))?.[1];
+          await f.locator(".urPWTitleText").filter({ visible: true }).last().click({ timeout: 3000 }).catch(() => {});
+          await session.roundtrip(() => session.pressKey(k), LOCAL_KEY.test(k) ? 800 : SURE_START_MS);
+          return `key ${k} (sent to the popup${title === undefined ? "" : ` "${title}"`}, which has no toolbar button for it)`;
+        }
       }
       // An SAP function key always sends a request: it is waited for, also when the browser is slow to
       // hand the key on. Keys that only move in the page (Tab, arrows) send none.

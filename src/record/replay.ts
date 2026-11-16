@@ -25,6 +25,13 @@ export interface ReplayOptions {
   variables?: Record<string, string>;
   /** strict (default): another program or screen number after a step fails it. loose: it is a warning. */
   screens?: "strict" | "loose";
+  /**
+   * A screen SAP shows for some data only, that offers a choice the recording does not have (availability
+   * control: complete delivery, delivery proposal, continue without confirming).
+   * stop (default): the step fails there and names the ways on; nothing is pressed.
+   * continue: the replay presses the screen's neutral Continue and says so in the result.
+   */
+  choices?: "stop" | "continue";
   /** After a failure, leave the transaction with /n (default true). Unsaved input is dropped. */
   leaveOnFailure?: boolean;
   /** Called after each step, for progress output. */
@@ -69,6 +76,8 @@ export interface ReplayResult {
 }
 
 const HOME = new Set(["SESSION_MANAGER", "SMEN", "S000"]);
+/** "a popup", "an availability control screen". */
+const a = (what: string) => `${/^[aeiou]/i.test(what) ? "an" : "a"} ${what}`;
 const first = (e: unknown) => (e instanceof Error ? e.message : String(e)).split("\n")[0] ?? "";
 const where = (r: { transaction?: string | undefined; program?: string | undefined; screen?: string | undefined }) => `${r.transaction ?? "?"} ${r.program ?? "?"}/${r.screen ?? "?"}`;
 
@@ -115,27 +124,34 @@ function sameText(recorded: string, now: string, vars: Record<string, string>): 
 /**
  * A window SAP showed that the recording does not have at this point, and
  * what the replay does about it:
- *   pass  an Information popup (text and a Continue button, no question, no
- *         input, no choice) or a known optional screen: answered as noted;
- *   stop  anything else: a question, a choice, input. The replay does not
- *         answer what it was not shown how to answer.
+ *   pass    an Information popup (text and a Continue button, no question, no
+ *           input, no choice): confirmed, and noted;
+ *   choice  a known screen that offers several ways on (availability control).
+ *           Which one is taken decides what is saved, so the replay stops
+ *           unless the run asked for the neutral way (`choices: "continue"`);
+ *   stop    anything else: a question, input. The replay does not answer
+ *           what it was not shown how to answer.
  */
 export interface Detour {
-  kind: "pass" | "stop";
+  kind: "pass" | "choice" | "stop";
   /** What it is, for the report: `popup "Information" (Consider the subsequent documents)`. */
   what: string;
   /** The answer, for a pass. */
   action?: NormalizedAction;
   /** How the answer is said in the report: "pressed Continue". */
   answer?: string;
+  /** For a choice: every way on the screen offers, as its buttons name them. */
+  ways?: string[];
 }
 
 /**
- * Screens of the main window that SAP shows for some data only and that
- * have a neutral way on, with that way. Availability control (VA01, VA02:
- * the quantity is not available on the date asked) shows what can be
- * confirmed; "Continue" takes the order on with what the check confirmed,
- * as a user who only wants to go on does.
+ * Screens of the main window that SAP shows for some data only, with their
+ * neutral way on. Availability control (VA01, VA02: the quantity is not
+ * available on the date asked) has no Back: its ways on are its own buttons
+ * (complete delivery, delivery proposal, continue). "Continue" takes the
+ * order on with what the check confirmed, which can be nothing: the order
+ * is then saved unconfirmed, a result the recording did not have. So this
+ * is a choice, not a detail (see Detour).
  */
 const OPTIONAL_SCREENS: { what: string; is: (s: ParsedScreen) => boolean; button: RegExp }[] = [
   {
@@ -179,7 +195,8 @@ export function detour(screen: ParsedScreen): Detour | undefined {
     const go = screen.controls.find((c) => c.type === "button" && c.window === "wnd[0]" && o.button.test(c.label));
     const what = `${o.what} screen "${screen.title ?? ""}"`;
     if (!go) return { kind: "stop", what: `${what} (no Continue button the replay could press)` };
-    return { kind: "pass", what, action: normalizeAction({ do: "press", id: go.id }), answer: `pressed ${go.label}` };
+    const ways = screen.controls.filter((c) => c.type === "button" && /^wnd\[0\]\/tbar\[1\]\//.test(c.id)).map((c) => c.label);
+    return { kind: "choice", what, action: normalizeAction({ do: "press", id: go.id }), answer: `pressed ${go.label}`, ways };
   }
   return undefined;
 }
@@ -294,11 +311,17 @@ export async function replay(driver: Driver, policy: Policy, test: SapTest, opti
           const d = detour(screen);
           if (!d) break;
           if (d.kind === "stop" || !d.action) {
-            r.failures.push(`SAP showed a ${d.what} that the recording does not have here. The replay answers only popups that inform (a Continue button, no question) and known optional screens: record the test on data that shows this window, or answer it and run the steps after it by hand`);
+            r.failures.push(`SAP showed ${a(d.what)} that the recording does not have here. The replay answers only popups that inform (a Continue button, no question): record the test on data that shows this window, or answer it and run the steps after it by hand`);
+            break;
+          }
+          if (d.kind === "choice" && options.choices !== "continue") {
+            r.failures.push(
+              `SAP showed ${a(d.what)} that the recording does not have here. It offers a choice (${(d.ways ?? []).join("; ")}), and which one is taken decides what is saved, so the replay pressed nothing. Record the test on data that shows this screen, or run the replay with "choices":"continue" to go on with ${d.answer?.replace(/^pressed /, "") ?? "Continue"} (the result then says so)`,
+            );
             break;
           }
           await guarded(driver, policy, d.action);
-          r.warnings.push(`SAP showed a ${d.what} that the recording does not have: the replay ${d.answer}`);
+          r.warnings.push(`SAP showed ${a(d.what)} that the recording does not have: the replay ${d.answer}${d.kind === "choice" ? ', as "choices":"continue" asked; what was saved may differ from the recording' : ""}`);
           screen = await read(driver);
         }
         const landed = sessionRefusal(policy, await driver.refresh());
@@ -366,7 +389,15 @@ export async function replayAll(driver: Driver, policy: Policy, tests: SapTest[]
 }
 
 export function resultText(r: ReplayResult): string {
-  const lines = [`${r.passed ? "PASS" : "FAIL"}  ${r.name}  on ${r.surface} ${r.system}  (${r.steps.filter((s) => s.outcome === "pass").length}/${r.steps.length} steps, ${(r.ms / 1000).toFixed(1)} s)`];
+  // What the replay did that the recording does not have (a popup it confirmed, a control it found elsewhere)
+  // is said in the first line too: a PASS with notes is not the recorded run.
+  const noted = r.steps.filter((s) => s.warnings.length).map((s) => s.n);
+  const notes = noted.length + (r.before?.length ? 1 : 0);
+  const lines = [
+    `${r.passed ? "PASS" : "FAIL"}  ${r.name}  on ${r.surface} ${r.system}  (${r.steps.filter((s) => s.outcome === "pass").length}/${r.steps.length} steps, ${(r.ms / 1000).toFixed(1)} s)${
+      r.passed && notes ? `  WITH NOTES: this run differed from the recording${noted.length ? ` at step${noted.length > 1 ? "s" : ""} ${noted.join(", ")}` : " before step 1"} (see "note:" below)` : ""
+    }`,
+  ];
   if (r.aborted) lines.push(`Not run: ${r.aborted}.`);
   for (const b of r.before ?? []) lines.push(`Before step 1: ${b}.`);
   for (const s of r.steps) {
