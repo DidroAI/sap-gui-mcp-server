@@ -78,8 +78,10 @@ export function commitQuestion(screen: Screen): string | undefined {
   // (Yes / No of POPUP_TO_CONFIRM): a popup whose only buttons sit in its toolbar is a dialog, and a checkbox
   // such as MM03's "Create views selected" asks nothing.
   const texts = w.controls.filter((c) => c.type !== "GuiButton" && c.type !== "GuiCheckBox" && c.type !== "GuiRadioButton" && c.id !== w.id).map((c) => clean(c.text));
-  const question = [w.title, ...texts].filter(Boolean).join(" ").replace(/\s+/g, " ");
-  const asked = commitWord(clean(w.title)) ? clean(w.title) : usrButton && commitWord(question) ? question : undefined;
+  // A popup titled like the main window carries the transaction's name, not a question.
+  const own = clean(w.title) !== clean(screen.windows.find((x) => x.id === "wnd[0]")?.title);
+  const question = [own ? w.title : "", ...texts].filter(Boolean).join(" ").replace(/\s+/g, " ");
+  const asked = own && commitWord(clean(w.title)) ? clean(w.title) : usrButton && commitWord(question) ? question : undefined;
   if (!asked) return undefined;
   // "Cancel Customer / Data will be lost": "cancel" there means "stop editing", and Yes discards input.
   if (commitWord(asked) === "cancel a document" && commitWord(question) === "cancel a document" && discardsInput(question)) return undefined;
