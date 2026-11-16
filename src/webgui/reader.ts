@@ -360,6 +360,9 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
         // Menu path: open the Menu button, then each level by its scripting id.
         const f = session.frame;
         const full = id.startsWith("wnd[") ? id : `wnd[0]/mbar/${id}`;
+        // A popup blocks the main window and its menu: said at once, not after a click that waits for its timeout.
+        if ((await f.locator("#urPopupWindowBlockLayer, #sesTimeoutPopupWindow").filter({ visible: true }).count().catch(() => 0)) > 0)
+          throw new ActionError("A popup window is open and blocks the menu: answer or close the popup first (see the WINDOW lines of sap_look).");
         const parts = full.split("/").slice(2);
         const path = (n: number) => `wnd[0]/mbar/${parts.slice(0, n).join("/")}`;
         const open = async (sid: string) => (await f.evaluate(menuRowOpen, sid).catch(() => "")) !== "";
