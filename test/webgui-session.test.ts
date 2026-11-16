@@ -13,6 +13,14 @@ describe("carriesStep: is a Web GUI request a round trip, or sent on the side", 
     expect(carriesStep('[{"post":"focus/wnd[1]/usr/ctxtZ-PLANT","logic":"ignore"},{"post":"typeahead/wnd[1]/usr/ctxtZ-PLANT","content":"10"}]')).toBe(false);
     expect(carriesStep('[{"get":"state/ur"}]')).toBe(false);
   });
+
+  test("a dropdown's choice that SAP acts on is a round trip: a value that is not ignored, with a request for the screen", () => {
+    expect(carriesStep('[{"post":"focus/wnd[0]/usr/cmbZ-ACTION","logic":"ignore"},{"content":"A04","post":"value/wnd[0]/usr/cmbZ-ACTION"},{"get":"state/ur"}]')).toBe(true);
+    // The type-ahead of a field also asks for the screen, but everything it posts is marked "ignore".
+    expect(carriesStep('[{"post":"focus/wnd[0]/usr/ctxtZ-ORG","logic":"ignore"},{"post":"typeahead/send","content":"%_SEARCH 1000","logic":"ignore"},{"get":"typeahead/get","logic":"inverse"},{"get":"state/ur"}]')).toBe(false);
+    // A value on its own, with no request for the screen, is sent on the side.
+    expect(carriesStep('[{"content":"1000","post":"value/wnd[0]/usr/ctxtZ-ORG"}]')).toBe(false);
+  });
   test("a body that cannot be read counts as a step: the wait then errs on the side of waiting", () => {
     expect(carriesStep(null)).toBe(true);
     expect(carriesStep("sap-ext-sid=abc&x=1")).toBe(true);
