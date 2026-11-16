@@ -54,6 +54,9 @@ export async function markScrolled<A, R>(session: WebGuiSession, sid: string, ro
   return { r, scrolled: scrolledNote(sc) };
 }
 
+/** The most a row takes to show that its selector was clicked: after this long the click did not change it. */
+const SELECTION_SHOWN_MS = 2000;
+
 /**
  * Selects (or deselects) a row of a grid, table control or value-help list
  * by its row selector, the button at the left of the row, as a person
@@ -68,7 +71,17 @@ export async function selectRow(session: WebGuiSession, sid: string, row: number
   if (typeof r === "string")
     throw new ActionError(notOnScreen(r) ? `${r}: a table control counts its rows on screen (row 0 is the first row shown); scroll it to bring the row into view.` : r);
   if (r.selected === on) return `row ${row} of ${sid} was already ${on ? "selected" : "not selected"}: nothing changed${scrolled}`;
-  await session.roundtrip(() => session.frame.locator("[data-sap-act='selector']").first().click({ timeout: 10000 }), 800);
+  await session.roundtrip(async () => {
+    await session.frame.locator("[data-sap-act='selector']").first().click({ timeout: 10000 });
+    // The row shows the selection a moment after the click: a table control marks it in the page about
+    // 350 ms later and sends nothing (measured on ECC), a grid after its round trip. The row itself is the signal.
+    const t0 = Date.now();
+    while (Date.now() - t0 < SELECTION_SHOWN_MS) {
+      const r = await evalLs(session, markSelector, target).catch(() => "");
+      if (typeof r !== "string" && r.selected === on) break;
+      await session.page.waitForTimeout(25);
+    }
+  }, 800);
   const now = await evalLs(session, markSelector, target).catch(() => "");
   if (typeof now !== "string" && now.selected !== on)
     throw new ActionError(`row ${row} of ${sid} is still ${now.selected ? "selected" : "not selected"}: the click on its row selector did not change it. Look at the screen.`);
@@ -141,7 +154,7 @@ export async function chooseEntry(session: WebGuiSession, c: MarkedControl, loc:
   if (idx < 0) {
     // Escape closes the open list; with no list open it would be Cancel (F12).
     if (entries.length > 0) await page.keyboard.press("Escape");
-    throw new ActionError(entries.length ? `no entry "${want}" in ${c.sid}: ${keys.map((k, i) => `${k}:${texts[i]}`).join(", ")}` : `the list of ${c.sid} did not open, so nothing was chosen. Look at the screen.`);
+    throw new ActionError(entries.length ? `no entry "${clean(String(wanted ?? ""))}" in ${c.sid}: ${entries.map((e) => `${e.key}:${e.text}`).join(", ")}` : `the list of ${c.sid} did not open, so nothing was chosen. Look at the screen.`);
   }
   const chosen = clean(await items.nth(idx).innerText());
   const key = (await items.nth(idx).getAttribute("data-itemkey")) ?? "";

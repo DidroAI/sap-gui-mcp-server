@@ -644,8 +644,29 @@ export function extractLook(limits: {
         break;
       }
       case "GuiSearchHelpPage": {
+        // The restrictions of a value help: a panel that opens and closes with the arrow left of its title.
         const t = prop(ls, 8);
-        if (t) out(modal, `${sid}  tab  ${t}`);
+        const stack = el.closest("table[ct='PST']");
+        const toggle = stack ? document.getElementById(`${stack.id}-tgl`) : null;
+        const closed = !!toggle && /TglIconCol\b/.test(toggle.className);
+        const chosen = !!stack && prop(stack.getAttribute("data-ls") ?? "", 8) === el.id;
+        if (t) out(modal, `${sid}  tab  ${t}${closed ? '  (closed: "select" opens it and shows its fields)' : chosen ? " (selected)" : ""}`);
+        break;
+      }
+      case "GuiSearchHelpPageItem": {
+        // A restriction field of a value help. Its label names it by DOM id (attribute f), with no scripting id.
+        if (el.tagName !== "INPUT") break;
+        const lab = Array.from(document.querySelectorAll("label[ct='L'][f]")).find((l) => l.getAttribute("f") === el.id);
+        const ro = fieldLocked(el);
+        out(modal, `${sid}  field  ${norm((lab as HTMLElement | undefined)?.innerText) || tip} = "${norm(h.value ?? "")}"  (${ro ? "read-only" : "edit"})`);
+        break;
+      }
+      case "GuiCalendar": {
+        // The calendar of a date's value help: the date it holds is in its own field, which can be typed into.
+        const date = el.querySelector("input[ct='I']") as HTMLInputElement | null;
+        if (!date || !visible(date)) break;
+        const format = prop(date.getAttribute("data-ls") ?? date.getAttribute("lsdata") ?? "", 9);
+        out(modal, `${sid}  field  Date = "${norm(date.value)}"  (edit)  calendar${format ? ` (${format})` : ""}: "set" the date here, then Continue copies it to the field`);
         break;
       }
       default:
@@ -719,9 +740,13 @@ export function extractLook(limits: {
   }
   // Open popup menus: rows whose DOM id is the scripting id.
   // A closed menu stays in the page, moved far above the window (top -9999 px): only rows in the window are open.
+  // The menu of a dropdown button names its rows u1234 in the page, a new number each time it opens: their
+  // scripting id (in lsdata) stays, so that is the id shown.
   for (const tr of Array.from(document.querySelectorAll("tr[ct^='POMN']"))) {
     if (!visible(tr) || !inView(tr) || tr.id.startsWith("sysInfoArea")) continue;
-    out(0, `${tr.id}  menu  ${norm((tr as HTMLElement).innerText)}`);
+    const text = norm((tr as HTMLElement).innerText);
+    const own = tr.id.startsWith("wnd[") ? "" : info(tr).sid;
+    if (text || own) out(0, `${own.startsWith("wnd[") ? own : tr.id}  menu  ${text}`);
   }
 
   // System information: transaction, program and screen.
@@ -833,15 +858,27 @@ export function topWindowOpen(): number {
 }
 
 /**
- * Is the menu row with this DOM id open on screen? A row of a popup menu (a
- * context menu, a dropdown button's menu, the ">>" menu of a toolbar). A
- * closed menu stays in the page far above the window.
+ * The DOM id of the open menu row this id names (its DOM id, or its scripting
+ * id as the view shows it); "" when no such row is open. A row of a popup
+ * menu (a context menu, a dropdown button's menu, the ">>" menu of a
+ * toolbar). A closed menu stays in the page far above the window.
  */
-export function menuRowOpen(rowId: string): boolean {
-  const tr = document.getElementById(rowId);
-  if (!tr || tr.tagName !== "TR" || !(tr.getAttribute("ct") ?? "").startsWith("POMN")) return false;
-  const r = tr.getBoundingClientRect();
-  return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight;
+export function menuRowOpen(rowId: string): string {
+  const open = (tr: Element | null): tr is Element => {
+    if (!tr || tr.tagName !== "TR" || !(tr.getAttribute("ct") ?? "").startsWith("POMN")) return false;
+    const r = tr.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight;
+  };
+  const byId = document.getElementById(rowId);
+  if (open(byId)) return byId.id;
+  if (!rowId.startsWith("wnd[")) return "";
+  // A row of a dropdown button's menu is named by its scripting id: lsdata holds it, the DOM id is u1234.
+  for (const tr of Array.from(document.querySelectorAll("tr[ct^='POMN']"))) {
+    const ls = tr.getAttribute("data-ls") ?? tr.getAttribute("lsdata") ?? "";
+    const sid = (/"?SID"?:["']((?:[^'"\\]|\\.)*)["']/.exec(ls)?.[1] ?? "").replace(/\\\\/g, "\\");
+    if (sid === rowId && tr.id && open(tr)) return tr.id;
+  }
+  return "";
 }
 
 /** Runs in an HTML viewer's frame: its form controls and links, numbered. */
@@ -1040,7 +1077,15 @@ export function markControl(ident: string): MarkedControl | string {
   };
   hits.sort((a, b) => Number(ro(a.el)) - Number(ro(b.el)));
   const h = hits[0]!;
-  h.el.setAttribute("data-sap-act", "1");
+  // What a click or typing goes to. The closed restrictions panel of a value help opens with the arrow
+  // left of its title (a click on the title does nothing); a calendar is typed into in its date field.
+  let target = h.el;
+  if (h.type === "GuiSearchHelpPage") {
+    const stack = h.el.closest("table[ct='PST']");
+    const toggle = stack ? document.getElementById(`${stack.id}-tgl`) : null;
+    if (toggle && /TglIconCol\b/.test(clsOf(toggle))) target = toggle;
+  } else if (h.type === "GuiCalendar") target = h.el.querySelector("input[ct='I']") ?? h.el;
+  target.setAttribute("data-sap-act", "1");
   const cls = clsOf(h.el);
   // The class says the state the page shows; the hidden input keeps what the server drew.
   let checked: boolean;
@@ -1407,8 +1452,12 @@ export function focusedControl(): FocusedControl | null {
   };
   if (ae.tagName === "IFRAME" || ae.tagName === "FRAME") return { sid: facts(ae).sid, type: "frame", pressable: false, text: "" };
   for (let el: Element | null = ae; el; el = el.parentElement) {
-    // A row of an open menu: its DOM id is its scripting id.
-    if (el.tagName === "TR" && (el.getAttribute("ct") ?? "").startsWith("POMN")) return { sid: el.id, type: "GuiMenu", pressable: true, text: norm((el as HTMLElement).innerText) };
+    // A row of an open menu.
+    if (el.tagName === "TR" && (el.getAttribute("ct") ?? "").startsWith("POMN")) {
+      // As the view names the row: its DOM id when that is a scripting id, else the scripting id in its lsdata.
+      const own = el.id.startsWith("wnd[") ? "" : facts(el).sid;
+      return { sid: own.startsWith("wnd[") ? own : el.id, type: "GuiMenu", pressable: true, text: norm((el as HTMLElement).innerText) };
+    }
     const f = facts(el);
     if (f.sid && f.type) return { sid: f.sid, type: f.type, pressable: /Button$/.test(f.type) && f.type !== "GuiRadioButton", text: norm((el as HTMLElement).innerText) || norm(el.getAttribute("title")) };
   }
@@ -1489,6 +1538,11 @@ export function scrollControl(a: { sid: string; to: number | string }): Scrolled
     scrollToPosition?: (n: number) => void;
     iGetFirstVisibleItem?: () => number;
     iGetMaxScrollTo?: () => number;
+    bPixelDirectMode?: boolean;
+    iScrollPos?: number;
+    iLargeChange?: number;
+    iScrollClipping?: number;
+    iScrollRange?: number;
   }
   const w = window as unknown as { UCF_Scrollbar?: { prototype: Record<string, unknown> } };
   const proto = w.UCF_Scrollbar?.prototype;
@@ -1505,6 +1559,24 @@ export function scrollControl(a: { sid: string; to: number | string }): Scrolled
     }
   }
   const live = control as Bar | undefined;
+  // The horizontal bar of a table control counts pixels, from 0, and its lsdata holds no position: the
+  // object says where it is, how far it goes and what a page is. The table draws the columns in the page.
+  if (sideways && live?.bPixelDirectMode === true && typeof live.iScrollPos === "number" && typeof live.scrollToPosition === "function") {
+    let end = NaN;
+    try {
+      end = Number(live.iGetMaxScrollTo?.call(live));
+    } catch {
+      /* read below as "cannot be read" */
+    }
+    const at = live.iScrollPos;
+    const page = Number(live.iLargeChange) > 0 ? Number(live.iLargeChange) : Number(live.iScrollClipping);
+    if (Number.isNaN(end) || !(page > 0)) return `the scrollbar of ${a.sid} could not be read`;
+    const to = a.to === "right" ? at + page : a.to === "left" ? at - page : a.to === "leftmost" ? 0 : end;
+    const next = Math.min(Math.max(0, to), Math.max(0, end));
+    const moved: Scrolled = { sid: a.sid, from: at, first: next, visible: page, total: Number(live.iScrollRange) || end + page, moved: true, bar: bar.id };
+    if (next !== at) live.scrollToPosition(next);
+    return moved;
+  }
   const ls = bar.getAttribute("lsdata") ?? "";
   const num = (k: number) => Number(new RegExp(`[{,]"?${k}"?:(-?\\d+)`).exec(ls)?.[1] ?? NaN);
   const asNumber = (f: (() => number) | undefined) => {
