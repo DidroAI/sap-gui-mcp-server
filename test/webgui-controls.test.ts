@@ -137,7 +137,11 @@ describe.skipIf(!exe)("Web GUI reader: control states as Web GUI draws them, in 
   const fullView = async () => ((await webguiLookInFrame(page.mainFrame(), false)) ?? "").split("\n");
   const compactView = async () => ((await webguiLookInFrame(page.mainFrame(), true)) ?? "").split("\n");
   const look: Driver["look"] = (options) => view(new WebGuiSession(page.mainFrame()), options);
-  const act = (a: Parameters<typeof webguiActInFrame>[1]) => webguiActInFrame(page.mainFrame(), a);
+  const actRaw = (a: Parameters<typeof webguiActInFrame>[1]) => webguiActInFrame(page.mainFrame(), a);
+  // The test page never sends a request to SAP, so every answer ends with the
+  // "Nothing was sent to SAP" line (timing lane); these tests read the note before it.
+  const NOTHING_SENT = /\nNothing was sent to SAP for this action[^\n]*$/;
+  const act = async (a: Parameters<typeof webguiActInFrame>[1]) => (await actRaw(a)).replace(NOTHING_SENT, "");
   beforeAll(async () => {
     browser = await chromium.launch({ executablePath: exe!, headless: true, args: ["--no-sandbox"] });
     page = await browser.newPage({ viewport: { width: 1200, height: 1400 } });

@@ -25,6 +25,19 @@ const QUIET_MS = 300;
 /** A background tab gets its input about once a second: the quiet period, and the wait for a request to start, must be longer. */
 const QUIET_SLOW_MS = 1300;
 const START_SLOW_MS = 2500;
+/**
+ * After the page has handled a key or a click (two frames drawn), how long
+ * its request may still take to leave before the action counts as one that
+ * sends nothing. Web GUI starts its request in the key or click handler or
+ * on a short timer after it; a page that is slow to draw is waited for by
+ * the frames themselves, up to the caller's `startMs`. Not yet tuned on a
+ * live system: "timing":true on an action shows the "start" part.
+ */
+export const LEAVE_MS = 250;
+/** A step still running when an action comes, for this long or more, makes the action stop: the screen it was chosen on is gone. */
+const BUSY_BEFORE_MS = 1000;
+/** How often a wait looks at the traffic and the page. */
+const POLL_MS = 25;
 /** How long a click, a focus or a key may wait for its control. */
 const ACTION_TIMEOUT_MS = 10_000;
 
@@ -35,6 +48,12 @@ interface Traffic {
   lastChange: number;
   /** The last round trip that failed on the network (the connection to SAP dropped), and when. */
   failed: { at: number; error: string } | undefined;
+  /** When each step POST started, by its number: the start of SAP's part of a round trip. */
+  postAt: number[];
+  /** When the last request ended. */
+  lastEnd: number;
+  /** The longest pause between one request ending and the next starting, since it was last reset. */
+  maxGap: number;
 }
 const trafficOf = new WeakMap<Page, Traffic>();
 
@@ -94,18 +113,21 @@ function valueOnly(r: Request): boolean {
 function watch(page: Page): Traffic {
   let t = trafficOf.get(page);
   if (t) return t;
-  const traffic: Traffic = { inflight: 0, posts: 0, lastChange: Date.now(), failed: undefined };
+  const traffic: Traffic = { inflight: 0, posts: 0, lastChange: Date.now(), failed: undefined, postAt: [], lastEnd: 0, maxGap: 0 };
   t = traffic;
   page.on("request", (r) => {
     if (!fromWebGui(r)) return;
+    const now = Date.now();
+    if (traffic.inflight === 0 && traffic.lastEnd) traffic.maxGap = Math.max(traffic.maxGap, now - traffic.lastEnd);
     traffic.inflight++;
-    if (r.method() === "POST" && !valueOnly(r)) traffic.posts++;
-    traffic.lastChange = Date.now();
+    if (r.method() === "POST" && !valueOnly(r)) traffic.postAt[traffic.posts++] = now;
+    traffic.lastChange = now;
   });
   const done = (r: Request) => {
     if (!fromWebGui(r)) return;
     traffic.inflight = Math.max(0, traffic.inflight - 1);
     traffic.lastChange = Date.now();
+    traffic.lastEnd = traffic.lastChange;
   };
   page.on("requestfinished", done);
   page.on("requestfailed", (r) => {
@@ -117,6 +139,28 @@ function watch(page: Page): Traffic {
   });
   trafficOf.set(page, t);
   return t;
+}
+
+/**
+ * Runs in the page: what a page says when the SAP session in it has ended
+ * (logged off with /nex or /i, ended by the server), or "" while Web GUI is
+ * there. Web GUI's own screens carry controls with scripting ids; the page
+ * after a logoff has none and says so in words. The logon page is not an
+ * end: the reader reports it as the logon screen. No String.prototype.trim:
+ * Web GUI patches it.
+ */
+export function extractEnded(): string {
+  if (document.querySelector("[lsdata*='wnd['],[data-ls*='wnd['],#ToolbarOkCode")) return "";
+  if (document.querySelector("input[type='password'],[name='sap-user'],#sap-user")) return "";
+  const text = (document.body?.innerText ?? "").replace(/\s+/g, " ").replace(/^ | $/g, "");
+  const said = /logged off|logged out|log off|session (has )?(ended|terminated|expired)|abgemeldet|d[ée]connect[ée]|goodbye|auf wiedersehen/i;
+  if (said.test(text) || said.test(document.title)) return text.slice(0, 160) || document.title;
+  return "";
+}
+
+/** The answer when the session has ended, with what the page says. */
+export function endedText(said: string): string {
+  return `The SAP session in this tab has ended: the page says "${said}". Nothing more can be done in it: the user has to log on again (this server never logs on), then call sap_sessions.`;
 }
 
 /** Pages whose focus emulation was asked for, and how that went. */
@@ -157,6 +201,39 @@ export async function hidden(frame: Frame): Promise<boolean> {
   return frame.evaluate(() => document.visibilityState === "hidden").catch(() => false);
 }
 
+/**
+ * Where the time of one action went, in milliseconds. "sap" is the part
+ * that is SAP's (and the network's): from the first request of a step to
+ * the end of the last one. "start" and "settle" are the server's own
+ * waiting: for a request to leave after the key or click, and after the
+ * last answer until the step counts as over.
+ */
+export interface Timing {
+  /** Before the action: focus emulation, the frame check, the wait for a step still running. */
+  wake: number;
+  /** After the key or click, until its request left (or the wait for one gave up). */
+  start: number;
+  /** From the first request of a step to the end of the last one. */
+  sap: number;
+  /** After the last answer, until the wait ended (quiet period, lock checks). */
+  settle: number;
+  /** Waits for quiet when no request was expected (after typing). */
+  idle: number;
+  /** Requests that carried a step. */
+  posts: number;
+  /** The longest pause between two requests of one step. */
+  gap: number;
+}
+
+export const noTiming = (): Timing => ({ wake: 0, start: 0, sap: 0, settle: 0, idle: 0, posts: 0, gap: 0 });
+
+/** "1306 ms: sap 812, start 40, settle 402, wake 30, other 22 (1 request)" */
+export function timingText(t: Timing, total: number): string {
+  const other = Math.max(0, total - t.wake - t.start - t.sap - t.settle - t.idle);
+  const parts = [`sap ${t.sap}`, `start ${t.start}`, `settle ${t.settle}`, ...(t.idle ? [`idle ${t.idle}`] : []), `wake ${t.wake}`, `other ${other}`];
+  return `${total} ms: ${parts.join(", ")} (${t.posts} request${t.posts === 1 ? "" : "s"}${t.gap ? `, longest pause between requests ${t.gap} ms` : ""})`;
+}
+
 export class WebGuiSession {
   readonly page: Page;
   private readonly traffic: Traffic;
@@ -180,6 +257,10 @@ export class WebGuiSession {
   started = false;
   /** The last full view read, for the step that follows it (assess, then act). */
   view: { at: number; text: string } | undefined;
+  /** Where the time of the current (or last) action went. */
+  timing: Timing = noTiming();
+  /** The last action's timing as one line (`timingText`). */
+  timingText: string | undefined;
 
   constructor(readonly frame: Frame) {
     this.page = frame.page();
@@ -201,26 +282,80 @@ export class WebGuiSession {
 
   /**
    * After an action that may cause a round trip (Enter, F-keys, clicks, OK-code):
-   * Web GUI sends the POST a little after the key event, so first wait up to
-   * `startMs` for the POST or the busy bar to appear, then wait for idle.
-   * First calls on a fresh system can take long (ABAP loads compile), hence
-   * the generous idle timeout.
+   * Web GUI sends the POST a little after the key event. The wait for it
+   * ends when the request leaves, or once the page has handled the input
+   * (it drew two frames after it) and `LEAVE_MS` more went by with no
+   * request, no loading sign and no lock: then nothing goes to SAP, and
+   * there is nothing to wait for. `startMs` is the most it waits when the
+   * page does not draw (a busy machine, a tab in the background). Then it
+   * waits for idle. First calls on a fresh system can take long (ABAP loads
+   * compile), hence the generous idle timeout.
    */
   async waitRoundtrip(startMs = 1500, before = this.traffic.posts): Promise<void> {
     const t0 = Date.now();
     if (this.slow) startMs = Math.max(startMs, START_SLOW_MS);
+    // A tab Chrome draws once a second hands input on late: there, only the long wait is safe.
+    let handled: number | undefined;
+    if (!this.slow)
+      void this.framesDrawn(startMs).then((drawn) => {
+        if (drawn) handled = Date.now();
+      });
+    let sent = false;
     while (Date.now() - t0 < startMs) {
-      if (this.traffic.posts > before || (await this.busyShown())) break;
-      await this.page.waitForTimeout(50);
+      if (this.traffic.posts > before || (await this.busyShown()) || (await this.locked()) === true) {
+        sent = true;
+        break;
+      }
+      if (handled !== undefined && Date.now() - handled >= LEAVE_MS) break;
+      await this.page.waitForTimeout(POLL_MS);
     }
-    await this.waitIdle();
+    const seen = Date.now();
+    this.traffic.maxGap = 0;
+    // Nothing left and nothing is under way: no round trip to wait for.
+    if (sent || this.traffic.inflight > 0 || this.traffic.posts > before) await this.waitIdle(this.quietMs, false, sent ? 0 : 100);
     this.started = this.traffic.posts > before;
+    this.account(t0, seen, before);
     const failed = this.traffic.failed;
     if (failed && failed.at >= t0 - 50) {
       this.traffic.failed = undefined;
       throw new ActionError(
         `SAP did not answer: the request failed (${failed.error}). The connection to the SAP system is down or was interrupted, and the step may not have run. The page may show the old screen and take no input until it is reloaded: ask the user to check the connection and reload the tab.`,
       );
+    }
+  }
+
+  /** Did the page draw two frames within `ms`? It has then handled the input sent before. */
+  private framesDrawn(ms: number): Promise<boolean> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const drawn = this.frame
+      .evaluate(() => new Promise<boolean>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)))))
+      .catch(() => false);
+    const late = new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(false), ms);
+    });
+    return Promise.race([drawn, late]).finally(() => clearTimeout(timer));
+  }
+
+  /** Requests that carried a step so far: an action that ends with the same count sent nothing to SAP. */
+  get posts(): number {
+    return this.traffic.posts;
+  }
+
+  /** Adds one wait to `timing`: `t0` when the wait began, `seen` when the request was seen (or the wait for it ended). */
+  private account(t0: number, seen: number, before: number): void {
+    const end = Date.now();
+    const t = this.timing;
+    const first = this.traffic.postAt[before];
+    if (this.traffic.posts > before && first !== undefined) {
+      const last = Math.max(this.traffic.lastEnd, first);
+      t.start += Math.max(0, first - t0);
+      t.sap += Math.max(0, last - first);
+      t.settle += Math.max(0, end - Math.max(last, t0));
+      t.posts += this.traffic.posts - before;
+      t.gap = Math.max(t.gap, this.traffic.maxGap);
+    } else {
+      t.start += seen - t0;
+      t.idle += end - seen;
     }
   }
 
@@ -272,18 +407,37 @@ export class WebGuiSession {
       .catch(() => undefined);
   }
 
+  /** What the page says when the SAP session in it has ended; "" while it has not (or the page cannot be read). */
+  async ended(): Promise<string> {
+    return this.frame.evaluate(extractEnded).catch(() => "");
+  }
+
   /**
    * Waits until no request has been in flight for a quiet period and Web GUI
    * is done with the answer: its page is unlocked, or, where it does not say,
    * its loading sign is gone.
    */
-  async waitIdle(quietMs = this.quietMs): Promise<void> {
+  async waitIdle(quietMs = this.quietMs, timed = true, leadMs = 100): Promise<void> {
     const start = Date.now();
+    if (timed) {
+      try {
+        return await this.waitIdle(quietMs, false, leadMs);
+      } finally {
+        this.timing.idle += Date.now() - start;
+      }
+    }
     const deadline = start + this.idleTimeoutMs;
-    await this.page.waitForTimeout(100);
+    if (leadMs > 0) await this.page.waitForTimeout(leadMs);
+    let checked = 0;
     while (Date.now() < deadline) {
       // A round trip that failed on the network never ends: the caller reports it.
       if (this.traffic.failed && this.traffic.failed.at >= start) return;
+      // A session that ended (logged off) never becomes idle: say so at once, not after the timeout.
+      if (Date.now() - checked > 1000) {
+        checked = Date.now();
+        const gone = await this.ended();
+        if (gone) throw new ActionError(endedText(gone));
+      }
       const quiet = this.traffic.inflight === 0 && Date.now() - this.traffic.lastChange >= quietMs;
       if (quiet) {
         const locked = await this.locked();
@@ -301,7 +455,7 @@ export class WebGuiSession {
           }
         }
       }
-      await this.page.waitForTimeout(100);
+      await this.page.waitForTimeout(POLL_MS);
     }
     throw new ActionError(
       `SAP was still working after ${Math.round(this.idleTimeoutMs / 1000)} s. The step may still finish: look at the screen again in a moment (sap_look), or give a long step more time with "timeout" (seconds, up to ${MAX_IDLE_TIMEOUT_MS / 1000}).`,
@@ -320,10 +474,19 @@ export class WebGuiSession {
     this.slow = await this.framesSlow();
     this.quietMs = this.slow ? QUIET_SLOW_MS : QUIET_MS;
     // The step before may still be running (it was given up on, or the user started one): input would be lost.
+    const t0 = Date.now();
     for (let i = 0; i < 100 && (await this.locked()) === true; i++) await this.page.waitForTimeout(100);
-    if ((await this.locked()) === true)
+    if ((await this.locked()) === true) {
+      const gone = await this.ended();
+      if (gone) throw new ActionError(endedText(gone));
       throw new ActionError(
         "SAP is still working on the step before this one, so nothing was done. Look at the screen again in a moment (sap_look). If it stays like this, the page has lost its connection to SAP: ask the user to reload the tab.",
+      );
+    }
+    // It ended while this action waited: the screen is not the one the action was chosen on.
+    if (Date.now() - t0 >= BUSY_BEFORE_MS)
+      throw new ActionError(
+        `SAP was still working on the step before this one; it finished ${((Date.now() - t0) / 1000).toFixed(1)} s later, and the screen may have changed since you chose this action. Nothing was done: check the screen, then act again.`,
       );
   }
 
