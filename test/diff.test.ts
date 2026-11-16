@@ -125,3 +125,38 @@ describe("Views: what an action answers with", () => {
     expect(() => viewModeFromEnv({ SAP_VIEW: "small" })).toThrow("SAP_VIEW must be diff or full");
   });
 });
+
+describe("fields that a message closed", () => {
+  const ro = (v: string) => v.replace(/ {2}\(edit\)/g, "  (read-only)");
+
+  test("four or more fields that only closed for input share one line; the message stays", () => {
+    const d = diffViews(view({ type: "AB" }), ro(view({ type: "AB", status: "W: The date lies in the future" })));
+    expect(d.text.split("\n")).toEqual([
+      "CHANGED 5 of 16 lines (same screen; sap_look shows all of it):",
+      "~ 4 fields closed for input (read-only now), values as before: ctxtZHDR-TYPE, ctxtZHDR-ORG, ctxtZHDR-CHAN, ...",
+      "+ sbar  status  W: The date lies in the future",
+    ]);
+    expect(d.changed).toBe(5);
+  });
+
+  test("the fields open again in one line when the message is answered", () => {
+    const d = diffViews(ro(view({ type: "AB", status: "W: The date lies in the future" })), view({ type: "AB" }));
+    expect(d.text).toContain("~ 4 fields open for input again (edit), values as before: ctxtZHDR-TYPE, ctxtZHDR-ORG, ctxtZHDR-CHAN, ...");
+    expect(d.text).toContain("- sbar  status  W: The date lies in the future");
+  });
+
+  test("an error leaves the wrong field open: it keeps its own line, with the cursor", () => {
+    const next = ro(view({ type: "ZZ", status: "E: Type ZZ is not defined" })).replace('"ZZ"  (read-only)', '"ZZ"  (edit)  (cursor here)');
+    const lines = diffViews(view({ type: "ZZ" }), next).text.split("\n");
+    expect(lines).toContain('~ ctxtZHDR-TYPE  field  Order Type = "ZZ"  (edit)  (cursor here)');
+    // Three fields closed: below the fold, each keeps its line.
+    expect(lines).toContain('~ ctxtZHDR-ORG  field  Sales Organization = "1000"  (read-only)');
+  });
+
+  test("a field whose value changed too is not folded", () => {
+    const next = ro(view({ type: "AB", status: "W: w" })).replace('"1000"', '"2000"');
+    const lines = diffViews(view({ type: "AB" }), next).text.split("\n");
+    expect(lines).toContain('~ ctxtZHDR-ORG  field  Sales Organization = "2000"  (read-only)');
+    expect(lines.filter((l) => l.includes("closed for input"))).toEqual([]);
+  });
+});

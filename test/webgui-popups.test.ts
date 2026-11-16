@@ -234,3 +234,36 @@ describe.skipIf(!exe)("a termination message, in a browser", () => {
     expect(note).toContain('SAP ended transaction ZT01 after the termination message "Date 17.11.2026 is after the end of factory calendar AM": input that was not saved there is lost.');
   }, 30_000);
 });
+
+// A warning in the status bar: SAP has closed every field of the screen until Enter accepts it.
+const WARNED = `<!doctype html><html lang="en"><head><title>Synthetic</title></head><body>
+<div id="cuaheader" lsdata="{1:'Create\\x20Synthetic\\x20Order'}">Create Synthetic Order</div>
+<input id="ToolbarOkCode" lsdata="{0:'FREETEXT',20:${sid("wnd[0]/tbar[0]/okcd", "GuiOKCodeField")}}">
+<span class="lsField lsField--readonly"><input id="F1" title="PO date" value="20.11.2026" readonly lsdata="{0:'x',20:${sid("wnd[0]/usr/ctxtZVBKD-BSTDK", "GuiCTextField")}}"></span>
+<span class="lsField lsField--readonly"><input id="F2" title="Material" value="" readonly lsdata="{0:'x',20:${sid("wnd[0]/usr/ctxtZRV45A-MABNR", "GuiCTextField")}}"></span>
+<div id="msgarea"><span id="wnd[0]/sbar_msg" lsdata="{0:'The\\x20purchase\\x20order\\x20date\\x20lies\\x20in\\x20the\\x20future',1:'WARNING'}">The purchase order date lies in the future</span></div>
+<div id="sysInfoAreaMenuItemSAPITS_MBAR_TRANSACTION" lsdata="{13:'ZT01'}"></div>
+<div id="sysInfoAreaMenuItemSAPITS_MBAR_DYNPRO" lsdata="{13:'ZPROG/0100'}"></div>
+</body></html>`;
+
+describe.skipIf(!exe)("a field closed by a warning, in a browser", () => {
+  let browser: Browser;
+  let page: Page;
+  beforeAll(async () => {
+    browser = await chromium.launch({ executablePath: exe as string, headless: true, args: ["--no-sandbox"] });
+    page = await (await browser.newContext({ viewport: { width: 1200, height: 900 } })).newPage();
+    await page.route("**/*", (r) => r.fulfill({ contentType: "text/html", body: WARNED }));
+    await page.goto("http://sap.test/sap/bc/gui/sap/its/webgui?sap-client=100");
+  }, 60_000);
+  afterAll(async () => {
+    await browser?.close();
+  });
+
+  test("set is refused with the warning as the reason, and Enter as the way on", async () => {
+    const e = await act(new WebGuiSession(page.mainFrame()), { do: "set", id: "ctxtZRV45A-MABNR", value: "M-01" }).catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(ActionError);
+    expect((e as Error).message).toBe(
+      'wnd[0]/usr/ctxtZRV45A-MABNR is read-only for now: SAP shows the warning "The purchase order date lies in the future" and keeps the fields closed until it is answered: Enter ({"do":"key","key":0}) accepts the warning, then the fields open again.',
+    );
+  }, 30_000);
+});
