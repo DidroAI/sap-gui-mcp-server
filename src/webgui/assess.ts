@@ -12,7 +12,8 @@
  * - its function code (the standard functions of ALV grids: sort, filter...);
  * - its text, when the session's logon language is covered (core/words.ts);
  * - its place: the Goto menu, a value help, a message popup, a report's
- *   selection screen (each rule below says why that place writes nothing).
+ *   selection screen, a screen that only displays an object (each rule below
+ *   says why that place writes nothing).
  * A control the view does not show cannot be ruled safe either.
  *
  * A key is judged as what it triggers: on a popup the button the reader
@@ -25,7 +26,7 @@
  */
 import { resolveId } from "../core/ids.js";
 import type { Action, Assessment } from "../core/types.js";
-import { CLOSES_SESSIONS, commitCode, commitWord, discardsInput, endsLogon, isGotoMenu, languageCovered, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
+import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayTitle, endsLogon, isGotoMenu, languageCovered, listTitle, MENU_PROGRAMS, okcodeKind, runSwitch, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
 import type { MenuEntry } from "./page.js";
 import { vkey } from "./keys.js";
 
@@ -283,13 +284,82 @@ function isValueHelp(w: ViewWindow | undefined): boolean {
  * generated ids `%_<name>_%_APP_%-...`), or screen 1000 with Execute (F8).
  * Its pushbuttons (multiple selection, select options, the report's own
  * SELECTION-SCREEN PUSHBUTTON) change the selection; they do at most what
- * Execute does, and F8 is counted safe on purpose (core/words.ts SAFE_VKEYS).
+ * Execute does, which is counted safe on purpose (core/words.ts SAFE_VKEYS)
+ * unless the screen shows that the report updates (updateRun).
  */
 function isSelectionScreen(scene: Scene): boolean {
   const main = scene.windows.find((w) => w.number === 0);
   if (!main) return false;
   if (main.controls.some((c) => /%_APP_%-/.test(c.id))) return true;
   return scene.dynpro === "1000" && main.controls.some((c) => c.id === "wnd[0]/tbar[1]/btn[8]");
+}
+
+/**
+ * Why Execute (F8) on this selection screen may write, or undefined when it
+ * is a selection screen like any list's. Execute is counted safe because
+ * reports read; a report that updates the database shows it in one of two
+ * ways, and then Execute is a write:
+ * - a switch on the screen (runSwitch): "Test Run" not ticked, or "Update
+ *   Run" chosen. With the test run ticked the report writes nothing;
+ * - its title names what it does ("Deletion of Jobs", "Batch Input: Process
+ *   All Sessions", "Close Period for Material Master Records") and not that
+ *   it lists something. Read where the words are known (a covered language).
+ * A report that updates without either sign is not caught: SAP_BLOCK_TCODES
+ * is the tool for known update programs (README).
+ */
+function updateRun(scene: Scene, ctx: AssessContext): string | undefined {
+  if (!isSelectionScreen(scene)) return undefined;
+  const main = scene.windows.find((w) => w.number === 0);
+  if (!main) return undefined;
+  const switches = main.controls
+    .filter((c) => c.kind === "checkbox" || c.kind === "radio")
+    .map((c) => {
+      const label = c.text.replace(/^\[[x ]\] ?/, "").replace(/ {2}\(read-only\)$/, "");
+      const name = c.id.slice(c.id.lastIndexOf("/") + 1).replace(/^(chk|rad)/, "");
+      return { label, on: c.text.startsWith("[x]"), is: runSwitch(name, label) };
+    });
+  const update = switches.find((x) => x.is === "update" && x.on);
+  if (update) return `${quote(update.label)} is chosen on this selection screen, so the report updates SAP when it runs`;
+  const tests = switches.filter((x) => x.is === "test");
+  if (tests.length && !tests.some((x) => x.on)) return `this report can update SAP and ${quote(tests[0]?.label ?? "")} is not chosen: choose it to run the report without writing`;
+  if (tests.some((x) => x.on)) return undefined;
+  if (languageCovered(ctx.language) && !listTitle(main.title)) {
+    const does = commitWord(main.title) ?? actWord(main.title);
+    if (does) return `the title of this selection screen, ${quote(main.title)}, names something the report does (${does}), not a list it shows`;
+  }
+  return undefined;
+}
+
+/**
+ * A screen that only displays an object: the title of the main window says
+ * so ("Display Standard Order 19121: Overview", "Material anzeigen"), and
+ * its system toolbar, which the view shows, has no Save. SAP opens such a
+ * screen without locking the object and offers no way to save, so a button
+ * or menu entry of the transaction moves to another view of the object
+ * (item conditions, schedule lines, a list of orders) or to another
+ * transaction, where the guard judges again. Fields that take input there
+ * are keys to search by (the initial screen). "Display <-> Change" leads to
+ * a screen titled "Change", where this no longer holds.
+ */
+function isDisplayScreen(scene: Scene, ctx: AssessContext): boolean {
+  const main = scene.windows.find((w) => w.number === 0);
+  if (!main || !displayTitle(ctx.language, main.title)) return false;
+  const buttons = main.controls.filter((c) => c.kind === "button");
+  // The system toolbar must have been read: without it, a missing Save proves nothing.
+  if (!buttons.some((c) => /^wnd\[0\]\/tbar\[0\]\/btn\[\d+\]$/.test(c.id))) return false;
+  return !buttons.some((c) => {
+    const key = buttonKey(c.id);
+    const sc = shortcutOf(c.text);
+    return (key !== undefined && SAVE_VKEYS.has(key)) || (sc !== undefined && SAVE_KEYS.has(sc));
+  });
+}
+
+/** Is this menu entry in one of the transaction's own menus? The last two of the menu bar are SAP's System and Help, the same on every screen. */
+function inOwnMenu(entry: MenuEntry, menus: MenuEntry[]): boolean {
+  const n = Number(/^wnd\[0\]\/mbar\/menu\[(\d+)\]/.exec(entry.sid)?.[1] ?? Number.NaN);
+  const tops = menus.map((m) => /^wnd\[0\]\/mbar\/menu\[(\d+)\]$/.exec(m.sid)?.[1]).filter((x): x is string => x !== undefined);
+  if (Number.isNaN(n) || tops.length < 3) return false;
+  return n < Math.max(...tops.map(Number)) - 1;
 }
 
 /** The top menu ("Goto") an entry sits in. */
@@ -336,6 +406,11 @@ function assessFunction(what: string, text: string, control: ViewControl | undef
     const asked = commitQuestion(scene.windows);
     if (asked && !declines(control, text, ctx)) return endsLogon(asked) ? closes(`${named} on the popup ${quote(asked)}`) : commit(`${named} on the popup ${quote(asked)}`);
   }
+  // Execute on the selection screen of a report that updates (updateRun).
+  if (control && control.window === 0 && (key === 8 || sc === "F8")) {
+    const writes = updateRun(scene, ctx);
+    if (writes) return commit(`${named}: ${writes}`);
+  }
   if (key !== undefined && SAFE_VKEYS.has(key)) return NAVIGATE;
   if (sc && SAFE_KEYS.has(sc)) return NAVIGATE;
   if (safeWord(ctx.language, text)) return NAVIGATE;
@@ -349,20 +424,35 @@ function assessFunction(what: string, text: string, control: ViewControl | undef
   if (placed && control && isValueHelp(win)) return navigate(`${named} of a value help`);
   if (placed && control && control.window === 0 && control.id.includes("/usr/") && isSelectionScreen(scene)) return navigate(`${named} of a selection screen`);
   if (control && inGotoMenu(control, text, scene, ctx)) return navigate(`${named} is in the Goto menu`);
+  // A button of the transaction on a screen that only displays (isDisplayScreen): its own toolbar or the
+  // screen body, not the toolbar of a grid or a tree. A function named as one that acts (print, issue
+  // output, start, execute...) is still held back.
+  if (control && control.window === 0 && control.kind === "button" && /^wnd\[0\]\/(tbar\[1\]|usr)\//.test(control.id) && !control.id.includes("/shell") && isDisplayScreen(scene, ctx) && !actWord(text))
+    return navigate(`${named} on a screen that only displays`);
   return notSafe(named);
 }
 
-function assessMenu(entry: MenuEntry, menus: MenuEntry[], ctx: AssessContext): Assessment {
+function assessMenu(entry: MenuEntry, menus: MenuEntry[], ctx: AssessContext, scene?: Scene): Assessment {
   // An entry with entries below it only opens its submenu.
   if (menus.some((m) => m.sid.startsWith(`${entry.sid}/`))) return NAVIGATE;
   const key = entry.key ? keyName(entry.key) : "";
   if (key && SAVE_KEYS.has(key)) return commit(`menu entry ${quote(entry.text)}`);
   if (endsLogon(entry.text)) return closes(`menu entry ${quote(entry.text)}`);
   if (commitWord(entry.text)) return commit(`menu entry ${quote(entry.text)}`);
+  // Execute on the selection screen of a report that updates (updateRun).
+  if (key === "F8" && scene) {
+    const writes = updateRun(scene, ctx);
+    if (writes) return commit(`menu entry ${quote(entry.text)}: ${writes}`);
+  }
   if (key && SAFE_KEYS.has(key)) return NAVIGATE;
   if (safeWord(ctx.language, entry.text)) return NAVIGATE;
   // SAP's Goto menu moves between the screens of an object (isGotoMenu).
   if (isGotoMenu(ctx.language, topMenuOf(entry, menus)?.text)) return navigate(`menu entry ${quote(entry.text)} is in the Goto menu`);
+  // An entry of the transaction's own menus on a screen that only displays (isDisplayScreen), unless it is
+  // named as a function that acts (Issue Output To, Print...). System and Help are the same everywhere.
+  // The menus above it count too: "Flag for deletion > Immediately" is named by its parent.
+  const path = [entry.text, ...menus.filter((m) => entry.sid.startsWith(`${m.sid}/`)).map((m) => m.text)];
+  if (scene && inOwnMenu(entry, menus) && isDisplayScreen(scene, ctx) && !actWord(...path) && !commitWord(...path)) return navigate(`menu entry ${quote(entry.text)} on a screen that only displays`);
   return notSafe(`menu entry ${quote(entry.text)}`);
 }
 
@@ -379,7 +469,7 @@ function assessFocus(scene: Scene, ctx: AssessContext, what: string): Assessment
   if (f.type === "GuiMenu") {
     const entry = menus.find((m) => m.sid === f.sid);
     if (!entry) return commit(`${what} would choose a menu entry the server could not read`);
-    const a = assessMenu(entry, menus, ctx);
+    const a = assessMenu(entry, menus, ctx, scene);
     return a.risk === "commit" ? { ...a, reason: `${what} would choose the ${a.reason}` } : undefined;
   }
   if (!/Button$/.test(f.type) || f.type === "GuiRadioButton") return undefined;
@@ -499,8 +589,13 @@ function assessKey(raw: unknown, scene: Scene, what: string, ctx: AssessContext)
   if (button) return assessFunction(`${what} is the button`, button.text, button, scene, ctx);
   const entry = top === 0 ? menus.find((m) => m.key && keyName(m.key) === name) : undefined;
   if (entry) {
-    const a = assessMenu(entry, menus, ctx);
+    const a = assessMenu(entry, menus, ctx, scene);
     return a.risk === "commit" ? { ...a, reason: `${what} is the ${a.reason}` } : a;
+  }
+  // F8 without a button or menu entry the view shows is still Execute on a selection screen (updateRun).
+  if (name === "F8" && top === 0) {
+    const writes = updateRun(scene, ctx);
+    if (writes) return commit(`${what}: ${writes}`);
   }
   if (SAFE_KEYS.has(name)) return NAVIGATE;
   return commit(`${what} has no button or menu entry on this screen, so what it does is unknown`);
@@ -526,7 +621,7 @@ function assessOkcode(value: string, view: string, scene: Scene, ctx: AssessCont
       return NAVIGATE;
     default:
       // On SAP Easy Access a plain word is a transaction code.
-      if (!k.code.startsWith("/") && /^[A-Z0-9_]+$/.test(k.code) && MENU_PROGRAMS.has(programOf(view).toUpperCase())) return NAVIGATE;
+      if (!k.code.startsWith("/") && /^[A-Z0-9_.]+$/.test(k.code) && MENU_PROGRAMS.has(programOf(view).toUpperCase())) return NAVIGATE;
       return commit(`${how} (a command or function code that the server cannot classify)`);
   }
 }
@@ -574,7 +669,7 @@ export function assessAction(action: Action, view: string, menus: MenuEntry[], c
         const full = id.startsWith("wnd[") ? id : `wnd[0]/mbar/${id}`;
         const entry = menus.find((m) => m.sid === full);
         if (!entry) return commit(`menu entry ${full} is not known, so what it does is unknown`);
-        return assessMenu(entry, menus, ctx);
+        return assessMenu(entry, menus, ctx, scene);
       }
       const control = findControl(windows, id);
       if (!control) {
@@ -589,7 +684,7 @@ export function assessAction(action: Action, view: string, menus: MenuEntry[], c
       // Buttons, open menu rows, links and buttons of HTML viewers, and any kind this table does not know.
       if (control.kind === "menu") {
         const entry = menus.find((m) => m.sid === control.id);
-        if (entry) return assessMenu(entry, menus, ctx);
+        if (entry) return assessMenu(entry, menus, ctx, scene);
       }
       return assessFunction(FUNCTION_KINDS.has(control.kind) ? (control.kind === "menu" ? "menu entry" : control.kind) : control.kind, control.text, control, scene, ctx);
     }

@@ -193,6 +193,21 @@ For each step:
    - every capture finds its value; then every check holds. Captures first,
      so a check may use a value captured at the same step.
 
+A window SAP shows after a step that the recording does not have there is
+handled by what it asks:
+
+- a popup that only informs (text and Continue, no question, no input): the
+  replay confirms it and notes it on the step;
+- a screen that offers a choice (availability control: complete delivery,
+  delivery proposal, continue without confirming): the step fails and names
+  the ways on, and nothing is pressed, because the choice decides what is
+  saved. `--continue` (`"choices":"continue"`) makes the replay press the
+  neutral Continue instead, and say so;
+- a question or a window that takes input: the step fails.
+
+When the replay did anything the recording does not have, the first line of
+the result says `PASS ... WITH NOTES` and names the steps.
+
 The first failing step stops the run; later steps are reported as skipped.
 On the wrong screen or after an SAP error, the marked checks are not run:
 they would only repeat the failure. The result holds, per step, pass, fail or

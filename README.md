@@ -439,9 +439,21 @@ Failing closed has a cost: with `SAP_WRITE=off`, some harmless buttons are
 refused too (for example "Continue" on a popup whose text the server does
 not know as safe). The agent is told why, and can tell you.
 
+**A screen that only displays** (Web GUI): when the title of the main
+window says "Display ..." and the system toolbar has no Save, the
+transaction's own buttons and menu entries count as navigate (item
+conditions, schedule lines, a list of orders). SAP offers no way to save
+there. Still held: anything named with a commit word, functions that act
+beyond the screen (print, issue output, start, execute...), the System and
+Help menus, and the toolbar buttons of grids and trees.
+
 **Execute (F8)** counts as navigate on purpose. It runs reports and lists
-(VA05, ME2N...), which read. A report that updates the database usually
-has a test-run flag and asks before posting, but not always. Put known
+(VA05, ME2N...), which read. In Web GUI, Execute on a selection screen is a
+commit when the screen shows that the report updates: a "Test Run" box that
+is not ticked (tick it, and the report runs without writing), an "Update
+Run" choice that is selected, or a title that names what the report does
+and not a list ("Deletion of Jobs", "Batch Input: Process All Sessions").
+A report that updates without any of these signs still runs: put known
 update programs in `SAP_BLOCK_TCODES`.
 
 A slow action can be given more time with `"timeout"` in seconds, up to
@@ -524,6 +536,7 @@ Every setting is an environment variable of the server process.
 | `SAP_VIEW` | `diff` | `full`: every action answers with the whole screen |
 | `SAP_FIORI_WAIT` | full waits | `busy`: faster Fiori waits (busy indicators only, without UI5's RecordReplay) |
 | `SAP_RECORD_DIR` | `./sap-tests` | where recordings and exports are written |
+| `SAP_DOWNLOAD_DIR` | `downloads` in `SAP_RECORD_DIR` when that is set, else `./sap-downloads` | Web GUI: where a file SAP writes "to a local file" (List > Export > Local File) is copied. Web GUI keeps such a file inside the browser; the answer of the action names the copy |
 | `SAP_RECORD` | `off` | `on`: record every session from its first action |
 
 `sap-gui-mcp-server --help` lists the commands and the main settings.

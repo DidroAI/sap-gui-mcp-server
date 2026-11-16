@@ -1,7 +1,7 @@
 /**
  * The command line of record and replay:
  *
- *   sap-gui-mcp-server replay <file>... [--var name=value]... [--session <ref>] [--loose] [--stay] [--json] [--junit <file>]
+ *   sap-gui-mcp-server replay <file>... [--var name=value]... [--session <ref>] [--loose] [--continue] [--stay] [--json] [--junit <file>]
  *   sap-gui-mcp-server export <file> --to <target> [--out <file>]
  *
  * `replay` runs on a session the user has open, as the server does: it
@@ -15,7 +15,7 @@ import { exportTest, TARGET_NAMES, TARGETS } from "./export/index.js";
 import { FILE_SUFFIX, parseTest } from "./format.js";
 import { junit, replayAll, resultText } from "./replay.js";
 
-export const RECORD_HELP = `  sap-gui-mcp-server replay <file>... [--var name=value] [--session <ref>] [--loose] [--stay] [--json] [--junit <file>]
+export const RECORD_HELP = `  sap-gui-mcp-server replay <file>... [--var name=value] [--session <ref>] [--loose] [--continue] [--stay] [--json] [--junit <file>]
                                 run recorded tests (${FILE_SUFFIX}) on an open session, with no model; exit code 1 on a failure
   sap-gui-mcp-server export <file> --to ${TARGET_NAMES.join("|")} [--out <file>]
                                 write a recorded test in another format`;
@@ -73,6 +73,7 @@ export async function replayCommand(argv: string[], surfaces: Surface[], policy:
     const results = await replayAll(driver, policy, tests, {
       variables,
       screens: flags.has("--loose") ? "loose" : "strict",
+      ...(flags.has("--continue") ? { choices: "continue" as const } : {}),
       leaveOnFailure: !flags.has("--stay"),
     });
     if (json) out(JSON.stringify(results, null, 2));

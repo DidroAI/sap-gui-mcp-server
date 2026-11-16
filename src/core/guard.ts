@@ -78,7 +78,7 @@ export function okcodeKind(value: unknown): Okcode {
   }
   // "/11", "/h", "/$sync": commands, not transactions.
   if (v.startsWith("/")) return { kind: "other" };
-  const t = /^([A-Za-z0-9_]+(?:\/[A-Za-z0-9_]+)*)$/.exec(v)?.[1]?.toUpperCase();
+  const t = /^([A-Za-z0-9_.]+(?:\/[A-Za-z0-9_.]+)*)$/.exec(v)?.[1]?.toUpperCase();
   if (!t || /^\d+$/.test(t)) return { kind: "other" };
   return { kind: "transaction", tcode: t };
 }

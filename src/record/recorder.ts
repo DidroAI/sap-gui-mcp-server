@@ -176,7 +176,10 @@ export class Recorder {
     await this.save();
     const t = screen.transaction;
     const clean = !t || HOME.has(t.toUpperCase()) ? `Begin with {"do":"okcode","value":"/n<transaction>"} so the replay starts clean.` : `The session is in ${t}: if the first step is not an okcode, the replay will start with /n${t}. Begin with {"do":"okcode","value":"/n<transaction>"} so the test does not depend on that.`;
-    return `Recording "${name}" on ${info.surface} ${info.system ?? "?"}${info.client ? `/${info.client}` : ""}, to ${path}. Every sap_act that works is now a step. ${clean}`;
+    // A popup open now is not in the recording: a replay cancels it before its first step, so a first step that answers it would find nothing.
+    const popup = screen.windows.filter((w) => /^wnd\[[1-9]\d*\]$/.test(w.id)).at(-1);
+    const open = popup ? ` A popup is open ("${popup.title}"): a replay closes any popup before its first step, so answering this one as the first step cannot be replayed. Close it, then start the test with an okcode.` : "";
+    return `Recording "${name}" on ${info.surface} ${info.system ?? "?"}${info.client ? `/${info.client}` : ""}, to ${path}. Every sap_act that works is now a step. ${clean}${open}`;
   }
 
   /** Runs an action through `run` and, when a recording is on for this session, records it as a step. */
