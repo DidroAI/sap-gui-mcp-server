@@ -67,7 +67,9 @@ export async function assess(session: WebGuiSession, action: Action): Promise<As
       if (hit?.asksDefault) throw new ActionError(questionRefusal(hit));
     }
     // The control the action will act on, resolved as `act` resolves it: the guard judges that one.
-    const resolved = action.id ? { ...action, id: resolveIn(view, String(action.id)) } : action;
+    // A menu entry is named by its path, also while another menu is open (the open rows are controls of the view,
+    // and "menu[5]/menu[3]" would be read as the handle of the open "menu[3]").
+    const resolved = action.id ? { ...action, id: menuSid(String(action.id)) ?? resolveIn(view, String(action.id)) } : action;
     const verdict = assessAction(resolved, view, menus, { language: facts.language, focus });
     // A control the view does not list may still exist in the page (markControl looks wider).
     // Only when the page has none either is it "no such control" rather than "may write".

@@ -13,7 +13,7 @@ import { chromium, type Browser, type Page } from "playwright-core";
 import { menuSid, shortIds } from "../src/core/ids.js";
 import { ActionError } from "../src/core/types.js";
 import { webguiLookInFrame } from "../src/webgui/index.js";
-import { act } from "../src/webgui/reader.js";
+import { act, assess } from "../src/webgui/reader.js";
 import { WebGuiSession } from "../src/webgui/session.js";
 
 const exe = process.env.SAP_TEST_CHROME;
@@ -183,6 +183,13 @@ describe.skipIf(!exe)("the menu bar, in a browser", () => {
     await act(session, { do: "key", key: "Escape" });
     expect(await act(session, { do: "select", id: `${M}/menu[1]/menu[0]/menu[3]` })).toBe(`menu ${M}/menu[1]/menu[0]/menu[3]`);
     expect(await chosen()).toBe(`${M}/menu[1]/menu[0]/menu[3]`);
+  }, 30_000);
+
+  test("the guard judges an entry of another menu by its path while a menu is open", async () => {
+    await open();
+    await act(session, { do: "select", id: `${M}/menu[1]` });
+    // "menu[0]" is also the last part of the open "menu[1]/menu[0]": the path is not read as a handle.
+    expect((await assess(session, { do: "select", id: `${M}/menu[0]/menu[0]` })).risk).toBeDefined();
   }, 30_000);
 
   test("an entry named from the menu bar (mbar/menu[1]/menu[1]) is chosen as by its whole id", async () => {
