@@ -174,6 +174,25 @@ describe("sap_record", () => {
     expect(stop.text).toContain("Recorded");
   });
 
+  test("a screen read while SAP is still working on the step is not what the step led to (NEW-4)", async () => {
+    const sap = new FakeSap();
+    const { act, rec, file, policy } = await setup({}, sap);
+    await rec("start", { name: "late" });
+    sap.lag = 2;
+    await act({ do: "okcode", value: "/nZA03" });
+    await act({ do: "set", id: "ctxtZORD-VBELN", value: "5000" });
+    await act({ do: "key", key: 0 });
+    sap.lag = 0;
+    await rec("stop");
+    const t = await file("late.saptest.json");
+    // Not SMEN, the screen the okcode was typed on.
+    expect(t.steps.map((s) => `${s.after?.transaction} ${s.after?.program}/${s.after?.screen}`)).toEqual(["ZA03 SAPMZA03/100", "ZA03 SAPMZA03/100", "ZA03 SAPMZA03/300"]);
+    // And the replay waits the same way before it compares.
+    sap.lag = 2;
+    const r = await replay(sap.driver(), policy, t);
+    expect(resultText(r).split("\n")[0]).toStartWith("PASS  late");
+  });
+
   test("a captured value is the variable in the steps after it, and not in the step that made it", async () => {
     const { test: t } = await recordCreateAndDisplay();
     expect(t.variables.order?.value).toBe("5001");

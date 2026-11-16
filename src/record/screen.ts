@@ -137,6 +137,28 @@ export function parseScreen(text: string): ParsedScreen {
   return out;
 }
 
+/**
+ * A view read while the surface is still busy with a step says so in a NOTE
+ * line (Web GUI: its page is locked until the answer is drawn). That screen
+ * is from before the step: it must not be recorded as where the step led,
+ * nor compared with the recording.
+ */
+export const stillWorking = (view: string): boolean => /^NOTE SAP is still working on a step/m.test(view);
+
+/**
+ * The screen once the step before it is over: read again while the view
+ * says SAP is still working, for at most `maxMs`. Then the screen as it is.
+ */
+export async function readSettled(look: () => Promise<string>, maxMs = 15_000, pauseMs = 250): Promise<ParsedScreen> {
+  const until = Date.now() + maxMs;
+  let view = await look();
+  while (stillWorking(view) && Date.now() < until) {
+    await new Promise((resolve) => setTimeout(resolve, pauseMs));
+    view = await look();
+  }
+  return parseScreen(view);
+}
+
 export const refOf = (s: ParsedScreen): ScreenRef => ({
   ...(s.transaction ? { transaction: s.transaction } : {}),
   ...(s.program ? { program: s.program } : {}),
