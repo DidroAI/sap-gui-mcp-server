@@ -459,3 +459,196 @@ describe("assess: a dialog popup is not a save question", () => {
     expect(risk({ do: "press", id: "wnd[1]/usr/btnSPOP-OPTION2" }, SAVE_Q)).toBe("navigate");
   });
 });
+
+// ---- a screen that only displays (ECCSES-03) ------------------------------------------
+
+const DISPLAY = [
+  "TRANSACTION ZT03  PROGRAM ZPROG  SCREEN 4001  SYSTEM XYZ (100) host",
+  'WINDOW wnd[0]  "Display Synthetic Order 1: Overview"',
+  "wnd[0]/tbar[0]/okcd  command-field",
+  "wnd[0]/tbar[0]/btn[3]  button  Back (F3)",
+  "wnd[0]/tbar[0]/btn[15]  button  Exit (Shift+F3)",
+  "wnd[0]/tbar[1]/btn[37]  button  Header output preview (Ctrl+Shift+F1)",
+  "wnd[0]/tbar[1]/btn[7]  button  Orders  (List of synthetic orders (F7))",
+  "wnd[0]/tbar[1]/btn[39]  button  Loading Units and Aggregation Categories (Ctrl+Shift+F3)",
+  "wnd[0]/tbar[1]/btn[20]  button  Issue output (Shift+F8)",
+  'wnd[0]/usr/ctxtZHDR-ID  field  Order = "1"  (read-only)',
+  "wnd[0]/usr/btnBT_PKON  button  Item conditions",
+  "wnd[0]/usr/btnBT_PEIN  button  Schedule lines for item",
+  "wnd[0]/usr/btnBT_POPO  button  Position",
+  "wnd[0]/usr/btnBT_POAN  button  Create item",
+  "wnd[0]/usr/btnBT_START  button  Start workflow",
+  "wnd[0]/usr/cntlGRID/shellcont/shell  grid  1 rows; columns: A=Col A",
+  "wnd[0]/usr/cntlGRID/shellcont/shell/ZRECALC  button  Recalculate",
+  "wnd[0]/mbar  menubar  Order {menu[0]}, Extras {menu[1]}, System {menu[2]}, Help {menu[3]}",
+].join("\n");
+
+const DISPLAY_MENUS: MenuEntry[] = [
+  { sid: "wnd[0]/mbar/menu[0]", text: "Order", key: "" },
+  { sid: "wnd[0]/mbar/menu[0]/menu[0]", text: "Issue Output To", key: "" },
+  { sid: "wnd[0]/mbar/menu[0]/menu[1]", text: "Deliver", key: "" },
+  { sid: "wnd[0]/mbar/menu[0]/menu[2]", text: "Flag for deletion", key: "" },
+  { sid: "wnd[0]/mbar/menu[0]/menu[2]/menu[0]", text: "Immediately", key: "" },
+  { sid: "wnd[0]/mbar/menu[1]", text: "Extras", key: "" },
+  { sid: "wnd[0]/mbar/menu[1]/menu[0]", text: "Packing proposal", key: "CTRL_F9" },
+  { sid: "wnd[0]/mbar/menu[2]", text: "System", key: "" },
+  { sid: "wnd[0]/mbar/menu[2]/menu[0]", text: "Own Spool Requests", key: "" },
+  { sid: "wnd[0]/mbar/menu[3]", text: "Help", key: "" },
+  { sid: "wnd[0]/mbar/menu[3]/menu[0]", text: "Settings...", key: "" },
+];
+
+describe("a screen that only displays: its buttons and menu entries navigate", () => {
+  const on = (action: Action, view = DISPLAY, ctx: AssessContext = EN) => assessAction(action, view, DISPLAY_MENUS, ctx);
+
+  test("buttons of the transaction run: item conditions, schedule lines, a list of orders, a preview", () => {
+    for (const id of ["btnBT_PKON", "btnBT_PEIN", "btnBT_POPO", "wnd[0]/tbar[1]/btn[7]", "wnd[0]/tbar[1]/btn[39]", "wnd[0]/tbar[1]/btn[37]"]) expect([id, on({ do: "press", id }).risk]).toEqual([id, "navigate"]);
+    expect(on({ do: "press", id: "btnBT_PKON" }).reason).toBe('button "Item conditions" on a screen that only displays');
+    // The key of a button is the button.
+    expect(on({ do: "key", key: 7 }).risk).toBe("navigate");
+    expect(on({ do: "okcode", value: "/39" }).risk).toBe("navigate");
+  });
+
+  test("menu entries of the transaction's own menus run; System and Help stay as they were", () => {
+    expect(on({ do: "select", id: "wnd[0]/mbar/menu[1]/menu[0]" }).risk).toBe("navigate");
+    expect(on({ do: "key", key: "Control+F9" }).risk).toBe("navigate");
+    expect(on({ do: "select", id: "wnd[0]/mbar/menu[0]/menu[1]" }).risk).toBe("navigate");
+    expect(on({ do: "select", id: "wnd[0]/mbar/menu[2]/menu[0]" }).risk).toBe("commit");
+    expect(on({ do: "select", id: "wnd[0]/mbar/menu[3]/menu[0]" }).risk).toBe("commit");
+  });
+
+  test("what writes or acts stays a commit there", () => {
+    // A commit word, on the button or on the menu above the entry.
+    expect(on({ do: "press", id: "btnBT_POAN" }).risk).toBe("commit");
+    expect(on({ do: "select", id: "wnd[0]/mbar/menu[0]/menu[2]/menu[0]" }).risk).toBe("commit");
+    // Functions that act beyond the screen: issue output, start a workflow.
+    expect(on({ do: "press", id: "wnd[0]/tbar[1]/btn[20]" }).risk).toBe("commit");
+    expect(on({ do: "press", id: "btnBT_START" }).risk).toBe("commit");
+    expect(on({ do: "select", id: "wnd[0]/mbar/menu[0]/menu[0]" }).risk).toBe("commit");
+    // Save by key, a key nothing carries, an unknown button of a grid's toolbar.
+    expect(on({ do: "key", key: 11 }).risk).toBe("commit");
+    expect(on({ do: "key", key: 9 }).risk).toBe("commit");
+    expect(on({ do: "press", id: "wnd[0]/usr/cntlGRID/shellcont/shell/ZRECALC" }).risk).toBe("commit");
+    expect(on({ do: "toolbar", id: "wnd[0]/usr/cntlGRID/shellcont/shell", button: "ZRECALC" }).risk).toBe("commit");
+  });
+
+  test("the rule needs the title, a system toolbar without Save, and a language whose words are read", () => {
+    const press: Action = { do: "press", id: "btnBT_PKON" };
+    // The same screen opened to change: the title says so.
+    expect(on(press, DISPLAY.replace("Display Synthetic", "Change Synthetic")).risk).toBe("commit");
+    expect(on(press, DISPLAY.replace("Display Synthetic Order 1", "Display/Change Synthetic Order 1")).risk).toBe("commit");
+    // "Display" in the title and a Save button: not a display screen.
+    expect(on(press, DISPLAY.replace("wnd[0]/tbar[0]/btn[3]  button  Back (F3)", "wnd[0]/tbar[0]/btn[11]  button  Save (Ctrl+S)\nwnd[0]/tbar[0]/btn[3]  button  Back (F3)")).risk).toBe("commit");
+    // The system toolbar was not read: a missing Save proves nothing.
+    expect(
+      on(
+        press,
+        DISPLAY.split("\n")
+          .filter((l) => !l.startsWith("wnd[0]/tbar[0]/btn["))
+          .join("\n"),
+      ).risk,
+    ).toBe("commit");
+    expect(on(press, DISPLAY, { language: "JA" }).risk).toBe("commit");
+    expect(on(press, DISPLAY, {}).risk).toBe("commit");
+    // A popup over the screen is judged as before.
+    const popup = `${DISPLAY}\nWINDOW wnd[1]  "Position"\nwnd[1]/usr/btnZGO  button  Reorganize`;
+    expect(on({ do: "press", id: "btnZGO" }, popup).risk).toBe("commit");
+  });
+
+  test("German: the title, and a compound that ends in a noun that only shows", () => {
+    const de = DISPLAY.replace("Display Synthetic Order 1: Overview", "Synthetischen Auftrag 1 anzeigen: Übersicht")
+      .replace("Item conditions", "Positionskonditionen")
+      .replace("Issue output (Shift+F8)", "Nachrichtenausgabe (Umsch+F8)");
+    expect(on({ do: "press", id: "btnBT_PKON" }, de, { language: "DE" }).risk).toBe("navigate");
+    expect(on({ do: "press", id: "wnd[0]/tbar[1]/btn[20]" }, de, { language: "DE" }).risk).toBe("commit");
+    // "Statusübersicht" is "Status overview": safe on any screen, as in English.
+    const edit = EDIT.replace("Display item details", "Statusübersicht");
+    expect(assessAction({ do: "press", id: "btnBT_DETAIL" }, edit, MENUS, { language: "DE" }).risk).toBe("navigate");
+    expect(assessAction({ do: "press", id: "btnBT_DETAIL" }, EDIT.replace("Display item details", "Ausgabevorschau"), MENUS, { language: "DE" }).risk).toBe("navigate");
+  });
+});
+
+// ---- Execute on a selection screen (ECCSES-09) ----------------------------------------
+
+const selection = (title: string, ...controls: string[]) =>
+  [
+    "TRANSACTION ZREP  PROGRAM ZREPORT  SCREEN 1000  SYSTEM XYZ (100) host",
+    `WINDOW wnd[0]  "${title}"`,
+    "wnd[0]/tbar[0]/okcd  command-field",
+    "wnd[0]/tbar[0]/btn[3]  button  Back (F3)",
+    "wnd[0]/tbar[1]/btn[8]  button  Execute (F8)",
+    "wnd[0]/tbar[1]/btn[9]  button  Execute in Background (F9)",
+    'wnd[0]/usr/ctxtS_NAME-LOW  field  Name = ""  (edit)',
+    "wnd[0]/usr/btn%_S_NAME_%_APP_%-VALU_PUSH  button  Multiple selection",
+    ...controls,
+  ].join("\n");
+
+describe("Execute on a selection screen: safe for a list, a commit for a report that updates", () => {
+  const execs: Action[] = [
+    { do: "key", key: 8 },
+    { do: "key", key: "F8" },
+    { do: "okcode", value: "/8" },
+    { do: "press", id: "wnd[0]/tbar[1]/btn[8]" },
+  ];
+  const all = (view: string, ctx: AssessContext = EN) => execs.map((a) => assessAction(a, view, [], ctx).risk);
+
+  test("a list report runs", () => {
+    expect(all(selection("Synthetic Document List", "wnd[0]/usr/chkDATABASE  checkbox  [x] Database"))).toEqual(["navigate", "navigate", "navigate", "navigate"]);
+    expect(all(selection("Stock on Posting Date", "wnd[0]/usr/radLGBST  radio  [x] Storage Loc./Batch Stock"))).toEqual(["navigate", "navigate", "navigate", "navigate"]);
+  });
+
+  test("a test run box that is not ticked makes Execute a commit; ticked, it runs", () => {
+    const off = selection("Synthetic Clearing", "wnd[0]/usr/chkX_TESTL  checkbox  [ ] Test Run");
+    expect(all(off)).toEqual(["commit", "commit", "commit", "commit"]);
+    expect(assessAction({ do: "key", key: 8 }, off, [], EN).reason).toBe('key 8 is the button "Execute (F8)": this report can update SAP and "Test Run" is not chosen: choose it to run the report without writing');
+    expect(all(selection("Synthetic Clearing", "wnd[0]/usr/chkX_TESTL  checkbox  [x] Test Run"))).toEqual(["navigate", "navigate", "navigate", "navigate"]);
+    // Ticking the box is input, as on any screen.
+    expect(assessAction({ do: "check", id: "chkX_TESTL", value: true }, off, [], EN).risk).toBe("navigate");
+  });
+
+  test("the switch is known by its label in other languages, and by its parameter name in any", () => {
+    expect(all(selection("Synthetischer Ausgleich", "wnd[0]/usr/chkZFLAG  checkbox  [ ] Testlauf"), { language: "DE" })[0]).toBe("commit");
+    expect(all(selection("Synthetischer Ausgleich", "wnd[0]/usr/chkZFLAG  checkbox  [x] Testlauf"), { language: "DE" })[0]).toBe("navigate");
+    expect(all(selection("総合", "wnd[0]/usr/chkP_TEST  checkbox  [ ] テスト"), { language: "JA" })[0]).toBe("commit");
+    expect(all(selection("総合", "wnd[0]/usr/chkP_TEST  checkbox  [x] テスト"), { language: "JA" })[0]).toBe("navigate");
+    expect(all(selection("総合", "wnd[0]/usr/chkTESTRUN  checkbox  [ ] テスト"), { language: "JA" })[0]).toBe("commit");
+    // "LATEST" is not a test switch.
+    expect(all(selection("Synthetic Document List", "wnd[0]/usr/chkP_LATEST  checkbox  [ ] Latest only"))[0]).toBe("navigate");
+  });
+
+  test("an update run that is chosen is a commit, whatever else is ticked", () => {
+    const radios = (test: boolean) => selection("Synthetic Revaluation", `wnd[0]/usr/radP_TEST  radio  [${test ? "x" : " "}] Simulation`, `wnd[0]/usr/radP_ECHT  radio  [${test ? " " : "x"}] Update run`);
+    expect(all(radios(false))[0]).toBe("commit");
+    expect(all(radios(true))[0]).toBe("navigate");
+    expect(assessAction({ do: "key", key: 8 }, radios(false), [], EN).reason).toContain('"Update run" is chosen on this selection screen');
+  });
+
+  test("a title that names what the report does, and no list, is a commit", () => {
+    for (const title of ["Deletion of Jobs", "Batch Input: Process All Sessions", "Close Period for Synthetic Records", "Selection Program for Issuing Output", "Inbound Processing of IDocs Ready for Passing"])
+      expect([title, all(selection(title))[0]]).toEqual([title, "commit"]);
+    for (const title of ["Maintain Billing Due List", "Display Release Log", "Synthetic Line Item Display", "Stock Overview: Company Code/Plant"]) expect([title, all(selection(title))[0]]).toEqual([title, "navigate"]);
+    // A title in a language whose words are not read says nothing.
+    expect(all(selection("Deletion of Jobs"), { language: "JA" })[0]).toBe("navigate");
+  });
+
+  test("the menu entry that carries F8 is judged the same; pushbuttons of the selection stay safe", () => {
+    const menus: MenuEntry[] = [
+      { sid: "wnd[0]/mbar/menu[0]", text: "Program", key: "" },
+      { sid: "wnd[0]/mbar/menu[0]/menu[0]", text: "Execute", key: "F8" },
+    ];
+    const off = selection("Synthetic Clearing", "wnd[0]/usr/chkX_TESTL  checkbox  [ ] Test Run");
+    expect(assessAction({ do: "select", id: "wnd[0]/mbar/menu[0]/menu[0]" }, off, menus, EN).risk).toBe("commit");
+    expect(assessAction({ do: "press", id: "btn%_S_NAME_%_APP_%-VALU_PUSH" }, off, menus, EN).risk).toBe("navigate");
+    expect(assessAction({ do: "press", id: "wnd[0]/tbar[1]/btn[9]" }, off, menus, EN).risk).toBe("commit");
+  });
+
+  test("F8 away from a selection screen is as before", () => {
+    expect(risk({ do: "key", key: 8 })).toBe("navigate");
+  });
+});
+
+describe("transaction codes with a dot", () => {
+  test("/nF.13 opens a transaction", () => {
+    expect(risk({ do: "okcode", value: "/nF.13" })).toBe("navigate");
+    expect(risk({ do: "okcode", value: "/oF.05" })).toBe("navigate");
+  });
+});
