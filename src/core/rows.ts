@@ -57,7 +57,7 @@ export function pageOf(block: string, screen?: string): Page {
       titles.push(l);
       continue;
     }
-    const m = /^ {2}(row) (\d+)((?: \(selected\))?): /.exec(l);
+    const m = /^ {2}(row) (\d+)((?: \((?:selected|total)\))*): /.exec(l);
     if (kind === "grid" && m) rows.push({ n: Number(m[2]), text: l });
     else if (kind === "list" && m && Number(m[2]) < fixed) titles.push(`  title ${m[2]}: ${l.slice(m[0].length)}`);
     else if ((kind === "table" || kind === "list") && m) {
@@ -82,7 +82,7 @@ export function onlyColumns(page: Page, cols: string[]): Page {
   const want = cols.map((c) => c.replace(/^ +| +$/g, "").toLowerCase()).filter(Boolean);
   if (!want.length) return page;
   const split = (row: string) => {
-    const m = /^( {2}row \d+(?: \(selected\))?: )(.*)$/.exec(row);
+    const m = /^( {2}row \d+(?: \((?:selected|total)\))*: )(.*)$/.exec(row);
     return m ? { prefix: m[1] ?? "", body: m[2] ?? "" } : undefined;
   };
   if (page.kind === "grid") {

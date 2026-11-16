@@ -254,7 +254,7 @@ function foldEmptyColumns(lines: string[]): string[] {
     const rows: { prefix: string; cells: string[] }[] = [];
     let j = i + 1;
     for (; j < lines.length; j++) {
-      const r = /^( {2}row \d+(?: \(selected\))?: )(.*)$/.exec(lines[j] ?? "");
+      const r = /^( {2}row \d+(?: \((?:selected|total)\))*: )(.*)$/.exec(lines[j] ?? "");
       if (!r) break;
       rows.push({ prefix: r[1] ?? "", cells: (r[2] ?? "").split(" | ") });
     }

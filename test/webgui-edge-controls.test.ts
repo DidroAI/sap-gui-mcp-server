@@ -32,6 +32,59 @@ const SELOPT = `
 const HELP = `<iframe id="V1" style="width:500px;height:200px" lsdata="{0:'x',20:${sid("wnd[0]/usr/cntlHELP/shellcont/shell", "GuiHtmlViewer")}}"
   srcdoc="<h3>Sales Document Type</h3><p>A classification that distinguishes between different types of <a href='#e2'><b>sales document</b></a>.</p><h3>Use</h3><p>${"The type decides the screens that follow. ".repeat(60)}</p><table><tr><th>Sales document type</th><th>Parameter ID</th></tr><tr><td>Order</td><td>AAT</td></tr></table><a href='#x'>Glossary</a><button>Close</button>"></iframe>`;
 
+// An editable ALV grid (BCALV_EDIT_03) with a title, a selected column, a sorted and a filtered column, and a totals row.
+const G = "wnd[0]/usr/cntlGRID/shellcont/shell";
+const th = (c: number, id: string, title: string, cls = "urST3HUnsel", icon = "") =>
+  `<th id="grid#9#0,${c}" lsmatrixrowindex="0" lsmatrixcolindex="${c}" class="urSTHC ${cls}" lsdata="{7:'${title}',17:${sid(`${G}/col${id}`, "GuiTableColumn")}}">${title}${icon ? `<img id="grid#9#0,${c}-HCICO" src="/its/images/gridview/${icon}.png">` : ""}</th>`;
+const td = (r: number, c: number, text: string, extra = "") =>
+  `<td id="grid#9#${r},${c}" lsmatrixrowindex="${r}" lsmatrixcolindex="${c}" lsdata="{${extra}7:${sid(`${G}/[1]/rowcol/row[${r}]/cell[${c - 1}]`, "GuiGridViewCell")}}">${text}</td>`;
+const cellInput = (r: number, c: number, value: string) =>
+  td(r, c, `<span class="lsField lsField--table"><input id="grid#9#${r},${c}#if" maxlength="5" value="${value}" onkeydown="window.gridKeys=(window.gridKeys||'')+(event.ctrlKey?'^':'')+event.key+' '" lsdata="{0:'FREETEXT',20:${sid(`${G}/[1]/rowcol/row[${r}]/cell[${c - 1}]/`, "GuiTextField")}}"></span>`, "2:'EDIT',");
+const GRID = `
+<input id="NV" title="Net value" readonly value="1.250,00" lsdata="{0:'x',20:${sid("wnd[0]/usr/txtZ-NETWR", "GuiTextField")}}">
+<table id="grid#9" ct="STCS" style="width:700px" lsdata="{10:'MULTI',29:{ColumnIDs:['CARRID','PLANETYPE','SEATSOCC'],ModalNo:0,SID:'${G}',Type:'GuiGridView'}}">
+  <thead><tr><th colspan="3" class="urST3Tit"><span ct="CP" lsdata="{1:'Flights',6:false}">Flights</span></th></tr>
+  <tr>${th(1, "CARRID", "ID", "urST3HUnsel", "headaoo")}${th(2, "PLANETYPE", "Plane Type", "urST3HSel")}${th(3, "SEATSOCC", "Occupied", "urST3HUnsel", "headotf")}</tr></thead>
+  <tbody>
+  <tr>${td(1, 1, "AA")}${cellInput(1, 2, "747")}${cellInput(1, 3, "373")}</tr>
+  <tr>${td(2, 1, "AZ")}${cellInput(2, 2, "A380")}${td(2, 3, "12")}</tr>
+  <tr>${td(3, 1, "", "3:'COL_TOTAL_INTENSIFIED',")}${td(3, 2, "", "3:'COL_TOTAL_INTENSIFIED',")}${td(3, 3, "385", "3:'COL_TOTAL_INTENSIFIED',")}</tr>
+  </tbody></table>`;
+
+// The value help of a field with several search helps: one is shown, the others are behind the menu at the right of the title.
+const HELPS = `
+<div ct="PW" id="P1" lsdata="{0:'x',5:${sid("wnd[1]", "GuiModalWindow", 1)}}"><span id="P1-ttltxt">Material Number (1)</span>
+<table ct="PST" id="PST1" lsdata="{8:'SH_Page10'}"><tr><td><span id="PST1-tgl" class="lsPnstTglIcon lsPnstTglIconExp" title="Collapse">v</span>
+  <div id="PST1-itms"><div id="SH_Page10" ct="P" lsdata="{8:'M\\x3a\\x20Material\\x20by\\x20description',25:${sid("wnd[1]/shell/critcol", "GuiSearchHelpPage", 1)}}">M: Material by description</div>
+  <div id="SH_Page11" ct="P" lsdata="{8:'A\\x3a\\x20Material\\x20by\\x20old\\x20material\\x20number'}">A: Material by old material number</div>
+  <div id="SH_Page12" ct="P" lsdata="{8:'T\\x3a\\x20Material\\x20by\\x20Material\\x20Type'}">T: Material by Material Type</div></div>
+  <a id="PST1-menuOpener" style="display:inline-block;width:16px;height:16px" onclick="document.getElementById('SHM').style.top='200px'">=</a></td></tr></table>
+<div lsdata="{0:'Find',28:${sid("wnd[1]/shell/btnSEARCH", "GuiButton", 1)}}">Find</div></div>
+<table id="SHM" style="position:absolute;top:-9999px;left:300px;background:#fff">
+  <tr id="SH_Page10-menuItem" ct="POMNI" onclick="window.chosen='10'"><td>M: Material by description</td></tr>
+  <tr id="SH_Page11-menuItem" ct="POMNI" onclick="window.chosen='11';document.getElementById('SHM').style.top='-9999px'"><td>A: Material by old material number</td></tr>
+  <tr id="SH_Page12-menuItem" ct="POMNI" onclick="window.chosen='12';document.getElementById('SHM').style.top='-9999px'"><td>T: Material by Material Type</td></tr></table>`;
+
+// The IMG: an activity node has two icons that are links (documentation, activity), before its text.
+const T = "wnd[0]/usr/cntlTREE/shellcont/shell";
+const item = (r: number, name: string, title: string) =>
+  `<a id="tree#1#${r}#1#${name}#i" ct="LN" title="${title}" style="display:inline-block;width:16px;height:16px" onclick="window.item=(window.item||'')+'${r}/${name} '" ondblclick="window.item+='DBL '"><img alt=""><span></span></a>`;
+const node = (r: number, key: string, lv: number, state: string, text: string, items = "") =>
+  `<tr iidx="${r - 1}" dddata="${key}#2"><td id="tree#1#${r}#1" subct="HIC" lsdata="{4:${lv},5:'${state}'}" lsmatrixrowindex="${r}" lsmatrixcolindex="0" lv="${lv}"><table><tbody><tr><td>${items}</td><td><span ct="TV" id="tree#1#${r}#1#TEXT#i">${text}</span></td></tr></tbody></table></td></tr>`;
+const TREE = `<table id="tree#1" ct="STCS" style="width:500px" lsdata="{29:{ModalNo:0,SID:'${T}',Type:'GuiTree'}}"><tbody>
+  ${node(0, "04  2      3", 3, "EXPANDED", "Financial Accounting", item(0, "1", "Documentation") + item(0, "2", ""))}
+  ${node(1, "05  3      1", 4, "INDENT", "Define company", item(1, "1", "IMG activity documentation") + item(1, "2", "IMG - Activity"))}
+  ${node(2, "05  3      2", 4, "INDENT", "Define credit control area", item(2, "1", "IMG activity documentation") + item(2, "2", "IMG - Activity"))}
+  </tbody></table>`;
+
+// The error log of an editable grid: a popup with no button, only the x in its title; and an icon-only tab behind it.
+const SHELL = `
+<div id="B1" lsdata="{0:'Refresh',28:${sid("wnd[0]/usr/btnREFRESH", "GuiButton")}}" onclick="window.refreshed=1">Refresh</div>
+<span title="Partners" style="display:inline-block;width:20px;height:20px" lsdata="{2:'\\x20',9:${sid("wnd[0]/usr/tabsTS/tabpOK_PEOPLE", "GuiTab")}}"><img alt=""></span>
+<div ct="PW" id="DS1" style="position:absolute;top:0;left:0;width:400px;height:200px;background:#fff" lsdata="{13:{ModalNo:1,SID:'wnd[0]/dialogshell',Type:'GuiDialogShell'},15:true}">
+  <div id="DS1-ttltxt" class="urPWTitleText">Error Log</div><a id="DS1-close" title="Close" style="display:inline-block;width:20px;height:20px" onclick="document.getElementById('DS1').style.display='none'">x</a>
+  <span lsdata="{3:'The\\x20number\\x20of\\x20seats\\x20exceeds\\x20the\\x20capacity',19:${sid("wnd[0]/shellcont/lblMSG", "GuiLabel", 1)}}">The number of seats exceeds the capacity</span></div>`;
+
 const page0 = (body: string) => `<!doctype html><html lang="en"><head><title>Synthetic</title></head><body>${HEAD}${body}</body></html>`;
 
 describe.skipIf(!exe)("Web GUI reader: edge cases of round 3, in a browser", () => {
@@ -71,7 +124,7 @@ describe.skipIf(!exe)("Web GUI reader: edge cases of round 3, in a browser", () 
   test("ECCSCR-11: a value longer than the field: the answer says what the field holds", async () => {
     const f = await show(FIELDS);
     expect(await webguiActInFrame(f, { do: "set", id: "ctxtZHDR-TYPE", value: "ORDER" })).toBe(
-      'set wnd[0]/usr/ctxtZHDR-TYPE (the field takes 4 characters: it holds "ORDE", the last 1 of the 5 typed are cut)',
+      'set wnd[0]/usr/ctxtZHDR-TYPE (the field takes 4 characters: it holds "ORDE", not all 5 typed)',
     );
     expect(await webguiActInFrame(f, { do: "set", id: "ctxtZHDR-TYPE", value: "OR" })).toBe("set wnd[0]/usr/ctxtZHDR-TYPE");
   });
@@ -100,5 +153,66 @@ describe.skipIf(!exe)("Web GUI reader: edge cases of round 3, in a browser", () 
     expect(whole).not.toContain("more characters");
     expect(whole).not.toContain("\n  Glossary");
     expect(whole).toContain("html[1]  link  sales document");
+  });
+
+  test("ECCSCR-05, ECCSCR-13: a grid says its title, selected columns, sorts, filters, totals, and which cells take input", async () => {
+    await show(GRID);
+    const lines = (await full()).split("\n");
+    expect(lines).toContain(
+      `${G}  grid  3 rows "Flights"; selected columns: PLANETYPE; CARRID sorted ascending, SEATSOCC totalled and filtered; cells that take input ("set" with "row" and "col"): PLANETYPE, SEATSOCC (rows 0); columns: CARRID=ID | PLANETYPE=Plane Type | SEATSOCC=Occupied`,
+    );
+    expect(lines).toContain("  row 0: AA | 747 | 373");
+    expect(lines).toContain("  row 2 (total):  |  | 385");
+  });
+
+  test("ECCSCR-05: set with row and col types into a cell of a grid, without the keys that mean something else there", async () => {
+    const f = await show(GRID);
+    expect(await webguiActInFrame(f, { do: "set", id: G, row: 0, col: "SEATSOCC", value: "380" })).toBe(`set row 0 column SEATSOCC of ${G}`);
+    expect(await page.locator("[id='grid#9#1,3#if']").inputValue()).toBe("380");
+    // Ctrl+A selects the whole grid and Delete is the grid's: neither is pressed.
+    const keys = await page.evaluate(() => (window as unknown as { gridKeys?: string }).gridKeys ?? "");
+    expect(keys).not.toContain("^a");
+    expect(keys).not.toContain("Delete");
+    // A value longer than the cell, and a number in the other notation than the screen's.
+    expect(await webguiActInFrame(f, { do: "set", id: G, row: 1, col: "PLANETYPE", value: "A380-800" })).toContain('the field takes 5 characters: it holds "A380-"');
+    expect(await webguiActInFrame(f, { do: "set", id: G, row: 0, col: "SEATSOCC", value: "1.000" })).toContain('numbers on this screen have a decimal comma, e.g. "1.250,00": if this field is a number, "1.000" is read as 1000');
+    // A cell that shows a value only, and the grid without a cell.
+    expect(await webguiActInFrame(f, { do: "set", id: G, row: 1, col: "SEATSOCC", value: "1" }).catch((e: Error) => e.message)).toContain("does not take input");
+    expect(await webguiActInFrame(f, { do: "set", id: G, value: "1" }).catch((e: Error) => e.message)).toContain('add "row" and "col"');
+  });
+
+  test("ECCSCR-04: the other search helps of a value help are counted, listed and chosen with combo", async () => {
+    const f = await show(HELPS);
+    expect(await full()).toContain('wnd[1]/shell/critcol  tab  M: Material by description (selected)  (1 of 3 search helps: "combo" on this id lists them, with "key" chooses one)');
+    expect(await webguiActInFrame(f, { do: "combo", id: "critcol" })).toBe("wnd[1]/shell/critcol has 3 search helps: M:Material by description, A:Material by old material number, T:Material by Material Type");
+    expect(await webguiActInFrame(f, { do: "combo", id: "critcol", key: "T" })).toContain('chose search help "T: Material by Material Type"');
+    expect(await page.evaluate(() => (window as unknown as { chosen?: string }).chosen)).toBe("12");
+    expect(await webguiActInFrame(f, { do: "combo", id: "critcol", key: "old material" })).toContain('chose search help "A: Material by old material number"');
+    expect(await webguiActInFrame(f, { do: "combo", id: "critcol", key: "m" })).toContain("already shows");
+    expect(await webguiActInFrame(f, { do: "combo", id: "critcol", key: "ZZ" }).catch((e: Error) => e.message)).toContain('no search help "ZZ"');
+  });
+
+  test("ECCSCR-09: the icons of a tree node that are links are its items, and tree with col clicks one", async () => {
+    const f = await show(TREE);
+    const lines = (await full()).split("\n");
+    expect(lines).toContain(`${T}  tree  3 nodes shown; node items 2=IMG - Activity ("tree" with "node" and "col":"<item>" clicks one)`);
+    expect(lines).toContain("          Define company [items 1=IMG activity documentation, 2]  {node 05 3 1}");
+    expect(lines).toContain("        [-] Financial Accounting [items 1=Documentation]  {node 04 2 3}");
+    expect(await webguiActInFrame(f, { do: "tree", id: T, node: "05 3 2", col: "1" })).toContain("tree clicked item 1 of node 05 3 2");
+    // One click on that item of that node: no double-click (it would open the node).
+    expect(await page.evaluate(() => (window as unknown as { item?: string }).item)).toBe("2/1 ");
+  });
+
+  test("a popup without a button closes with the x in its title; an icon-only tab is named by its tooltip (ECCSCR-16)", async () => {
+    const f = await show(SHELL);
+    const view = await full();
+    expect(view).toContain("wnd[1]/close  button  Close  (the x in the title of this window: it has no other button)");
+    // An icon-only tab is named by its tooltip.
+    expect(view).toContain("wnd[0]/usr/tabsTS/tabpOK_PEOPLE  tab  Partners");
+    // Cancel (key 12) on a popup that has no Cancel button is that x too.
+    expect(await webguiActInFrame(f, { do: "key", key: 12 })).toContain("closed it with the x in its title");
+    await page.evaluate(() => (document.getElementById("DS1") as HTMLElement).style.removeProperty("display"));
+    expect(await webguiActInFrame(f, { do: "press", id: "wnd[1]/close" })).toContain("pressed wnd[1]/close (the x in the window's title)");
+    expect(await full()).not.toContain("WINDOW wnd[1]");
   });
 });

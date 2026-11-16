@@ -112,6 +112,7 @@ export const typeName = (type: string): string => type.replace(/^Gui/, "").repla
 export function setRefusal(c: MarkedControl): string | undefined {
   if (c.type === "GuiPasswordField" || c.inputType === "password") return `${c.sid} is a password field: this server never types a password. Type it yourself.`;
   if (c.type === "GuiOKCodeField") return 'The command field takes {"do":"okcode","value":"..."}, not "set".';
+  if (c.type === "GuiGridView") return `${c.sid} is a grid: to type into one of its cells add "row" and "col", e.g. {"do":"set","id":"...","row":0,"col":"<column id>","value":"..."} (the grid's line names the columns whose cells take input).`;
   if (!FIELD_TYPES.has(c.type)) return `${c.sid} is a ${typeName(c.type)}, not a field: "set" types into fields only. Use "press" for a button, "select" for a tab or a menu entry.`;
   if (c.tag !== "INPUT" && c.tag !== "TEXTAREA" && c.type !== "GuiTextEdit") return `${c.sid} cannot be typed into (it is shown as text).`;
   return undefined;
@@ -127,16 +128,26 @@ const TYPE_KEYS_MAX = 120;
  * line breaks; in a field that has one line each becomes a space. Then the
  * field is read back: the answer is what to add to the note, "" when the
  * field holds what was asked for. A field cuts a value longer than itself
- * without a word, so the note says what it holds.
+ * without a word, so the note says what it holds. `cell`: the field is a
+ * cell of a grid, where the keys that empty a field mean something else.
  */
-export async function typeInto(session: WebGuiSession, loc: Locator, value: string, lines = false): Promise<string> {
+export async function typeInto(session: WebGuiSession, loc: Locator, value: string, lines = false, cell = false): Promise<string> {
   const single = oneLine(value);
   const text = lines ? value.replace(/\r\n?/g, "\n") : single.text;
   await session.closeSuggestions();
   await loc.focus({ timeout: 10000 });
-  // Select all: Ctrl+A, or Cmd+A when the browser runs on macOS.
-  await loc.press("ControlOrMeta+A");
-  await loc.press("Delete");
+  if (cell) {
+    // In a grid cell Ctrl+A selects every row and column of the grid, and Delete can be the grid's own
+    // function (measured on ECC): the cell's text is selected in the page and taken away with Backspace.
+    if (await loc.inputValue({ timeout: 1000 }).catch(() => "")) {
+      await loc.selectText({ timeout: 3000 });
+      await loc.press("Backspace");
+    }
+  } else {
+    // Select all: Ctrl+A, or Cmd+A when the browser runs on macOS.
+    await loc.press("ControlOrMeta+A");
+    await loc.press("Delete");
+  }
   // With line breaks, or long: inserted as text, as a paste is (no key is pressed, so no Enter).
   if (lines && (text.includes("\n") || text.length > TYPE_KEYS_MAX)) await session.page.keyboard.insertText(text);
   else if (text) await loc.pressSequentially(text, { delay: 15 });
@@ -157,7 +168,7 @@ export async function typeInto(session: WebGuiSession, loc: Locator, value: stri
 export function heldNote(typed: string, held: string): string {
   const show = (t: string) => (t.length > 60 ? `${t.slice(0, 57)}...` : t).replace(/\n/g, "\\n");
   if (held.length < typed.length && typed.toLowerCase().startsWith(held.toLowerCase()))
-    return `the field takes ${held.length} characters: it holds "${show(held)}", the last ${typed.length - held.length} of the ${typed.length} typed are cut`;
+    return `the field takes ${held.length} characters: it holds "${show(held)}", not all ${typed.length} typed`;
   return `the field holds "${show(held)}", not the value typed`;
 }
 
