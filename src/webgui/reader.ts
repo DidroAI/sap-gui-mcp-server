@@ -29,6 +29,7 @@ import { assessAction, popupButton, questionRefusal } from "./assess.js";
 import { checkedNow, clean, clickForRoundtrip, clickListLine, clickMenuRow, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlLook, pressOverflow, setCalendar, setRefusal, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
 import { LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
 import { chooseEntry, entriesOf, markScrolled, notOnScreen, scrollTo, selectRow } from "./lists.js";
+import { behindPopup, popupName, topPopup } from "./popups.js";
 import { extractFacts, markControl, markRow, markSelector, menuRowOpen, openOverlay, scrollControl, topWindowOpen } from "./page.js";
 import { checkBeforeAct, focusOf, freshView, guardFacts, isDropdown, kindIn, LOGGED_OFF, loggedOff, look, lookRead, menuLines, readViewer, resolveIn, type ScreenRead, scrollables, viewerFrames } from "./screen.js";
 import { IDLE_TIMEOUT_MS, LEAVE_MS, MAX_IDLE_TIMEOUT_MS, noTiming, timingText, type WebGuiSession } from "./session.js";
@@ -147,8 +148,16 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
     // The id as the screen holds it now: a handle becomes its full id, one that names several controls is refused.
     const named = a.id !== undefined && String(a.id).trim() && !isMenuPath(String(a.id));
     const mark = session.posts;
-    const done = await run(session, named ? { ...a, id: resolveIn(await freshView(session), String(a.id)) } : a);
-    const nothing = session.posts === mark && !done.endsWith(NOTHING_TO_SAP) ? nothingSent(a) : undefined;
+    const before = named ? await freshView(session) : await freshView(session).catch(() => "");
+    const resolved = named ? { ...a, id: resolveIn(before, String(a.id)) } : a;
+    // A control of a window behind a popup takes nothing: said at once, with the popup, not after a click has timed out.
+    const covered = a.id === undefined ? undefined : behindPopup(before, isMenuPath(String(a.id)) ? "wnd[0]/mbar" : String(resolved.id), a.do);
+    if (covered && a.do !== "scroll" && (await session.blocked())) throw new ActionError(covered);
+    const done = await run(session, resolved);
+    let nothing = session.posts === mark && !done.endsWith(NOTHING_TO_SAP) ? nothingSent(a) : undefined;
+    // A key the popup in front has no function for: the answer names the popup, the key did not reach the window behind it.
+    const front = nothing && a.do === "key" && !LOCAL_KEY.test(vkey(a.key ?? a.value)) ? topPopup(before) : undefined;
+    if (front) nothing = `Nothing was sent to SAP: the popup ${popupName(before, front)} is open and this key does nothing on it.`;
     const note = nothing ? `${done}\n${nothing}` : done;
     return session.unsettled ? `${note}\n(Web GUI still showed its loading sign when the server stopped waiting: the step may not be over. If the screen below is not what the step should lead to, look again in a moment.)` : note;
   } catch (e) {

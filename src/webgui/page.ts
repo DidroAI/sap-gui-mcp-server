@@ -1079,13 +1079,18 @@ export function markControl(ident: string): MarkedControl | string {
   };
   let want = ident.replace(/^ +| +$/g, "");
   let hits = pick(all.filter((x) => x.sid === want));
-  if (!hits.length && want.startsWith("wnd["))
+  // An id that names its window (wnd[1]/...) means a control of that window only.
+  let pool = all;
+  if (!hits.length && want.startsWith("wnd[")) {
+    const wnd = want.slice(0, want.indexOf("]") + 1);
+    pool = all.filter((x) => x.sid.startsWith(`${wnd}/`));
     want = want.slice(want.lastIndexOf("/") + 1);
-  if (!hits.length) hits = pick(all.filter((x) => x.sid.endsWith(`/${want}`)));
+  }
+  if (!hits.length) hits = pick(pool.filter((x) => x.sid.endsWith(`/${want}`)));
   if (!hits.length) {
     // A field's SAP name (VBAK-AUART): the id's last segment without its type prefix.
     hits = pick(
-      all.filter(
+      pool.filter(
         (x) =>
           x.sid.slice(x.sid.lastIndexOf("/") + 1).replace(/^[a-z]+/, "") ===
           want,
