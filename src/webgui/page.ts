@@ -844,6 +844,24 @@ export function menuRowOpen(rowId: string): boolean {
   return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight;
 }
 
+/**
+ * What is open above the screen and closes with Escape alone: "menu" for a
+ * popup menu (a context menu, a dropdown button's menu, the ">>" menu of a
+ * toolbar, the menu bar's menu), "list" for the list of a dropdown or of a
+ * field's earlier entries; "" when nothing is. Web GUI keeps Escape for
+ * these and sends SAP nothing (measured on ECC: the menu or list closed, no
+ * request). A closed menu stays in the page far above the window.
+ */
+export function openOverlay(): "menu" | "list" | "" {
+  const open = (e: Element): boolean => {
+    const r = e.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight && getComputedStyle(e).visibility === "visible";
+  };
+  if (Array.from(document.querySelectorAll("tr[ct^='POMN']")).some((tr) => !tr.id.startsWith("sysInfoArea") && open(tr))) return "menu";
+  if (Array.from(document.querySelectorAll("[role='listbox'],.lsListbox,[ct='LIB']")).some(open)) return "list";
+  return "";
+}
+
 /** Runs in an HTML viewer's frame: its form controls and links, numbered. */
 export function extractViewer(start: number): {
   lines: string[];
