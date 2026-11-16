@@ -99,6 +99,12 @@ export function shortIds(ids: Iterable<string>): Map<string, string> {
       out.set(id, id);
       continue;
     }
+    // A menu entry is named by its whole path below the menu bar (menu[3]/menu[5]): "menu[5]" alone reads as a top menu.
+    const menu = id.indexOf("/mbar/menu[");
+    if (menu >= 0) {
+      out.set(id, id.slice(menu + 6));
+      continue;
+    }
     const isShell = last === "shell";
     if (!isShell && lastCount.get(last) === 1) {
       out.set(id, last);

@@ -30,7 +30,7 @@ import { checkedNow, clean, clickForRoundtrip, clickListLine, clickMenuRow, eval
 import { LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
 import { chooseEntry, entriesOf, markScrolled, notOnScreen, scrollTo, selectRow } from "./lists.js";
 import { behindPopup, popupName, topPopup } from "./popups.js";
-import { extractFacts, markControl, markRow, markSelector, menuRowOpen, openOverlay, scrollControl, topWindowOpen } from "./page.js";
+import { extractFacts, extractMenus, markControl, markRow, markSelector, menuRowOpen, openOverlay, submenuOpen, scrollControl, topWindowOpen } from "./page.js";
 import { checkBeforeAct, focusOf, freshView, guardFacts, isDropdown, kindIn, LOGGED_OFF, loggedOff, look, lookRead, menuLines, readViewer, resolveIn, type ScreenRead, scrollables, viewerFrames } from "./screen.js";
 import { IDLE_TIMEOUT_MS, LEAVE_MS, MAX_IDLE_TIMEOUT_MS, noTiming, timingText, type WebGuiSession } from "./session.js";
 
@@ -239,11 +239,22 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
         // nothing. Pressing the window's Cancel button instead left the transaction with the menu open.
         const overlay = await session.frame.evaluate(openOverlay).catch(() => "" as const);
         if (overlay) {
-          await session.roundtrip(() => session.pressKey("Escape"), 800);
-          const still = await session.frame.evaluate(openOverlay).catch(() => "" as const);
-          const what = overlay === "menu" ? "menu" : "list";
-          if (still) throw new ActionError(`Escape did not close the open ${what}. Nothing else was pressed: look at the screen.`);
+          const what = overlay === "list" ? "list" : "menu";
+          // Escape closes one level of a menu (a submenu, then the menu): pressed until nothing is left open.
+          let still: "" | typeof overlay = overlay;
+          for (let i = 0; i < 3 && still; i++) {
+            await session.roundtrip(() => session.pressKey("Escape"), 800);
+            if (session.started) break;
+            still = await session.frame.evaluate(openOverlay).catch(() => "" as const);
+          }
+          // The menu bar's menu can keep its top level open (the focus was in the submenu that closed): its Menu button closes it.
+          if (still === "menubar" && !session.started) {
+            await session.frame.locator("#cua2sapmenu_btn").click({ timeout: 3000 }).catch(() => {});
+            await session.page.waitForTimeout(150);
+            still = await session.frame.evaluate(openOverlay).catch(() => "" as const);
+          }
           if (session.started) return `key ${k} (a ${what} was open: Escape went to it)`;
+          if (still) throw new ActionError(`Escape did not close the open ${what}. Nothing else was pressed: look at the screen.`);
           return `key ${k} (closed the open ${what}; the screen under it is as it was, ${NOTHING_TO_SAP}`;
         }
       }
@@ -349,24 +360,7 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
     }
     case "select": {
       if (isMenuPath(id)) {
-        // Menu path: open the Menu button, then each level by its scripting id.
-        const f = session.frame;
-        const full = id.startsWith("wnd[") ? id : `wnd[0]/mbar/${id}`;
-        const before = session.posts;
-        await f.locator("#cua2sapmenu_btn").click();
-        const parts = full.split("/").slice(2);
-        for (let i = 1; i <= parts.length; i++) {
-          const sid = `wnd[0]/mbar/${parts.slice(0, i).join("/")}`;
-          const row = f
-            .locator(`tr[id="${sid}"]`)
-            .filter({ visible: true })
-            .first();
-          // The click waits for the entry to be drawn: a submenu opens a moment after its parent is clicked.
-          await row.click({ timeout: 10000 });
-          if (i < parts.length) await page.waitForTimeout(100);
-        }
-        await session.waitRoundtrip(SURE_START_MS, before);
-        return `menu ${full}`;
+        return chooseMenu(session, id);
       }
       if (a.row !== undefined && /^(table|grid)$/.test(kindIn(await freshView(session), id)))
         return selectRow(session, id, Number(a.row), wantsOn(a.value));
@@ -478,6 +472,51 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
     default:
       throw new ActionError(`unknown action ${a.do}`);
   }
+}
+
+/** How long a menu entry may take to be drawn after its menu was opened. */
+const MENU_ROW_MS = 3000;
+
+/**
+ * Chooses an entry of the menu bar by its path (menu[2]/menu[1]/menu[10]):
+ * opens the menu behind the Menu button and each level, as a person does.
+ * What is already open stays open: the Menu button is a toggle, and a click
+ * on it with the menu open would close the menu (so the entry the agent has
+ * just read in the open menu could not be chosen). An entry that has a
+ * submenu opens it, and the answer says so.
+ */
+async function chooseMenu(session: WebGuiSession, id: string): Promise<string> {
+  const f = session.frame;
+  const full = id.startsWith("wnd[") ? id : `wnd[0]/mbar/${id}`;
+  const parts = full.split("/").slice(2);
+  const sids = parts.map((_, i) => `wnd[0]/mbar/${parts.slice(0, i + 1).join("/")}`);
+  const isOpen = async (sid: string) => !!(await f.evaluate(menuRowOpen, sid).catch(() => ""));
+  // An entry the menu bar does not have is said at once (the templates behind the Menu button list every entry).
+  const known = await f.evaluate(extractMenus).catch(() => []);
+  if (known.length && !known.some((m) => m.sid === full) && !(await isOpen(full)))
+    throw new ActionError(`No menu entry "${id}" on this screen. {"id":"mbar"} with sap_look lists every entry of the menu bar with its path.`);
+  const before = session.posts;
+  if (!(await isOpen(sids[0] as string))) await f.locator("#cua2sapmenu_btn").click({ timeout: 5000 });
+  for (let i = 0; i < sids.length; i++) {
+    const sid = sids[i] as string;
+    const last = i === sids.length - 1;
+    // This level's submenu is open already: a click on its entry could close it again.
+    if (!last && (await isOpen(sids[i + 1] as string))) continue;
+    // A submenu is drawn a moment after its parent is clicked.
+    const t0 = Date.now();
+    while (!(await isOpen(sid)) && Date.now() - t0 < MENU_ROW_MS) await session.page.waitForTimeout(50);
+    if (!(await isOpen(sid))) {
+      await session.pressKey("Escape").catch(() => {});
+      throw new ActionError(`Menu entry ${sid} did not appear when its menu was opened (it may be hidden on this screen). Nothing was chosen. {"id":"mbar"} with sap_look lists the entries.`);
+    }
+    await f.locator(`tr[id="${sid}"]`).filter({ visible: true }).first().click({ timeout: MENU_ROW_MS });
+    if (!last) await session.page.waitForTimeout(100);
+  }
+  await session.waitRoundtrip(SURE_START_MS, before);
+  // An entry with a submenu only opens it: its entries are in the view now, each with its path.
+  if (session.posts === before && (await isOpen(full)) && (await f.evaluate(submenuOpen, full).catch(() => false)))
+    return `menu ${full} opened: its entries are in the view, choose one by its id (the menu stays open until then or Escape; ${NOTHING_TO_SAP}`;
+  return `menu ${full}`;
 }
 
 /** Why an action may not run on this element of an HTML viewer, or undefined when it may. */

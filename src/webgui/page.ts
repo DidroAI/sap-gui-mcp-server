@@ -754,7 +754,8 @@ export function extractLook(limits: {
           /* not JSON */
         }
       }
-    if (names.length) out(0, `wnd[0]/mbar  menubar  ${names.join(", ")}`);
+    // The entries below the top menus are not on this line: the view of the menu bar alone lists them all.
+    if (names.length) out(0, `wnd[0]/mbar  menubar  ${names.join(", ")}  (every entry and its path: look id "mbar")`);
     break;
   }
   // Open popup menus: rows whose DOM id is the scripting id.
@@ -765,6 +766,8 @@ export function extractLook(limits: {
     if (!visible(tr) || !inView(tr) || tr.id.startsWith("sysInfoArea")) continue;
     const text = norm((tr as HTMLElement).innerText);
     const own = tr.id.startsWith("wnd[") ? "" : info(tr).sid;
+    // Web GUI's own entries in the menu bar's menu (its file browser, Settings, About) are not SAP's: they have no scripting id of their own.
+    if (/^wnd\[\d+\]\/mbar\/(\[\d+\])?$/.test(own)) continue;
     if (text || own) out(0, `${own.startsWith("wnd[") ? own : tr.id}  menu  ${text}`);
   }
 
@@ -900,20 +903,32 @@ export function menuRowOpen(rowId: string): string {
   return "";
 }
 
+/** Is an entry below this menu entry open (drawn in the window)? Its submenu is then on screen. */
+export function submenuOpen(sid: string): boolean {
+  return Array.from(document.querySelectorAll("tr[ct^='POMN']")).some((tr) => {
+    if (!tr.id.startsWith(`${sid}/`)) return false;
+    const r = tr.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight;
+  });
+}
+
 /**
- * What is open above the screen and closes with Escape alone: "menu" for a
- * popup menu (a context menu, a dropdown button's menu, the ">>" menu of a
- * toolbar, the menu bar's menu), "list" for the list of a dropdown or of a
+ * What is open above the screen and closes with Escape alone: "menubar" for
+ * the menu bar's menu, "menu" for another popup menu (a context menu, a
+ * dropdown button's menu, the ">>" menu of a toolbar), "list" for the list of a dropdown or of a
  * field's earlier entries; "" when nothing is. Web GUI keeps Escape for
  * these and sends SAP nothing (measured on ECC: the menu or list closed, no
  * request). A closed menu stays in the page far above the window.
  */
-export function openOverlay(): "menu" | "list" | "" {
+export function openOverlay(): "menubar" | "menu" | "list" | "" {
   const open = (e: Element): boolean => {
     const r = e.getBoundingClientRect();
     return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight && getComputedStyle(e).visibility === "visible";
   };
-  if (Array.from(document.querySelectorAll("tr[ct^='POMN']")).some((tr) => !tr.id.startsWith("sysInfoArea") && open(tr))) return "menu";
+  const rows = Array.from(document.querySelectorAll("tr[ct^='POMN']")).filter((tr) => !tr.id.startsWith("sysInfoArea") && open(tr));
+  // The menu bar's menu (behind the Menu button) keeps its top level open when Escape closes a submenu.
+  if (rows.some((tr) => /^wnd\[0\]\/mbar\/menu\[\d+\]$/.test(tr.id))) return "menubar";
+  if (rows.length) return "menu";
   if (Array.from(document.querySelectorAll("[role='listbox'],.lsListbox,[ct='LIB']")).some(open)) return "list";
   return "";
 }

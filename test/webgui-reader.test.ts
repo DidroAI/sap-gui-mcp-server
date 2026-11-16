@@ -70,7 +70,7 @@ const EXPECTED = [
   "wnd[0]/usr/cntlHTML/shellcont/shell/html[3]  button  Approve all",
   "wnd[0]/usr/cntlHTML/shellcont/shell/html[4]  link  Show details",
   "wnd[0]/sbar  status  E: Order type ZZ is not defined",
-  "wnd[0]/mbar  menubar  Order {menu[0]}, Edit {menu[1]}",
+  'wnd[0]/mbar  menubar  Order {menu[0]}, Edit {menu[1]}  (every entry and its path: look id "mbar")',
   'WINDOW wnd[1]  "Exit Order Processing"',
   "wnd[1]/usr/txtSPOP-TEXTLINE1  label  Do you wish to save your data first?",
   "wnd[1]/usr/btnSPOP-OPTION1  button  Yes",
