@@ -24,14 +24,14 @@ import { compact, controlBlock } from "../core/compact.js";
 import { shortIds } from "../core/ids.js";
 import { readRows } from "../core/rows.js";
 import { ActionError, type Action, type Assessment, type LookOptions } from "../core/types.js";
-import { okcodeKind } from "../core/words.js";
+import { LOGON_REFUSAL, okcodeKind } from "../core/words.js";
 import { assessAction, popupButton } from "./assess.js";
 import { checkedNow, clean, clickForRoundtrip, clickMenuRow, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlLook, pressOverflow, setRefusal, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
 import { LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
 import { chooseEntry, entriesOf, markScrolled, notOnScreen, scrollTo, selectRow } from "./lists.js";
-import { extractFacts, extractMenus, markControl, markRow, markSelector, scrollControl, topWindowOpen } from "./page.js";
-import { focusOf, freshView, isDropdown, kindIn, LOGGED_OFF, loggedOff, look, menuLines, readViewer, refuseLogon, resolveIn, scrollables, viewerFrames } from "./screen.js";
-import { endedText, IDLE_TIMEOUT_MS, MAX_IDLE_TIMEOUT_MS, noTiming, timingText, type WebGuiSession } from "./session.js";
+import { extractFacts, markControl, markRow, markSelector, scrollControl, topWindowOpen } from "./page.js";
+import { checkBeforeAct, focusOf, freshView, guardFacts, isDropdown, kindIn, LOGGED_OFF, loggedOff, look, lookRead, menuLines, readViewer, resolveIn, type ScreenRead, scrollables, viewerFrames } from "./screen.js";
+import { IDLE_TIMEOUT_MS, MAX_IDLE_TIMEOUT_MS, noTiming, timingText, type WebGuiSession } from "./session.js";
 
 export { setRefusal } from "./controls.js";
 export { LOCAL_KEY, nothingSent, vkey } from "./keys.js";
@@ -43,12 +43,19 @@ export { focusOf, LOGGED_OFF, loggedOff, look, resolveIn } from "./screen.js";
  * refuses (ActionError). A screen that cannot be read cannot be ruled safe.
  */
 export async function assess(session: WebGuiSession, action: Action): Promise<Assessment> {
-  await refuseLogon(session);
+  let screen: ScreenRead;
   try {
-    const view = await look(session);
-    const menus = await session.frame.evaluate(extractMenus);
-    const facts = await session.frame.evaluate(extractFacts);
-    const focus = action.do === "key" || action.do === "okcode" ? await focusOf(session) : undefined;
+    screen = await lookRead(session);
+  } catch (e) {
+    // Still never a logon screen, even one that could not be read out.
+    if ((await session.frame.evaluate(extractFacts).catch(() => undefined))?.logon === true) throw new ActionError(LOGON_REFUSAL);
+    return unreadable(e);
+  }
+  if (screen.facts?.logon) throw new ActionError(LOGON_REFUSAL);
+  try {
+    const view = screen.text;
+    const { menus, focus } = await guardFacts(session, action.do === "key" || action.do === "okcode");
+    const facts = screen.facts ?? (await session.frame.evaluate(extractFacts));
     // The control the action will act on, resolved as `act` resolves it: the guard judges that one.
     const resolved = action.id ? { ...action, id: resolveIn(view, String(action.id)) } : action;
     const verdict = assessAction(resolved, view, menus, { language: facts.language, focus });
@@ -61,9 +68,12 @@ export async function assess(session: WebGuiSession, action: Action): Promise<As
     return verdict;
   } catch (e) {
     if (e instanceof ActionError) throw e;
-    return { risk: "commit", reason: `the screen could not be read (${(e as Error).message.split("\n")[0]})` };
+    return unreadable(e);
   }
 }
+
+/** A screen that cannot be read cannot be ruled safe. */
+const unreadable = (e: unknown): Assessment => ({ risk: "commit", reason: `the screen could not be read (${(e as Error).message.split("\n")[0]})` });
 
 /** The screen, or one control of it, as the tools show it. */
 export async function view(session: WebGuiSession, options: LookOptions): Promise<string> {
@@ -116,11 +126,7 @@ export async function act(session: WebGuiSession, a: Action): Promise<string> {
 }
 
 async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
-  // A session that has ended takes nothing more: said at once, not after a wait.
-  const gone = await session.ended();
-  if (gone) throw new ActionError(endedText(gone));
-  await refuseLogon(session);
-  if (await loggedOff(session)) throw new ActionError(LOGGED_OFF);
+  await checkBeforeAct(session);
   const w0 = Date.now();
   await session.wake();
   session.timing.wake = Date.now() - w0;
@@ -218,7 +224,7 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
             const sid = `wnd[${top}]/tbar[${bar}]/btn[${n}]`;
             // Only a button of the popup itself counts.
             if (!isExactly(await evalLs(session, markControl, sid), sid)) continue;
-            await clickForRoundtrip(session, sid);
+            await clickForRoundtrip(session, sid, true, true);
             return `key ${k} (pressed ${sid})`;
           }
         // No such button in the popup: give the popup the keyboard focus (a click on its title bar
@@ -320,7 +326,7 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       const { loc, c } = await locate(session, id);
       // A tab sends a request, and choosing it twice is choosing it once: a lost click is made again.
       // (Not `sure`: a tab strip that switches in the page sends nothing.)
-      if (c.type === "GuiTab") await clickForRoundtrip(session, c.sid, false);
+      if (c.type === "GuiTab") await clickForRoundtrip(session, c.sid, false, true);
       else await session.roundtrip(() => loc.click(), 1200);
       return `selected ${c.sid}`;
     }
@@ -360,7 +366,7 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
     }
     case "press":
       if (c.overflow) return pressOverflow(session, c);
-      if (c.type === "GuiButton") await clickForRoundtrip(session, c.sid);
+      if (c.type === "GuiButton") await clickForRoundtrip(session, c.sid, true, true);
       else await session.roundtrip(() => loc.click(), 1200);
       return `pressed ${c.sid}`;
     case "focus":

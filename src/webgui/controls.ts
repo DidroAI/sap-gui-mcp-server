@@ -82,9 +82,10 @@ export const marked = (session: WebGuiSession): Locator => session.frame.locator
  * only in such a tab, and only while the control is still there: a click
  * that did work has taken its popup or screen away.
  */
-export async function clickForRoundtrip(session: WebGuiSession, sid: string, sure = true): Promise<void> {
+export async function clickForRoundtrip(session: WebGuiSession, sid: string, sure = true, markedNow = false): Promise<void> {
   for (let attempt = 0; attempt < 2; attempt++) {
-    if (!isExactly(await evalLs(session, markControl, sid), sid)) {
+    // `markedNow`: the caller has just marked exactly this control, so the first click needs no new mark.
+    if (!(attempt === 0 && markedNow) && !isExactly(await evalLs(session, markControl, sid), sid)) {
       if (attempt === 0) throw noControlAct(sid);
       return;
     }

@@ -14,7 +14,9 @@
  *
  * "calls" counts every message the Playwright client sends (an evaluate, a
  * locator count, a click, a wait); "evaluate" the evaluates among them;
- * "sleep" the fixed waits (waitForTimeout) in milliseconds, polls included.
+ * "sleep" the waits sent to the browser (waitForTimeout) in milliseconds.
+ * The polls and the settle waits of session.ts pause in the server without
+ * a message, so they show in "wall", not in "sleep".
  */
 import { chromium, type Page } from "playwright-core";
 import type { Action } from "../../src/core/types.js";
