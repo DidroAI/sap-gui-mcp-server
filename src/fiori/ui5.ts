@@ -1145,8 +1145,11 @@ export function ui5Open(hash: string): "OK" | "SAME" | "NOSHELL" {
 /**
  * Back in a launchpad: marks the shell's back button when it shows (the
  * driver clicks it). Without one: "HISTORY" when the tab has an earlier
- * launchpad page, else the home page is opened ("HOME"), so that Back never
- * leaves SAP for whatever the tab showed before.
+ * launchpad page. When the page before this one in the tab's history is not
+ * the launchpad (the app is the first page of the tab: what was there before
+ * is about:blank or another site), neither the button nor the history is
+ * used, both would leave SAP and lose the session: the home page is opened
+ * ("HOME"), or nothing is done on the home page itself ("ATHOME").
  */
 export async function ui5Back(attr: string): Promise<"BUTTON" | "HISTORY" | "HOME" | "ATHOME"> {
   const sap = (window as C).sap;
@@ -1158,22 +1161,43 @@ export async function ui5Back(attr: string): Promise<"BUTTON" | "HISTORY" | "HOM
   }
   if (!container) return "HISTORY";
   for (const old of Array.from(document.querySelectorAll(`[${attr}]`))) old.removeAttribute(attr);
+  // Does one step back in the tab's history leave the launchpad? The browser's own list of this tab's entries
+  // says it (the Navigation API lists the entries of this site only: no entry before this one means that the
+  // step back goes elsewhere). undefined when the browser has no such list.
+  let leaves: boolean | undefined;
+  try {
+    const nav: C = (window as C).navigation;
+    const entries: C[] = nav.entries();
+    const prev = entries[nav.currentEntry.index - 1];
+    if (!prev) leaves = true;
+    else {
+      const u = new URL(String(prev.url));
+      leaves = u.origin !== location.origin || u.pathname !== location.pathname;
+    }
+  } catch {
+    leaves = undefined;
+  }
   const btn = document.getElementById("backBtn");
-  if (btn && btn.getBoundingClientRect().width > 0 && (btn as C).checkVisibility?.() !== false) {
+  const button = !!btn && btn.getBoundingClientRect().width > 0 && (btn as C).checkVisibility?.() !== false;
+  if (leaves === undefined) {
+    // No list of entries: the launchpad says whether this app is the first one it opened in this tab.
+    try {
+      const nav: C = await Promise.race([container.getServiceAsync?.("CrossApplicationNavigation"), new Promise((r) => setTimeout(() => r(null), 2000))]);
+      leaves = ((await nav?.isInitialNavigationAsync?.()) ?? nav?.isInitialNavigation?.() ?? false) && !button;
+    } catch {
+      leaves = false;
+    }
+  }
+  if (leaves) {
+    if (/^#?(Shell-home)?$/.test(location.hash)) return "ATHOME";
+    location.hash = "#Shell-home";
+    return "HOME";
+  }
+  if (button && btn) {
     btn.setAttribute(attr, "1");
     return "BUTTON";
   }
-  let first = false;
-  try {
-    const nav: C = await Promise.race([container.getServiceAsync?.("CrossApplicationNavigation"), new Promise((r) => setTimeout(() => r(null), 2000))]);
-    first = (await nav?.isInitialNavigationAsync?.()) ?? nav?.isInitialNavigation?.() ?? false;
-  } catch {
-    first = false;
-  }
-  if (!first) return "HISTORY";
-  if (/^#?(Shell-home)?$/.test(location.hash)) return "ATHOME";
-  location.hash = "#Shell-home";
-  return "HOME";
+  return "HISTORY";
 }
 
 export interface Ui5Info {

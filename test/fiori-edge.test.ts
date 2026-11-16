@@ -10,7 +10,7 @@ import { normalizeAction } from "../src/core/action.js";
 import { decide, policyFromEnv } from "../src/core/guard.js";
 import { ActionError } from "../src/core/types.js";
 import { assessAction, assessControl, intentOf } from "../src/fiori/risk.js";
-import { type ControlFacts, ui5Control, ui5Look } from "../src/fiori/ui5.js";
+import { type ControlFacts, ui5Back, ui5Control, ui5Look } from "../src/fiori/ui5.js";
 import { FakeControl, FakeEl, installPage, item, marked, removePage } from "./fiori-fixtures.js";
 
 afterAll(removePage);
@@ -286,3 +286,37 @@ describe("FIORI-08, FIORI-09, FIORI-10", () => {
 });
 
 export { marked };
+
+describe("FIORI-11: Back never leaves the launchpad", () => {
+  const ATTR = "data-sap-mcp-target";
+  const back = new FakeControl({ type: "sap.ushell.ui.shell.ShellHeadItem", id: "backBtn" });
+  const g = globalThis as Record<string, unknown>;
+  const BASE = "https://sap.test/sap/bc/ui2/flp";
+  const tab = (hash: string, before: string[]) => {
+    installPage([back], { hash });
+    (g.sap as { ui: { require: (n: string) => unknown } }).ui.require = (n: string) => (n === "sap/ushell/Container" ? {} : undefined);
+    Object.assign(g.location as object, { origin: "https://sap.test", pathname: "/sap/bc/ui2/flp" });
+    const entries = [...before, `${BASE}${hash}`].map((url) => ({ url }));
+    g.navigation = { entries: () => entries, currentEntry: { index: entries.length - 1 } };
+  };
+  afterAll(() => {
+    delete g.navigation;
+    removePage();
+  });
+
+  test("the app is the first page of the tab: the back button is not pressed, the home page is opened", async () => {
+    tab("#SalesOrder-manageV2", []);
+    expect(await ui5Back(ATTR)).toBe("HOME");
+    expect((g.location as { hash: string }).hash).toBe("#Shell-home");
+    expect(back.dom?.hasAttribute(ATTR)).toBe(false);
+  });
+  test("an earlier launchpad page in the tab: the back button is marked for the click", async () => {
+    tab("#SalesOrder-manageV2&/SalesOrder('1')", [`${BASE}#Shell-home`, `${BASE}#SalesOrder-manageV2`]);
+    expect(await ui5Back(ATTR)).toBe("BUTTON");
+    expect(back.dom?.hasAttribute(ATTR)).toBe(true);
+  });
+  test("the home page as the first page: nothing to go back to", async () => {
+    tab("#Shell-home", []);
+    expect(await ui5Back(ATTR)).toBe("ATHOME");
+  });
+});
