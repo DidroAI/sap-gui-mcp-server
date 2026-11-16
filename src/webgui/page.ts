@@ -706,6 +706,8 @@ export function extractLook(limits: {
         // A filter of the value help dialog of S/4HANA 2025: a token field, named in its lsdata (LabelledBy).
         // Its frame carries the same id: the innermost element is the field.
         if (el.querySelector("[data-ls*=\"Type:'GuiSearchHelpHeaderItem'\"]")) break;
+        // While the dialog draws, a filter can be in the page twice: it is listed once.
+        if (lines.get(modal)?.some((l) => l.startsWith(`${sid}  `))) break;
         // While it holds a value as a token it has no input: the token is its value.
         const inp = el.querySelector("input") as HTMLInputElement | null;
         const lab = unesc(/LabelledBy:'((?:[^'\\]|\\.)*)'/.exec(ls)?.[1] ?? "") || tip;
