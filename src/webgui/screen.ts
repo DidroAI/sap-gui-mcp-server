@@ -203,7 +203,10 @@ export async function lookRead(session: WebGuiSession, ended = false): Promise<S
     await session.page.waitForTimeout(250);
     r = await read(session, ended);
   }
-  if (!r.ended) session.view = { at: Date.now(), text: r.text };
+  if (!r.ended) {
+    session.view = { at: Date.now(), text: r.text };
+    session.unsaved.seen(r.text);
+  }
   return r;
 }
 

@@ -159,6 +159,13 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
     const front = nothing && a.do === "key" && !LOCAL_KEY.test(vkey(a.key ?? a.value)) ? topPopup(before) : undefined;
     if (front) nothing = `Nothing was sent to SAP: the popup ${popupName(before, front)} is open and this key does nothing on it.`;
     let note = nothing ? `${done}\n${nothing}` : done;
+    // What the agent set in this transaction counts as unsaved until SAP says it saved; a command that
+    // leaves the transaction drops it without a question, and the answer says so.
+    if (/^(set|check|combo)$/.test(a.do) && !/(nothing changed|already chosen|entries: |has no entries)/.test(done)) session.unsaved.typed();
+    if (a.do === "okcode" && /^\/n/i.test(String(a.value ?? "")) && session.posts !== mark) {
+      const lost = session.unsaved.left();
+      if (lost) note = `${note}\n${lost}`;
+    }
     // A termination message that was confirmed: SAP has ended the transaction, and the answer says so
     // (the screen that follows is the start screen or the menu, with no word about it).
     const ended = terminationIn(before);
