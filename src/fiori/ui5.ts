@@ -560,6 +560,24 @@ export function ui5Look(opts: Ui5LookOptions): string {
   }
   // Message toasts are plain DOM, not controls.
   for (const t of Array.from(document.querySelectorAll(".sapMMessageToast"))) if (visible(t)) lines.push(`TOAST "${norm((t as HTMLElement).innerText)}"`);
+  // SAP's in-app help ("Help Topics", the panel the shell bar's Help button opens beside the page) is plain
+  // DOM too. One line: that it is open, how it closes, and its topics, each once.
+  for (const panel of Array.from(document.querySelectorAll(".help4-control-carousel"))) {
+    if (!visible(panel)) continue;
+    const bare = (e: Element | null) => norm((e as HTMLElement | null)?.innerText).replace(/\u2060/g, "");
+    const topics: string[] = [];
+    for (const tile of Array.from(panel.querySelectorAll(".help4-control-tile"))) {
+      const cap = bare(tile.querySelector(".help4-caption"));
+      const desc = bare(tile.querySelector(".help4-desc"));
+      const topic = desc && desc !== cap ? `${cap}: ${desc.slice(0, 90)}` : cap;
+      if (cap && !topics.some((t) => t === topic || t.startsWith(`${cap}:`))) topics.push(topic);
+    }
+    const shown = topics.slice(0, 12);
+    lines.push(
+      `PANEL "${bare(panel.querySelector(".help4-head")) || "Help"}" (SAP's help for this page, open beside it; the shell bar's Help button closes it)${shown.length ? `: ${shown.join(" | ")}` : ""}${topics.length > shown.length ? ` | ... ${topics.length - shown.length} more topics` : ""}`,
+    );
+    break;
+  }
   // The view holds what is in the viewport: say when the main area goes on below.
   let best: Element | null = null;
   let area = 0;
@@ -582,7 +600,8 @@ export function ui5Look(opts: Ui5LookOptions): string {
   }
   const title = norm(document.title);
   // The launchpad's state keys change on every filter edit and say nothing: left out, so the line stays the same.
-  const hash = location.hash.replace(/([?&])sap-[ix]app-state(--history)?=[^&/]*&?/g, "$1").replace(/[?&]$/, "");
+  // Two of them can stand side by side (?sap-iapp-state--history=..&sap-iapp-state=..): each is taken out with the "&" after it.
+  const hash = location.hash.replace(/(?<=[?&])sap-[ix]app-state(--history)?=[^&/]*&?/g, "").replace(/[?&]$/, "");
   return `PAGE ${title} (${hash.slice(0, 120)})\n${lines.join("\n")}`;
 }
 

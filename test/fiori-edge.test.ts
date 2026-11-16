@@ -264,6 +264,27 @@ describe("FIORI-08, FIORI-09, FIORI-10", () => {
     expect(ui5Look({ compact: true }).split("\n")[0]).toBe("PAGE Orders (#SalesOrder-manage&/?x=1)");
     installPage([], { title: "Orders", hash: "#SalesOrder-manage&/Order('1')?sap-iapp-state=TAS79M8LHPAH" });
     expect(ui5Look({ compact: true }).split("\n")[0]).toBe("PAGE Orders (#SalesOrder-manage&/Order('1'))");
+    // Both keys side by side (seen on Manage Purchase Orders).
+    installPage([], { title: "Orders", hash: "#PurchaseOrder-manage&/?sap-iapp-state--history=TASK6R&sap-iapp-state=TASMIK" });
+    expect(ui5Look({ compact: true }).split("\n")[0]).toBe("PAGE Orders (#PurchaseOrder-manage&/)");
+    installPage([], { title: "Orders", hash: "#PurchaseOrder-manage&/?a=1&sap-iapp-state--history=TASK6R&sap-iapp-state=TASMIK&b=2" });
+    expect(ui5Look({ compact: true }).split("\n")[0]).toBe("PAGE Orders (#PurchaseOrder-manage&/?a=1&b=2)");
+  });
+  test("SAP's help panel, open beside the page, is one line with its topics", () => {
+    installPage([], { title: "Orders" });
+    const el = (text: string, kids: Record<string, FakeEl | FakeEl[]> = {}) => {
+      const e = new FakeEl("h");
+      e.innerText = text;
+      e.querySelector = ((sel: string) => ([kids[sel]].flat()[0] as FakeEl | undefined) ?? null) as never;
+      (e as unknown as { querySelectorAll: (sel: string) => FakeEl[] }).querySelectorAll = (sel: string) => [kids[sel] ?? []].flat();
+      return e;
+    };
+    const tile = (cap: string, desc: string) => el("", { ".help4-caption": el(`\u2060${cap}`), ".help4-desc": el(desc) });
+    const panel = el("", { ".help4-head": el("Help Topics"), ".help4-control-tile": [tile("Search", "Search for orders."), tile("Sold-to Party", "Sold-to Party"), tile("Search", "Search for orders.")] });
+    const doc = (globalThis as unknown as { document: { querySelectorAll: (sel: string) => unknown[] } }).document;
+    const base = doc.querySelectorAll;
+    doc.querySelectorAll = (sel: string) => (sel === ".help4-control-carousel" ? [panel] : base(sel));
+    expect(ui5Look({ compact: true })).toContain(`PANEL "Help Topics" (SAP's help for this page, open beside it; the shell bar's Help button closes it): Search: Search for orders. | Sold-to Party`);
   });
   test("fields of one object name its context once", () => {
     const ctx = { getPath: () => "/Order('1')" };
