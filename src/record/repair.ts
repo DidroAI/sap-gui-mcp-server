@@ -12,7 +12,7 @@
  *   - every action passes the guard, as in `sap_act`;
  *   - no write the recording does not have: an action rated "commit" is
  *     refused unless the recorded step is itself a write, the repair stands
- *     in for it or completes it (not "retry"), and it is the only one;
+ *     in for it or completes it (not "before"), and it is the only one;
  *   - no leaving: an okcode that opens a transaction or ends the session is
  *     refused;
  *   - no invented data: a typed value is in the recording or on the screen;
@@ -48,11 +48,11 @@ export const repairSchema = z.object({
   actions: z.array(z.record(z.string(), z.unknown())).optional(),
   /**
    * How the actions relate to the recorded action of the step:
-   *   retry    do them, then the recorded action runs;
+   *   before   do them, then the recorded action runs;
    *   instead  they stand in for it (it could not run);
    *   after    it already ran; they complete it (a popup it raised).
    */
-  then: z.enum(["retry", "instead", "after"]).optional(),
+  place: z.enum(["before", "instead", "after"]).optional(),
   /** A value SAP makes anew at each run (a document number), read into a variable from now on. */
   capture: z.object({ var: z.string(), from: z.enum(["status", "field", "title"]), id: z.string().optional(), pattern: z.string().min(1) }).optional(),
 });
@@ -64,7 +64,7 @@ export interface RepairRecord {
   outcome: "repaired" | "refused" | "failed";
   /** The actions run, as text. */
   did: string[];
-  then?: Repair["then"];
+  place?: Repair["place"];
   /** `${order} = "19105" (recorded "19097")`. */
   captured?: string;
   /** Why it was refused or did not work. */
@@ -95,8 +95,8 @@ export function repairRefusal(step: Step, repair: Repair, test: SapTest): string
   if (repair.capture && n) return "a repair is either actions or a capture, not both";
   if (!repair.capture && !n) return "a repair needs actions or a capture";
   if (n > MAX_REPAIR_ACTIONS) return `a repair is at most ${MAX_REPAIR_ACTIONS} actions (got ${n}): a step that needs more has changed too much, record it again`;
-  if (n && !repair.then) return 'a repair with actions says "then": retry (then the recorded action runs), instead (they replace it) or after (it already ran)';
-  if (n && repair.then === "instead" && !step.action) return "this step has no action to replace";
+  if (n && !repair.place) return 'a repair with actions says "place": before (then the recorded action runs), instead (they replace it) or after (it already ran)';
+  if (n && repair.place === "instead" && !step.action) return "this step has no action to replace";
   if (repair.capture) {
     if (step.risk !== "commit") return "a capture is for a number SAP makes when it saves: this step does not write, so a different value here is a different result, not a new number";
     if (!NAME.test(repair.capture.var)) return "a variable name is letters, digits and _, not starting with a digit";
@@ -157,7 +157,7 @@ export async function runRepairActions(
     const assessment = await driver.assess(action);
     if (assessment.risk === "commit") {
       if (step.risk !== "commit") throw new RepairRefused(`${actionText(action)} may write to SAP (${assessment.reason}), and the recorded step does not write: a repair adds no write`);
-      if (repair.then === "retry") throw new RepairRefused(`${actionText(action)} may write to SAP (${assessment.reason}) and the recorded write would run after it: use "instead" or "after"`);
+      if (repair.place === "before") throw new RepairRefused(`${actionText(action)} may write to SAP (${assessment.reason}) and the recorded write would run after it: use "instead" or "after"`);
       if (commits++) throw new RepairRefused("a repair holds at most one action that may write");
     }
     const before = screen;
@@ -256,7 +256,7 @@ export function propose(original: SapTest, working: SapTest, index: number, repa
   const fresh = structuredClone(added);
   const list = fresh.map((s) => actionText(normalizeAction(s.action as Record<string, unknown>))).join(", then ");
   let changes: string[];
-  if (repair.then === "retry") {
+  if (repair.place === "before") {
     test.steps.splice(index, 0, ...fresh);
     changes = [`Step ${n} (${what}): ${repair.why}`, `Added before step ${n}: ${list}.`];
   } else {
@@ -267,7 +267,7 @@ export function propose(original: SapTest, working: SapTest, index: number, repa
     if (kept.after) last.after = kept.after;
     if (kept.expect) last.expect = kept.expect;
     if (kept.capture) last.capture = kept.capture;
-    if (repair.then === "instead") {
+    if (repair.place === "instead") {
       test.steps.splice(index, 1, ...fresh);
       changes = [`Step ${n} (${what}): ${repair.why}`, `Step ${n} replaced by: ${list}. Its checks are unchanged.`];
     } else {

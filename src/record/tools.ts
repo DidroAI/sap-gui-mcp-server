@@ -154,7 +154,7 @@ A check or capture is tried on the screen as it is now and refused if it does no
         repair: repairSchema
           .optional()
           .describe(
-            'with "from": a repair for that one step, then the replay goes on as recorded. {"why":"what changed","actions":[...],"then":"retry|instead|after"} (at most 4 actions; retry: then the recorded action runs; instead: they replace it; after: it already ran) or {"why":"...","capture":{"var":"order","from":"status","pattern":"Order (\\d+)"}} for a number SAP makes anew when it saves. Refused: a write the recorded step does not have, leaving the transaction, a typed value that is neither in the recording nor on the screen. The recorded checks still judge the step. The answer holds a proposed test; nothing is saved',
+            'with "from": a repair for that one step, then the replay goes on as recorded. {"why":"what changed","actions":[...],"place":"before|instead|after"} (at most 4 actions; before: then the recorded action runs; instead: they replace it; after: it already ran) or {"why":"...","capture":{"var":"order","from":"status","pattern":"Order (\\d+)"}} for a number SAP makes anew when it saves. Refused: a write the recorded step does not have, leaving the transaction, a typed value that is neither in the recording nor on the screen. The recorded checks still judge the step. The answer holds a proposed test; nothing is saved',
           ),
         format: z.enum(["text", "json"]).optional().describe("json: the result as data (steps with the phase of a failure, the full screen, the proposed test)"),
         session,
