@@ -153,6 +153,33 @@ const refusal = (p: Promise<unknown>): Promise<string> =>
     (e: unknown) => (e as Error).message,
   );
 
+/** A cell of a classic list as S/4HANA 2025 writes it: the id only, no Type. */
+const listText = (c: number, r: number, text: string, head = false) =>
+  `<div ct="ALT" id="M1:46:::${r}:${c}_l" class="lsAbapList__item lsAbapListText--text" style="display:inline-block;min-width:30px" ${head ? `title="${text}"` : `ondblclick="window.chosen='row ${r}'" onclick="window.clicked=(window.clicked||0)+1"`}
+    lsdata="${ls({ x: 0, "2": { SID: `wnd[1]/usr/lbl[${c},${r}]`, focusable: "X" } })}">&nbsp;${text}</div>`;
+/** The lines SAP draws between the cells: images without a tooltip. */
+const listLine = (c: number, r: number, title = "") =>
+  `<div ct="ALI" id="M1:46:::${r}:${c}_0" class="lsAbapList__item lsAbapList__image" aria-hidden="true" style="display:inline-block;width:2px;height:10px"${title ? ` title="${title}"` : ""} lsdata="${ls({ x: 0, "1": { SID: `wnd[1]/usr/lbl[${c},${r}]` } })}"></div>`;
+const listRow = (r: number, cells: string[], head = false) => `<div>${listLine(0, r)}${cells.map((t, i) => listText([1, 7, 11, 15][i] ?? 20, r, t, head) + listLine([6, 10, 14, 70][i] ?? 80, r)).join("")}</div>`;
+/** The popup VA01 shows for a customer of several sales areas: a classic list in a popup (values made up). */
+const LIST_POPUP = `${HEAD}
+<input id="F1" value="4711" lsdata="${ls({ "21": { SID: "wnd[0]/usr/ctxtKUAGV-KUNNR", Type: "GuiCTextField" } })}">
+<div id="webguiPopups"><div id="SAPMV45A0257_1" ct="PW_standards" role="dialog" class="lsPWNew" style="width:600px"
+  lsdata="${ls({ "0": false, "13": { SID: "wnd[1]", Type: "GuiModalWindow", ModalNo: 1 }, "16": true })}">
+  <header class="lsPWNewHeader"><div role="heading"><span id="SAPMV45A0257_1-header-title-txt">Sales area for customer</span></div></header>
+  <section class="lsPWNewContentSection">
+    <table id="userarealist1" ct="AL" lsdata="${ls({ "0": 8.0, "2": 27.0, "4": 3, "5": 0, "6": 2, "10": { SID: "wnd[1]/usr", Type: "ABAPLIST" } })}"><tbody><tr><td>
+      <div>${listLine(0, 0)}${listLine(0, 0)}</div>
+      ${listRow(1, ["SORG", "DC", "Dv", "Description"], true)}
+      <div>${listLine(0, 2)}${listLine(0, 2)}</div>
+      ${listRow(3, ["9010", "10", "00", "Sales Org A / Direct / Division 00"])}
+      ${listRow(4, ["9710", "10", "00", "Sales Org B / Direct / Division 00"])}
+    </td></tr></tbody></table>
+    ${button("LB0", "wnd[1]/tbar[0]/btn[0]", "Choose")}${button("LB12", "wnd[1]/tbar[0]/btn[12]", "Cancel")}
+  </section>
+</div></div>
+</body></html>`;
+
 describe.skipIf(!exe)("Web GUI reader: SAP GUI for HTML of S/4HANA 2025, in a browser", () => {
   let browser: Browser;
   let page: Page;
@@ -188,6 +215,22 @@ describe.skipIf(!exe)("Web GUI reader: SAP GUI for HTML of S/4HANA 2025, in a br
     ]);
     // The main window's field stays in the main window.
     expect(full.indexOf('wnd[0]/usr/txtVBKD-BSTKD  field   = "X1"  (edit)')).toBeLessThan(at);
+  });
+
+  test("a classic list in a popup, whose cells S/4HANA 2025 does not type: its rows are read, and a row is chosen by its cell", async () => {
+    await page.setContent(LIST_POPUP);
+    const full = await webguiLookInFrame(page.mainFrame(), false);
+    expect(full).toContain('WINDOW wnd[1]  "Sales area for customer"');
+    expect(full).toContain("wnd[1]/usr/lbl[1,4]  label  9710");
+    expect(full).toContain("wnd[1]/usr/lbl[15,3]  label  Sales Org A / Direct / Division 00");
+    // The lines between the cells are not controls.
+    expect(full).not.toContain("wnd[1]/usr/lbl[0,2]");
+    const compact = await webguiLookInFrame(page.mainFrame(), true);
+    expect(compact).toMatch(/row 3: .*9010.*10.*00.*Sales Org A/);
+    expect(compact).toMatch(/row 4: .*9710.*Sales Org B/);
+    const said = await webguiActInFrame(page.mainFrame(), { do: "dblclick", id: "wnd[1]/usr/lbl[1,4]" });
+    expect(said).toContain("double-clicked wnd[1]/usr/lbl[1,4]");
+    expect(await page.evaluate(() => (window as unknown as { chosen: string }).chosen)).toBe("row 4");
   });
 
   test("S4WEB-10: a popup without a button (the F1 help) lists the x of its title, and that x is pressed by its id", async () => {
