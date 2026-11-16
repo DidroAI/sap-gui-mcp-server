@@ -444,13 +444,17 @@ export function extractLook(limits: {
         out(modal, `${sid}  command-field`);
         break;
       case "GuiTextEdit": {
+        // The lines of the text, with "\n" between them (a backslash and an n: the view has one line per control).
+        const raw = (h as HTMLTextAreaElement).value ?? h.innerText ?? "";
         const v =
           (h as HTMLInputElement).type === "password"
             ? "***"
-            : norm((h as HTMLTextAreaElement).value ?? h.innerText).slice(
-                0,
-                2000,
-              );
+            : raw
+                .split(/\r\n?|\n/)
+                .map((x) => norm(x))
+                .join("\\n")
+                .replace(/(\\n)+$/, "")
+                .slice(0, 2000);
         out(modal, `${sid}  text-editor  "${v}"`);
         break;
       }

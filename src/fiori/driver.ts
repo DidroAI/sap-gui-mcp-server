@@ -13,6 +13,7 @@
  */
 import type { Frame, Page } from "playwright-core";
 import type { ChromeTab } from "../browser/chrome.js";
+import { ONE_LINE_NOTE, oneLine } from "../core/action.js";
 import { type Action, ActionError, type Assessment, type Driver, type LookOptions, type SessionInfo } from "../core/types.js";
 import { webguiActInFrame, webguiAssessInFrame, webguiLookInFrame } from "../webgui/index.js";
 import { LOGON_REFUSAL } from "../core/words.js";
@@ -279,6 +280,7 @@ export class FioriDriver implements Driver {
     const hit = await this.control(req, ui5);
     if (!hit) throw new ActionError(`No control "${id}" on this screen. Take the id from sap_look (the text after # in the compact view).`);
     const { frame: f, result: r } = hit;
+    let said = "";
     const target = f.locator(`[${TARGET_ATTR}]`).first();
     const unmark = () => f.evaluate((attr) => document.querySelectorAll(`[${attr}]`).forEach((e) => e.removeAttribute(attr)), TARGET_ATTR).catch(() => {});
     try {
@@ -287,7 +289,11 @@ export class FioriDriver implements Driver {
           break;
         case "TARGET":
           if (op === "fill") {
-            await target.fill(action.value == null ? "" : String(action.value), { timeout: 8000 });
+            // A text area has lines; an input has one, and the browser would drop the line breaks and join the words.
+            const lines = await target.evaluate((e) => e.tagName === "TEXTAREA" || (e as HTMLElement).isContentEditable).catch(() => false);
+            const single = oneLine(action.value == null ? "" : String(action.value));
+            if (!lines && single.had) said = ` (${ONE_LINE_NOTE})`;
+            await target.fill(lines ? String(action.value ?? "") : single.text, { timeout: 8000 });
             // Tab leaves the field, which is when UI5 takes the value; a search field searches on Enter.
             await target.press(r.enter || action.enter === true ? "Enter" : "Tab", { timeout: 8000 });
           } else if (op === "dblclick") await target.dblclick({ timeout: 8000 });
@@ -322,7 +328,7 @@ export class FioriDriver implements Driver {
     } finally {
       await unmark();
     }
-    return `${action.do} ${r.note}; ${await this.idle()}`;
+    return `${action.do} ${r.note}${said}; ${await this.idle()}`;
   }
 
   async screenshot(): Promise<Buffer> {

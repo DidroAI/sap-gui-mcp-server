@@ -16,6 +16,7 @@
 import { compact, controlBlock } from "../core/compact.js";
 import { severalText } from "../core/ids.js";
 import { readRows } from "../core/rows.js";
+import { ONE_LINE_NOTE, oneLine } from "../core/action.js";
 import { type Action, ActionError, type Assessment, type Driver, type LookOptions, type SessionInfo, type Surface } from "../core/types.js";
 import { isLogonScreen, LOGON_REFUSAL } from "../core/words.js";
 import { assess } from "./assess.js";
@@ -248,9 +249,11 @@ class SapguiDriver implements Driver {
         if (target.type === "GuiOkCodeField") throw new ActionError('The command field takes {"do":"okcode","value":"..."}, not "set".');
         if (target.type === "GuiCheckBox" || target.type === "GuiRadioButton") return this.act({ ...action, do: "check" });
         if (target.type === "GuiComboBox") return this.act({ ...action, do: "combo", key: action.value });
-        if (target.type === "GuiShell" && target.sub === "TextEdit") return this.run({ do: "set", id, value: String(action.value ?? "") }, `set ${id}`, timeoutMs);
+        // A text editor has lines (SAP GUI separates them with CR LF); every other field has one.
+        if (target.type === "GuiShell" && target.sub === "TextEdit") return this.run({ do: "set", id, value: String(action.value ?? "").replace(/\r\n?|\n/g, "\r\n") }, `set ${id}`, timeoutMs);
         if (!SET_TYPES.has(target.type)) throw new ActionError(`${id} is a ${target.type}, not a field: "set" types into fields only. Use "press" for a button, "select" for a tab or a menu entry.`);
-        return this.run({ do: "set", id, value: String(action.value ?? "") }, `set ${id} = "${String(action.value ?? "")}"`, timeoutMs);
+        const single = oneLine(String(action.value ?? ""));
+        return this.run({ do: "set", id, value: single.text }, `set ${id} = "${single.text}"${single.had ? ` (${ONE_LINE_NOTE})` : ""}`, timeoutMs);
       case "press":
         if (target.type !== "GuiButton") throw new ActionError(`${id} is a ${target.type}, not a button: use "select" for a tab or a menu entry, "set" for a field.`);
         return this.run({ do: doing, id }, `${doing} ${id}`, timeoutMs);

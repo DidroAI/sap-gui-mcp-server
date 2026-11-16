@@ -406,8 +406,9 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       const refusal = setRefusal(c);
       if (refusal) throw new ActionError(refusal);
       if (c.readonly) throw new ActionError(`${c.sid} is read-only`);
-      await typeInto(session, loc, String(a.value ?? ""));
-      return `set ${c.sid}`;
+      // A text editor has lines; every other field has one.
+      const said = await typeInto(session, loc, String(a.value ?? ""), c.type === "GuiTextEdit" || c.tag === "TEXTAREA");
+      return `set ${c.sid}${said}`;
     }
     case "press":
       if (c.overflow) return pressOverflow(session, c);

@@ -13,7 +13,11 @@
  *   virtual key), or a key name in one spelling ("Enter", "Shift+Tab",
  *   "Control+s");
  * - an `okcode` action has a trimmed string `value`;
- * - no string holds a carriage return or a line feed;
+ * - no string holds a carriage return or a line feed, except the `value` of
+ *   a `set`: a text editor has lines. There a line break is one "\n", and
+ *   none stands at either end. A surface types it into a control that has
+ *   lines and writes a space in its place into a field that has one
+ *   (`oneLine`), never the Enter key: "OR\n/nSE38" must not run a command;
  * - `value` and `key` are a string, a number, a boolean or absent.
  * Anything else is refused with an ActionError.
  */
@@ -102,6 +106,20 @@ const SCROLL_ALIASES: Readonly<Record<string, string>> = { down: "next", up: "pr
 const SCROLL_WORDS = new Set(["next", "prev", "first", "last", "right", "left", "rightmost", "leftmost", ...Object.keys(SCROLL_ALIASES)]);
 
 const stripBreaks = (s: string) => s.replace(/[\r\n]+/g, "");
+/** The value of a `set`: each line break one "\n", none at either end. */
+const keepLines = (s: string) => s.replace(/\r\n?/g, "\n").replace(/^\n+|\n+$/g, "");
+
+/** What the answer says when a value with line breaks went into a field that has one line. */
+export const ONE_LINE_NOTE = "the value had line breaks and this field has one line: each was typed as a space";
+
+/**
+ * A value for a field that has one line: each run of line breaks becomes one
+ * space. `had` says that there were some, so the answer can say it.
+ */
+export function oneLine(value: string): { text: string; had: boolean } {
+  const text = value.replace(/[\r\n]+/g, " ");
+  return { text, had: text !== value };
+}
 const scalar = (v: unknown) => v === undefined || v === null || typeof v === "string" || typeof v === "number" || typeof v === "boolean";
 
 /**
@@ -120,7 +138,7 @@ export function normalizeAction(input: unknown): NormalizedAction {
   for (const [k, v] of Object.entries(raw)) {
     if (k === "do" || v === undefined) continue;
     if (k === "__proto__" || k === "constructor" || k === "prototype") continue;
-    if (typeof v === "string") out[k] = stripBreaks(v);
+    if (typeof v === "string") out[k] = verb === "set" && k === "value" ? keepLines(v) : stripBreaks(v);
     else if (scalar(v)) out[k] = v;
     else throw new ActionError(`"${k}" must be a string, a number or a boolean.`);
   }
