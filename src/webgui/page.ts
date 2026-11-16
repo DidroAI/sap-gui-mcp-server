@@ -1072,7 +1072,7 @@ export interface MarkedControl {
   tag: string;
   /** For an input element: its type ("text", "password", ...); "" otherwise. */
   inputType: string;
-  /** A toolbar button behind the toolbar's ">>" button: the DOM id of that ">>" button; "" otherwise. */
+  /** A toolbar button behind the toolbar's ">>" button: the DOM id of that ">>" button (of the toolbar when it shows none); "" otherwise. */
   overflow: string;
   /** The button's DOM id ("" when not a button): its entry in the ">>" menu is "<id>-BtnMenu". */
   dom: string;
@@ -1110,7 +1110,12 @@ export function markControl(ident: string): MarkedControl | string {
     if (!el.closest(".lsToolbar--item-hidden")) return null;
     const bar = el.closest("[ct='T']");
     if (!bar || !visible(bar)) return null;
-    return document.getElementById(`${bar.id}-hiddenOpener`);
+    // ECC names the ">>" button <toolbar>-hiddenOpener; S/4HANA 2025 puts a button in an item of its own
+    // (lsToolbar--overflowButton). A toolbar that shows neither still hides the button: the toolbar stands in.
+    const named = document.getElementById(`${bar.id}-hiddenOpener`);
+    if (named && visible(named)) return named;
+    const own = Array.from(bar.querySelectorAll(".lsToolbar--overflowButton [ct='B'],.lsToolbar--overflowButton [role='button']")).find(visible);
+    return own ?? named ?? bar;
   };
   const all = Array.from(document.querySelectorAll("[data-ls*='SID:']"))
     .map((el) => ({ el, ...info(el) }))

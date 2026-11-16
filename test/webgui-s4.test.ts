@@ -107,6 +107,19 @@ const VALUE_HELP = `${HEAD}
 </script>
 </body></html>`;
 
+const btn = (dom: string, n: number, text: string, hidden: boolean) =>
+  `<span id="${dom}-r" class="lsToolbar--item${hidden ? " lsToolbar--item-hidden" : ""}"><div id="${dom}" ct="B" role="button" title="${text}" lsdata="${ls({ "0": text, "27": { SID: `wnd[0]/tbar[1]/btn[${n}]`, Type: "GuiButton", SubType: "toolbar" } })}">${text}</div></span>`;
+const overflowPage = (withMenu: boolean) => `${HEAD}
+<div id="uB62" ct="T" role="toolbar" class="lsToolbar lsToolbar--standards-overflow" style="width:600px" lsdata="${ls({ "0": "uB62", "10": { SID: "wnd[0]/tbar[0]", Type: "GuiToolBar" } })}">
+  <div id="uB62-itms">${btn("M0:48::btn[6]", 6, "Display", false)}${btn("M0:48::btn[26]", 26, "Sales", true)}
+    <span id="u5B0E-r" class="lsToolbar--item lsToolbar--overflowButton"><div id="u5B0E" ct="B" role="button" title="More" style="display:inline-block;width:26px;height:26px"
+      lsdata="${ls({ "4": "More", "11": "sap-icon://overflow" })}" onclick="${withMenu ? "document.getElementById('OVM').style.top='60px'" : ""}">...</div></span>
+  </div>
+</div>
+<table id="OVM" style="position:absolute;top:-9999px;left:300px;background:#fff"><tr id="M0:48::btn[26]-BtnMenu" ct="POMNI" role="menuitem" onclick="window.pressed=['Sales'];document.getElementById('OVM').style.top='-9999px'"><td>Sales</td></tr></table>
+<script>document.addEventListener('keydown', function (e) { if (e.key === 'F2' && e.ctrlKey) window.pressed = ['CTRL+F2']; });</script>
+</body></html>`;
+
 const refusal = (p: Promise<unknown>): Promise<string> =>
   p.then(
     () => "",
@@ -218,5 +231,18 @@ describe.skipIf(!exe)("Web GUI reader: SAP GUI for HTML of S/4HANA 2025, in a br
     expect(await act({ do: "set", id: "crit1805", value: "*ALPHA*" })).toBe("set wnd[2]/shell/critcol/crit1805");
     expect(await fullView()).toContain('wnd[2]/shell/critcol/crit1805  field  Name = "*ALPHA*"  (edit)');
     expect(await page.locator("[ct='TOKEN']").count()).toBe(0);
+  });
+
+  test('a toolbar button behind the ">>" button of S/4HANA 2025 is pressed through its menu', async () => {
+    await load(overflowPage(true));
+    expect(await fullView()).toContain('wnd[0]/tbar[1]/btn[26]  button  Sales  (behind ">>")');
+    expect(await act({ do: "press", id: "btn[26]" })).toBe('pressed wnd[0]/tbar[1]/btn[26] (from the ">>" menu of its toolbar)');
+    expect(await pressed()).toEqual(["Sales"]);
+  });
+
+  test('when the ">>" menu does not show the entry, the button is sent as its function key', async () => {
+    await load(overflowPage(false));
+    expect(await act({ do: "press", id: "wnd[0]/tbar[1]/btn[26]" })).toBe('pressed wnd[0]/tbar[1]/btn[26] (behind ">>": sent as its key Control+F2)');
+    expect(await pressed()).toEqual(["CTRL+F2"]);
   });
 });

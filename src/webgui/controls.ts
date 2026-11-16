@@ -6,7 +6,7 @@
 import type { Locator } from "playwright-core";
 import { ActionError } from "../core/types.js";
 import { vkey } from "./keys.js";
-import { type MarkedControl, markControl, menuRowOpen, normalizeLsdata } from "./page.js";
+import { type MarkedControl, markControl, menuRowOpen, normalizeLsdata, openOverlay } from "./page.js";
 import type { WebGuiSession } from "./session.js";
 
 /**
@@ -225,14 +225,21 @@ export async function setCalendar(session: WebGuiSession, loc: Locator, value: s
  */
 export async function pressOverflow(session: WebGuiSession, c: MarkedControl): Promise<string> {
   const opener = session.frame.locator(`[id="${c.overflow}"]`).first();
-  await opener.click({ timeout: 5000 });
-  // Not tuned: the time the ">>" menu takes to open.
-  await session.page.waitForTimeout(300);
-  if (await clickMenuRow(session, `${c.dom}-BtnMenu`)) return `pressed ${c.sid} (from the ">>" menu of its toolbar)`;
+  // A toolbar without a ">>" button of its own (the id is then the toolbar's): only the function key is left.
+  const opens = await opener.evaluate((e) => e.getAttribute("ct") !== "T").catch(() => false);
+  if (opens) {
+    await opener.click({ timeout: 5000 });
+    // The ">>" menu opens a moment after the click: its entry is looked for until it is there.
+    for (let i = 0; i < 10; i++) {
+      if (await clickMenuRow(session, `${c.dom}-BtnMenu`)) return `pressed ${c.sid} (from the ">>" menu of its toolbar)`;
+      if ((await session.frame.evaluate(openOverlay).catch(() => "")) === "menu" && i >= 2) break;
+      await session.page.waitForTimeout(100);
+    }
+    // The menu did not show the entry: close it (Escape goes to an open menu only; else ">>" again), then send the button's function key.
+    if ((await session.frame.evaluate(openOverlay).catch(() => "")) === "menu") await session.pressKey("Escape");
+    await session.page.waitForTimeout(150);
+  }
   const k = /\/tbar\[\d\]\/btn\[(\d+)\]$/.exec(c.sid)?.[1];
-  // The menu did not show the entry: close it (">>" again; Escape would be Cancel if it is not open), then send the button's function key.
-  await opener.click({ timeout: 5000 }).catch(() => {});
-  await session.page.waitForTimeout(150);
   if (k === undefined) throw new ActionError(`${c.sid} is behind the toolbar's ">>" button and its entry could not be found there. Look at the screen.`);
   await session.roundtrip(() => session.pressKey(vkey(Number(k))), SURE_START_MS);
   return `pressed ${c.sid} (behind ">>": sent as its key ${vkey(Number(k))})`;
