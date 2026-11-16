@@ -306,6 +306,8 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
         } else if (how === "double") await cell.dblclick({ timeout: 5000 }).catch(() => cell.dispatchEvent("dblclick"));
         else await cell.click({ timeout: 5000 }).catch(() => cell.dispatchEvent("click"));
       }, 1200);
+      // A column and no row: the column's header was clicked (it selects the column, for the toolbar's sort or total).
+      if (a.row === undefined && a.node === undefined && a.col !== undefined && a.col !== "") return `${a.do} ${how === "select" || how === "cell" ? "selected" : how} column ${a.col}`;
       return `${a.do} ${how === "cell" ? "cursor on" : how} ${a.node ?? `row ${a.row}`}${a.col !== undefined && a.col !== "" && a.node === undefined ? ` column ${a.col}` : ""}${scrolled}`;
     }
     case "select": {

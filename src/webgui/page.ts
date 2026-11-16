@@ -158,9 +158,14 @@ export function extractLook(limits: {
     };
   };
 
-  // Labels name their field's DOM id in key 1.
+  // Labels name their field's DOM id in key 1. So does the text SAP writes to the right of a field, the
+  // description of its value ("Germany Frankfurt" after sales organization 1000): that one is not the
+  // field's name, it goes after the value. And a label can point at a button that stands before its
+  // field (XD03, Customer): the field is then named by the label of its own SAP name (lblRF02D-KUNNR).
   const labelFor = new Map<string, string>();
   const labelEl = new Map<string, Element>();
+  const describedBy = new Map<string, string>();
+  const labelNamed = new Map<string, string>();
   for (const el of Array.from(
     document.querySelectorAll("[data-ls*=\"Type:'GuiLabel'\"]"),
   )) {
@@ -168,11 +173,22 @@ export function extractLook(limits: {
       el.getAttribute("data-ls") ?? "",
     )?.[1];
     const t = norm((el as HTMLElement).innerText);
-    if (!forId || !t || !visible(el)) continue;
+    if (!t || !visible(el)) continue;
+    const own = info(el).sid;
+    if (/\/lbl[^/]+$/.test(own) && !labelNamed.has(own)) labelNamed.set(own, t);
+    if (!forId) continue;
     const k = unesc(forId);
+    const field = document.getElementById(k);
+    const after = !!field && visible(field) && el.getBoundingClientRect().left >= field.getBoundingClientRect().right - 1;
+    if (after) {
+      describedBy.set(k, describedBy.has(k) ? `${describedBy.get(k)} ${t}` : t);
+      continue;
+    }
     labelFor.set(k, labelFor.has(k) ? `${labelFor.get(k)} ${t}` : t);
     if (!labelEl.has(k)) labelEl.set(k, el);
   }
+  /** The name of a field: its label, else the label of its SAP name, else "". */
+  const nameOf = (el: Element, sid: string) => labelFor.get(el.id) ?? labelNamed.get(sid.replace(/\/[a-z]+([^/]*)$/, "/lbl$1")) ?? "";
   const usedLabels = new Set<string>();
 
   // After an error or a warning SAP puts the cursor on the field the message is about: the view says which.
@@ -301,8 +317,9 @@ export function extractLook(limits: {
           const tbl = el.closest("[data-ls*=\"Type:'GuiTableControl'\"]");
           if (tbl && !inView(el, tbl.getBoundingClientRect())) break;
         }
-        const lab = labelFor.get(el.id) ?? "";
+        const lab = nameOf(el, sid);
         if (lab) usedLabels.add(el.id);
+        const described = describedBy.get(el.id);
         const ro = fieldLocked(el);
         // A password is never written out, whatever type SAP gives the field.
         const secret =
@@ -317,7 +334,7 @@ export function extractLook(limits: {
             /--required\b|Required\b|urEdf2Req/.test(`${el.closest(".lsField")?.className ?? ""} ${el.className} ${lbl?.className ?? ""} ${lbl?.firstElementChild?.className ?? ""}`));
         out(
           modal,
-          `${sid}  field  ${lab || tip} = "${val}"  (${ro ? "read-only" : "edit"})${required ? "  required" : ""}${cursorTold && document.activeElement === el ? "  (cursor here)" : ""}`,
+          `${sid}  field  ${lab || tip} = "${val}"${described && !secret ? ` ${described}` : ""}  (${ro ? "read-only" : "edit"})${required ? "  required" : ""}${cursorTold && document.activeElement === el ? "  (cursor here)" : ""}`,
         );
         break;
       }
@@ -353,7 +370,7 @@ export function extractLook(limits: {
         // A dropdown cell of a table control scrolled out sideways is not on the screen.
         const tblC = el.closest("[data-ls*=\"Type:'GuiTableControl'\"]");
         if (tblC && !inView(el, tblC.getBoundingClientRect())) break;
-        const lab = labelFor.get(el.id) ?? tip;
+        const lab = nameOf(el, sid) || tip;
         // S/4HANA 2025 keeps the field name in key 3 (VBAK-LIFSKSAPMV45A), not the selected key.
         const k3 = prop(ls, 3);
         // S/4HANA 2025: key 3 names the field (VBAK-LIFSKSAPMV45A), key 4 holds
@@ -1110,7 +1127,11 @@ export function markControl(ident: string): MarkedControl | string {
   };
 }
 
-/** A row of a smart table (grid, tree, value-help list) and one of its cells, marked for Playwright. */
+/**
+ * A row of a smart table (grid, tree, value-help list) and one of its cells,
+ * marked for Playwright; with a column and no row or node, the column's
+ * header. A column the table does not have is said, not guessed.
+ */
 export function markRow(a: { sid: string; row?: number | undefined; node?: string | undefined; col?: string | number | undefined }): string {
   // Web GUI of S/4HANA 2025 breaks String.prototype.matchAll (as Web GUI breaks trim): loop with exec.
   const execAll = (text: string, re: RegExp): RegExpExecArray[] => {
@@ -1179,6 +1200,35 @@ export function markRow(a: { sid: string; row?: number | undefined; node?: strin
     const own = tr.querySelector("td[lsmatrixrowindex]");
     rowIdx = own ? Number(own.getAttribute("lsmatrixrowindex")) : Number(tr.getAttribute("iidx")) + 1;
   } else rowIdx = Number(a.row ?? 0) + 1;
+  // The column `col` names: by its id (VBELN), its title, or its number counted from 0.
+  const colIds = (/ColumnI[dD]s:\[([^\]]*)\]/.exec(root.getAttribute("data-ls") ?? "")?.[1] ?? "")
+    .split(",")
+    .filter(Boolean)
+    .map((x) => x.replace(/^'|'$/g, ""));
+  const ths = Array.from(root.querySelectorAll("th[lsmatrixcolindex]"));
+  const column = (col: string): { th: Element | undefined; ci: number } => {
+    const th =
+      ths.find((t) => sidOf(t).endsWith(`/col${col}`)) ??
+      ths.find((t) =>
+        (t.getAttribute("title") ?? (t as HTMLElement).innerText)
+          .replace(/\s+/g, " ")
+          .includes(col),
+      );
+    let ci = th ? Number(th.getAttribute("lsmatrixcolindex")) : NaN;
+    if (Number.isNaN(ci) && colIds.indexOf(col) >= 0) ci = colIds.indexOf(col) + 1;
+    if (Number.isNaN(ci) && /^\d+$/.test(col) && (!colIds.length || Number(col) < colIds.length)) ci = Number(col) + 1;
+    return { th: th ?? ths.find((t) => Number(t.getAttribute("lsmatrixcolindex")) === ci), ci };
+  };
+  const noColumn = (col: string) => `no column ${col} in ${sidOf(root)}${colIds.length ? `: its columns are ${colIds.slice(0, 60).join(", ")}${colIds.length > 60 ? ", ..." : ""}` : ""}`;
+  const named = a.col !== undefined && a.col !== "" ? column(String(a.col)) : undefined;
+  if (named && Number.isNaN(named.ci)) return noColumn(String(a.col));
+  // A column without a row or a node: the column itself, by its header.
+  if (named && a.row === undefined && a.node === undefined) {
+    const r = named.th?.getBoundingClientRect();
+    if (!named.th || !r || r.width <= 0 || r.height <= 0) return `the header of column ${a.col} is not on screen`;
+    named.th.setAttribute("data-sap-act", "cell");
+    return "ok";
+  }
   // Only rows that are drawn: Web GUI keeps rows it scrolled away from in the page, without a size.
   const box = root.getBoundingClientRect();
   const drawn = (td: Element) => {
@@ -1190,27 +1240,7 @@ export function markRow(a: { sid: string; row?: number | undefined; node?: strin
   );
   if (!inRow.length) return `row ${a.row ?? a.node} is not on screen`;
   let cell: Element | undefined;
-  if (a.col !== undefined && a.col !== "") {
-    const ths = Array.from(root.querySelectorAll("th[lsmatrixcolindex]"));
-    const ls = root.getAttribute("data-ls") ?? "";
-    const ids = (/ColumnI[dD]s:\[([^\]]*)\]/.exec(ls)?.[1] ?? "")
-      .split(",")
-      .map((x) => x.replace(/^'|'$/g, ""));
-    const col = String(a.col);
-    const th =
-      ths.find((t) => sidOf(t).endsWith(`/col${col}`)) ??
-      ths.find((t) =>
-        (t.getAttribute("title") ?? (t as HTMLElement).innerText)
-          .replace(/\s+/g, " ")
-          .includes(col),
-      );
-    let ci = th ? Number(th.getAttribute("lsmatrixcolindex")) : NaN;
-    if (Number.isNaN(ci) && ids.indexOf(col) >= 0) ci = ids.indexOf(col) + 1;
-    if (Number.isNaN(ci) && /^\d+$/.test(col)) ci = Number(col) + 1;
-    cell = inRow.find(
-      (td) => Number(td.getAttribute("lsmatrixcolindex")) === ci,
-    );
-  }
+  if (named) cell = inRow.find((td) => Number(td.getAttribute("lsmatrixcolindex")) === named.ci);
   const hicCell = inRow.find((td) => td.getAttribute("subct") === "HIC");
   const isTree = /Type:'GuiTree'/.test(root.getAttribute("data-ls") ?? "");
   // A tree node is opened on its text (in the hierarchy cell); a grid row on its first filled cell.

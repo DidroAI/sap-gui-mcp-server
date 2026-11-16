@@ -448,7 +448,7 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
   {"do":"f4","id":"..."}                            value help
   {"do":"dblclick","id":"..."}                      list entry or label
   {"do":"tree","id":"...","node":"<key>","how":"double|select|expand|collapse"}
-  {"do":"grid","id":"...","row":0,"col":"VBELN","how":"double|select|cell"}   any row of the grid: one that is not on screen is scrolled to first; "select" selects the row, "cell" only puts the cursor on the cell
+  {"do":"grid","id":"...","row":0,"col":"VBELN","how":"double|select|cell"}   any row of the grid: one that is not on screen is scrolled to first; "select" selects the row, "cell" only puts the cursor on the cell; "select" with "col" and no "row" selects the column (for the grid's sort or total buttons)
   {"do":"toolbar","id":"...","button":"<id>"}
   {"do":"scroll","id":"...","to":120}               grid, table control, tree or list: to a row counted from 0, or "next", "prev", "first", "last"; a table control's columns: "right", "left" (Fiori: scrolls a table or the page when the view ends with SCROLL)
 Ids: use them as the view shows them. A toolbar button btn[N] is function key N: press it, or send the key. A handle such as cntlGRID1/shell or shellcont[1]/shell is a shortened id; an id that names several controls is refused with the list of them, and an id from an earlier screen is refused with the screen you are on.

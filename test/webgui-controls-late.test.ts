@@ -13,7 +13,10 @@
  *   popup the first one can do no more than give the line the cursor;
  * - the restrictions of a value help are a panel closed by default, opened
  *   with the arrow left of its title; its fields are GuiSearchHelpPageItem;
- * - the calendar of a date's value help holds its date in a field of its own.
+ * - the calendar of a date's value help holds its date in a field of its own;
+ * - the text SAP writes after a field (the description of its value) points
+ *   at the field as its label does, and a label can point at a button;
+ * - a grid's column is selected by a click on its header.
  *
  * Needs a Chrome: SAP_TEST_CHROME=/path/to/chrome. Without it the tests are skipped.
  */
@@ -42,6 +45,20 @@ const PAGE = `<!doctype html><html lang="en"><head><title>Synthetic</title></hea
 </table>
 <div id="tbl1_vscroll" ct="SCB" style="width:16px;height:40px" lsdata="{0:1,1:1,3:2,6:'tbl1',10:2}">&nbsp;</div>
 <div id="tbl1_hscroll" ct="SCB" style="width:300px;height:16px" lsdata="{1:0,3:-100,5:'HORIZONTAL',6:'tbl1'}">&nbsp;</div>
+
+<label id="LA" style="position:absolute;left:600px;top:20px" lsdata="{1:'BTNS',3:'Customer',19:${sid("wnd[0]/usr/lblRF02D-KUNNR", "GuiLabel")}}">Customer</label>
+<div id="BTNS" style="position:absolute;left:700px;top:20px;width:20px" title="Search" lsdata="{4:'Search',28:${sid("wnd[0]/usr/btnSEARCH_CUSTOMER", "GuiButton")}}">S</div>
+<input id="FK" style="position:absolute;left:730px;top:20px;width:80px" value="1000" lsdata="{0:'x',20:${sid("wnd[0]/usr/ctxtRF02D-KUNNR", "GuiCTextField")}}">
+<label id="LD" style="position:absolute;left:830px;top:20px" lsdata="{1:'FK',3:'x',19:${sid("wnd[0]/usr/txtINT_KNA1-NAME1", "GuiLabel")}}">Becker Berlin</label>
+<label id="LV" style="position:absolute;left:600px;top:50px" lsdata="{1:'FV',3:'x',19:${sid("wnd[0]/usr/lblRF02D-VKORG", "GuiLabel")}}">Sales Organization</label>
+<input id="FV" style="position:absolute;left:730px;top:50px;width:80px" value="1000" lsdata="{0:'x',20:${sid("wnd[0]/usr/ctxtRF02D-VKORG", "GuiCTextField")}}">
+<label id="LT" style="position:absolute;left:830px;top:50px" lsdata="{1:'FV',3:'x',19:${sid("wnd[0]/usr/txtTVKOT-VTEXT", "GuiLabel")}}">Germany Frankfurt</label>
+
+<table id="grid#9" ct="STCS" lsdata="{29:{ColumnIDs:['WERKS','ORT01'],${sid("wnd[0]/usr/cntlRESULT/shell", "GuiGridView").slice(1)}}" style="position:absolute;left:600px;top:100px;width:300px">
+  <thead><tr><th lsmatrixrowindex="0" lsmatrixcolindex="1" onclick="window.header='WERKS'" lsdata="{17:${sid("wnd[0]/usr/cntlRESULT/shell/colWERKS", "GuiTableColumn")}}">Plant</th>
+    <th lsmatrixrowindex="0" lsmatrixcolindex="2" onclick="window.header='ORT01'" lsdata="{17:${sid("wnd[0]/usr/cntlRESULT/shell/colORT01", "GuiTableColumn")}}">City</th></tr></thead>
+  <tbody><tr><td lsmatrixrowindex="1" lsmatrixcolindex="1" ondblclick="window.opened='0001'">0001</td><td lsmatrixrowindex="1" lsmatrixcolindex="2">Walldorf</td></tr></tbody>
+</table>
 
 <table id="menu_1_1" ct="POMN" style="position:absolute;top:500px;left:700px;background:#fff">
   <tr id="u235188" ct="POMNI" onclick="window.chosen='PO'" lsdata="{1:'Purchase\\x20orders',18:${sid("wnd[0]/shellcont/shell/dbtnSELECT/mnu/menu5113NEW:PO_QUERY", "GuiMenu")}}"><td>Purchase orders</td></tr>
@@ -192,6 +209,24 @@ describe.skipIf(!exe)("Web GUI reader: controls that answer late or hide their p
     expect(await inPage<string>("window.chosen")).toBe("MINE");
     expect(await act({ do: "select", id: "wnd[0]/shellcont/shell/dbtnSELECT/mnu/menu5113NEW:PO_QUERY" })).toBe("chose menu entry wnd[0]/shellcont/shell/dbtnSELECT/mnu/menu5113NEW:PO_QUERY");
     expect(await inPage<string>("window.chosen")).toBe("PO");
+  });
+
+  test("a field is named by its own label; the text after it is the description of its value", async () => {
+    await open();
+    const full = await fullView();
+    // "Customer" points at the search button before the field, and the customer's name at the field.
+    expect(full).toContain('wnd[0]/usr/ctxtRF02D-KUNNR  field  Customer = "1000" Becker Berlin  (edit)');
+    expect(full).toContain('wnd[0]/usr/ctxtRF02D-VKORG  field  Sales Organization = "1000" Germany Frankfurt  (edit)');
+  });
+
+  test("a grid column the grid does not have is refused; a column without a row is selected by its header", async () => {
+    await open();
+    expect(await refusal(actRaw(session, { do: "grid", id: "cntlRESULT/shell", row: 0, col: "NOPE", how: "double" }))).toBe("no column NOPE in wnd[0]/usr/cntlRESULT/shell: its columns are WERKS, ORT01");
+    expect(await inPage<string | undefined>("window.opened")).toBeUndefined();
+    expect(await act({ do: "grid", id: "cntlRESULT/shell", col: "ORT01", how: "select" })).toBe("grid selected column ORT01");
+    expect(await inPage<string>("window.header")).toBe("ORT01");
+    expect(await act({ do: "grid", id: "cntlRESULT/shell", row: 0, col: "WERKS", how: "double" })).toBe("grid double row 0 column WERKS");
+    expect(await inPage<string>("window.opened")).toBe("0001");
   });
 
   test("a wrong dropdown key is answered with the entries as the list writes them", async () => {
