@@ -10,7 +10,13 @@
  *   - every check marked on the step holds;
  *   - every capture finds its value, which later steps use.
  * The first failing step stops the run; the steps after it are skipped. The
- * result carries the screen at the failure.
+ * result carries the screen at the failure and the phase the step failed in.
+ *
+ * A run can resume at the failed step (`from`), on the screen as it is, with
+ * a repair for that one step (repair.ts): the repair is carried out under
+ * its rules, the step is judged by what the recording expected, and the
+ * steps after it run as recorded. The result then holds what the repair did
+ * and a proposed test. No model is called here.
  */
 import { actionText, normalizeAction, type NormalizedAction } from "../core/action.js";
 import { commandFieldRefusal, decide, leavesTransaction, type Policy, sessionRefusal, systemAllowed } from "../core/guard.js";
@@ -18,6 +24,7 @@ import type { Driver } from "../core/types.js";
 import { compact } from "../core/compact.js";
 import { captureValue, evaluate } from "./checks.js";
 import { actionWith, fill, inputsOf, type SapTest, type Step } from "./format.js";
+import { applyCapture, type Phase, type Proposal, propose, type Repair, type RepairRecord, RepairRefused, repairRefusal, runRepairActions } from "./repair.js";
 import { type Control, locate, type ParsedScreen, readSettled } from "./screen.js";
 
 export interface ReplayOptions {
@@ -32,6 +39,13 @@ export interface ReplayOptions {
    * continue: the replay presses the screen's neutral Continue and says so in the result.
    */
   choices?: "stop" | "continue";
+  /**
+   * Resume at this step (from 1) on the screen as it is: no clean start, no popup closed. With the
+   * variables the earlier run ended with. The result holds the steps from this one on.
+   */
+  from?: number;
+  /** A repair for step `from` (see repair.ts). */
+  repair?: Repair;
   /** After a failure, leave the transaction with /n (default true). Unsaved input is dropped. */
   leaveOnFailure?: boolean;
   /** Called after each step, for progress output. */
@@ -51,6 +65,10 @@ export interface StepResult {
   warnings: string[];
   /** Checks that held. */
   passed: string[];
+  /** On a failure: where the step failed (see repair.ts). */
+  phase?: Phase;
+  /** What a repair did at this step. A step that passed with one is not the recorded step. */
+  repair?: RepairRecord;
 }
 
 export interface ReplayResult {
@@ -72,6 +90,10 @@ export interface ReplayResult {
   screen?: string;
   /** The full view at the failure, for tools. */
   screenFull?: string;
+  /** The step the run resumed at, when it did not start at step 1. */
+  from?: number;
+  /** After a repair that worked: the recording with the change written in. Nothing was saved. */
+  proposal?: Proposal;
   ms: number;
 }
 
@@ -86,17 +108,25 @@ async function read(driver: Driver): Promise<ParsedScreen> {
   return readSettled(() => driver.look({ compact: false }));
 }
 
+/** The run cannot start, for a reason said as it is. */
+class Abort extends Error {}
+
+/** The guard said no. Not drift: a repair is never asked for. */
+export class GuardRefusal extends Error {
+  override name = "GuardRefusal";
+}
+
 /** Runs one action the way sap_act does: the same guard, then the driver. Returns the driver's note, or throws with the refusal. */
 async function guarded(driver: Driver, policy: Policy, action: NormalizedAction): Promise<string> {
   const field = commandFieldRefusal(action);
-  if (field) throw new Error(`refused: ${field}`);
+  if (field) throw new GuardRefusal(`refused: ${field}`);
   const info = await driver.refresh();
-  if (!systemAllowed(policy, info)) throw new Error(`refused: system ${info.system ?? "(unknown)"} is outside SAP_ALLOW_SYSTEMS`);
+  if (!systemAllowed(policy, info)) throw new GuardRefusal(`refused: system ${info.system ?? "(unknown)"} is outside SAP_ALLOW_SYSTEMS`);
   const here = sessionRefusal(policy, info);
-  if (here && !leavesTransaction(policy, action)) throw new Error(`refused: ${here}`);
+  if (here && !leavesTransaction(policy, action)) throw new GuardRefusal(`refused: ${here}`);
   const verdict = decide(policy, action, await driver.assess(action));
   if (!verdict.run)
-    throw new Error("refused" in verdict ? `refused: ${verdict.refused}` : `refused: this step may write to SAP (${verdict.confirm}). A replay cannot ask for each step: run it with SAP_WRITE=on, on a system where the test may write.`);
+    throw new GuardRefusal("refused" in verdict ? `refused: ${verdict.refused}` : `refused: this step may write to SAP (${verdict.confirm}). A replay cannot ask for each step: run it with SAP_WRITE=on, on a system where the test may write.`);
   return driver.act(action);
 }
 
@@ -220,21 +250,25 @@ function confirming(step: Step): string | undefined {
 /** At most this many unrecorded windows are answered after one step (VA02 shows two Information popups in a row). */
 const MAX_DETOURS = 5;
 
-export async function replay(driver: Driver, policy: Policy, test: SapTest, options: ReplayOptions = {}): Promise<ReplayResult> {
+export async function replay(driver: Driver, policy: Policy, recorded: SapTest, options: ReplayOptions = {}): Promise<ReplayResult> {
   const t0 = Date.now();
+  // The replay's own copy: a capture added by a repair changes the steps after it.
+  const test = structuredClone(recorded);
+  const resumed = options.from !== undefined || options.repair !== undefined;
+  const from = options.from ?? 1;
   // Only the test's own variables: an unknown name is refused below, not shown as a value.
   const given = Object.fromEntries(Object.entries(options.variables ?? {}).filter(([k]) => k in test.variables));
   const vars: Record<string, string> = { ...Object.fromEntries(Object.entries(test.variables).map(([k, v]) => [k, v.value])), ...given };
   const captures = new Set(test.steps.flatMap((s) => (s.capture ?? []).map((c) => c.var)));
-  const captured = new Set<string>();
+  const captured_ = new Set<string>();
   const info = await driver.refresh();
   const result: ReplayResult = { name: test.name, passed: false, system: `${info.system ?? "?"}${info.client ? `/${info.client}` : ""}`, surface: info.surface, steps: [], variables: vars, ms: 0 };
   const strict = (options.screens ?? "strict") === "strict";
   const finish = (aborted?: string): ReplayResult => {
     if (aborted) result.aborted = aborted;
-    const missed = [...captures].filter((v) => !captured.has(v) && !(v in given));
+    const missed = [...captures].filter((v) => !captured_.has(v) && !(v in given));
     if (missed.length) result.notCaptured = missed;
-    result.passed = !aborted && result.steps.length === test.steps.length && result.steps.every((s) => s.outcome === "pass");
+    result.passed = !aborted && result.steps.length === test.steps.length - (from - 1) && result.steps.every((s) => s.outcome === "pass");
     result.ms = Date.now() - t0;
     return result;
   };
@@ -243,12 +277,14 @@ export async function replay(driver: Driver, policy: Policy, test: SapTest, opti
   const missing = inputsOf(test).filter((k) => vars[k] === undefined);
   if (missing.length) return finish(`no value for ${missing.map((k) => `\${${k}}`).join(", ")}`);
   if (!test.steps.length) return finish("the recording has no steps");
+  if (options.repair && options.from === undefined) return finish('a repair needs "from", the step it is for');
+  if (!Number.isInteger(from) || from < 1 || from > test.steps.length) return finish(`"from" is a step of the test, 1 to ${test.steps.length} (got ${from})`);
+  if (resumed) result.from = from;
   if (info.surface !== test.recorded.surface) return finish(`the test was recorded on ${test.recorded.surface}; this session is ${info.surface}. Ids differ between Fiori and SAP GUI screens.`);
 
-  let screen: ParsedScreen;
-  try {
-    screen = await read(driver);
-    if (screen.logon) return finish("the session is on the logon screen: log on first");
+  /** A clean start: popups left open are closed, and the recording's first transaction is opened fresh. */
+  const cleanStart = async (at: ParsedScreen): Promise<ParsedScreen> => {
+    let screen = at;
     // A popup left open blocks the command field: an Information popup is confirmed, any other is cancelled
     // (Cancel never saves; the /n that follows drops unsaved input, as every replay start does).
     for (let i = 0; i < MAX_DETOURS && popupOf(screen) && info.surface !== "fiori"; i++) {
@@ -259,7 +295,7 @@ export async function replay(driver: Driver, policy: Policy, test: SapTest, opti
       screen = await read(driver);
     }
     const left = popupOf(screen);
-    if (left) return finish(`a popup is open and the replay could not close it: "${left.title}". Answer it, then run the replay again`);
+    if (left) throw new Abort(`a popup is open and the replay could not close it: "${left.title}". Answer it, then run the replay again`);
     // A clean start: the recording's first transaction, opened fresh.
     const opens = test.steps[0]?.action;
     const startsClean = opens?.do === "okcode" && /^\/n\S/i.test(String(opens.value ?? ""));
@@ -268,14 +304,23 @@ export async function replay(driver: Driver, policy: Policy, test: SapTest, opti
       await guarded(driver, policy, normalizeAction({ do: "okcode", value: `/n${t}` }));
       screen = await read(driver);
       if (strict && test.start.program && screen.program && (screen.program !== test.start.program || screen.screen !== test.start.screen))
-        return finish(`/n${t} opened ${where(screen)}, but the recording started on ${where(test.start)}: record the test from /n${t} on`);
+        throw new Abort(`/n${t} opened ${where(screen)}, but the recording started on ${where(test.start)}: record the test from /n${t} on`);
     }
-  } catch (e) {
-    return finish(`could not start: ${first(e)}`);
-  }
+    return screen;
+  };
 
+  let screen: ParsedScreen;
+  try {
+    screen = await read(driver);
+    if (screen.logon) return finish("the session is on the logon screen: log on first");
+    // A resumed run goes on from the screen as it is: what is open there is the step's business.
+    if (!resumed) screen = await cleanStart(screen);
+  } catch (e) {
+    return finish(e instanceof Abort ? e.message : `could not start: ${first(e)}`);
+  }
   let failed = false;
   for (const [i, step] of test.steps.entries()) {
+    if (i < from - 1) continue;
     const r: StepResult = { n: i + 1, outcome: "pass", ms: 0, failures: [], warnings: [], passed: [], ...(step.note ? { note: step.note } : {}) };
     result.steps.push(r);
     if (failed) {
@@ -284,11 +329,35 @@ export async function replay(driver: Driver, policy: Policy, test: SapTest, opti
       continue;
     }
     const s0 = Date.now();
+    // The repair, when this is the step the run resumed at with one.
+    const repair = i === from - 1 ? options.repair : undefined;
+    let phase: Phase = "act";
+    let added: Step[] = [];
+    let captured: { now: string; recorded: string } | undefined;
     try {
+      // Does the recorded action run? Not when a repair stands in for it, or it ran before the run resumed.
+      let runs = true;
+      if (repair) {
+        r.repair = { why: repair.why, outcome: "refused", did: [], ...(repair.then ? { then: repair.then } : {}) };
+        const no = repairRefusal(step, repair, test);
+        if (no) throw new RepairRefused(no);
+        if (repair.actions?.length) {
+          const run = await runRepairActions(driver, test, step, repair, vars, screen, (a) => guarded(driver, policy, a), () => read(driver)).catch((e) => {
+            // An action SAP did not take: the repair was tried and did not work.
+            if (!(e instanceof RepairRefused) && !(e instanceof GuardRefusal) && r.repair) r.repair.outcome = "failed";
+            throw e;
+          });
+          screen = run.screen;
+          added = run.steps;
+          r.repair.did = run.did;
+        }
+        r.repair.outcome = "failed";
+        runs = repair.then === "retry";
+      }
       if (step.action) {
         let action = actionWith(step.action, vars);
         // The screen may have moved the control: find it by its field name before giving up on the id.
-        if (action.id && step.target) {
+        if (runs && action.id && step.target) {
           const found = locate(screen, step.target.id) ?? locate(screen, action.id);
           if (found && found.by !== "exact") {
             r.warnings.push(`${step.target.id} was found as ${found.control.id} (same field name)`);
@@ -298,14 +367,17 @@ export async function replay(driver: Driver, policy: Policy, test: SapTest, opti
         r.action = actionText(action);
         // The recording confirmed an Information popup here that SAP did not show this time: nothing to answer.
         const confirms = confirming(step);
-        if (confirms && !screen.windows.some((w) => w.id === confirms)) {
+        if (runs && confirms && !screen.windows.some((w) => w.id === confirms)) {
           r.warnings.push(`the recording confirmed a popup here ("${step.on?.title ?? ""}") that SAP did not show this time: step skipped`);
           r.ms = Date.now() - s0;
           options.onStep?.(r);
           continue;
         }
-        await guarded(driver, policy, action);
-        screen = await read(driver);
+        if (runs) {
+          await guarded(driver, policy, action);
+          screen = await read(driver);
+        }
+        phase = "landing";
         // Windows SAP showed that the recording does not have here: passed when they only inform, else the step fails.
         for (let k = 0; k < MAX_DETOURS && !asRecorded(step, screen, vars); k++) {
           const d = detour(screen);
@@ -336,16 +408,22 @@ export async function replay(driver: Driver, policy: Policy, test: SapTest, opti
           if (j > i + 1 && last && asRecorded(last, screen, vars)) judged = { ...step, ...(last.after ? { after: last.after } : {}) };
         }
         if (!r.failures.length) implicit(judged, screen, strict, r, vars);
-      } else screen = await read(driver);
+      } else if (!repair) screen = await read(driver);
       // On the wrong screen or after an error, the marked checks would only repeat the failure.
       if (r.failures.length) throw undefined;
+      phase = "check";
+      // A capture a repair adds: the step and the steps after it now hold the variable where they held the recorded number.
+      if (repair?.capture) {
+        captured = applyCapture(test, i, repair, screen, vars);
+        if (r.repair) r.repair.captured = `\${${repair.capture.var}} = "${captured.now}" (recorded "${captured.recorded}")`;
+      }
       // Captures first: a check on the same step may use what was captured.
       for (const c of step.capture ?? []) {
         const got = captureValue(screen, c);
         if ("error" in got) r.failures.push(got.error);
         else {
           vars[c.var] = got.value;
-          captured.add(c.var);
+          captured_.add(c.var);
           r.passed.push(`\${${c.var}} = "${got.value}"`);
         }
       }
@@ -355,11 +433,26 @@ export async function replay(driver: Driver, policy: Policy, test: SapTest, opti
         if (v.ok && v.relocated) r.warnings.push(`${c.id} was found as ${v.relocated}`);
       }
     } catch (e) {
-      if (e !== undefined) r.failures.push(first(e));
+      if (e instanceof GuardRefusal && !r.repair) phase = "refused";
+      if (e instanceof RepairRefused) {
+        if (r.repair) r.repair.outcome = "refused";
+        r.failures.push(`the repair was refused: ${e.message}`);
+      }
+      else if (e !== undefined) r.failures.push(first(e));
     }
     r.ms = Date.now() - s0;
+    if (r.repair) {
+      if (r.failures.length) {
+        if (r.repair.outcome !== "refused") r.repair.outcome = "failed";
+        r.repair.problem = r.failures[0] ?? "";
+      } else {
+        r.repair.outcome = "repaired";
+        result.proposal = propose(recorded, test, i, repair as Repair, added, captured);
+      }
+    }
     if (r.failures.length) {
       r.outcome = "fail";
+      r.phase = phase;
       failed = true;
       const full = await driver.look({ compact: false }).catch(() => undefined);
       if (full) {
@@ -393,22 +486,28 @@ export function resultText(r: ReplayResult): string {
   // is said in the first line too: a PASS with notes is not the recorded run.
   const noted = r.steps.filter((s) => s.warnings.length).map((s) => s.n);
   const notes = noted.length + (r.before?.length ? 1 : 0);
+  const repaired = r.steps.filter((s) => s.repair?.outcome === "repaired").map((s) => s.n);
   const lines = [
     `${r.passed ? "PASS" : "FAIL"}  ${r.name}  on ${r.surface} ${r.system}  (${r.steps.filter((s) => s.outcome === "pass").length}/${r.steps.length} steps, ${(r.ms / 1000).toFixed(1)} s)${
+      r.passed && repaired.length ? `  REPAIRED at step ${repaired.join(", ")}: this run is not the recorded one (see "repaired:" and the proposed change below)` : ""
+    }${
       r.passed && notes ? `  WITH NOTES: this run differed from the recording${noted.length ? ` at step${noted.length > 1 ? "s" : ""} ${noted.join(", ")}` : " before step 1"} (see "note:" below)` : ""
     }`,
   ];
   if (r.aborted) lines.push(`Not run: ${r.aborted}.`);
+  if (r.from !== undefined) lines.push(`Resumed at step ${r.from}, on the screen as it was.`);
   for (const b of r.before ?? []) lines.push(`Before step 1: ${b}.`);
   for (const s of r.steps) {
     lines.push(`${s.outcome === "pass" ? "ok  " : s.outcome === "fail" ? "FAIL" : "skip"} ${s.n}. ${s.action ?? "(check only)"}${s.note ? `  — ${s.note}` : ""}`);
-    for (const f of s.failures) lines.push(`       failed: ${f}`);
+    for (const f of s.failures) lines.push(`       failed${s.phase ? ` (${s.phase})` : ""}: ${f}`);
+    if (s.repair) lines.push(`       ${s.repair.outcome === "repaired" ? "repaired" : `repair ${s.repair.outcome}`}: ${s.repair.why}${s.repair.did.length ? `  did: ${s.repair.did.join(", ")}${s.repair.then ? ` (${s.repair.then})` : ""}` : ""}${s.repair.captured ? `  ${s.repair.captured}` : ""}`);
     for (const w of s.warnings) lines.push(`       note: ${w}`);
     for (const p of s.passed) lines.push(`       ok: ${p}`);
   }
   const missed = new Set(r.notCaptured ?? []);
   const vars = Object.entries(r.variables);
   if (vars.length) lines.push(`Variables: ${vars.map(([k, v]) => (missed.has(k) ? `\${${k}} not captured in this run (recorded "${v}")` : `\${${k}} = "${v}"`)).join(", ")}`);
+  if (r.proposal) lines.push("", "Proposed change to the test (nothing was saved):", ...r.proposal.changes.map((c) => `  ${c}`));
   if (r.screen) lines.push("", "Screen at the failure:", r.screen);
   return lines.join("\n");
 }
