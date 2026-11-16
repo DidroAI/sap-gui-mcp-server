@@ -236,6 +236,12 @@ cannot change (`src/record/repair.ts`):
 - no write the recording does not have: an action that may write is refused
   unless the recorded step is itself a write, the repair replaces or completes
   it (not `before`), and it is the only one;
+- a confirmation is the write it completes: while SAP holds a warning in the
+  status bar or a popup that it raised at a write (the step being repaired, or
+  the step before it), Enter or a confirming button counts as that write. SAP
+  saves on the Enter that acknowledges a warning raised by Save. So it is
+  refused on a step that is not that write, refused `before` the recorded
+  write, and with writing off the guard refuses it as a write;
 - no leaving the transaction, no other app;
 - no invented data: a typed value is in the recording or on the screen;
 - a screen that offers a choice (availability control) is not answered;

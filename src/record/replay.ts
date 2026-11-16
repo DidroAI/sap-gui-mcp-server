@@ -20,7 +20,7 @@
  */
 import { actionText, normalizeAction, type NormalizedAction } from "../core/action.js";
 import { commandFieldRefusal, decide, leavesTransaction, type Policy, sessionRefusal, systemAllowed } from "../core/guard.js";
-import type { Driver } from "../core/types.js";
+import type { Assessment, Driver } from "../core/types.js";
 import { compact } from "../core/compact.js";
 import { captureValue, evaluate } from "./checks.js";
 import { actionWith, fill, inputsOf, type SapTest, type Step } from "./format.js";
@@ -117,14 +117,15 @@ export class GuardRefusal extends Error {
 }
 
 /** Runs one action the way sap_act does: the same guard, then the driver. Returns the driver's note, or throws with the refusal. */
-async function guarded(driver: Driver, policy: Policy, action: NormalizedAction): Promise<string> {
+async function guarded(driver: Driver, policy: Policy, action: NormalizedAction, rated?: Assessment): Promise<string> {
   const field = commandFieldRefusal(action);
   if (field) throw new GuardRefusal(`refused: ${field}`);
   const info = await driver.refresh();
   if (!systemAllowed(policy, info)) throw new GuardRefusal(`refused: system ${info.system ?? "(unknown)"} is outside SAP_ALLOW_SYSTEMS`);
   const here = sessionRefusal(policy, info);
   if (here && !leavesTransaction(policy, action)) throw new GuardRefusal(`refused: ${here}`);
-  const verdict = decide(policy, action, await driver.assess(action));
+  // `rated`: a repair's own, stricter rating of the action (a confirmation that completes a write is that write).
+  const verdict = decide(policy, action, rated ?? (await driver.assess(action)));
   if (!verdict.run)
     throw new GuardRefusal("refused" in verdict ? `refused: ${verdict.refused}` : `refused: this step may write to SAP (${verdict.confirm}). A replay cannot ask for each step: run it with SAP_WRITE=on, on a system where the test may write.`);
   return driver.act(action);
@@ -346,7 +347,7 @@ export async function replay(driver: Driver, policy: Policy, recorded: SapTest, 
         if (open?.kind === "choice" && options.choices !== "continue")
           throw new RepairRefused(`SAP shows ${a(open.what)} that offers a choice (${(open.ways ?? []).join("; ")}): which one is taken decides what is saved, so a repair does not take it. Record the test on data that shows this screen`);
         if (repair.actions?.length) {
-          const run = await runRepairActions(driver, test, step, repair, vars, screen, (a) => guarded(driver, policy, a), () => read(driver)).catch((e) => {
+          const run = await runRepairActions(driver, test, step, repair, vars, screen, (a, rated) => guarded(driver, policy, a, rated), () => read(driver), test.steps[i - 1]).catch((e) => {
             // An action SAP did not take: the repair was tried and did not work.
             if (!(e instanceof RepairRefused) && !(e instanceof GuardRefusal) && r.repair) r.repair.outcome = "failed";
             throw e;

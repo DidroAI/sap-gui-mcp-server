@@ -7,7 +7,10 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { policyFromEnv } from "../src/core/guard.js";
 import { parseTest, type SapTest, serializeTest } from "../src/record/format.js";
 import { recorderOptionsFromEnv } from "../src/record/recorder.js";
+import { normalizeAction } from "../src/core/action.js";
+import { confirms, writeInFlight } from "../src/record/repair.js";
 import { replay, resultText } from "../src/record/replay.js";
+import { parseScreen } from "../src/record/screen.js";
 import { createServer } from "../src/server.js";
 import { FakeSap } from "./record-fakes.js";
 
@@ -269,6 +272,57 @@ describe("what a repair may not do", () => {
     expect(r.steps[0]?.failures[0]).toContain("offers a choice");
     expect(r.steps[0]?.repair?.outcome).toBe("refused");
     expect(sap.screen).toBe("500");
+  });
+
+  test("a warning SAP raises while saving: the Enter that acknowledges it is the save", async () => {
+    const warned = async () => {
+      const c = await recordCreate();
+      c.sap.saveWarning = "Minimum quantity of free goods has not been reached";
+      const first = await replay(c.sap.driver(), c.policy, c.test, { leaveOnFailure: false });
+      // Save answered with the warning and saved nothing: the step did not lead where it was recorded to lead.
+      expect(first.steps[4]).toMatchObject({ outcome: "fail", phase: "landing" });
+      expect(c.sap.next).toBe(5002);
+      c.sap.acts = [];
+      return c;
+    };
+    // Before the recorded Save: refused, the write would run twice (the Enter saves, then Save meets an empty screen).
+    let c = await warned();
+    let r = await replay(c.sap.driver(), c.policy, c.test, { from: 5, repair: { why: "a warning", actions: [{ do: "key", key: 0 }], place: "before" }, leaveOnFailure: false });
+    expect(r.steps[0]?.failures[0]).toContain("completes the save");
+    expect(r.steps[0]?.failures[0]).toContain("the recorded write would run after it");
+    expect(r.steps[0]?.repair?.outcome).toBe("refused");
+    expect(c.sap.acts).toEqual([]);
+    expect(c.sap.next).toBe(5002);
+    // After it, as the one write of the repair, on the step that is that write: allowed, and the order is the step's.
+    r = await replay(c.sap.driver(), c.policy, c.test, { from: 5, repair: { why: "a warning", actions: [{ do: "key", key: 0 }], place: "after" }, leaveOnFailure: false });
+    expect(c.sap.next).toBe(5003);
+    expect(r.steps[0]?.repair?.did).toEqual(['{"do":"key","key":0}']);
+    // On a step that is not the write (the one after it), with the warning still there: refused, nothing saved.
+    c = await warned();
+    r = await replay(c.sap.driver(), c.policy, c.test, { from: 6, repair: { why: "a warning", actions: [{ do: "key", key: 0 }], place: "before" }, leaveOnFailure: false });
+    expect(r.steps[0]?.failures[0]).toContain("which SAP raised at the write of the step before");
+    expect(r.steps[0]?.repair?.outcome).toBe("refused");
+    expect(c.sap.next).toBe(5002);
+    // With write off the same Enter is refused by the guard as a write.
+    c = await warned();
+    r = await replay(c.sap.driver(), policyFromEnv({}), c.test, { from: 5, repair: { why: "a warning", actions: [{ do: "key", key: 0 }], place: "after" }, leaveOnFailure: false });
+    expect(c.sap.next).toBe(5002);
+  });
+
+  test("a popup SAP raises at a write: its confirming button is the write, its Cancel is not", async () => {
+    const screen = parseScreen(
+      ['TRANSACTION ZA01  PROGRAM SAPMZA01  SCREEN 200', 'WINDOW wnd[0]  "Create Order: Overview"', 'WINDOW wnd[1]  "Save incomplete document"', "wnd[1]/usr/btnSPOP-OPTION1  button  Save", "wnd[1]/usr/btnSPOP-OPTION2  button  Edit", "wnd[1]/tbar[0]/btn[12]  button  Cancel (Escape)"].join("\n"),
+    );
+    const write = { action: { do: "key", key: 11 }, risk: "commit" };
+    const plain = { action: { do: "key", key: 0 }, risk: "navigate" };
+    expect(writeInFlight(write, undefined, screen)).toBe("this");
+    expect(writeInFlight(plain, write, screen)).toBe("previous");
+    expect(writeInFlight(plain, plain, screen)).toBeUndefined();
+    expect(confirms(normalizeAction({ do: "press", id: "wnd[1]/usr/btnSPOP-OPTION1" }), screen)).toBe(true);
+    expect(confirms(normalizeAction({ do: "key", key: 0 }), screen)).toBe(true);
+    expect(confirms(normalizeAction({ do: "press", id: "wnd[1]/tbar[0]/btn[12]" }), screen)).toBe(false);
+    expect(confirms(normalizeAction({ do: "key", key: 12 }), screen)).toBe(false);
+    expect(confirms(normalizeAction({ do: "set", id: "x", value: "1" }), screen)).toBe(false);
   });
 
   test("write off: a repair cannot write either", async () => {

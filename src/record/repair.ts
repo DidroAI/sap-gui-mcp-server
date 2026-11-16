@@ -13,6 +13,11 @@
  *   - no write the recording does not have: an action rated "commit" is
  *     refused unless the recorded step is itself a write, the repair stands
  *     in for it or completes it (not "before"), and it is the only one;
+ *   - a confirmation is the write it completes: while SAP holds a warning or
+ *     a popup it raised at a write (the step being repaired, or the step
+ *     before it), Enter or a confirming button there counts as that write.
+ *     So it is refused on any step that is not that write, and before the
+ *     recorded write (the write would run twice);
  *   - no leaving: an okcode that opens a transaction or ends the session is
  *     refused;
  *   - no invented data: a typed value is in the recording or on the screen;
@@ -25,7 +30,7 @@
 import { z } from "zod";
 import { actionText, normalizeAction, type NormalizedAction } from "../core/action.js";
 import { okcodeKind } from "../core/guard.js";
-import type { Driver } from "../core/types.js";
+import type { Assessment, Driver } from "../core/types.js";
 import { captureValue } from "./checks.js";
 import { type Capture, fill, parametriseStep, type SapTest, type Step } from "./format.js";
 import { locate, type ParsedScreen, refOf } from "./screen.js";
@@ -114,6 +119,34 @@ export function valueKnown(value: string, test: SapTest, vars: Record<string, st
   return hay.includes(v);
 }
 
+const isPopup = (window: string) => /^wnd\[[1-9]\d*\]/.test(window);
+/** Cancel, No, Back, the x of a popup: answers that decline. They complete nothing. */
+const declines = (id: string, label: string) => /\/btn\[(12|3|15)\]$|\/close$|CANCEL|OPTION_CAN/i.test(id) || /^(cancel|no|back|exit|abbrechen|nein|zur(ü|ue)ck|beenden)\b/i.test(label.trim());
+
+/**
+ * The write SAP is in the middle of, if any: right after a step that writes
+ * (the one being repaired, or the one before it), SAP shows a warning in the
+ * status bar or a popup. What confirms it carries the write through: SAP
+ * saves on the Enter that acknowledges "Minimum quantity not reached".
+ */
+export function writeInFlight(step: Step, previous: Step | undefined, screen: ParsedScreen): "this" | "previous" | undefined {
+  const held = screen.status?.type === "W" || screen.windows.some((w) => isPopup(w.id));
+  if (!held) return undefined;
+  if (step.risk === "commit") return "this";
+  return previous?.risk === "commit" ? "previous" : undefined;
+}
+
+/** Does this action confirm what the screen holds: Enter, or a button of a popup that does not decline? */
+export function confirms(action: NormalizedAction, screen: ParsedScreen): boolean {
+  if (action.do === "key") return action.key === 0 || /^enter$/i.test(String(action.key));
+  if (action.do !== "press" && action.do !== "click") return false;
+  const found = action.id ? locate(screen, action.id) : undefined;
+  const id = found?.control.id ?? String(action.id ?? "");
+  if (declines(id, found?.control.label ?? "")) return false;
+  // The Enter button of the main toolbar, or any other button of a popup.
+  return /^wnd\[0\]\/tbar\[0\]\/btn\[0\]$/.test(id) || isPopup(found?.control.window ?? id);
+}
+
 export interface RepairRun {
   screen: ParsedScreen;
   /** The actions as steps, for the proposed test. */
@@ -132,8 +165,10 @@ export async function runRepairActions(
   repair: Repair,
   vars: Record<string, string>,
   screen: ParsedScreen,
-  guarded: (action: NormalizedAction) => Promise<string>,
+  guarded: (action: NormalizedAction, rated?: Assessment) => Promise<string>,
   read: () => Promise<ParsedScreen>,
+  /** The recorded step before this one: a write it made may still be waiting for a confirmation. */
+  previous?: Step,
 ): Promise<RepairRun> {
   const steps: Step[] = [];
   const did: string[] = [];
@@ -154,14 +189,23 @@ export async function runRepairActions(
       if ((action.do === "set" || action.do === "combo") && typeof action[k] === "string" && !valueKnown(action[k], test, vars, screen))
         throw new RepairRefused(`"${action[k]}" is neither in the recording nor on the screen: a repair does not invent data. The test needs this value from a person`);
     }
-    const assessment = await driver.assess(action);
+    let assessment = await driver.assess(action);
+    // A confirmation of what SAP raised at a write is that write, whatever the surface rates an Enter.
+    const pending = assessment.risk === "commit" ? undefined : writeInFlight(step, previous, screen);
+    if (pending && confirms(action, screen)) {
+      const held = screen.windows.some((w) => isPopup(w.id)) ? `the popup "${screen.title ?? ""}"` : `the warning "${screen.status?.text ?? ""}"`;
+      if (pending === "previous")
+        throw new RepairRefused(`${actionText(action)} would confirm ${held}, which SAP raised at the write of the step before: confirming it completes that write, and the step being repaired is not that write. The run stops here; a person decides`);
+      assessment = { risk: "commit", reason: `it confirms ${held} that SAP raised while saving, which completes the save` };
+    }
     if (assessment.risk === "commit") {
       if (step.risk !== "commit") throw new RepairRefused(`${actionText(action)} may write to SAP (${assessment.reason}), and the recorded step does not write: a repair adds no write`);
       if (repair.place === "before") throw new RepairRefused(`${actionText(action)} may write to SAP (${assessment.reason}) and the recorded write would run after it: use "instead" or "after"`);
       if (commits++) throw new RepairRefused("a repair holds at most one action that may write");
     }
     const before = screen;
-    await guarded(action);
+    // The guard decides on the rating used here: with writing off, a confirmation that completes a write is refused as one.
+    await guarded(action, assessment);
     did.push(actionText(action));
     screen = await read();
     const { do: verb, ...rest } = action;
