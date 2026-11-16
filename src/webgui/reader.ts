@@ -529,10 +529,18 @@ async function chooseSearchHelp(session: WebGuiSession, sid: string, wanted: unk
   const hit = helps.entries[idx];
   if (!hit) throw new ActionError(`no search help "${clean(String(wanted))}" in ${sid}: ${listed}`);
   if (hit.selected) return `${sid} already shows "${hit.text}": nothing changed`;
-  await session.frame.locator(`[id="${helps.opener}"]`).first().click({ timeout: 3000 });
-  // Not tuned: the time the menu takes to open.
-  await session.page.waitForTimeout(300);
-  if (!(await clickMenuRow(session, `${hit.dom}-menuItem`))) {
+  // The menu opens a moment after the click (300 ms was not always enough, measured on ECC): its row is waited
+  // for, and the button is clicked once more when the first click opened nothing.
+  const row = `${hit.dom}-menuItem`;
+  let open = false;
+  for (let attempt = 0; attempt < 2 && !open; attempt++) {
+    await session.frame.locator(`[id="${helps.opener}"]`).first().click({ timeout: 3000 });
+    for (let i = 0; i < 15 && !open; i++) {
+      await session.page.waitForTimeout(100);
+      open = !!(await session.frame.evaluate(menuRowOpen, row).catch(() => ""));
+    }
+  }
+  if (!open || !(await clickMenuRow(session, row))) {
     if (await session.frame.evaluate(openOverlay).catch(() => "")) await session.page.keyboard.press("Escape");
     throw new ActionError(`the menu of search helps of ${sid} did not open, so nothing was chosen. Look at the screen.`);
   }
