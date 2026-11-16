@@ -470,9 +470,11 @@ export function extractLook(limits: {
         if (!t && !tip) break;
         // "Back" with tooltip "Back (F3)": one name, with its key.
         const name = tip && (!t || tip.startsWith(t)) ? tip : t;
+        // A button SAP shows greyed out takes no click (the role details of a partner that has no role to show).
+        const grey = /--disabled\b|Dsbl\b/.test(typeof h.className === "string" ? h.className : "") || el.getAttribute("aria-disabled") === "true";
         out(
           modal,
-          `${sid}  button  ${name}${t && tip && !tip.startsWith(t) ? `  (${tip})` : ""}${overflow ? '  (behind ">>")' : ""}`,
+          `${sid}  button  ${name}${t && tip && !tip.startsWith(t) ? `  (${tip})` : ""}${overflow ? '  (behind ">>")' : ""}${grey ? "  (greyed out: SAP does not offer it now)" : ""}`,
         );
         break;
       }
@@ -1271,6 +1273,8 @@ export interface MarkedControl {
   dom: string;
   /** A field drawn as text until it is clicked (a table cell of S/4HANA 2025, <span role="textbox">): a click makes it an input. */
   drawnAsText: boolean;
+  /** A button, tab or menu entry SAP shows greyed out: a click on it does nothing. */
+  disabled: boolean;
 }
 
 /** Runs in the Web GUI frame: marks the control an id names and describes it. */
@@ -1410,6 +1414,7 @@ export function markControl(ident: string): MarkedControl | string {
     overflow: opener && !visible(h.el) ? opener.id : "",
     dom: h.el.id,
     drawnAsText: h.el.tagName !== "INPUT" && h.el.tagName !== "TEXTAREA" && h.el.getAttribute("role") === "textbox" && /^Gui(C?Text|Password)Field$/.test(h.type),
+    disabled: /^Gui(Button|ToggleButton|DropDownButton|Tab)$/.test(h.type) && (/--disabled\b|Dsbl\b/.test(cls) || h.el.getAttribute("aria-disabled") === "true"),
   };
 }
 
@@ -1605,6 +1610,8 @@ export interface MenuEntry {
   text: string;
   /** Shortcut as Web GUI names it: F8, SHIFT_F3, CTRL_S, ESCAPE; "" when none. */
   key: string;
+  /** SAP shows the entry greyed out on this screen: choosing it does nothing. */
+  disabled?: true;
 }
 
 /**
@@ -1631,25 +1638,27 @@ export function extractMenus(): MenuEntry[] {
   };
   const out: MenuEntry[] = [];
   const seen = new Set<string>();
-  const add = (sid: string, text: string, key: string) => {
+  const add = (sid: string, text: string, key: string, disabled = false) => {
     if (!sid || !text || seen.has(sid)) return;
     seen.add(sid);
-    out.push({ sid, text, key });
+    out.push({ sid, text, key, ...(disabled ? { disabled: true as const } : {}) });
   };
+  // An entry SAP greys out: its row says so (aria-disabled, the class urMnuRowDsbl), in a template as in a drawn menu.
+  const greyTag = (tag: string) => /aria-disabled="true"|class="[^"]*\burMnuRowDsbl\b/.test(tag);
   for (const x of Array.from(document.querySelectorAll(".lsMnu--root xmp"))) {
     const src = x.textContent ?? "";
     // ECC: lsdata="{1:'Create',15:'F8',18:{ModalNo:0,SID:'wnd[0]/mbar/menu[0]/menu[3]',Type:'GuiMenu'}}"
     for (const m of execAll(src, /lsdata="(\{1:'[^"]*)"/g)) {
       const ls = m[1] ?? "";
       const sid = /SID:'((?:[^'\\\\]|\\\\.)*)'/.exec(ls)?.[1] ?? "";
-      add(sid.replace(/\\\\/g, "\\"), prop(ls, 1), prop(ls, 15));
+      add(sid.replace(/\\\\/g, "\\"), prop(ls, 1), prop(ls, 15), greyTag(src.slice(m.index + m[0].length, src.indexOf(">", m.index + m[0].length) + 1)));
     }
     // S/4HANA 2025 writes the template's lsdata as JSON in single quotes.
     for (const m of execAll(src, /lsdata='(\{[^']*\})'/g)) {
       try {
         const o = JSON.parse(m[1] ?? "") as Record<string, unknown>;
         const sidObj = Object.values(o).find((v) => v && typeof v === "object" && "SID" in (v as object)) as { SID?: string } | undefined;
-        if (sidObj?.SID && typeof o["1"] === "string") add(sidObj.SID, o["1"], typeof o["15"] === "string" ? o["15"] : "");
+        if (sidObj?.SID && typeof o["1"] === "string") add(sidObj.SID, o["1"], typeof o["15"] === "string" ? o["15"] : "", greyTag(src.slice(m.index + m[0].length, src.indexOf(">", m.index + m[0].length) + 1)));
       } catch {
         /* not JSON */
       }
@@ -1678,7 +1687,7 @@ export function extractMenus(): MenuEntry[] {
       text = prop(ls, 1);
       key = prop(ls, 15);
     }
-    if (/^wnd\[\d+\]\/mbar\/menu\[/.test(sid)) add(sid, text, key);
+    if (/^wnd\[\d+\]\/mbar\/menu\[/.test(sid)) add(sid, text, key, tr.getAttribute("aria-disabled") === "true" || /\burMnuRowDsbl\b/.test(tr.className));
   }
   return out;
 }
@@ -1950,7 +1959,9 @@ export function scrollControl(a: { sid: string; to: number | string }): Scrolled
   const liveMax = asNumber(live?.iGetMaxScrollTo);
   const pos = Number.isNaN(livePos) ? num(0) : livePos;
   const max = Number.isNaN(liveMax) ? num(1) : liveMax;
-  const visible = num(3);
+  // S/4HANA 2025 leaves the page size (key 3) out of a table control's vertical bar: the bar's object holds it.
+  const livePage = Number(live?.iLargeChange) > 0 ? Number(live?.iLargeChange) : Number(live?.iScrollClipping) > 0 ? Number(live?.iScrollClipping) : NaN;
+  const visible = Number.isNaN(num(3)) ? livePage : num(3);
   const total = num(10);
   if ([pos, max, visible].some((x) => Number.isNaN(x))) return `the scrollbar of ${a.sid} could not be read`;
   let want: number;

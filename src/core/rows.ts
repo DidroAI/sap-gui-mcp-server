@@ -156,6 +156,8 @@ export async function readRows(source: RowSource, id: string, from: number, to: 
       : "";
   const note = rows.length
     ? `  (rows ${rows[0]?.[0]} to ${rows[rows.length - 1]?.[0]}${total}; the control is now scrolled there.${where})`
-    : `  (no rows ${from} to ${to}: the control has ${page.total ?? "fewer"} rows)`;
+    : page.kind === "table" && page.total !== undefined && from < page.total
+      ? `  (rows ${from} to ${Math.min(to, page.total - 1)} hold nothing: SAP counts ${page.total} rows in this table, blank lines included, and none of these is filled)`
+      : `  (no rows ${from} to ${to}: the control has ${page.total ?? "fewer"} rows)`;
   return [...page.frame, page.head, ...page.titles, ...rows.map(([, t]) => t), note].join("\n");
 }

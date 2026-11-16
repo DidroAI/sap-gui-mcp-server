@@ -454,7 +454,10 @@ export function compact(full: string, options: CompactOptions = {}): string {
       const firstCol = [...t.columns.entries()].sort((a, b) => a[0] - b[0])[0];
       const example = firstCol ? `${firstCol[1].id}[${firstCol[0]},0]` : `${short(t.id)}/<id>[0,0]`;
       const head = `${t.head}  (cell id: <id>[col,row], e.g. ${example}${t.first ? `; row 0 here is row ${t.first} of the table` : ""})`;
-      return l ? [head, l] : [head];
+      // No cell of the table holds a value or takes input: said, or the "rows N" of its line reads as N rows the view left out.
+      const rows = out.some((o) => typeof o !== "string" && "cells" in o && o.table === t);
+      const none = rows || !/ {2}table {2}rows /.test(t.head) ? [] : ["  (no row is filled: every row on screen is blank and takes no input. The rows its line counts are SAP's blank lines.)"];
+      return l ? [head, l, ...none] : [head, ...none];
     }
     if ("cells" in x) {
       const sel = x.table && x.r !== undefined && x.table.selected.has(x.r) ? " (selected)" : "";

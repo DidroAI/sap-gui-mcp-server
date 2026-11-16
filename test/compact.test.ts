@@ -92,6 +92,19 @@ describe("compact", () => {
     expect(compact(t).split("\n")).toContain("  row 0: Country [col 0]=AR; Country [col 1]=Argentina; Tax category=J1AU");
   });
 
+  test("a table control none of whose rows holds a value says so (its line counts SAP's blank lines)", () => {
+    const t = ["wnd[0]/usr/tblT  table  rows 6 (visible 7); rows can be selected; columns: Item | Amount", "wnd[0]/usr/txtZ-TOTAL  label  0"].join("\n");
+    expect(compact(t).split("\n")).toEqual([
+      "tblT  table  rows 6 (visible 7); rows can be selected  (cell id: <id>[col,row], e.g. tblT/<id>[0,0])",
+      "  columns: 0 Item, 1 Amount",
+      "  (no row is filled: every row on screen is blank and takes no input. The rows its line counts are SAP's blank lines.)",
+      "txtZ-TOTAL  label  0",
+    ]);
+    // A table with a cell line, filled or empty, has its rows in the view: no such note.
+    const filled = ["wnd[0]/usr/tblT  table  rows 6 (visible 7); columns: Item", 'wnd[0]/usr/tblT/txtZX-A[0,0]  field  Item = ""  (edit)'].join("\n");
+    expect(compact(filled)).not.toContain("no row is filled");
+  });
+
   test("a table control that is scrolled says which row its row 0 is", () => {
     const t = ['wnd[0]/usr/tblT  table  rows 171 (visible 13, first 60); columns: A', 'wnd[0]/usr/tblT/txtZX-A[0,0]  field  A = "1"  (edit)'].join("\n");
     expect(compact(t).split("\n")[0]).toBe("tblT  table  rows 171 (visible 13, first 60)  (cell id: <id>[col,row], e.g. txtZX-A[0,0]; row 0 here is row 60 of the table)");

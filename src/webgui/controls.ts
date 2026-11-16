@@ -46,7 +46,46 @@ export const noControlAct = (id: string): ActionError =>
 export async function locate(session: WebGuiSession, id: string): Promise<{ c: MarkedControl; loc: Locator }> {
   const r = await evalLs(session, markControl, id);
   if (typeof r === "string") throw r.startsWith("no control named") ? noControlAct(id) : new ActionError(r);
-  return { c: r, loc: session.frame.locator("[data-sap-act]").first() };
+  return { c: r, loc: marked(session) };
+}
+
+/**
+ * Runs in the Web GUI frame, on a control: a point of the control a click
+ * reaches when its middle is under something else, as offsets from its top
+ * left corner; null when the middle is free (the usual case), when no part
+ * of it is, or when it is not in the window. SAP draws neighbours over a
+ * part of some controls (a checkbox of a classic list is half under the
+ * line image next to it): a person clicks the part that shows.
+ */
+export function freePoint(el: Element): { x: number; y: number } | null {
+  const r = el.getBoundingClientRect();
+  if (!(r.width > 0 && r.height > 0)) return null;
+  const hit = (fx: number, fy: number) => {
+    const at = document.elementFromPoint(r.left + fx * r.width, r.top + fy * r.height);
+    return !!at && (at === el || el.contains(at));
+  };
+  if (hit(0.5, 0.5) || !document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)) return null;
+  for (const [fx, fy] of [[0.25, 0.5], [0.75, 0.5], [0.5, 0.25], [0.5, 0.75], [0.12, 0.5], [0.88, 0.5], [0.12, 0.2], [0.88, 0.8]] as const)
+    if (hit(fx, fy)) return { x: Math.max(1, Math.round(fx * r.width)), y: Math.max(1, Math.round(fy * r.height)) };
+  return null;
+}
+
+/**
+ * A locator whose click and double-click go to the part of the control that
+ * shows (`freePoint`) when its middle is covered; otherwise they are
+ * Playwright's own.
+ */
+function onFreePoint(loc: Locator): Locator {
+  const at = async <T extends { position?: { x: number; y: number } }>(options?: T): Promise<T | undefined> => {
+    if (options?.position) return options;
+    const position = await loc.evaluate(freePoint, undefined, { timeout: 1000 }).catch(() => null);
+    return position ? ({ ...(options ?? {}), position } as T) : options;
+  };
+  const click = loc.click.bind(loc);
+  const dblclick = loc.dblclick.bind(loc);
+  loc.click = async (options) => click(await at(options));
+  loc.dblclick = async (options) => dblclick(await at(options));
+  return loc;
 }
 
 /** Did markControl mark the control with exactly this id? It also matches by the last segment. */
@@ -69,7 +108,7 @@ export async function checkedNow(session: WebGuiSession, sid: string): Promise<b
 }
 
 /** The marked control: what `locate`, `markExactly` and the page functions marked last. */
-export const marked = (session: WebGuiSession): Locator => session.frame.locator("[data-sap-act]").first();
+export const marked = (session: WebGuiSession): Locator => onFreePoint(session.frame.locator("[data-sap-act]").first());
 
 /**
  * Clicks a control whose click sends a request (a button, a tab) and waits
