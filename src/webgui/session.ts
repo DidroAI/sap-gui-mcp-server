@@ -250,6 +250,12 @@ export interface PageState {
    * watch was not there before the input.
    */
   queue: "waiting" | "idle" | undefined;
+  /**
+   * After an answer: the queue holds nothing and no delayed call is left
+   * but the scroll report (`fireScrollSync`), which rides with the next
+   * request and sends none itself. False when the queue is not watched.
+   */
+  calm: boolean;
 }
 
 /**
@@ -316,6 +322,7 @@ export function pageState(arg: { busy: string; watch: boolean; maxMs: number }):
   };
   const locked = isLocked();
   let queue: "waiting" | "idle" | undefined;
+  let calm = false;
   try {
     const owner = w.UCF_System?.oLS?.oSemanticEventHandlerObject;
     if (owner && typeof owner.enqueueEvent === "function" && typeof owner.processEventQueue === "function") {
@@ -348,14 +355,16 @@ export function pageState(arg: { busy: string; watch: boolean; maxMs: number }):
         // Just processed: a Personas script may run before the request leaves (a timer of 1 ms).
         const justDone = now - watch.done < 50;
         const calls = w.UCF_JsUtil?.mDelayedCalls;
-        const delayed = calls ? Object.keys(calls).some((k) => !/^(show|timedMassNotificationFilter)$/.test(String(calls[k]?.sMethodName ?? ""))) : false;
+        const names = calls ? Object.keys(calls).map((k) => String(calls[k]?.sMethodName ?? "")) : [];
+        const delayed = names.some((n) => !/^(show|timedMassNotificationFilter)$/.test(n));
         queue = held || justDone || delayed ? "waiting" : "idle";
+        calm = !held && !justDone && !names.some((n) => !/^(show|timedMassNotificationFilter|fireScrollSync)$/.test(n));
       }
     }
   } catch {
     queue = undefined;
   }
-  return { busy, locked, queue };
+  return { busy, locked, queue, calm };
 }
 
 export class WebGuiSession {
@@ -401,7 +410,7 @@ export class WebGuiSession {
    * event already in the queue would be missed).
    */
   private state(watch = false): Promise<PageState> {
-    return this.frame.evaluate(pageState, { busy: BUSY, watch, maxMs: QUEUE_MAX_MS }).catch(() => ({ busy: false, locked: undefined, queue: undefined }));
+    return this.frame.evaluate(pageState, { busy: BUSY, watch, maxMs: QUEUE_MAX_MS }).catch(() => ({ busy: false, locked: undefined, queue: undefined, calm: false }));
   }
 
   /** Before an input: Web GUI's event queue is watched from here on (see `pageState`). */
@@ -463,7 +472,7 @@ export class WebGuiSession {
     const seen = Date.now();
     this.traffic.maxGap = 0;
     // Nothing left and nothing is under way: no round trip to wait for.
-    if (sent || this.traffic.inflight > 0 || this.traffic.posts > before) await this.waitIdle(this.quietMs, false, sent ? 0 : 100);
+    if (sent || this.traffic.inflight > 0 || this.traffic.posts > before) await this.waitIdle(this.quietMs, false, sent ? 0 : 100, true);
     this.started = this.traffic.posts > before;
     this.account(t0, seen, before);
     const failed = this.traffic.failed;
@@ -571,12 +580,23 @@ export class WebGuiSession {
    * Waits until no request has been in flight for a quiet period and Web GUI
    * is done with the answer: its page is unlocked, or, where it does not say,
    * its loading sign is gone.
+   *
+   * `answered`: the wait follows a step's request. The quiet period is a
+   * guess at "no second request follows" (a step can be two round trips with
+   * a timer between them). Where Web GUI's event queue is watched the guess
+   * is not needed: the step is over when the page is unlocked, no request is
+   * under way, and the queue and Lightspeed's delayed calls hold nothing
+   * that could send one (`PageState.calm`), seen on two looks in a row.
+   * Measured on ECC over 16 kinds of step: the page changed nothing between
+   * its unlock and the end of the old 300 ms, and sent nothing. Not in a tab
+   * Chrome draws once a second, and not after typing (the list of earlier
+   * entries is asked for 250 ms after the last key).
    */
-  async waitIdle(quietMs = this.quietMs, timed = true, leadMs = 100): Promise<void> {
+  async waitIdle(quietMs = this.quietMs, timed = true, leadMs = 100, answered = false): Promise<void> {
     const start = Date.now();
     if (timed) {
       try {
-        return await this.waitIdle(quietMs, false, leadMs);
+        return await this.waitIdle(quietMs, false, leadMs, answered);
       } finally {
         this.timing.idle += Date.now() - start;
       }
@@ -584,6 +604,8 @@ export class WebGuiSession {
     const deadline = start + this.idleTimeoutMs;
     if (leadMs > 0) await this.pause(leadMs);
     let checked = 0;
+    // The step was seen over on the look before (see `answered`).
+    let calm = false;
     while (Date.now() < deadline) {
       // A round trip that failed on the network never ends: the caller reports it.
       if (this.traffic.failed && this.traffic.failed.at >= start) return;
@@ -594,6 +616,15 @@ export class WebGuiSession {
         if (gone) throw new ActionError(endedText(gone));
       }
       const quiet = this.traffic.inflight === 0 && Date.now() - this.traffic.lastChange >= quietMs;
+      if (!quiet && answered && !this.slow && this.traffic.inflight === 0) {
+        const st = await this.state();
+        const over = st.locked === false && st.calm && this.traffic.inflight === 0;
+        if (over && calm) {
+          await this.frame.waitForLoadState("domcontentloaded").catch(() => {});
+          return;
+        }
+        calm = over;
+      } else if (!quiet) calm = false;
       if (quiet) {
         const { locked, busy } = await this.state();
         if (locked === false) {
