@@ -19,23 +19,45 @@ const FRESH_MS = 1500;
 /** The end of a grid's line while it has rows and draws none (just scrolled far: its rows are on their way). */
 const NONE_DRAWN = " rows, none drawn yet";
 
-/** Reads an HTML viewer and the frames inside it, numbering controls across them. */
-export async function readViewer(fr: Frame): Promise<{
+/** How much of an HTML viewer's text the view of a screen holds: a help text or a message's long text fits (measured: 600 to 1500 characters). */
+export const VIEWER_TEXT = 2000;
+/** How much sap_look with the viewer's id shows. */
+export const VIEWER_TEXT_WHOLE = 30000;
+
+/**
+ * Reads an HTML viewer and the frames inside it: its controls, numbered
+ * across the frames, and its text, as indented lines (at most `maxText`
+ * characters; a last line says how much is left out and how to get it).
+ */
+export async function readViewer(
+  fr: Frame,
+  maxText = VIEWER_TEXT,
+): Promise<{
   lines: string[];
+  text: string[];
   frames: { frame: Frame; from: number; to: number }[];
 }> {
   const lines: string[] = [];
+  const text: string[] = [];
   const frames: { frame: Frame; from: number; to: number }[] = [];
   let n = 0;
+  let left = maxText;
+  let more = 0;
   const walk = async (x: Frame) => {
-    const r = await x.evaluate(extractViewer, n).catch(() => ({ lines: [] as string[], next: n }));
+    const r = await x.evaluate(extractViewer, { start: n, text: Math.max(0, left) }).catch(() => ({ lines: [] as string[], next: n, text: [] as string[], more: 0 }));
     frames.push({ frame: x, from: n + 1, to: r.next });
     lines.push(...r.lines);
+    for (const t of r.text) {
+      text.push(`  ${t}`);
+      left -= t.length;
+    }
+    more += r.more;
     n = r.next;
     for (const c of x.childFrames()) await walk(c);
   };
   await walk(fr);
-  return { lines, frames };
+  if (more > 0) text.push(`  ... ${more} more characters of text${maxText < VIEWER_TEXT_WHOLE ? ": sap_look with this viewer's id shows it" : ""}`);
+  return { lines, text, frames };
 }
 
 /** The frame of each HTML viewer, by its scripting id. */
@@ -296,7 +318,12 @@ async function read(session: WebGuiSession, ended: boolean): Promise<ScreenRead>
       out.push(l);
       if (l.endsWith("  html-viewer")) {
         const v = viewers.find((x) => l.startsWith(`${x.sid}  `));
-        if (v) for (const x of (await readViewer(v.frame)).lines) out.push(`${v.sid}/${x}`);
+        if (v) {
+          // The text the viewer shows, then its controls.
+          const r = await readViewer(v.frame);
+          out.push(...r.text);
+          for (const x of r.lines) out.push(`${v.sid}/${x}`);
+        }
       }
     }
   }

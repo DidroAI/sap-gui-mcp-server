@@ -924,15 +924,22 @@ export function openOverlay(): "menu" | "list" | "" {
   return "";
 }
 
-/** Runs in an HTML viewer's frame: its form controls and links, numbered. */
-export function extractViewer(start: number): {
+/**
+ * Runs in an HTML viewer's frame: its form controls and links, numbered, and
+ * the text it shows (the documentation of F1, the long text of a message),
+ * one entry per line of the page, at most `text` characters; `more` counts
+ * the characters left out.
+ */
+export function extractViewer(a: { start: number; text: number }): {
   lines: string[];
   next: number;
+  text: string[];
+  more: number;
 } {
   const norm = (s: string | null | undefined) =>
     (s ?? "").replace(/[\s\u00a0]+/g, " ").replace(/^ | $/g, "");
   const out: string[] = [];
-  let n = start;
+  let n = a.start;
   for (const el of Array.from(
     document.querySelectorAll(
       "select,input:not([type=hidden]),textarea,button,a[href]",
@@ -984,7 +991,28 @@ export function extractViewer(start: number): {
         out.push(`html[${n}]  ${el.tagName === "A" ? "link" : "button"}  ${t}`);
     }
   }
-  return { lines: out, next: n };
+  // The text as the page shows it: one entry per line, the cells of a table row with " | " between them.
+  // A line that is only the text of a button or a link is left out (its control line says it).
+  const pressed = [...new Set(Array.from(document.querySelectorAll("button,a[href]")).map((b) => norm((b as HTMLElement).innerText)))].filter(Boolean).sort((x, y) => y.length - x.length);
+  const onlyControls = (t: string) => {
+    let rest = t;
+    for (const p of pressed) rest = rest.split(p).join("");
+    return !rest.replace(/[\s|]/g, "");
+  };
+  const text: string[] = [];
+  let more = 0;
+  let left = a.text;
+  for (const raw of (document.body?.innerText ?? "").split("\n")) {
+    const t = norm(raw.replace(/\t+/g, " | ")).replace(/^(\| )+|( \|)+$/g, "");
+    if (!t || onlyControls(t)) continue;
+    if (left <= 0) more += t.length;
+    else if (t.length > left) {
+      text.push(`${t.slice(0, left)}...`);
+      more += t.length - left;
+    } else text.push(t);
+    left -= t.length;
+  }
+  return { lines: out, next: n, text, more };
 }
 
 /**
