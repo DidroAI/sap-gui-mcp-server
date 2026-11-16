@@ -314,7 +314,9 @@ export function compact(full: string, options: CompactOptions = {}): string {
       const c = Number(g.c);
       const r = Number(g.r);
       const t = tables.get(tbl);
-      const col = t?.titles[c] || (g.name ?? "");
+      const title = t?.titles[c] || (g.name ?? "");
+      // Two columns with one title (a key and its text, both "Country"): each is told apart by its number.
+      const col = t && title && t.titles.indexOf(title) !== t.titles.lastIndexOf(title) ? `${title} [col ${c}]` : title;
       let cell: string | null = null;
       if (cellRest.startsWith("checkbox")) cell = `${col} ${cellRest.includes("[x]") ? "[x]" : "[ ]"}`;
       else if (cellRest.startsWith("dropdown")) {
