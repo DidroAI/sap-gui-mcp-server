@@ -629,9 +629,14 @@ export function extractLook(limits: {
           return !!inp && !inp.readOnly && !inp.disabled && !/lsField--(readonly|disabled)\b/.test(inp.closest(".lsField")?.className ?? "");
         };
         const rowsShown = shown.slice(0, limits.grid);
-        // A row of totals or subtotals is drawn in the totals colour: it is no row of data.
-        const totals = (row: { cells: Map<number, Element> }) =>
-          [...row.cells.values()].some((td) => /[{,]3:'COL_TOTAL/.test(td.getAttribute("data-ls") ?? "") || /\burColorTotal/.test(typeof td.className === "string" ? td.className : ""));
+        // A row of totals or subtotals is no row of data: SAP marks the summed cell (MARKTOTALS), and draws the
+        // whole row in the totals colour. The colour in some cells only is a coloured column (SE16N draws
+        // every amount and quantity column in it), so it says nothing about the row.
+        const totalColour = (td: Element) => /[{,]\d+:'COL_TOTAL/.test(td.getAttribute("data-ls") ?? "") || /\burColorTotal/.test(typeof td.className === "string" ? td.className : "");
+        const totals = (row: { cells: Map<number, Element> }) => {
+          const cells = colIdx.map((c) => row.cells.get(c)).filter((td): td is Element => !!td);
+          return cells.some((td) => /[{,]\d+:'MARK\w*TOTALS'/.test(td.getAttribute("data-ls") ?? "")) || (cells.length > 1 && cells.every(totalColour));
+        };
         const dataRows = rowsShown.filter(([, row]) => !totals(row)).length;
         const editable: string[] = [];
         colIdx.forEach((c, i) => {
