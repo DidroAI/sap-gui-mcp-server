@@ -304,8 +304,10 @@ export function extractLook(limits: {
       : "";
 
   for (const el of Array.from(document.querySelectorAll("[data-ls]"))) {
-    const { ls, sid, type, modal } = info(el);
-    if (!sid || !type) continue;
+    const { ls, sid, type: ownType, modal } = info(el);
+    if (!sid || !ownType) continue;
+    // The value help dialog of S/4HANA 2025 types its OK and Cancel buttons as the dialog (GuiSearchHelp, SubType toolbar).
+    const type = ownType === "GuiSearchHelp" && el.getAttribute("ct") === "B" ? "GuiButton" : ownType;
     const button = type === "GuiButton" || type === "GuiToggleButton" || type === "GuiDropDownButton";
     // A grid is read whole, except its own toolbar: those buttons are controls of their own.
     if (inHandled(el) && !(button && /\/tbar\/[^/]+$/.test(sid))) continue;
@@ -538,6 +540,7 @@ export function extractLook(limits: {
         break;
       }
       case "GuiGridView":
+      case "GuiValueHelpResult":
       case "GuiSearchHelpResult": {
         handled.push(el);
         const colIds = (/ColumnI[dD]s:\[([^\]]*)\]/.exec(ls)?.[1] ?? "")
@@ -697,6 +700,18 @@ export function extractLook(limits: {
         const lab = Array.from(document.querySelectorAll("label[ct='L'][f]")).find((l) => l.getAttribute("f") === el.id);
         const ro = fieldLocked(el);
         out(modal, `${sid}  field  ${norm((lab as HTMLElement | undefined)?.innerText) || tip} = "${norm(h.value ?? "")}"  (${ro ? "read-only" : "edit"})`);
+        break;
+      }
+      case "GuiSearchHelpHeaderItem": {
+        // A filter of the value help dialog of S/4HANA 2025: a token field, named in its lsdata (LabelledBy).
+        // Its frame carries the same id: the innermost element is the field.
+        if (el.querySelector("[data-ls*=\"Type:'GuiSearchHelpHeaderItem'\"]")) break;
+        // While it holds a value as a token it has no input: the token is its value.
+        const inp = el.querySelector("input") as HTMLInputElement | null;
+        const lab = unesc(/LabelledBy:'((?:[^'\\]|\\.)*)'/.exec(ls)?.[1] ?? "") || tip;
+        const tokens = Array.from(el.querySelectorAll("[ct='TOKEN']")).map((t) => norm((t as HTMLElement).innerText)).filter(Boolean);
+        const val = [...tokens, norm(inp?.value)].filter(Boolean).join(", ");
+        out(modal, `${sid}  field  ${lab} = "${val}"  (${fieldLocked(inp ?? el) ? "read-only" : "edit"})`);
         break;
       }
       case "GuiCalendar": {
@@ -1145,7 +1160,8 @@ export function markControl(ident: string): MarkedControl | string {
     return !list && i.readOnly === true;
   };
   hits.sort((a, b) => Number(ro(a.el)) - Number(ro(b.el)));
-  const h = hits[0]!;
+  // A filter of the value help dialog of S/4HANA 2025 and its frame share the id: the token field itself is meant.
+  const h = hits.find((x) => x.type === "GuiSearchHelpHeaderItem" && x.el.getAttribute("ct") === "TOKENIZER") ?? hits[0]!;
   // What a click or typing goes to. The closed restrictions panel of a value help opens with the arrow
   // left of its title (a click on the title does nothing); a calendar is typed into in its date field.
   let target = h.el;
@@ -1154,6 +1170,9 @@ export function markControl(ident: string): MarkedControl | string {
     const toggle = stack ? document.getElementById(`${stack.id}-tgl`) : null;
     if (toggle && /TglIconCol\b/.test(clsOf(toggle))) target = toggle;
   } else if (h.type === "GuiCalendar") target = h.el.querySelector("input[ct='I']") ?? h.el;
+  // A filter of the value help dialog of S/4HANA 2025 is a token field: its input is typed into.
+  else if (h.type === "GuiSearchHelpHeaderItem") target = h.el.querySelector("input") ?? h.el;
+  const typed = h.type === "GuiSearchHelpHeaderItem" ? target : h.el;
   target.setAttribute("data-sap-act", "1");
   const cls = clsOf(h.el);
   // The class says the state the page shows; the hidden input keeps what the server drew.
@@ -1170,10 +1189,10 @@ export function markControl(ident: string): MarkedControl | string {
     type: h.type,
     modal: h.modal,
     checked,
-    readonly: ro(h.el),
-    tag: h.el.tagName,
+    readonly: ro(typed),
+    tag: typed.tagName,
     inputType:
-      h.el.tagName === "INPUT" ? (h.el as HTMLInputElement).type || "text" : "",
+      typed.tagName === "INPUT" ? (typed as HTMLInputElement).type || "text" : "",
     overflow: opener && !visible(h.el) ? opener.id : "",
     dom: h.el.id,
     drawnAsText: h.el.tagName !== "INPUT" && h.el.tagName !== "TEXTAREA" && h.el.getAttribute("role") === "textbox" && /^Gui(C?Text|Password)Field$/.test(h.type),
@@ -1208,7 +1227,7 @@ export function markRow(a: { sid: string; row?: number | undefined; node?: strin
   };
   const roots = Array.from(
     document.querySelectorAll(
-      "[data-ls*=\"Type:'GuiGridView'\"],[data-ls*=\"Type:'GuiTree'\"],[data-ls*=\"Type:'GuiSearchHelpResult'\"]",
+      "[data-ls*=\"Type:'GuiGridView'\"],[data-ls*=\"Type:'GuiTree'\"],[data-ls*=\"Type:'GuiSearchHelpResult'\"],[data-ls*=\"Type:'GuiValueHelpResult'\"]",
     ),
   ).filter((el) => el.getBoundingClientRect().width > 0);
   const want = a.sid;
@@ -1339,7 +1358,7 @@ export function markSelector(a: { sid: string; row: number }): { selected: boole
   };
   const root = Array.from(
     document.querySelectorAll(
-      "[data-ls*=\"Type:'GuiGridView'\"],[data-ls*=\"Type:'GuiTableControl'\"],[data-ls*=\"Type:'GuiSearchHelpResult'\"]",
+      "[data-ls*=\"Type:'GuiGridView'\"],[data-ls*=\"Type:'GuiTableControl'\"],[data-ls*=\"Type:'GuiSearchHelpResult'\"],[data-ls*=\"Type:'GuiValueHelpResult'\"]",
     ),
   ).find((el) => el.getBoundingClientRect().width > 0 && sidOf(el) === a.sid);
   if (!root) return `no grid or table named ${a.sid} on this screen`;
@@ -1605,7 +1624,7 @@ export function scrollControl(a: { sid: string; to: number | string }): Scrolled
     const ls = el.getAttribute("data-ls") ?? "";
     return (/OrigID:'((?:[^'\\]|\\.)*)'/.exec(ls)?.[1] ?? /SID:'((?:[^'\\]|\\.)*)'/.exec(ls)?.[1] ?? "").replace(/\\\\/g, "\\");
   };
-  const KINDS = /Type:'(GuiTableControl|GuiGridView|GuiTree|GuiSearchHelpResult|ABAPLIST)'/;
+  const KINDS = /Type:'(GuiTableControl|GuiGridView|GuiTree|GuiSearchHelpResult|GuiValueHelpResult|ABAPLIST)'/;
   const roots = Array.from(document.querySelectorAll("[data-ls*='SID:']")).filter((el) => KINDS.test(el.getAttribute("data-ls") ?? "") && el.getBoundingClientRect().width > 0);
   const root = roots.find((el) => sidOf(el) === a.sid);
   if (!root) return `no grid, table, tree or list named ${a.sid}`;

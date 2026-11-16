@@ -99,7 +99,7 @@ export async function clickForRoundtrip(session: WebGuiSession, sid: string, sur
 export const windowOf = (sid: string): number => Number(/^wnd\[(\d+)\]/.exec(sid)?.[1] ?? 0);
 
 /** Controls a value can be typed into. A password field is not one: this server never types a password. */
-export const FIELD_TYPES = new Set(["GuiTextField", "GuiCTextField", "GuiTextEdit", "GuiSearchHelpPageItem"]);
+export const FIELD_TYPES = new Set(["GuiTextField", "GuiCTextField", "GuiTextEdit", "GuiSearchHelpPageItem", "GuiSearchHelpHeaderItem"]);
 /** "GuiRadioButton" as the answers name it: "radio button". */
 export const typeName = (type: string): string => type.replace(/^Gui/, "").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase() || "control";
 
@@ -130,6 +130,30 @@ export async function openTextCell(session: WebGuiSession, c: MarkedControl, loc
     await session.page.waitForTimeout(50);
   }
   throw new ActionError(`${c.sid} did not open for typing after a click: the cell stays shown as text. Look at the screen (a message may have to be answered first).`);
+}
+
+/**
+ * Sets a filter of the value help dialog of S/4HANA 2025, a token field: a
+ * value it holds is a token, and the field has an input only while it holds
+ * none. The tokens are removed as a person does (a click on the token, then
+ * Backspace), then the value is typed into the input that comes back.
+ */
+export async function setTokenField(session: WebGuiSession, c: MarkedControl, value: string): Promise<void> {
+  const field = session.frame.locator(`[id="${c.dom}"]`).first();
+  const tokens = field.locator("[ct='TOKEN']");
+  await session.closeSuggestions();
+  for (let i = 0; i < 20 && (await tokens.count()) > 0; i++) {
+    await tokens.last().click({ timeout: 3000 });
+    await session.page.keyboard.press("Backspace");
+    await session.page.waitForTimeout(150);
+  }
+  if ((await tokens.count()) > 0) throw new ActionError(`${c.sid} still holds its old value: it could not be removed. Look at the screen.`);
+  for (let i = 0; i < 40; i++) {
+    const now = await evalLs(session, markControl, c.sid).catch(() => "gone");
+    if (isExactly(now, c.sid) && now.tag === "INPUT") return typeInto(session, marked(session), value);
+    await session.page.waitForTimeout(50);
+  }
+  if (value) throw new ActionError(`${c.sid} did not open for typing. Look at the screen.`);
 }
 
 /** Types a value into a field as a person does: select all, delete, type; no line break (it would be Enter). */

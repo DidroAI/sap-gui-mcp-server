@@ -67,6 +67,46 @@ const TABLE = `${HEAD}
 </script>
 </body></html>`;
 
+const crit = (n: number, sid: string, label: string, value: string) => {
+  const own = { SID: `wnd[2]/shell/critcol/${sid}`, Type: "GuiSearchHelpHeaderItem", LabelledBy: label };
+  return `<div id="NSHHIC2_${n}" ct="SL" lsdata="${ls({ "1": own })}"><label ct="L" for="NSHHI2_${n}-input">${label}</label>
+    <div id="NSHHI2_${n}" ct="TOKENIZER" lsdata="${ls({ "0": `NSHHI2_${n}`, "2": own })}"><input id="NSHHI2_${n}-input" ct="CBS" role="textbox" value="${value}" lsdata="${ls({ "1": "FREETEXT" })}"></div></div>`;
+};
+/** A filter that holds its value as a token: no input until the token is removed (a click on it, then Backspace). */
+const tokenCrit = (n: number, sid: string, label: string, value: string) => {
+  const own = { SID: `wnd[2]/shell/critcol/${sid}`, Type: "GuiSearchHelpHeaderItem", LabelledBy: label };
+  return `<div id="NSHHIC2_${n}" ct="SL" lsdata="${ls({ "1": own })}"><label ct="L">${label}</label>
+    <div id="NSHHI2_${n}" ct="TOKENIZER" class="c2Tokenizer c2Tokenizer--noInput" lsdata="${ls({ "0": `NSHHI2_${n}`, "2": own })}"><span ct="TOKEN" tabindex="0" class="c2Token"
+      lsdata="${ls({ "0": { SID: `${own.SID}/cond[0]`, Type: "GuiSearchHelp" }, "13": value })}" onkeydown="if (event.key === 'Backspace') dropToken(this)"><div class="c2Token__text">${value}</div></span></div></div>`;
+};
+const G = "wnd[2]/shell/gridRESULT";
+const VALUE_HELP = `${HEAD}
+<input id="F1" value="" lsdata="${ls({ "21": { SID: "wnd[0]/usr/ctxtRV45S-KUNNR", Type: "GuiCTextField" } })}">
+<div id="SearchHelp2" ct="PW_standards" role="dialog" class="lsPWNew" style="width:700px" lsdata="${ls({ "13": { SID: "wnd[2]/shell", Type: "GuiSearchHelp", ModalNo: 2 } })}">
+  <header class="lsPWNewHeader"><div role="heading"><span id="SearchHelp2-header-title-txt">Restrict Value Range (1)</span></div></header>
+  <table ct="TS_standards" lsdata="${ls({ "11": { SID: "wnd[2]/shell", Type: "GuiSearchHelp", ModalNo: "2" } })}"><tr><td>
+    ${crit(0, "crit1800", "Sales Organization", "1710")}${crit(1, "crit1806", "Customer", "")}${tokenCrit(2, "crit1805", "Name", "*DOM*")}
+    ${button("btnGO2", "wnd[2]/shell/btnSEARCH", "Go")}
+    <table id="SHresultgrid2" ct="STCS" style="width:500px" lsdata="${ls({ "10": "SINGLE", "34": { SID: G, Type: "GuiValueHelpResult", firstrow: 1 } })}">
+      <tr><th id="NAME_2" lsmatrixrowindex="0" lsmatrixcolindex="1" lsdata="${ls({ "7": "Name", "17": { SID: `${G}/colMCOD1`, Type: "GuiTableColumn" } })}">Name 1</th>
+          <th id="KUNNR_2" lsmatrixrowindex="0" lsmatrixcolindex="2" lsdata="${ls({ "7": "Customer", "17": { SID: `${G}/colKUNNR`, Type: "GuiTableColumn" } })}">Customer</th></tr>
+      <tr><td id="sh[1,0]#sc" subct="SC" lsmatrixrowindex="1" lsmatrixcolindex="0" class="urSTSC" onclick="pick(this)"><div class="urSTRowUnSelIcon">&nbsp;</div></td>
+          <td id="sh[1,1]" lsmatrixrowindex="1" lsmatrixcolindex="1">ALPHA INC</td><td id="sh[1,2]" lsmatrixrowindex="1" lsmatrixcolindex="2">1000001</td></tr>
+      <tr><td id="sh[2,0]#sc" subct="SC" lsmatrixrowindex="2" lsmatrixcolindex="0" class="urSTSC" onclick="pick(this)"><div class="urSTRowUnSelIcon">&nbsp;</div></td>
+          <td id="sh[2,1]" lsmatrixrowindex="2" lsmatrixcolindex="1">BETA LTD</td><td id="sh[2,2]" lsmatrixrowindex="2" lsmatrixcolindex="2">1000002</td></tr>
+    </table>
+    ${button("NSH2_copy", `${G}/tbar/btnCOPY`, "OK", "GuiSearchHelp")}${button("NSH2_close", "wnd[2]/shell/tbar/btnCLOSE", "Cancel", "GuiSearchHelp")}
+  </td></tr></table>
+</div>
+<script>
+  function dropToken(token) {
+    var field = token.parentElement; token.remove();
+    var input = document.createElement('input'); input.id = field.id + '-input'; input.setAttribute('ct', 'CBS'); field.appendChild(input); input.focus();
+  }
+  function pick(td) { var d = td.firstElementChild; var on = /UnSel/.test(d.className); d.className = on ? 'urSTRowSelSecIcon' : 'urSTRowUnSelIcon'; }
+</script>
+</body></html>`;
+
 const refusal = (p: Promise<unknown>): Promise<string> =>
   p.then(
     () => "",
@@ -142,5 +182,41 @@ describe.skipIf(!exe)("Web GUI reader: SAP GUI for HTML of S/4HANA 2025, in a br
     expect(full).toContain(`${T}/ctxtRV45A-MABNR[1,0]  field  Material = "TG11"  (edit)`);
     expect(full).toContain(`${T}/txtRV45A-KWMENG[2,0]  field  Order Quantity = "5"  (edit)`);
     expect(await refusal(act({ do: "set", id: "txtVBAP-POSNR[0,0]", value: "20" }))).toContain("is read-only");
+  });
+
+  test("the value help dialog: a window with its filters, result list, OK and Cancel", async () => {
+    await load(VALUE_HELP);
+    const full = await fullView();
+    const at = full.indexOf('WINDOW wnd[2]  "Restrict Value Range (1)"');
+    expect(at).toBeGreaterThan(0);
+    expect(full.slice(at + 1)).toEqual([
+      'wnd[2]/shell/critcol/crit1800  field  Sales Organization = "1710"  (edit)',
+      'wnd[2]/shell/critcol/crit1806  field  Customer = ""  (edit)',
+      'wnd[2]/shell/critcol/crit1805  field  Name = "*DOM*"  (edit)',
+      "wnd[2]/shell/btnSEARCH  button  Go",
+      "wnd[2]/shell/gridRESULT  grid  2 rows; rows can be selected; columns: MCOD1=Name 1 | KUNNR=Customer",
+      "  row 0: ALPHA INC | 1000001",
+      "  row 1: BETA LTD | 1000002",
+      "wnd[2]/shell/gridRESULT/tbar/btnCOPY  button  OK",
+      "wnd[2]/shell/tbar/btnCLOSE  button  Cancel",
+    ]);
+  });
+
+  test("the value help dialog is used: a filter is typed into, a row selected, OK pressed", async () => {
+    await load(VALUE_HELP);
+    expect(await act({ do: "set", id: "crit1806", value: "1000002" })).toBe("set wnd[2]/shell/critcol/crit1806");
+    expect(await page.locator("[id='NSHHI2_1-input']").inputValue()).toBe("1000002");
+    expect(await act({ do: "press", id: "btnSEARCH" })).toBe("pressed wnd[2]/shell/btnSEARCH");
+    expect(await act({ do: "grid", id: G, row: 1, how: "select" })).toBe(`selected row 1 of ${G}`);
+    expect(await fullView()).toContain("  row 1 (selected): BETA LTD | 1000002");
+    expect(await act({ do: "press", id: "btnCOPY" })).toBe(`pressed ${G}/tbar/btnCOPY`);
+    expect(await pressed()).toEqual(["Go", "OK"]);
+  });
+
+  test("a filter that holds a token: set removes the token and types the new value", async () => {
+    await load(VALUE_HELP);
+    expect(await act({ do: "set", id: "crit1805", value: "*ALPHA*" })).toBe("set wnd[2]/shell/critcol/crit1805");
+    expect(await fullView()).toContain('wnd[2]/shell/critcol/crit1805  field  Name = "*ALPHA*"  (edit)');
+    expect(await page.locator("[ct='TOKEN']").count()).toBe(0);
   });
 });

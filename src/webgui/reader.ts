@@ -26,7 +26,7 @@ import { readRows } from "../core/rows.js";
 import { ActionError, type Action, type Assessment, type LookOptions } from "../core/types.js";
 import { LOGON_REFUSAL, okcodeKind } from "../core/words.js";
 import { assessAction, popupButton, questionRefusal } from "./assess.js";
-import { checkedNow, clean, clickForRoundtrip, clickListLine, clickMenuRow, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlLook, openTextCell, pressOverflow, setCalendar, setRefusal, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
+import { checkedNow, clean, clickForRoundtrip, clickListLine, clickMenuRow, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlLook, openTextCell, pressOverflow, setCalendar, setTokenField, setRefusal, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
 import { LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
 import { chooseEntry, entriesOf, markScrolled, notOnScreen, scrollTo, selectRow } from "./lists.js";
 import { extractFacts, markControl, markRow, markSelector, menuRowOpen, openOverlay, scrollControl, topWindowOpen } from "./page.js";
@@ -403,6 +403,10 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       if (c.type === "GuiCheckBox") return run(session, { ...a, do: "check" });
       if (c.type === "GuiComboBox")
         return run(session, { ...a, do: "combo", key: a.value });
+      if (c.type === "GuiSearchHelpHeaderItem" && !c.readonly) {
+        await setTokenField(session, c, String(a.value ?? ""));
+        return `set ${c.sid}`;
+      }
       const refusal = setRefusal(c);
       if (refusal) throw new ActionError(refusal);
       if (c.readonly) throw new ActionError(`${c.sid} is read-only`);
