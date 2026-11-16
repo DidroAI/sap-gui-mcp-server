@@ -190,6 +190,19 @@ describe.skipIf(!exe)("Web GUI reader: SAP GUI for HTML of S/4HANA 2025, in a br
     expect(full.indexOf('wnd[0]/usr/txtVBKD-BSTKD  field   = "X1"  (edit)')).toBeLessThan(at);
   });
 
+  test("S4WEB-10: a popup without a button (the F1 help) lists the x of its title, and that x is pressed by its id", async () => {
+    const help = POPUP.replace(/<section[\s\S]*?<\/section>/, '<section class="lsPWNewContentSection"><span>Help text</span></section>').replace(
+      "</header>",
+      `<span id="SAPLSPO1100_1-close" role="button" style="display:inline-block;width:16px;height:16px" onclick="document.getElementById('SAPLSPO1100_1').remove();window.pressed=(window.pressed||[]).concat('X')">x</span></header>`,
+    );
+    await load(help);
+    expect(await fullView()).toContain("wnd[1]/close  button  Close  (the x in the title of this window: it has no other button)");
+    expect(await act({ do: "press", id: "wnd[1]/close" })).toContain("pressed wnd[1]/close (the x in the window's title)");
+    expect(await pressed()).toEqual(["X"]);
+    await load(help);
+    expect(await act({ do: "press", id: "close" })).toContain("pressed wnd[1]/close");
+  });
+
   test("Enter on that question popup is refused, with the answers; the answer meant is pressed by its id", async () => {
     await load(POPUP);
     const said = await refusal(act({ do: "key", key: 0 }));
