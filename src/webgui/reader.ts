@@ -29,7 +29,7 @@ import { assessAction, popupButton, questionRefusal } from "./assess.js";
 import { checkedNow, clean, clickForRoundtrip, clickMenuRow, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlLook, pressOverflow, setRefusal, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
 import { LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
 import { chooseEntry, entriesOf, markScrolled, notOnScreen, scrollTo, selectRow } from "./lists.js";
-import { extractFacts, markControl, markRow, markSelector, scrollControl, topWindowOpen } from "./page.js";
+import { extractFacts, markControl, markRow, markSelector, openOverlay, scrollControl, topWindowOpen } from "./page.js";
 import { checkBeforeAct, focusOf, freshView, guardFacts, isDropdown, kindIn, LOGGED_OFF, loggedOff, look, lookRead, menuLines, readViewer, resolveIn, type ScreenRead, scrollables, viewerFrames } from "./screen.js";
 import { IDLE_TIMEOUT_MS, MAX_IDLE_TIMEOUT_MS, noTiming, timingText, type WebGuiSession } from "./session.js";
 
@@ -141,13 +141,14 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
   session.idleTimeoutMs = Number.isFinite(t) && t > 0 ? Math.min(Math.round(t * 1000), MAX_IDLE_TIMEOUT_MS) : IDLE_TIMEOUT_MS;
   session.unsettled = false;
   // A type-ahead list left open by the field typed into before covers what is below it.
-  if (a.do !== "set") await session.closeSuggestions().catch(() => {});
+  // Escape closes it itself, and only it (see the "key" action).
+  if (a.do !== "set" && !isEscape(a)) await session.closeSuggestions().catch(() => {});
   try {
     // The id as the screen holds it now: a handle becomes its full id, one that names several controls is refused.
     const named = a.id !== undefined && String(a.id).trim() && !isMenuPath(String(a.id));
     const mark = session.posts;
     const done = await run(session, named ? { ...a, id: resolveIn(await freshView(session), String(a.id)) } : a);
-    const nothing = session.posts === mark ? nothingSent(a) : undefined;
+    const nothing = session.posts === mark && !done.endsWith(NOTHING_TO_SAP) ? nothingSent(a) : undefined;
     const note = nothing ? `${done}\n${nothing}` : done;
     return session.unsettled ? `${note}\n(Web GUI still showed its loading sign when the server stopped waiting: the step may not be over. If the screen below is not what the step should lead to, look again in a moment.)` : note;
   } catch (e) {
@@ -157,6 +158,19 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
     session.idleTimeoutMs = IDLE_TIMEOUT_MS;
   }
 }
+
+/** Is the action the Escape key (also as key 12 or F12, Cancel)? */
+function isEscape(a: Action): boolean {
+  if (a.do !== "key") return false;
+  try {
+    return vkey(a.key ?? a.value) === "Escape";
+  } catch {
+    return false;
+  }
+}
+
+/** The end of a note that already says that SAP got nothing. */
+const NOTHING_TO_SAP = "nothing was sent to SAP)";
 
 const isMenuPath = (id: string) => /\/mbar\/menu\[/.test(id) || /^menu\[/.test(id);
 
@@ -201,6 +215,19 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       // In a popup, SAP binds toolbar button btn[N] to virtual key N ("Continue (Enter)" is btn[0]).
       // Pressing that button works whether or not the keyboard focus is in the popup.
       const n = typeof raw === "number" ? Number(raw) : k === "Enter" ? 0 : k === "Escape" ? 12 : undefined;
+      if (k === "Escape") {
+        // A menu or a list is open above the screen: Escape closes it, as for a person, and SAP gets
+        // nothing. Pressing the window's Cancel button instead left the transaction with the menu open.
+        const overlay = await session.frame.evaluate(openOverlay).catch(() => "" as const);
+        if (overlay) {
+          await session.roundtrip(() => session.pressKey("Escape"), 800);
+          const still = await session.frame.evaluate(openOverlay).catch(() => "" as const);
+          const what = overlay === "menu" ? "menu" : "list";
+          if (still) throw new ActionError(`Escape did not close the open ${what}. Nothing else was pressed: look at the screen.`);
+          if (session.started) return `key ${k} (a ${what} was open: Escape went to it)`;
+          return `key ${k} (closed the open ${what}; the screen under it is as it was, ${NOTHING_TO_SAP}`;
+        }
+      }
       if (n !== undefined && (typeof raw === "number" || typeof raw === "string")) {
         // The button the key presses on the popup, as the guard judged it (assess.ts `popupButton`): it is
         // pressed by its id and named in the answer, so the agent knows which answer SAP got.

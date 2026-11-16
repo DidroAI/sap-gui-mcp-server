@@ -28,8 +28,17 @@ const PAGE = `<!doctype html><html lang="en"><head><title>Synthetic</title></hea
 <div id="sysInfoAreaMenuItemSAPITS_MBAR_DYNPRO" lsdata="{13:'ZPROG/0100'}"></div>
 <div ct="PW" id="P1" style="display:none" lsdata="{0:'x',5:${sid("wnd[1]", "GuiModalWindow", 1)}}"><span class="urPWTitleText">Partner selection</span>
 <div id="ROW" ct="ALT" lsdata="{2:${sid("wnd[1]/usr/lbl[4,5]", "ABAPLISTTEXT", 1)}}">1000 Becker Berlin</div></div>
+<table id="CTX" style="position:absolute;top:-9999px;left:20px"><tr ct="POMN" id="u1"><td>Copy text</td></tr><tr ct="POMN" id="u2"><td>Paste</td></tr></table>
+<div id="LIST" ct="LIB" class="lsListbox" style="display:none;position:absolute;top:120px;left:20px;width:80px;height:40px">A B</div>
 <script>
   window.posted = [];
+  // Escape with a menu or a list open closes it and goes no further, as in Web GUI.
+  window.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    var ctx = document.getElementById('CTX'), list = document.getElementById('LIST');
+    if (ctx.style.top !== '-9999px') { ctx.style.top = '-9999px'; e.stopImmediatePropagation(); }
+    else if (list.style.display !== 'none') { list.style.display = 'none'; e.stopImmediatePropagation(); }
+  }, true);
   window.oLS = { n: 0, bLocked: function () { return this.n > 0 || window.stuck === true; } };
   function post(what) {
     window.oLS.n++;
@@ -198,6 +207,23 @@ describe.skipIf(!exe)("waits of a Web GUI action", () => {
       expect(note).toBe("key Escape (pressed wnd[0]/tbar[0]/btn[12])");
     }
     expect(await page.evaluate(() => (window as unknown as { posted: string[] }).posted)).toEqual(["vkey/12", "vkey/12", "vkey/12"]);
+  });
+
+  test("Escape with a menu or a list open closes that only; the next Escape is Cancel (NEW-3)", async () => {
+    await open();
+    await page.evaluate(() => {
+      (document.getElementById("CTX") as HTMLElement).style.top = "100px";
+    });
+    expect(await act(session, { do: "key", key: 12 })).toBe("key Escape (closed the open menu; the screen under it is as it was, nothing was sent to SAP)");
+    await page.evaluate(() => {
+      (document.getElementById("LIST") as HTMLElement).style.display = "block";
+    });
+    expect(await act(session, { do: "key", key: "Escape" })).toBe("key Escape (closed the open list; the screen under it is as it was, nothing was sent to SAP)");
+    // The window's Cancel button was not pressed, and both are closed.
+    expect(await posted()).toEqual([]);
+    expect(await page.evaluate(() => [(document.getElementById("CTX") as HTMLElement).style.top, (document.getElementById("LIST") as HTMLElement).style.display])).toEqual(["-9999px", "none"]);
+    expect(await act(session, { do: "key", key: 12 })).toBe("key Escape (pressed wnd[0]/tbar[0]/btn[12])");
+    expect(await posted()).toEqual(["vkey/12"]);
   });
 
   test("the first double-click on a popup's list row only moves the cursor: it is made again", async () => {
