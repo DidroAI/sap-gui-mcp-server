@@ -102,7 +102,8 @@ describe("sapgui: scrolling", () => {
     const d = await w.open();
     expect(await d.act({ do: "scroll", id: "tblZPROGTC_ITEMS", to: 30 })).toBe(`scrolled ${TABLE}: rows 30 to 31 of 60`);
     const view = await d.look({ compact: true });
-    expect(view).toContain("tblZPROGTC_ITEMS  table  rows 60 (visible 2, first 30); columns: Item  (cell ids: <field>[col,row], e.g. tblZPROGTC_ITEMS/<ctl><FIELD>[0,0]; row 0 here is row 30 of the table)");
+    expect(view).toContain("tblZPROGTC_ITEMS  table  rows 60 (visible 2, first 30)  (cell id: <id>[col,row], e.g. txtZITM-POSNR[0,0]; row 0 here is row 30 of the table)");
+    expect(view).toContain("  columns: 0 Item=txtZITM-POSNR (read-only)");
     expect(view).toContain("  row 0: Item=310");
   });
   test("a tree longer than one read is paged, until an action moves on", async () => {
@@ -147,7 +148,7 @@ describe("sapgui: a range of rows", () => {
   test("rows of a table control are numbered in the whole table", async () => {
     const d = await world().open();
     const out = (await d.look({ compact: true, id: "tblZPROGTC_ITEMS", rows: { from: 10, to: 13 } })).split("\n");
-    expect(out.slice(3, 7)).toEqual(["  row 10: Item=110", "  row 11: Item=120", "  row 12: Item=130", "  row 13: Item=140"]);
+    expect(out.slice(3, 8)).toEqual(["  columns: 0 Item=txtZITM-POSNR (read-only)", "  row 10: Item=110", "  row 11: Item=120", "  row 12: Item=130", "  row 13: Item=140"]);
   });
   test("one control alone: its lines, and nothing else of the screen", async () => {
     const d = await world().open();

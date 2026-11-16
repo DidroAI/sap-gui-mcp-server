@@ -99,26 +99,57 @@ export function extractLook(limits: {
       return false;
     return true;
   };
+  /**
+   * Checked or not. Web GUI draws the state as a class of the control
+   * (lsCheckBox--checked, lsRadioButton--unchecked, ...--checked--disabled);
+   * the hidden input inside keeps the state the server drew, so a radio
+   * clicked away from still has its input checked: the class wins. A list
+   * checkbox shows an image (urCImgOn / urCImgOff).
+   */
   const checkedOf = (el: Element) => {
     const cls =
       typeof (el as HTMLElement).className === "string"
         ? (el as HTMLElement).className
         : "";
-    let on =
-      /--checked|--selected|Sel\b/.test(cls) &&
-      !/--unchecked|--unselected/.test(cls);
-    const inp = el.querySelector("input");
-    if (inp && (inp as HTMLInputElement).checked) on = true;
+    if (/--(unchecked|unselected)\b/.test(cls)) return false;
+    if (/--(checked|selected)\b|Sel\b/.test(cls)) return true;
+    if (el.querySelector(".urCImgOn,.lsCBImgSel")) return true;
+    if (el.querySelector(".urCImgOff")) return false;
     const aria = el.getAttribute("aria-checked");
-    if (aria) on = aria === "true";
-    return on;
+    if (aria) return aria === "true";
+    const inp = el.querySelector("input");
+    return !!inp && (inp as HTMLInputElement).checked;
+  };
+  /** A checkbox or radio button that cannot be changed (greyed): Web GUI says so in its class. */
+  const selectorLocked = (el: Element) =>
+    /--disabled\b|--readonly\b/.test(
+      typeof (el as HTMLElement).className === "string" ? (el as HTMLElement).className : "",
+    ) || el.getAttribute("aria-disabled") === "true";
+  /**
+   * An input that cannot be changed. Web GUI marks it on the field's frame
+   * (lsField--readonly, lsField--disabled). A dropdown is an <input readonly>
+   * by construction (the value is picked, never typed), so for a dropdown the
+   * input's own readOnly says nothing.
+   */
+  const fieldLocked = (el: Element) => {
+    const i = el as HTMLInputElement;
+    const frameCls = el.closest(".lsField")?.className ?? "";
+    if (/lsField--(readonly|disabled)\b/.test(typeof frameCls === "string" ? frameCls : "")) return true;
+    if (i.disabled || el.getAttribute("aria-readonly") === "true" || el.getAttribute("aria-disabled") === "true") return true;
+    if (/--readonly|--disabled/.test(el.parentElement?.className ?? "")) return true;
+    const list =
+      el.getAttribute("ct") === "CB" ||
+      /lsField--list\b/.test(typeof frameCls === "string" ? frameCls : "") ||
+      /Type:'GuiComboBox'/.test(el.getAttribute("data-ls") ?? "");
+    return !list && i.readOnly === true;
   };
   const scrollInfo = (domId: string) => {
-    const sb = Array.from(
-      document.querySelectorAll(
-        `[ct='SCB'][data-ls*="6:'${domId.replace(/#/g, "\\x23")}'"]`,
-      ),
-    ).find((e) => !/5:'HORIZONTAL'/.test(e.getAttribute("data-ls") ?? ""));
+    // The scrollbar names its control's DOM id in key 6 (tree#105 written tree\x23105).
+    const sb = Array.from(document.querySelectorAll("[ct='SCB']")).find(
+      (e) =>
+        prop(e.getAttribute("data-ls") ?? "", 6) === domId &&
+        !/5:'HORIZONTAL'/.test(e.getAttribute("data-ls") ?? ""),
+    );
     const ls = sb?.getAttribute("data-ls") ?? "";
     // Key 0 is the first row shown, counted from 1.
     const pos = Number(/[{,]0:(\d+)/.exec(ls)?.[1] ?? NaN);
@@ -131,6 +162,7 @@ export function extractLook(limits: {
 
   // Labels name their field's DOM id in key 1.
   const labelFor = new Map<string, string>();
+  const labelEl = new Map<string, Element>();
   for (const el of Array.from(
     document.querySelectorAll("[data-ls*=\"Type:'GuiLabel'\"]"),
   )) {
@@ -141,9 +173,13 @@ export function extractLook(limits: {
     if (!forId || !t || !visible(el)) continue;
     const k = unesc(forId);
     labelFor.set(k, labelFor.has(k) ? `${labelFor.get(k)} ${t}` : t);
+    if (!labelEl.has(k)) labelEl.set(k, el);
   }
   const usedLabels = new Set<string>();
 
+  // After an error or a warning SAP puts the cursor on the field the message is about: the view says which.
+  const sbarKind = prop(document.getElementById("wnd[0]/sbar_msg")?.getAttribute("data-ls") ?? "", 1).toUpperCase();
+  const cursorTold = sbarKind === "ERROR" || sbarKind === "WARNING";
   const lines = new Map<number, string[]>();
   const titles = new Map<number, string>();
   const out = (modal: number, line: string) => {
@@ -175,21 +211,36 @@ export function extractLook(limits: {
     if (t && !titles.has(i.modal)) titles.set(i.modal, t);
   }
 
-  /** Rows of a Lightspeed smart table (grid, tree, value-help list), merged across its left/right segments. */
+  /** A row selector cell (subct SC) shows a selected row with a "Sel" icon class, an unselected one with "UnSel". */
+  const selectorOn = (sc: Element) => {
+    const cls = `${sc.className} ${sc.firstElementChild?.className ?? ""}`;
+    return !/UnSel/.test(cls) && /urSTRowSel|LbSelIcon|Sel2BgColor/.test(cls);
+  };
+  /**
+   * Rows of a Lightspeed smart table (grid, tree, value-help list), merged
+   * across its left/right segments, with the state of each row's selector
+   * cell. Row 0 is the column header when the table has one; a tree without
+   * header (SAP Easy Access) has its first node there.
+   */
   const matrix = (root: Element) => {
     const box = root.getBoundingClientRect();
     const rows = new Map<
       number,
-      { cells: Map<number, Element>; tr: Element }
+      { cells: Map<number, Element>; tr: Element; selector?: Element }
     >();
+    const headed = !!root.querySelector("th[lsmatrixrowindex='0'],th[lsmatrixcolindex]");
     for (const td of Array.from(
       root.querySelectorAll("td[lsmatrixrowindex][lsmatrixcolindex]"),
     )) {
       const r = Number(td.getAttribute("lsmatrixrowindex"));
-      if (r === 0 || td.getAttribute("subct") === "SC") continue;
-      const c = Number(td.getAttribute("lsmatrixcolindex"));
+      if (r === 0 && headed) continue;
       const tr = td.closest("tr")!;
       if (!rows.has(r)) rows.set(r, { cells: new Map(), tr });
+      if (td.getAttribute("subct") === "SC") {
+        rows.get(r)!.selector = td;
+        continue;
+      }
+      const c = Number(td.getAttribute("lsmatrixcolindex"));
       rows.get(r)!.cells.set(c, td);
     }
     const heads = new Map<number, Element>();
@@ -197,19 +248,30 @@ export function extractLook(limits: {
       heads.set(Number(th.getAttribute("lsmatrixcolindex")), th);
     return {
       box,
-      rows: [...rows.entries()].sort((a, b) => a[0] - b[0]),
+      rows: [...rows.entries()].filter(([, r]) => r.cells.size > 0).sort((a, b) => a[0] - b[0]),
       heads,
+      /** The table has a row selector column: rows can be selected. */
+      selectable: !!root.querySelector("td[subct='SC']"),
     };
   };
   const cellText = (td: Element) => {
+    // A checkbox or radio button in a cell: its state, from its class (its hidden input says "on" whatever the state).
+    const sel = td.querySelector("[ct^='C_'],[ct^='R_'],.lsCheckBox,[class*='lsRadioButton'],[class*='lsCheckBox']");
+    if (sel) return checkedOf(sel) ? "X" : "";
     const inp = td.querySelector("input,textarea") as HTMLInputElement | null;
     // A password is never written out.
     if (inp) return inp.type === "password" ? (inp.value ? "***" : "") : norm(inp.value);
     const cb = td.querySelector("[data-ls*=\"Type:'GuiCheckBox'\"],[ct^='C']");
     if (cb && /lsCheckBox/.test((cb as HTMLElement).className))
       return checkedOf(cb) ? "X" : "";
+    const t = norm((td as HTMLElement).innerText);
+    if (t) return t;
+    // An icon (status light, PO history): its tooltip.
+    const icon = td.querySelector("img[title],img[alt],[title]");
     return (
-      norm((td as HTMLElement).innerText) || norm(td.getAttribute("title"))
+      norm(td.getAttribute("title")) ||
+      norm(icon?.getAttribute("title")) ||
+      norm(icon?.getAttribute("alt"))
     );
   };
   const headTitle = (th: Element | undefined) =>
@@ -221,9 +283,14 @@ export function extractLook(limits: {
 
   for (const el of Array.from(document.querySelectorAll("[data-ls]"))) {
     const { ls, sid, type, modal } = info(el);
-    if (!sid || !type || inHandled(el)) continue;
+    if (!sid || !type) continue;
+    const button = type === "GuiButton" || type === "GuiToggleButton" || type === "GuiDropDownButton";
+    // A grid is read whole, except its own toolbar: those buttons are controls of their own.
+    if (inHandled(el) && !(button && /\/tbar\/[^/]+$/.test(sid))) continue;
     if (sid.includes("sysInfoArea")) continue;
-    if (!visible(el)) continue;
+    // A toolbar too narrow for its buttons moves the last ones behind its ">>" button (lsToolbar--item-hidden).
+    const overflow = button && !visible(el) && !!el.closest(".lsToolbar--item-hidden") && !!el.closest("[ct='T']") && visible(el.closest("[ct='T']")!);
+    if (!visible(el) && !overflow) continue;
     const h = el as HTMLElement & { value?: string };
     const tip = norm(el.getAttribute("title"));
     switch (type) {
@@ -238,19 +305,21 @@ export function extractLook(limits: {
         }
         const lab = labelFor.get(el.id) ?? "";
         if (lab) usedLabels.add(el.id);
-        const ro =
-          (h as HTMLInputElement).readOnly ||
-          (h as HTMLInputElement).disabled ||
-          /--readonly|--disabled/.test(el.parentElement?.className ?? "") ||
-          el.getAttribute("aria-readonly") === "true";
+        const ro = fieldLocked(el);
         // A password is never written out, whatever type SAP gives the field.
         const secret =
           type === "GuiPasswordField" ||
           (h as HTMLInputElement).type === "password";
         const val = secret ? (h.value ? "***" : "") : norm(h.value ?? "");
+        // A required entry: Web GUI marks the field or its label (aria-required, a --required class); SAP GUI draws a "?" in it.
+        const lbl = labelEl.get(el.id);
+        const required =
+          !ro &&
+          (el.getAttribute("aria-required") === "true" ||
+            /--required\b|Required\b|urEdf2Req/.test(`${el.closest(".lsField")?.className ?? ""} ${el.className} ${lbl?.className ?? ""} ${lbl?.firstElementChild?.className ?? ""}`));
         out(
           modal,
-          `${sid}  field  ${lab || tip} = "${val}"  (${ro ? "read-only" : "edit"})`,
+          `${sid}  field  ${lab || tip} = "${val}"  (${ro ? "read-only" : "edit"})${required ? "  required" : ""}${cursorTold && document.activeElement === el ? "  (cursor here)" : ""}`,
         );
         break;
       }
@@ -277,12 +346,15 @@ export function extractLook(limits: {
         const t = prop(ls, 4) || norm(h.innerText) || prop(ls, 5) || tip;
         out(
           modal,
-          `${sid}  ${type === "GuiCheckBox" ? "checkbox" : "radio"}  [${checkedOf(el) ? "x" : " "}] ${t}`,
+          `${sid}  ${type === "GuiCheckBox" ? "checkbox" : "radio"}  [${checkedOf(el) ? "x" : " "}] ${t}${selectorLocked(el) ? "  (read-only)" : ""}`,
         );
         break;
       }
       case "GuiComboBox": {
         if (el.tagName !== "INPUT") break;
+        // A dropdown cell of a table control scrolled out sideways is not on the screen.
+        const tblC = el.closest("[data-ls*=\"Type:'GuiTableControl'\"]");
+        if (tblC && !inView(el, tblC.getBoundingClientRect())) break;
         const lab = labelFor.get(el.id) ?? tip;
         // S/4HANA 2025 keeps the field name in key 3 (VBAK-LIFSKSAPMV45A), not the selected key.
         const k3 = prop(ls, 3);
@@ -290,32 +362,36 @@ export function extractLook(limits: {
         // the selected key, the input shows the text, and the list box is the
         // element named by aria-controls.
         const s4 = /^[A-Z0-9_/]+-[A-Z0-9_]+/.test(k3);
-        const key = s4 ? norm(prop(ls, 4)) : k3;
-        const text = s4
-          ? norm(h.value ?? "")
-          : prop(ls, 4) || norm(h.value ?? "");
         const lb = document.getElementById(
           s4 ? (h.getAttribute("aria-controls") ?? "") : prop(ls, 2),
         );
+        const ro = fieldLocked(el);
         const opts: string[] = [];
+        // The input shows the entry chosen now; lsdata holds what the server drew last.
+        const shown = norm(h.value ?? "");
+        let key = s4 ? norm(prop(ls, 4)) : k3;
+        let text = s4 ? shown : shown || prop(ls, 4);
         for (const it of Array.from(
           lb?.querySelectorAll("[ct='LIB_I'],[data-itemkey]") ?? [],
         )) {
           const ils = it.getAttribute("data-ls") ?? "";
           const k =
             it.getAttribute("data-itemkey") ?? (prop(ils, 3) || prop(ils, 1));
-          const v = prop(ils, 4) || norm((it as HTMLElement).innerText);
+          const v =
+            prop(ils, 4) ||
+            norm(it.getAttribute("data-itemvalue2")) ||
+            norm((it as HTMLElement).innerText);
+          // Chosen in the page and not sent yet: the key of the entry the input shows.
+          if (shown && v === shown && k !== key && shown !== prop(ls, 4)) {
+            key = k;
+            text = v;
+          }
           // A read-only dropdown (display transactions) cannot change: its entries add only tokens.
-          if (
-            (h as HTMLInputElement).readOnly ||
-            h.getAttribute("aria-readonly") === "true"
-          )
-            break;
-          if (k || v) opts.push(`${k}:${v}`);
+          if (!ro && (k || v)) opts.push(`${k}:${v}`);
         }
         out(
           modal,
-          `${sid}  dropdown  ${lab} = "${key}" ${text}${opts.length ? `  ${opts.length} options: ${opts.slice(0, 30).join(", ")}${opts.length > 30 ? ", ..." : ""}` : ""}`,
+          `${sid}  dropdown  ${lab} = "${key}" ${text}  (${ro ? "read-only" : "edit"})${opts.length ? `  ${opts.length} options: ${opts.slice(0, 30).join(", ")}${opts.length > 30 ? ", ..." : ""}` : ""}`,
         );
         break;
       }
@@ -330,7 +406,7 @@ export function extractLook(limits: {
         const name = tip && (!t || tip.startsWith(t)) ? tip : t;
         out(
           modal,
-          `${sid}  button  ${name}${t && tip && !tip.startsWith(t) ? `  (${tip})` : ""}`,
+          `${sid}  button  ${name}${t && tip && !tip.startsWith(t) ? `  (${tip})` : ""}${overflow ? '  (behind ">>")' : ""}`,
         );
         break;
       }
@@ -390,9 +466,22 @@ export function extractLook(limits: {
           ? prop(capEl.getAttribute("data-ls") ?? "", 1) ||
             norm((capEl as HTMLElement).innerText)
           : "";
+        // Row selectors (the column of buttons at the left): which rows on screen are selected.
+        const tbox = el.getBoundingClientRect();
+        const selectors = Array.from(el.querySelectorAll("td[subct='SC'][lsmatrixrowindex]")).filter(
+          (td) => Number(td.getAttribute("lsmatrixrowindex")) > 0 && inView(td, tbox),
+        );
+        const picked = selectors
+          .filter(selectorOn)
+          .map((td) => Number(td.getAttribute("lsmatrixrowindex")) - 1)
+          .sort((a, b) => a - b);
+        const how = /[{,]10:'(MULTI|SINGLE)'/.exec(ls)?.[1];
+        const selection = selectors.length
+          ? `; rows can be selected${how === "SINGLE" ? " (one at a time)" : ""}${picked.length ? `; selected rows ${picked.join(",")}` : ""}`
+          : "";
         out(
           modal,
-          `${sid}  table  rows ${Number.isNaN(s.total) ? "?" : s.total} (visible ${Number.isNaN(s.visible) ? "?" : s.visible}${s.first ? `, first ${s.first}` : ""})${cap ? ` "${cap}"` : ""}; columns: ${cols.map((c) => byName.get(c) ?? "").join(" | ")}`,
+          `${sid}  table  rows ${Number.isNaN(s.total) ? "?" : s.total} (visible ${Number.isNaN(s.visible) ? "?" : s.visible}${s.first ? `, first ${s.first}` : ""})${cap ? ` "${cap}"` : ""}${selection}; columns: ${cols.map((c) => byName.get(c) ?? "").join(" | ")}`,
         );
         // Cells come after, as their own controls (inputs, checkboxes; display cells here).
         const box = el.getBoundingClientRect();
@@ -438,12 +527,12 @@ export function extractLook(limits: {
         const total = Number.isNaN(s.total) ? m.rows.length : s.total;
         out(
           modal,
-          `${sid}  grid  ${total} rows; columns: ${names.join(" | ")}`,
+          `${sid}  grid  ${total} rows${m.selectable ? "; rows can be selected" : ""}; columns: ${names.join(" | ")}`,
         );
         for (const [r, row] of shown.slice(0, limits.grid))
           out(
             modal,
-            `  row ${r - 1}: ${colIdx.map((c) => (row.cells.get(c) ? cellText(row.cells.get(c)!) : "")).join(" | ")}`,
+            `  row ${r - 1}${row.selector && selectorOn(row.selector) ? " (selected)" : ""}: ${colIdx.map((c) => (row.cells.get(c) ? cellText(row.cells.get(c)!) : "")).join(" | ")}`,
           );
         const first = shown[0]?.[0] ?? 1;
         const rest = total - Math.min(shown.length, limits.grid);
@@ -470,6 +559,8 @@ export function extractLook(limits: {
           .map(([, th]) => headTitle(th))
           .filter(Boolean);
         const nodes: string[] = [];
+        // A tree with columns (MMBE): one value per column, empty ones kept, so each value stays under its title.
+        const columns = heads.length > 1 ? Math.max(...m.heads.keys()) : -1;
         for (const [, row] of m.rows) {
           if (!inView(row.tr, m.box)) continue;
           const key =
@@ -483,13 +574,22 @@ export function extractLook(limits: {
           const st = prop(hier?.getAttribute("data-ls") ?? "", 5);
           const state =
             st === "EXPANDED" ? "[-] " : st === "COLLAPSED" ? "[+] " : "";
-          const text = [
-            ...new Set(
-              cells
-                .map(([, td]) => norm((td as HTMLElement).innerText))
-                .filter(Boolean),
-            ),
-          ].join(" | ");
+          let text: string;
+          if (columns >= 0) {
+            const vals: string[] = [];
+            for (let c = 0; c <= columns; c++) vals.push(row.cells.get(c) ? norm((row.cells.get(c) as HTMLElement).innerText) : "");
+            while (vals.length > 1 && !vals[vals.length - 1]) vals.pop();
+            text = vals.join(" | ");
+          } else
+            text = [
+              ...new Set(
+                cells
+                  .map(([, td]) => norm((td as HTMLElement).innerText))
+                  .filter(Boolean),
+              ),
+            ].join(" | ");
+          // Web GUI keeps empty placeholder rows below the last node: not nodes.
+          if (!key && !text.replace(/[ |]/g, "")) continue;
           nodes.push(`  ${"  ".repeat(depth)}${state}${text}  {node ${key}}`);
         }
         out(
@@ -533,6 +633,12 @@ export function extractLook(limits: {
         }
         const t = norm(h.innerText);
         if (t) out(modal, `${sid}  label  ${t}`);
+        break;
+      }
+      case "ABAPLISTIMAGE": {
+        // An icon in a list (a status light, a ledger): its tooltip says what it shows.
+        const t = tip || norm(el.querySelector("img")?.getAttribute("alt")) || norm(el.querySelector("img")?.getAttribute("title"));
+        if (t) out(modal, `${sid}  label  icon "${t}"`);
         break;
       }
       case "ABAPLISTCHECKBOX": {
@@ -614,8 +720,9 @@ export function extractLook(limits: {
     break;
   }
   // Open popup menus: rows whose DOM id is the scripting id.
+  // A closed menu stays in the page, moved far above the window (top -9999 px): only rows in the window are open.
   for (const tr of Array.from(document.querySelectorAll("tr[ct^='POMN']"))) {
-    if (!visible(tr) || tr.id.startsWith("sysInfoArea")) continue;
+    if (!visible(tr) || !inView(tr) || tr.id.startsWith("sysInfoArea")) continue;
     out(0, `${tr.id}  menu  ${norm((tr as HTMLElement).innerText)}`);
   }
 
@@ -779,6 +886,10 @@ export interface MarkedControl {
   tag: string;
   /** For an input element: its type ("text", "password", ...); "" otherwise. */
   inputType: string;
+  /** A toolbar button behind the toolbar's ">>" button: the DOM id of that ">>" button; "" otherwise. */
+  overflow: string;
+  /** The button's DOM id ("" when not a button): its entry in the ">>" menu is "<id>-BtnMenu". */
+  dom: string;
 }
 
 /** Runs in the Web GUI frame: marks the control an id names and describes it. */
@@ -804,9 +915,17 @@ export function markControl(ident: string): MarkedControl | string {
       (el as HTMLElement).checkVisibility?.() !== false
     );
   };
+  /** A toolbar button moved behind the toolbar's ">>" button: its ">>" button, else null. */
+  const overflowOf = (el: Element): Element | null => {
+    if (!/Type:'Gui(Button|ToggleButton|DropDownButton)'/.test(el.getAttribute("data-ls") ?? "")) return null;
+    if (!el.closest(".lsToolbar--item-hidden")) return null;
+    const bar = el.closest("[ct='T']");
+    if (!bar || !visible(bar)) return null;
+    return document.getElementById(`${bar.id}-hiddenOpener`);
+  };
   const all = Array.from(document.querySelectorAll("[data-ls*='SID:']"))
     .map((el) => ({ el, ...info(el) }))
-    .filter((x) => x.sid && visible(x.el));
+    .filter((x) => x.sid && (visible(x.el) || overflowOf(x.el)));
   // Table cells: the input or checkbox inside the cell, not the cell itself.
   const pick = (xs: typeof all) => {
     const inner = xs.filter(
@@ -834,21 +953,36 @@ export function markControl(ident: string): MarkedControl | string {
   if (!hits.length) return `no control named ${ident}`;
   const top = Math.max(...hits.map((h) => h.modal));
   hits = hits.filter((h) => h.modal === top);
-  const ro = (el: Element) =>
-    (el as HTMLInputElement).readOnly === true ||
-    (el as HTMLInputElement).disabled === true;
+  const clsOf = (el: Element | null | undefined) => {
+    const c = (el as HTMLElement | null | undefined)?.className;
+    return typeof c === "string" ? c : "";
+  };
+  // Read-only as Web GUI marks it: on the field's frame (lsField--readonly), on a checkbox's class
+  // (lsCheckBox--checked--disabled). A dropdown is an <input readonly> by construction: its readOnly says nothing.
+  const ro = (el: Element) => {
+    const i = el as HTMLInputElement;
+    const ls = el.getAttribute("data-ls") ?? "";
+    if (/Type:'Gui(CheckBox|RadioButton)'/.test(ls)) return /--disabled\b|--readonly\b/.test(clsOf(el)) || el.getAttribute("aria-disabled") === "true";
+    const frame = clsOf(el.closest(".lsField"));
+    if (/lsField--(readonly|disabled)\b/.test(frame)) return true;
+    if (i.disabled === true || el.getAttribute("aria-readonly") === "true" || el.getAttribute("aria-disabled") === "true") return true;
+    if (/--readonly|--disabled/.test(clsOf(el.parentElement))) return true;
+    const list = el.getAttribute("ct") === "CB" || /lsField--list\b/.test(frame) || /Type:'GuiComboBox'/.test(ls);
+    return !list && i.readOnly === true;
+  };
   hits.sort((a, b) => Number(ro(a.el)) - Number(ro(b.el)));
   const h = hits[0]!;
   h.el.setAttribute("data-sap-act", "1");
-  const cls =
-    typeof (h.el as HTMLElement).className === "string"
-      ? (h.el as HTMLElement).className
-      : "";
-  const checked =
-    (/--checked|--selected/.test(cls) &&
-      !/--unchecked|--unselected/.test(cls)) ||
-    h.el.getAttribute("aria-checked") === "true" ||
-    (h.el.querySelector("input") as HTMLInputElement | null)?.checked === true;
+  const cls = clsOf(h.el);
+  // The class says the state the page shows; the hidden input keeps what the server drew.
+  let checked: boolean;
+  if (/--(unchecked|unselected)\b/.test(cls)) checked = false;
+  else if (/--(checked|selected)\b/.test(cls)) checked = true;
+  else if (h.el.querySelector(".urCImgOn,.lsCBImgSel")) checked = true;
+  else if (h.el.querySelector(".urCImgOff")) checked = false;
+  else if (h.el.getAttribute("aria-checked")) checked = h.el.getAttribute("aria-checked") === "true";
+  else checked = (h.el.querySelector("input") as HTMLInputElement | null)?.checked === true;
+  const opener = overflowOf(h.el);
   return {
     sid: h.sid,
     type: h.type,
@@ -858,6 +992,8 @@ export function markControl(ident: string): MarkedControl | string {
     tag: h.el.tagName,
     inputType:
       h.el.tagName === "INPUT" ? (h.el as HTMLInputElement).type || "text" : "",
+    overflow: opener && !visible(h.el) ? opener.id : "",
+    dom: h.el.id,
   };
 }
 
@@ -926,7 +1062,9 @@ export function markRow(a: { sid: string; row?: number | undefined; node?: strin
           ),
       );
     if (!tr) return `no node ${a.node}`;
-    rowIdx = Number(tr.getAttribute("iidx")) + 1;
+    // The node's own row number in the table: a tree with a header row starts its nodes at 1, one without at 0.
+    const own = tr.querySelector("td[lsmatrixrowindex]");
+    rowIdx = own ? Number(own.getAttribute("lsmatrixrowindex")) : Number(tr.getAttribute("iidx")) + 1;
   } else rowIdx = Number(a.row ?? 0) + 1;
   // Only rows that are drawn: Web GUI keeps rows it scrolled away from in the page, without a size.
   const box = root.getBoundingClientRect();
@@ -979,6 +1117,43 @@ export function markRow(a: { sid: string; row?: number | undefined; node?: strin
   );
   exp?.setAttribute("data-sap-act", "expander");
   return "ok";
+}
+
+/**
+ * The row selector of a row (the button at the left of a grid, table
+ * control or value-help list row), marked for Playwright, and whether its row
+ * is selected now. `row` counts as the view does: from 0, on screen for a
+ * table control, in the whole list for a grid. A text when there is none.
+ */
+export function markSelector(a: { sid: string; row: number }): { selected: boolean } | string {
+  for (const e of Array.from(document.querySelectorAll("[data-sap-act]")))
+    e.removeAttribute("data-sap-act");
+  const sidOf = (el: Element) => {
+    const ls = el.getAttribute("data-ls") ?? "";
+    return (
+      /OrigID:'((?:[^'\\]|\\.)*)'/.exec(ls)?.[1] ??
+      /SID:'((?:[^'\\]|\\.)*)'/.exec(ls)?.[1] ??
+      ""
+    ).replace(/\\\\/g, "\\");
+  };
+  const root = Array.from(
+    document.querySelectorAll(
+      "[data-ls*=\"Type:'GuiGridView'\"],[data-ls*=\"Type:'GuiTableControl'\"],[data-ls*=\"Type:'GuiSearchHelpResult'\"]",
+    ),
+  ).find((el) => el.getBoundingClientRect().width > 0 && sidOf(el) === a.sid);
+  if (!root) return `no grid or table named ${a.sid} on this screen`;
+  const cells = Array.from(root.querySelectorAll("td[subct='SC'][lsmatrixrowindex]"));
+  if (!cells.length) return `the rows of ${a.sid} cannot be selected (it has no row selector)`;
+  const box = root.getBoundingClientRect();
+  const sc = cells.find((td) => {
+    if (Number(td.getAttribute("lsmatrixrowindex")) !== a.row + 1) return false;
+    const r = td.getBoundingClientRect();
+    return r.height > 0 && r.bottom > box.top + 2 && r.top < box.bottom - 2;
+  });
+  if (!sc) return `row ${a.row} is not on screen`;
+  sc.setAttribute("data-sap-act", "selector");
+  const cls = `${sc.className} ${sc.firstElementChild?.className ?? ""}`;
+  return { selected: !/UnSel/.test(cls) && /urSTRowSel|LbSelIcon|Sel2BgColor/.test(cls) };
 }
 
 export interface MenuEntry {
@@ -1229,10 +1404,17 @@ export function scrollControl(a: { sid: string; to: number | string }): Scrolled
   const roots = Array.from(document.querySelectorAll("[data-ls*='SID:']")).filter((el) => KINDS.test(el.getAttribute("data-ls") ?? "") && el.getBoundingClientRect().width > 0);
   const root = roots.find((el) => sidOf(el) === a.sid);
   if (!root) return `no grid, table, tree or list named ${a.sid}`;
-  const bar = Array.from(document.querySelectorAll(`[ct='SCB'][data-ls*="6:'${root.id.replace(/#/g, "\\x23")}'"]`)).find(
-    (e) => !/5:'HORIZONTAL'/.test(e.getAttribute("data-ls") ?? "") && (e as HTMLElement).offsetHeight > 0,
-  );
-  if (!bar) return `all rows of ${a.sid} are on screen: nothing to scroll`;
+  // The scrollbars name their control's DOM id in key 6 (tree#105 written tree\x23105).
+  const unesc = (x: string) =>
+    x.replace(/\\x([0-9a-fA-F]{2})/g, (_m, h) => String.fromCharCode(parseInt(h, 16))).replace(/\\(.)/g, "$1");
+  const sideways = a.to === "right" || a.to === "left" || a.to === "leftmost" || a.to === "rightmost";
+  const bar = Array.from(document.querySelectorAll("[ct='SCB']")).find((e) => {
+    const ls = e.getAttribute("data-ls") ?? "";
+    const owner = unesc(/[{,]6:'((?:[^'\\]|\\.)*)'/.exec(ls)?.[1] ?? "");
+    const horizontal = /5:'HORIZONTAL'/.test(ls);
+    return owner === root.id && horizontal === sideways && (sideways ? (e as HTMLElement).offsetWidth > 0 : (e as HTMLElement).offsetHeight > 0);
+  });
+  if (!bar) return sideways ? `all columns of ${a.sid} are on screen: nothing to scroll sideways` : `all rows of ${a.sid} are on screen: nothing to scroll`;
   // The scrollbar's object, from the event it handles: it knows where the list is now. The element's
   // lsdata only says where it was when the server last drew it; a grid that scrolls in the page moves on.
   interface Bar {
@@ -1274,12 +1456,14 @@ export function scrollControl(a: { sid: string; to: number | string }): Scrolled
   if ([pos, max, visible].some((x) => Number.isNaN(x))) return `the scrollbar of ${a.sid} could not be read`;
   let want: number;
   if (typeof a.to === "number") want = a.to + 1;
-  else if (a.to === "next") want = pos + visible;
-  else if (a.to === "prev") want = pos - visible;
+  else if (a.to === "next" || a.to === "right") want = pos + visible;
+  else if (a.to === "prev" || a.to === "left") want = pos - visible;
+  else if (a.to === "leftmost") want = 1;
+  else if (a.to === "rightmost") want = max;
   else if (a.to === "first") want = 1;
   else if (a.to === "last") want = max;
   else if (a.to === "here") want = pos;
-  else return `scroll "to" is a row number, "next", "prev", "first" or "last"`;
+  else return `scroll "to" is a row number, "next", "prev", "first" or "last"; sideways "right", "left", "leftmost" or "rightmost"`;
   want = Math.min(Math.max(1, want), Math.max(1, max));
   const res: Scrolled = { sid: a.sid, from: pos - 1, first: want - 1, visible, total: Number.isNaN(total) ? max + visible - 1 : total, moved: true, bar: bar.id };
   if (want === pos) return res;

@@ -156,6 +156,7 @@ class SapguiDriver implements Driver {
         options.id,
         options.rows.from,
         options.rows.to,
+        options.cols,
       );
     }
     let block = controlBlock(full, id);

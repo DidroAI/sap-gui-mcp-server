@@ -28,7 +28,7 @@ import { ActionError, type Action, type Assessment, type LookOptions } from "../
 import { LOGON_PROGRAM, LOGON_REFUSAL } from "../core/words.js";
 import { assessAction, type FocusFacts } from "./assess.js";
 import type { MarkedControl, Scrolled } from "./page.js";
-import { comboEntries, extractFacts, extractLook, extractMenus, extractViewer, focusedControl, markControl, markRow, normalizeLsdata, scrollControl, viewerFocus } from "./page.js";
+import { comboEntries, extractFacts, extractLook, extractMenus, extractViewer, focusedControl, markControl, markRow, markSelector, normalizeLsdata, scrollControl, viewerFocus } from "./page.js";
 import { IDLE_TIMEOUT_MS, MAX_IDLE_TIMEOUT_MS, type WebGuiSession } from "./session.js";
 
 const MAX_GRID_ROWS = 50;
@@ -292,11 +292,13 @@ export async function view(session: WebGuiSession, options: LookOptions): Promis
       options.id,
       options.rows.from,
       options.rows.to,
+      options.cols,
     );
   }
   let block = controlBlock(full, sid);
   if (!block) throw missing();
-  if (/ {2}dropdown {2}/.test(block.split("\n").at(-1) ?? "")) {
+  // The control's own line says what it is (a table's last line may be one of its dropdown cells).
+  if (/ {2}dropdown {2}/.test(block.split("\n").find((l) => l.startsWith(`${sid}  `)) ?? "")) {
     // Every entry, also those the view cuts and those Web GUI loads only when the list opens.
     const entries = await entriesOf(session, sid);
     block = `${block.replace(/ {2}(\d+ )?options: .*$/, "")}  ${entries.length} options: ${entries.map((e) => `${e.key}:${e.text}`).join(", ")}`;
@@ -467,6 +469,7 @@ async function scrollTo(session: WebGuiSession, sid: string, to: number | string
     if (done.startsWith("all rows")) return done;
     throw new ActionError(done);
   }
+  if (typeof to === "string" && /^(right|left|rightmost|leftmost)$/.test(to)) return done;
   // Where it is now: the end of the list stops a scroll short of the row asked for.
   const now = await (await lsFrame(session)).evaluate(scrollControl, { sid, to: "here" }).catch(() => "");
   return typeof now === "string" ? done : { ...done, first: now.from };
@@ -511,6 +514,91 @@ function tidy(e: unknown): Error {
   if (message.includes("intercepts pointer events"))
     return new ActionError(`${first} Another window covers this control (a popup is open?): look at the screen and answer the popup first.`);
   return new ActionError(first);
+}
+
+/** What kind of control a line of the view says `sid` is ("grid", "table", "tree", "list", "field" ...), "" when the view has no such line. */
+function kindIn(view: string, sid: string): string {
+  const line = view.split("\n").find((l) => l.startsWith(`${sid}  `));
+  return line?.split("  ")[1] ?? "";
+}
+
+/**
+ * Selects (or deselects) a row of a grid, table control or value-help list
+ * by its row selector, the button at the left of the row, as a person
+ * clicks it; and reads the state back. A grid row that is not drawn is
+ * scrolled to first; a table control counts rows on screen.
+ */
+async function selectRow(session: WebGuiSession, sid: string, row: number, on: boolean): Promise<string> {
+  const target = { sid, row };
+  let f = await lsFrame(session);
+  let r = await f.evaluate(markSelector, target);
+  let scrolled = "";
+  if (typeof r === "string" && / is not on screen$/.test(r) && kindIn(await freshView(session), sid) !== "table") {
+    const sc = await scrollTo(session, sid, row);
+    if (typeof sc !== "string") scrolled = ` (scrolled to it: rows ${sc.first} to ${Math.min(sc.first + sc.visible, sc.total) - 1} of ${sc.total} are shown)`;
+    // The rows come a moment after the scroll.
+    for (let i = 0; i < 10; i++) {
+      f = await lsFrame(session);
+      r = await f.evaluate(markSelector, target);
+      if (typeof r !== "string" || !/ is not on screen$/.test(r)) break;
+      await session.page.waitForTimeout(200);
+    }
+  }
+  if (typeof r === "string")
+    throw new ActionError(/ is not on screen$/.test(r) ? `${r}: a table control counts its rows on screen (row 0 is the first row shown); scroll it to bring the row into view.` : r);
+  if (r.selected === on) return `row ${row} of ${sid} was already ${on ? "selected" : "not selected"}: nothing changed${scrolled}`;
+  await session.roundtrip(() => f.locator("[data-sap-act='selector']").first().click({ timeout: 10000 }), 800);
+  const now = await (await lsFrame(session)).evaluate(markSelector, target).catch(() => "");
+  if (typeof now !== "string" && now.selected !== on)
+    throw new ActionError(`row ${row} of ${sid} is still ${now.selected ? "selected" : "not selected"}: the click on its row selector did not change it. Look at the screen.`);
+  return `${on ? "selected" : "deselected"} row ${row} of ${sid}${scrolled}`;
+}
+
+/**
+ * Clicks a row of an open popup menu (a context menu, the menu of a
+ * dropdown button, the ">>" menu of a toolbar) named by its DOM id, as the
+ * view lists it. False when no such row is open.
+ */
+async function clickMenuRow(session: WebGuiSession, id: string): Promise<boolean> {
+  const f = await lsFrame(session);
+  const open = await f
+    .evaluate((rowId) => {
+      const tr = document.getElementById(rowId);
+      if (!tr || tr.tagName !== "TR" || !(tr.getAttribute("ct") ?? "").startsWith("POMN")) return false;
+      const r = tr.getBoundingClientRect();
+      // A closed menu stays in the page far above the window.
+      return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight;
+    }, id)
+    .catch(() => false);
+  if (!open) return false;
+  await session.roundtrip(() => f.locator(`tr[id="${id.replace(/"/g, '\\"')}"]`).first().click({ timeout: 10000 }), 1200);
+  return true;
+}
+
+/**
+ * Presses a toolbar button that the toolbar moved behind its ">>" button:
+ * opens that menu and chooses the button's entry, as a person does. A
+ * button of the screen's toolbar (tbar[N]/btn[K]) is function key K when the
+ * entry cannot be found.
+ */
+async function pressOverflow(session: WebGuiSession, c: MarkedControl): Promise<string> {
+  const f = await lsFrame(session);
+  await f.locator(`[id="${c.overflow}"]`).first().click({ timeout: 5000 });
+  await session.page.waitForTimeout(300);
+  const row = `${c.dom}-BtnMenu`;
+  if (await clickMenuRow(session, row)) return `pressed ${c.sid} (from the ">>" menu of its toolbar)`;
+  const k = /\/tbar\[\d\]\/btn\[(\d+)\]$/.exec(c.sid)?.[1];
+  // The menu did not show the entry: close it (">>" again; Escape would be Cancel if it is not open), then send the button's function key.
+  await f.locator(`[id="${c.overflow}"]`).first().click({ timeout: 5000 }).catch(() => {});
+  await session.page.waitForTimeout(150);
+  if (k === undefined) throw new ActionError(`${c.sid} is behind the toolbar's ">>" button and its entry could not be found there. Look at the screen.`);
+  await session.roundtrip(() => session.pressKey(vkey(Number(k))), SURE_START_MS);
+  return `pressed ${c.sid} (behind ">>": sent as its key ${vkey(Number(k))})`;
+}
+
+/** The entry a dropdown shows now, read from its input: "" when it cannot be read. */
+async function comboShown(loc: Locator): Promise<string> {
+  return ((await loc.inputValue().catch(() => "")) || "").replace(/\s+/g, " ").replace(/^ | $/g, "");
 }
 
 async function run(session: WebGuiSession, a: Action): Promise<string> {
@@ -560,13 +648,37 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
         if (all.length !== 1) throw new ActionError(all.length ? `scroll needs "id": one of ${all.map((x) => shortIds(all).get(x) ?? x).join(", ")}.` : "Nothing on this screen scrolls: no grid, table, tree or list.");
         sid = all[0] as string;
       }
-      const r = await scrollTo(session, sid, (a.to ?? "next") as number | string);
+      const to = (a.to ?? "next") as number | string;
+      const r = await scrollTo(session, sid, to);
       if (typeof r === "string") return r;
       const last = Math.min(r.first + r.visible, r.total) - 1;
+      if (to === "right" || to === "left" || to === "rightmost" || to === "leftmost")
+        return r.first === r.from ? `${r.sid} cannot move further ${to.replace(/most$/, "")}` : `scrolled ${r.sid} sideways: the columns on screen changed (the view lists them)`;
       return r.first === r.from ? `${r.sid} is already there: rows ${r.first} to ${last} of ${r.total}` : `scrolled ${r.sid}: rows ${r.first} to ${last} of ${r.total}`;
     }
     case "tree":
     case "grid": {
+      // "select" on a grid row: the row is selected by its row selector, as a person clicks it; with a column,
+      // the cell gets the cursor first. "cell" only puts the cursor on the cell.
+      if (a.do === "grid" && (a.how ?? "double") === "select" && a.row !== undefined) {
+        const hasSelector = await (await lsFrame(session)).evaluate(markSelector, { sid: id, row: Number(a.row) }).catch(() => "");
+        const selectable = typeof hasSelector !== "string" || / is not on screen$/.test(hasSelector);
+        if (selectable && (a.col === undefined || a.col === "")) return selectRow(session, id, Number(a.row), true);
+        if (selectable) {
+          const note = await run(session, { ...a, how: "cell" });
+          const sel = await selectRow(session, id, Number(a.row), true);
+          return `${note}; ${sel}`;
+        }
+      }
+      // expand and collapse are one click on the node's expander: a node already in that state is left alone.
+      if (a.do === "tree" && (a.how === "expand" || a.how === "collapse") && a.node !== undefined) {
+        const node = String(a.node).replace(/^ +| +$/g, "");
+        const line = (await freshView(session)).split("\n").find((l) => l.endsWith(`{node ${node}}`));
+        const open = line ? /^ +\[-\] /.test(line) : undefined;
+        const leaf = line ? !/^ +\[[-+]\] /.test(line) : false;
+        if (leaf) throw new ActionError(`node ${node} has no children: there is nothing to ${a.how}.`);
+        if (open === (a.how === "expand")) return `node ${node} is already ${a.how === "expand" ? "expanded" : "collapsed"}: nothing changed`;
+      }
       let f = await lsFrame(session);
       const target = { sid: id, row: a.row, node: a.node, col: a.col };
       let r = await f.evaluate(markRow, target);
@@ -579,8 +691,13 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
         const sc = await scrollTo(session, id, a.row);
         if (typeof sc !== "string") {
           scrolled = ` (scrolled to it: rows ${sc.first} to ${Math.min(sc.first + sc.visible, sc.total) - 1} of ${sc.total} are shown)`;
-          f = await lsFrame(session);
-          r = await f.evaluate(markRow, target);
+          // The rows are drawn a moment after the scroll's round trip.
+          for (let i = 0; i < 10; i++) {
+            f = await lsFrame(session);
+            r = await f.evaluate(markRow, target);
+            if (!/ is not on screen$/.test(r)) break;
+            await session.page.waitForTimeout(200);
+          }
         }
       }
       if (r !== "ok") throw new ActionError(/ is not on screen$/.test(r) ? `${r}: the list does not have it, or it is not drawn. {"do":"scroll","id":"${id}","to":<row>} shows where the list ends.` : r);
@@ -588,14 +705,14 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       const cell = f.locator("[data-sap-act='cell']").first();
       await cell.scrollIntoViewIfNeeded().catch(() => {});
       await session.roundtrip(async () => {
-        if (how === "expand") {
+        if (how === "expand" || how === "collapse") {
           const exp = f.locator("[data-sap-act='expander']");
           if (await exp.count()) await exp.first().click();
           else await cell.click();
-        } else if (how === "double") await cell.dblclick();
-        else await cell.click();
+        } else if (how === "double") await cell.dblclick({ timeout: 5000 }).catch(() => cell.dispatchEvent("dblclick"));
+        else await cell.click({ timeout: 5000 }).catch(() => cell.dispatchEvent("click"));
       }, 1200);
-      return `${a.do} ${how} ${a.node ?? `row ${a.row}`}${scrolled}`;
+      return `${a.do} ${how === "cell" ? "cursor on" : how} ${a.node ?? `row ${a.row}`}${a.col !== undefined && a.col !== "" && a.node === undefined ? ` column ${a.col}` : ""}${scrolled}`;
     }
     case "select": {
       if (/\/mbar\/menu\[/.test(id) || /^menu\[/.test(id)) {
@@ -617,6 +734,9 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
         await session.waitRoundtrip();
         return `menu ${full}`;
       }
+      if (a.row !== undefined && /^(table|grid)$/.test(kindIn(await freshView(session), id)))
+        return selectRow(session, id, Number(a.row), a.value === undefined || /^(x|true|1|on|yes)$/i.test(String(a.value)));
+      if (await clickMenuRow(session, id)) return `chose menu entry ${id}`;
       const { loc, c } = await locate(session, id);
       // A tab sends a request, and choosing it twice is choosing it once: a lost click is made again.
       // (Not `sure`: a tab strip that switches in the page sends nothing.)
@@ -642,6 +762,10 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
   }
   if (id.startsWith("html[") || /\/html\[\d+\]$/.test(id))
     return actHtml(session, a);
+  // A row of an open popup menu is named by its DOM id.
+  if ((a.do === "press" || a.do === "dblclick") && (await clickMenuRow(session, id))) return `chose menu entry ${id}`;
+  if (a.do === "check" && a.row !== undefined && /^(table|grid)$/.test(kindIn(await freshView(session), id)))
+    return selectRow(session, id, Number(a.row), a.value === undefined || /^(x|true|1|on|yes)$/i.test(String(a.value)));
   const { loc, c } = await locate(session, id);
   switch (a.do) {
     case "set": {
@@ -655,6 +779,7 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       return `set ${c.sid}`;
     }
     case "press":
+      if (c.overflow) return pressOverflow(session, c);
       if (c.type === "GuiButton") await clickForRoundtrip(session, c.sid);
       else await session.roundtrip(() => loc.click(), 1200);
       return `pressed ${c.sid}`;
@@ -670,20 +795,27 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       await session.roundtrip(() => page.keyboard.press("F4"));
       return `value help on ${c.sid}`;
     case "check": {
-      if (c.type !== "GuiCheckBox" && c.type !== "GuiRadioButton") throw new ActionError(`${c.sid} is a ${typeName(c.type)}, not a checkbox: use "press" for a button, "select" for a tab.`);
+      if (c.type !== "GuiCheckBox" && c.type !== "GuiRadioButton" && c.type !== "ABAPLISTCHECKBOX")
+        throw new ActionError(`${c.sid} is a ${typeName(c.type)}, not a checkbox: use "press" for a button, "select" for a tab, {"do":"select","id":<table>,"row":N} for a row.`);
       const on =
         a.value === undefined
           ? true
           : /^(x|true|1|on|yes)$/i.test(String(a.value));
-      if (c.checked !== on) {
-        await session.roundtrip(() => loc.click(), 800);
-        // A click that was lost (see clickForRoundtrip) left the box as it was: made once more, by the box's own state.
-        const now = await (await lsFrame(session)).evaluate(markControl, c.sid);
-        if (typeof now !== "string" && now.sid === c.sid && now.checked !== on) {
-          await session.closeSuggestions();
-          await session.roundtrip(() => session.frame.locator("[data-sap-act]").first().click(), 800);
-        }
+      if (c.readonly) throw new ActionError(`${c.sid} cannot be changed here: it is greyed out (read-only). It stays ${c.checked ? "checked" : "unchecked"}.`);
+      if (c.type === "GuiRadioButton" && !on) throw new ActionError(`${c.sid} is a radio button: it is turned off by selecting another one of its group.`);
+      if (c.checked === on) return `${c.sid} was already ${on ? "checked" : "unchecked"}: nothing changed`;
+      const stateNow = async () => {
+        const now = await (await lsFrame(session)).evaluate(markControl, c.sid).catch(() => "");
+        return typeof now !== "string" && now.sid === c.sid ? now.checked : undefined;
+      };
+      await session.roundtrip(() => loc.click(), 800);
+      // A click that was lost (see clickForRoundtrip) left the box as it was: made once more, by the box's own state.
+      if ((await stateNow()) === !on) {
+        await session.closeSuggestions();
+        await session.roundtrip(() => session.frame.locator("[data-sap-act]").first().click(), 800);
       }
+      const after = await stateNow();
+      if (after === !on) throw new ActionError(`${c.sid} is still ${after ? "checked" : "unchecked"}: SAP did not take the change (it may set this box itself). Look at the screen.`);
       return `${c.sid} ${on ? "checked" : "unchecked"}`;
     }
     case "combo": {
@@ -693,40 +825,51 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
         const entries = await entriesOf(session, c.sid);
         return entries.length ? `${c.sid} has ${entries.length} entries: ${entries.map((e) => `${e.key}:${e.text}`).join(", ")}` : `${c.sid} has no entries`;
       }
-      if (c.readonly) throw new ActionError(`${c.sid} is read-only`);
-      const want = String(a.key ?? a.value ?? "").toLowerCase();
+      if (c.readonly) throw new ActionError(`${c.sid} is read-only: its entry cannot be changed here.`);
+      const want = String(a.key ?? a.value ?? "").replace(/\s+/g, " ").replace(/^ | $/g, "").toLowerCase();
       const f = await lsFrame(session);
+      // This dropdown's own list box (ECC: lsdata key 2; S/4HANA 2025: aria-controls): other dropdowns' lists stay out.
+      const listId = await loc
+        .evaluate((e) => {
+          const ls = e.getAttribute("data-ls") ?? "";
+          const k3 = /[{,]3:'((?:[^'\\]|\\.)*)'/.exec(ls)?.[1] ?? "";
+          if (/^[A-Z0-9_/]+-[A-Z0-9_]+/.test(k3) && e.getAttribute("aria-controls")) return e.getAttribute("aria-controls") ?? "";
+          const k2 = /[{,]2:'((?:[^'\\]|\\.)*)'/.exec(ls)?.[1] ?? "";
+          return k2.replace(/\\x([0-9a-fA-F]{2})/g, (_m, h) => String.fromCharCode(parseInt(h, 16))).replace(/\\(.)/g, "$1") || e.getAttribute("aria-controls") || "";
+        })
+        .catch(() => "");
+      const items = (listId ? f.locator(`[id="${listId}"]`).locator("[ct='LIB_I'],[role='option']") : f.locator("[ct='LIB_I'],[role='option']")).filter({ visible: true });
+      const before = await comboShown(loc);
       await loc.click();
-      await page.waitForTimeout(400);
-      const items = f
-        .locator("[ct='LIB_I'],[role='option']")
-        .filter({ visible: true });
+      await page.waitForTimeout(300);
+      // Some lists open from the arrow next to the field.
+      if (!(await items.count())) {
+        await f.locator(`[id="${await loc.getAttribute("id")}-btn"]`).first().click({ timeout: 3000 }).catch(() => {});
+        await page.waitForTimeout(300);
+      }
       const n = await items.count();
       const texts: string[] = [];
       const keys: string[] = [];
       for (let i = 0; i < n; i++) {
-        texts.push(
-          ((await items.nth(i).innerText()) || "")
-            .replace(/\s+/g, " ")
-            .toLowerCase(),
-        );
-        keys.push(
-          (
-            (await items.nth(i).getAttribute("data-itemkey")) ?? ""
-          ).toLowerCase(),
-        );
+        texts.push(((await items.nth(i).innerText()) || "").replace(/\s+/g, " ").replace(/^ | $/g, "").toLowerCase());
+        keys.push(((await items.nth(i).getAttribute("data-itemkey")) ?? "").toLowerCase());
       }
       let idx = keys.indexOf(want);
-      if (idx < 0)
-        idx = texts.findIndex((t) => t === want || t.startsWith(`${want} `));
-      if (idx < 0) idx = texts.findIndex((t) => t.includes(want));
+      if (idx < 0) idx = texts.findIndex((t) => t === want || t.startsWith(`${want} `));
+      if (idx < 0 && want) idx = texts.findIndex((t) => t.includes(want));
       if (idx < 0) {
         // Escape closes the open list; with no list open it would be Cancel (F12).
         if (n > 0) await page.keyboard.press("Escape");
-        throw new ActionError(`no entry ${want} in ${c.sid}: ${texts.join(" | ")}`);
+        throw new ActionError(n ? `no entry "${want}" in ${c.sid}: ${keys.map((k, i) => `${k}:${texts[i]}`).join(", ")}` : `the list of ${c.sid} did not open, so nothing was chosen. Look at the screen.`);
       }
+      const chosen = ((await items.nth(idx).innerText()) || "").replace(/\s+/g, " ").replace(/^ | $/g, "");
+      const key = (await items.nth(idx).getAttribute("data-itemkey")) ?? "";
       await session.roundtrip(() => items.nth(idx).click(), 800);
-      return `${c.sid} = ${texts[idx]}`;
+      // The answer says what the dropdown shows now, not what was asked for (the screen may have been drawn again).
+      const again = await locate(session, c.sid).catch(() => undefined);
+      const after = again ? await comboShown(again.loc) : "";
+      if (after && after !== chosen) throw new ActionError(`${c.sid} shows "${after}" after choosing "${chosen}" (it showed "${before}" before): SAP did not take the entry. Look at the screen.`);
+      return `${c.sid} = ${key ? `${key} ` : ""}${chosen}${before === chosen ? " (it was already chosen)" : ""}`;
     }
     default:
       throw new ActionError(`unknown action ${a.do}`);

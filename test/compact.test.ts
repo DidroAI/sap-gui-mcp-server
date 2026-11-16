@@ -67,23 +67,57 @@ describe("compact", () => {
     expect(compact(FULL).split("\n")).toContain("btn[0]  button  Continue (Enter)");
   });
 
-  test("writes a table control as one line per row, with the filled cells only", () => {
-    expect(out).toContain(
-      'tblZPROGTC_ITEMS  table  rows 2 (visible 2) "All items"; columns: Item | Material | Qty | Done  (cell ids: <field>[col,row], e.g. tblZPROGTC_ITEMS/<ctl><FIELD>[0,0])',
-    );
+  test("writes a table control as one line per row, with the filled cells and every checkbox", () => {
+    expect(out).toContain('tblZPROGTC_ITEMS  table  rows 2 (visible 2) "All items"  (cell id: <id>[col,row], e.g. txtZITM-POSNR[0,0])');
+    // The id of each column once, from its cells (also empty ones), with where it cannot be changed.
+    expect(out).toContain("  columns: 0 Item=txtZITM-POSNR (read-only in rows 0), 1 Material=ctxtZITM-MATNR, 2 Qty=txtZITM-QTY, 3 Done=chkZITM-DONE");
     expect(out).toContain("  row 0: Item=10; Material=WIDGET-1; Done [x]");
-    expect(out).toContain("  row 1: (empty)");
+    // An unchecked box is a box to tick: it is shown.
+    expect(out).toContain("  row 1: Done [ ]");
     expect(out.some((l) => l.includes("[0,0]  field"))).toBe(false);
   });
 
   test("uses the field name when the table has no column title", () => {
     const t = ['wnd[0]/usr/tblT  table  rows 1 (visible 1); columns:  | B', 'wnd[0]/usr/tblT/txtZX-A[0,0]  field   = "1"  (edit)'].join("\n");
-    expect(compact(t).split("\n")[1]).toBe("  row 0: ZX-A=1");
+    expect(compact(t).split("\n")[2]).toBe("  row 0: ZX-A=1");
   });
 
   test("a table control that is scrolled says which row its row 0 is", () => {
     const t = ['wnd[0]/usr/tblT  table  rows 171 (visible 13, first 60); columns: A', 'wnd[0]/usr/tblT/txtZX-A[0,0]  field  A = "1"  (edit)'].join("\n");
-    expect(compact(t).split("\n")[0]).toBe("tblT  table  rows 171 (visible 13, first 60); columns: A  (cell ids: <field>[col,row], e.g. tblT/<ctl><FIELD>[0,0]; row 0 here is row 60 of the table)");
+    expect(compact(t).split("\n")[0]).toBe("tblT  table  rows 171 (visible 13, first 60)  (cell id: <id>[col,row], e.g. txtZX-A[0,0]; row 0 here is row 60 of the table)");
+  });
+
+  test("a table control: selected rows marked, empty rows in a run on one line, columns scrolled out named", () => {
+    const t = [
+      "wnd[0]/usr/tblT  table  rows 9 (visible 5); rows can be selected; selected rows 1; columns: Item | Material | Stock type | Net value | Currency",
+      'wnd[0]/usr/tblT/txtZ-POSNR[0,0]  field  Item = "10"  (read-only)',
+      'wnd[0]/usr/tblT/ctxtZ-MATNR[1,0]  field  Material = "M-1"  (read-only)',
+      'wnd[0]/usr/tblT/cmbZ-STYPE[2,0]  dropdown  Stock type = "F" Unrestricted use  (edit)',
+      'wnd[0]/usr/tblT/txtZ-POSNR[0,1]  field  Item = "20"  (read-only)',
+      'wnd[0]/usr/tblT/ctxtZ-MATNR[1,1]  field  Material = "M-2"  (read-only)',
+      'wnd[0]/usr/tblT/cmbZ-STYPE[2,1]  dropdown  Stock type = "" (edit)',
+      'wnd[0]/usr/tblT/txtZ-POSNR[0,2]  field  Item = ""  (edit)',
+      'wnd[0]/usr/tblT/txtZ-POSNR[0,3]  field  Item = ""  (edit)',
+      'wnd[0]/usr/tblT/txtZ-POSNR[0,4]  field  Item = ""  (edit)',
+    ].join("\n");
+    expect(compact(t).split("\n")).toEqual([
+      "tblT  table  rows 9 (visible 5); rows can be selected; selected rows 1  (cell id: <id>[col,row], e.g. txtZ-POSNR[0,0])",
+      '  columns: 0 Item=txtZ-POSNR (read-only in rows 0,1), 1 Material=ctxtZ-MATNR (read-only), 2 Stock type=cmbZ-STYPE; 2 more to the right (scroll "to":"right"): Net value, Currency',
+      "  row 0: Item=10; Material=M-1; Stock type=Unrestricted use",
+      "  row 1 (selected): Item=20; Material=M-2",
+      "  rows 2 to 4: (empty)",
+    ]);
+  });
+
+  test("behind a popup a table keeps its line, so its rows keep their titles", () => {
+    const t = [
+      'WINDOW wnd[0]  "Main"',
+      "wnd[0]/usr/tblT  table  rows 1 (visible 1); columns: Item",
+      'wnd[0]/usr/tblT/txtZ-POSNR[0,0]  field  Item = "10"  (read-only)',
+      'WINDOW wnd[1]  "Question"',
+      "wnd[1]/usr/btnYES  button  Yes",
+    ].join("\n");
+    expect(compact(t).split("\n")).toContain("  row 0: Item=10");
   });
 
   test("is shorter than the full view and leaves a view without ids alone", () => {
@@ -96,6 +130,7 @@ describe("compact", () => {
     expect(plain).toContain("wnd[0]/tbar[0]/btn[3]  button  Back (F3)");
     expect(plain).toContain("cntlGRID/shellcont/shell  grid  2 rows; columns: A=Col A | B=Col B");
     expect(plain).toContain("  tblZPROGTC_ITEMS row 0: Item=10; Material=WIDGET-1; Done [x]");
+    expect(plain).toContain("  tblZPROGTC_ITEMS row 1: Done [ ]");
   });
 });
 

@@ -50,6 +50,8 @@ export interface CompactOptions {
   emptyColumns?: boolean;
   /** Table rows without the table's id on every line (default true). */
   shortRows?: boolean;
+  /** Empty table rows in a run on one line (default true). */
+  emptyRuns?: boolean;
   /** Cut row lines when the view is longer than this many characters; 0 never cuts (default 20000). */
   maxChars?: number;
   /**
@@ -64,6 +66,8 @@ export const DEFAULT_MAX_CHARS = 20_000;
 /** Is this line of the screen behind a popup worth keeping? */
 function keepBehind(l: string): boolean {
   if (/\bsbar\b|  status  /.test(l)) return true;
+  // A table's own line: its rows behind the popup keep their column titles.
+  if (/^\S+  table  rows /.test(l)) return true;
   if (/= "[^"]+"/.test(l)) return true;
   if (/\[x\]|\(selected\)/.test(l)) return true;
   return false;
@@ -118,7 +122,46 @@ function plainHandles(ids: string[]): Map<string, string> {
 }
 
 /** One line of the result while it is built: text, or a line that is filled in at the end. */
-type Out = string | { cells: string[]; prefix: string } | { list: List; r?: number };
+type Out = string | { cells: string[]; prefix: string; table?: Table; r?: number } | { list: List; r?: number } | { table: Table };
+
+/** A table control: what its own line says, and what its cells say about its columns. */
+interface Table {
+  id: string;
+  /** Its line in the compact view, without the columns. */
+  head: string;
+  /** Column titles by column number (the table line names every column, drawn or not). */
+  titles: string[];
+  /** Rows (on screen) its line says are selected. */
+  selected: Set<number>;
+  /** Columns that have cells on screen: their cell id (ctxtVBAK-MATNR) and in which rows they are read-only or editable. */
+  columns: Map<number, { id: string; ro: Set<number>; edit: Set<number> }>;
+  /** Row 0 here is this row of the table. */
+  first: number;
+}
+
+/** Up to `n` numbers, then "...". */
+const some = (xs: number[], n = 5) => `${xs.slice(0, n).join(",")}${xs.length > n ? ",..." : ""}`;
+
+/** The column legend of a table: the id of each column on screen, and which columns are scrolled out. */
+function legend(t: Table): string {
+  const drawn = [...t.columns.keys()].sort((a, b) => a - b);
+  if (!drawn.length) return t.titles.length ? `  columns: ${t.titles.map((x, i) => `${i} ${x || "?"}`).join(", ")}` : "";
+  const parts = drawn.map((c) => {
+    const col = t.columns.get(c)!;
+    const ro = [...col.ro].sort((a, b) => a - b);
+    const state = ro.length && !col.edit.size ? " (read-only)" : ro.length ? ` (read-only in rows ${some(ro)})` : "";
+    return `${c} ${t.titles[c] || col.id.replace(/^[a-z]+/, "")}=${col.id}${state}`;
+  });
+  const lo = drawn[0] ?? 0;
+  const hi = drawn[drawn.length - 1] ?? 0;
+  const left = t.titles.map((x, i) => ({ x, i })).filter((c) => c.i < lo && !t.columns.has(c.i));
+  const right = t.titles.map((x, i) => ({ x, i })).filter((c) => c.i > hi && !t.columns.has(c.i));
+  const names = (cs: { x: string; i: number }[]) => `${cs.slice(0, 12).map((c) => c.x || "?").join(", ")}${cs.length > 12 ? ", ..." : ""}`;
+  const out = [`  columns: ${parts.join(", ")}`];
+  if (left.length) out.push(`; ${left.length} more to the left (scroll "to":"left"): ${names(left)}`);
+  if (right.length) out.push(`; ${right.length} more to the right (scroll "to":"right"): ${names(right)}`);
+  return out.join("");
+}
 
 /** A classic list: its cells by line. */
 interface List {
@@ -191,7 +234,7 @@ function foldEmptyColumns(lines: string[]): string[] {
     const rows: { prefix: string; cells: string[] }[] = [];
     let j = i + 1;
     for (; j < lines.length; j++) {
-      const r = /^( {2}row \d+: )(.*)$/.exec(lines[j] ?? "");
+      const r = /^( {2}row \d+(?: \(selected\))?: )(.*)$/.exec(lines[j] ?? "");
       if (!r) break;
       rows.push({ prefix: r[1] ?? "", cells: (r[2] ?? "").split(" | ") });
     }
@@ -246,13 +289,13 @@ function fit(lines: string[], maxChars: number): string[] {
 }
 
 export function compact(full: string, options: CompactOptions = {}): string {
-  const opt: CompactOptions = { handles: true, repeatedButtons: true, dropdowns: true, lists: true, listColumns: true, emptyColumns: true, shortRows: true, maxChars: DEFAULT_MAX_CHARS, ...options };
+  const opt: CompactOptions = { handles: true, repeatedButtons: true, dropdowns: true, lists: true, listColumns: true, emptyColumns: true, shortRows: true, emptyRuns: true, maxChars: DEFAULT_MAX_CHARS, ...options };
   const lines = trimBehindPopups(full.split("\n"));
   const ids = (opt.screen === undefined ? lines : opt.screen.split("\n")).filter((l) => l.startsWith("wnd[")).map(idOf);
   const handles = opt.handles ? shortIds(ids) : plainHandles(ids);
   const short = (id: string) => handles.get(id) ?? id;
 
-  const titles = new Map<string, string[]>();
+  const tables = new Map<string, Table>();
   const tableRows = new Map<string, string[]>();
   const lists = new Map<string, List>();
   const out: Out[] = [];
@@ -270,34 +313,57 @@ export function compact(full: string, options: CompactOptions = {}): string {
       const cellRest = g.rest ?? "";
       const c = Number(g.c);
       const r = Number(g.r);
-      const col = titles.get(tbl)?.[c] || (g.name ?? "");
+      const t = tables.get(tbl);
+      const col = t?.titles[c] || (g.name ?? "");
       let cell: string | null = null;
-      if (cellRest.startsWith("checkbox")) cell = cellRest.includes("[x]") ? `${col} [x]` : null;
-      else {
+      if (cellRest.startsWith("checkbox")) cell = `${col} ${cellRest.includes("[x]") ? "[x]" : "[ ]"}`;
+      else if (cellRest.startsWith("dropdown")) {
+        // A dropdown cell: the entry's text, else its key.
+        const v = /= "(.*?)"(.*)$/.exec(cellRest.replace(/ {2}(\d+ )?options: .*$/, "").replace(/\s*\((edit|read-only)\)\s*$/, ""));
+        const text = (v?.[2] ?? "").replace(/^\s+|\s+$/g, "") || v?.[1] || "";
+        cell = text ? `${col}=${text}` : null;
+      } else {
         const v = /= "(.*)" {2}\((edit|read-only)\)/.exec(cellRest);
         cell = v?.[1] ? `${col}=${v[1]}` : null;
+      }
+      if (t) {
+        let info = t.columns.get(c);
+        if (!info) {
+          info = { id: `${g.ctl ?? ""}${g.name ?? ""}`, ro: new Set(), edit: new Set() };
+          t.columns.set(c, info);
+        }
+        if (/\(read-only\)/.test(cellRest)) info.ro.add(r);
+        else if (/\(edit\)/.test(cellRest)) info.edit.add(r);
       }
       const key = `${tbl}|${r}`;
       let cells = tableRows.get(key);
       if (!cells) {
         cells = [];
         tableRows.set(key, cells);
-        out.push({ cells, prefix: opt.shortRows ? `  row ${r}: ` : `  ${lastSegment(tbl)} row ${r}: ` });
+        out.push({ cells, prefix: opt.shortRows ? `  row ${r}` : `  ${lastSegment(tbl)} row ${r}`, ...(t ? { table: t } : {}), r });
       }
       if (cell) cells.push(cell);
       continue;
     }
     if (l.includes("  table  rows ")) {
-      titles.set(
-        id,
-        l.includes("columns: ")
-          ? (l.split("columns: ")[1] ?? "").split(" | ").map((x) => x.replace(/^ +| +$/g, ""))
-          : [],
-      );
+      const titles = l.includes("columns: ")
+        ? (l.split("columns: ")[1] ?? "").split(" | ").map((x) => x.replace(/^ +| +$/g, ""))
+        : [];
       const h = short(id);
       // A table control counts its rows on the screen: scrolled, its row 0 is further down the table.
       const first = Number(/\(visible [^)]*\bfirst (\d+)\)/.exec(l)?.[1] ?? 0);
-      out.push(`${h}  table  ${l.split("  table  ")[1]}  (cell ids: <field>[col,row], e.g. ${h}/<ctl><FIELD>[0,0]${first ? `; row 0 here is row ${first} of the table` : ""})`);
+      const selected = new Set((/; selected rows ([\d,]+)/.exec(l)?.[1] ?? "").split(",").filter(Boolean).map(Number));
+      const own = (l.split("  table  ")[1] ?? "").replace(/; columns: .*$/, "");
+      const t: Table = {
+        id,
+        head: `${h}  table  ${own}`,
+        titles,
+        selected,
+        columns: new Map(),
+        first,
+      };
+      tables.set(id, t);
+      out.push({ table: t });
       continue;
     }
 
@@ -345,18 +411,39 @@ export function compact(full: string, options: CompactOptions = {}): string {
 
   const shared = new Map<List, string | undefined>();
   for (const l of lists.values()) shared.set(l, opt.listColumns ? sharedColumns(l) : undefined);
-  let text = out.map((x) => {
-    if (typeof x === "string") return x;
-    if ("cells" in x) return `${x.prefix}${x.cells.join("; ") || "(empty)"}`;
+  let text = out.flatMap((x, i): string[] => {
+    if (typeof x === "string") return [x];
+    if ("table" in x && !("cells" in x)) {
+      const t = x.table;
+      const l = legend(t);
+      const firstCol = [...t.columns.entries()].sort((a, b) => a[0] - b[0])[0];
+      const example = firstCol ? `${firstCol[1].id}[${firstCol[0]},0]` : `${short(t.id)}/<id>[0,0]`;
+      const head = `${t.head}  (cell id: <id>[col,row], e.g. ${example}${t.first ? `; row 0 here is row ${t.first} of the table` : ""})`;
+      return l ? [head, l] : [head];
+    }
+    if ("cells" in x) {
+      const sel = x.table && x.r !== undefined && x.table.selected.has(x.r) ? " (selected)" : "";
+      if (x.cells.length || sel || !opt.emptyRuns) return [`${x.prefix}${sel}: ${x.cells.join("; ") || "(empty)"}`];
+      // Empty rows in a run: one line for the run.
+      const prev = out[i - 1];
+      if (prev && typeof prev !== "string" && "cells" in prev && !prev.cells.length && prev.table === x.table && !(prev.table && prev.r !== undefined && prev.table.selected.has(prev.r))) return [];
+      let last = x.r ?? 0;
+      for (let j = i + 1; j < out.length; j++) {
+        const n = out[j];
+        if (!n || typeof n === "string" || !("cells" in n) || n.cells.length || n.table !== x.table || (n.table && n.r !== undefined && n.table.selected.has(n.r))) break;
+        last = n.r ?? last;
+      }
+      return [last > (x.r ?? 0) ? `${x.prefix.replace(/row (\d+)$/, `rows $1 to ${last}`)}: (empty)` : `${x.prefix}: (empty)`];
+    }
     const h = short(x.list.area);
     const cols = shared.get(x.list);
     if (x.r === undefined) {
       const how = cols ? `; rows without braces have their cells in columns ${cols}` : "";
-      return `${h}  list  ${x.list.text || `${x.list.lines.size} rows`}  (cell ids: ${h}/lbl[col,row], col in braces${how}; a checkbox is chk[col,row])`;
+      return [`${h}  list  ${x.list.text || `${x.list.lines.size} rows`}  (cell ids: ${h}/lbl[col,row], col in braces${how}; a checkbox is chk[col,row])`];
     }
     const cells = x.list.lines.get(x.r) ?? [];
     const plain = cols !== undefined && cells.map((c) => c.c).join(",") === cols;
-    return `  row ${x.r}: ${cells.map((c) => (plain ? c.text : `${c.text} {${c.c}}`)).join(" | ")}`;
+    return [`  row ${x.r}: ${cells.map((c) => (plain ? c.text : `${c.text} {${c.c}}`)).join(" | ")}`];
   });
   if (opt.repeatedButtons) text = foldRepeatedButtons(text);
   if (opt.emptyColumns) text = foldEmptyColumns(text);
