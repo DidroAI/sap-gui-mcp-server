@@ -1,0 +1,179 @@
+/**
+ * What the reader says about the window in front (src/webgui/popups.ts), and
+ * actions on a control behind a popup, on a synthetic page with Web GUI's
+ * markup (a popup window and the layer it draws over the windows behind it).
+ *
+ * The browser part needs a Chrome: SAP_TEST_CHROME=/path/to/chrome.
+ */
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { chromium, type Browser, type Page } from "playwright-core";
+import { resolveId } from "../src/core/ids.js";
+import { ActionError } from "../src/core/types.js";
+import { markControl, normalizeLsdata } from "../src/webgui/page.js";
+import { behindPopup, closedByMessage, popupName, statusMessage, terminationIn, topPopup } from "../src/webgui/popups.js";
+import { act } from "../src/webgui/reader.js";
+import { WebGuiSession } from "../src/webgui/session.js";
+
+const VIEW = [
+  "TRANSACTION VL01N  PROGRAM SAPMV50A  SCREEN 1000",
+  'WINDOW wnd[0]  "Create Outbound Delivery"',
+  "wnd[0]/tbar[0]/btn[11]  button  Save (Ctrl+S)",
+  "wnd[0]/tbar[0]/btn[12]  button  Cancel (Escape)",
+  'wnd[0]/usr/ctxtLIKP-WADAT  field  Pl. GI date = "17.11.2026"  (edit)',
+  'WINDOW wnd[1]  "Exit delivery processing"',
+  "wnd[1]/usr/txtSPOP-TEXTLINE1  label  Do you wish to save your data first?",
+  "wnd[1]/usr/btnSPOP-OPTION1  button  Yes",
+  "wnd[1]/usr/btnSPOP-OPTION2  button  No",
+  "wnd[1]/usr/btnSPOP-OPTION_CAN  button  Cancel",
+].join("\n");
+
+describe("the popup in front, from the view", () => {
+  test("the window in front is the popup with the highest number", () => {
+    expect(topPopup(VIEW)).toMatchObject({ n: 1, title: "Exit delivery processing" });
+    expect(topPopup(VIEW.split("\nWINDOW wnd[1]")[0] as string)).toBeUndefined();
+    expect(topPopup(`${VIEW}\nWINDOW wnd[2]  "Information"\nwnd[2]/tbar[0]/btn[0]  button  Continue (Enter)`)).toMatchObject({ n: 2, title: "Information" });
+  });
+
+  test("a control behind the popup is refused with the popup and its buttons", () => {
+    const why = behindPopup(VIEW, "wnd[0]/tbar[0]/btn[11]", "press") ?? "";
+    expect(why).toContain("wnd[0]/tbar[0]/btn[11] is behind a popup");
+    expect(why).toContain('wnd[1] "Exit delivery processing"');
+    expect(why).toContain('btnSPOP-OPTION1 "Yes", btnSPOP-OPTION2 "No", btnSPOP-OPTION_CAN "Cancel"');
+    expect(why).not.toContain("read-only");
+    // A control of the popup itself, a handle without a window, and a screen without a popup are not refused.
+    expect(behindPopup(VIEW, "wnd[1]/usr/btnSPOP-OPTION1", "press")).toBeUndefined();
+    expect(behindPopup(VIEW, "html[3]", "press")).toBeUndefined();
+    expect(behindPopup(VIEW.split("\nWINDOW wnd[1]")[0] as string, "wnd[0]/tbar[0]/btn[11]", "press")).toBeUndefined();
+  });
+
+  test("the popup's name lists its buttons by the handles of the view", () => {
+    expect(popupName(VIEW, topPopup(VIEW)!)).toBe('wnd[1] "Exit delivery processing" (its buttons: btnSPOP-OPTION1 "Yes", btnSPOP-OPTION2 "No", btnSPOP-OPTION_CAN "Cancel")');
+  });
+
+  test("an id that names a window never means a control of another window", () => {
+    const ids = VIEW.split("\n").filter((l) => l.startsWith("wnd[")).map((l) => l.split("  ")[0] as string);
+    // The popup has no btn[12]: the main window's Cancel is not what the id means.
+    expect(resolveId(ids, "wnd[1]/tbar[0]/btn[12]")).toEqual({ none: true });
+    // A wrong path inside the right window is still found by its last segment.
+    expect(resolveId(ids, "wnd[1]/tbar[0]/btnSPOP-OPTION2")).toEqual({ id: "wnd[1]/usr/btnSPOP-OPTION2" });
+    expect(resolveId(ids, "wnd[0]/usr/btn[12]")).toEqual({ id: "wnd[0]/tbar[0]/btn[12]" });
+    // A handle without a window still means the control of the window in front.
+    expect(resolveId([...ids, "wnd[1]/tbar[0]/btn[12]"], "btn[12]")).toEqual({ id: "wnd[1]/tbar[0]/btn[12]" });
+  });
+});
+
+describe("messages, from the view", () => {
+  const closed = [
+    "TRANSACTION VA01  PROGRAM SAPMV45A  SCREEN 4001",
+    'WINDOW wnd[0]  "Create Standard Order: Overview"',
+    'wnd[0]/usr/ctxtVBKD-BSTDK  field  PO date = "20.11.2026"  (read-only)',
+    'wnd[0]/usr/ctxtRV45A-MABNR[1,0]  field  Material = ""  (read-only)',
+    "wnd[0]/sbar  status  W: The purchase order date lies in the future. Please check",
+  ].join("\n");
+
+  test("a warning that closed the fields: the reason says that Enter accepts it", () => {
+    expect(statusMessage(closed)).toEqual({ type: "W", text: "The purchase order date lies in the future. Please check" });
+    const why = closedByMessage(closed) ?? "";
+    expect(why).toContain('the warning "The purchase order date lies in the future. Please check"');
+    expect(why).toContain("Enter");
+  });
+
+  test("an error leaves the wrong field open: the reason points at it", () => {
+    const error = closed.replace("W: The purchase", "E: The purchase").replace('"20.11.2026"  (read-only)', '"20.11.2026"  (edit)  (cursor here)');
+    expect(closedByMessage(error)).toContain("cursor here");
+  });
+
+  test("a screen that still has open fields, or no warning, is read-only by itself", () => {
+    expect(closedByMessage(closed.replace(/\(read-only\)/g, "(edit)"))).toBeUndefined();
+    expect(closedByMessage(closed.replace("W: ", "S: "))).toBeUndefined();
+  });
+
+  test("a termination message is found in the popup in front", () => {
+    const view = [
+      "TRANSACTION VA01  PROGRAM SAPMV45A  SCREEN 4001",
+      'WINDOW wnd[0]  "Create Standard Order: Overview"',
+      'WINDOW wnd[1]  "Cancel"',
+      "wnd[1]/usr/txtMESSTXT1  label  A: Date 17.11.2026 is after the end of factory calendar AM  (termination message: SAP ends the transaction when it is confirmed, and unsaved input is lost)",
+      "wnd[1]/tbar[0]/btn[0]  button  Exit (Enter)",
+    ].join("\n");
+    expect(terminationIn(view)).toBe("Date 17.11.2026 is after the end of factory calendar AM");
+    expect(terminationIn(VIEW)).toBeUndefined();
+  });
+});
+
+const exe = process.env.SAP_TEST_CHROME;
+const sid = (id: string, type: string, modal = 0) => `{ModalNo:${modal},SID:'${id}',Type:'${type}'}`;
+// A screen with a question popup: Web GUI draws a layer over the main window, which takes every click.
+const PAGE = `<!doctype html><html lang="en"><head><title>Synthetic</title></head><body>
+<div id="cuaheader" lsdata="{1:'Create\\x20Synthetic\\x20Delivery'}">Create Synthetic Delivery</div>
+<input id="ToolbarOkCode" lsdata="{0:'FREETEXT',20:${sid("wnd[0]/tbar[0]/okcd", "GuiOKCodeField")}}">
+<div id="SAVE" title="Save (Ctrl+S)" onclick="window.saved=1" lsdata="{0:'Save',28:${sid("wnd[0]/tbar[0]/btn[11]", "GuiButton")}}">Save</div>
+<div id="CANCEL" title="Cancel (Escape)" onclick="window.cancelled=1" lsdata="{0:'Cancel',28:${sid("wnd[0]/tbar[0]/btn[12]", "GuiButton")}}">Cancel</div>
+<input id="F1" title="Pl. GI date" value="16.11.2026" lsdata="{0:'x',20:${sid("wnd[0]/usr/ctxtZLIKP-WADAT", "GuiCTextField")}}">
+<div id="urPopupWindowBlockLayer" style="position:fixed;left:0;top:0;width:100%;height:100%;z-index:5"></div>
+<div ct="PW" id="P1" style="position:absolute;z-index:6;top:200px;left:20px;width:400px" lsdata="{0:'x',5:${sid("wnd[1]", "GuiModalWindow", 1)}}"><span class="urPWTitleText" id="P1-ttltxt">Exit delivery processing</span>
+<span lsdata="{1:'',3:'Do\\x20you\\x20wish\\x20to\\x20save\\x20your\\x20data\\x20first?',19:${sid("wnd[1]/usr/txtSPOP-TEXTLINE1", "GuiLabel", 1)}}">Do you wish to save your data first?</span>
+<div tabindex="0" onclick="window.yes=1" lsdata="{0:'Yes',28:${sid("wnd[1]/usr/btnSPOP-OPTION1", "GuiButton", 1)}}">Yes</div>
+<div tabindex="0" onclick="window.no=1" lsdata="{0:'No',28:${sid("wnd[1]/usr/btnSPOP-OPTION2", "GuiButton", 1)}}">No</div></div>
+<div id="sysInfoAreaMenuItemSAPITS_MBAR_TRANSACTION" lsdata="{13:'ZT01'}"></div>
+<div id="sysInfoAreaMenuItemSAPITS_MBAR_DYNPRO" lsdata="{13:'ZPROG/0100'}"></div>
+</body></html>`;
+
+describe.skipIf(!exe)("actions on a control behind a popup, in a browser", () => {
+  let browser: Browser;
+  let page: Page;
+  let session: WebGuiSession;
+  beforeAll(async () => {
+    browser = await chromium.launch({ executablePath: exe as string, headless: true, args: ["--no-sandbox"] });
+    page = await (await browser.newContext({ viewport: { width: 1200, height: 900 } })).newPage();
+    await page.route("**/*", (r) => r.fulfill({ contentType: "text/html", body: PAGE }));
+    await page.goto("http://sap.test/sap/bc/gui/sap/its/webgui?sap-client=100");
+    session = new WebGuiSession(page.mainFrame());
+  }, 60_000);
+  afterAll(async () => {
+    await browser?.close();
+  });
+  const refused = async (action: Parameters<typeof act>[1]): Promise<{ message: string; ms: number }> => {
+    const t0 = Date.now();
+    try {
+      await act(session, action);
+    } catch (e) {
+      expect(e).toBeInstanceOf(ActionError);
+      return { message: (e as Error).message, ms: Date.now() - t0 };
+    }
+    throw new Error("the action ran");
+  };
+
+  test("press, set and a short handle behind the popup are refused at once, with the popup named", async () => {
+    for (const action of [
+      { do: "press", id: "wnd[0]/tbar[0]/btn[11]" },
+      { do: "press", id: "btn[11]" },
+      { do: "set", id: "ctxtZLIKP-WADAT", value: "17.11.2026" },
+      { do: "select", id: "wnd[0]/mbar/menu[0]/menu[1]" },
+    ]) {
+      const r = await refused(action);
+      expect(r.message).toContain("is behind a popup");
+      expect(r.message).toContain('wnd[1] "Exit delivery processing" (its buttons: btnSPOP-OPTION1 "Yes", btnSPOP-OPTION2 "No")');
+      expect(r.message).not.toContain("Timeout");
+      expect(r.message).not.toContain("read-only");
+      expect(r.ms).toBeLessThan(3000);
+    }
+    expect(await page.evaluate(() => (window as unknown as { saved?: number }).saved)).toBeUndefined();
+    expect(await page.inputValue("#F1")).toBe("16.11.2026");
+  });
+
+  test("an id of the popup that the popup does not have is not a control of the main window", async () => {
+    await page.evaluate(normalizeLsdata);
+    expect(await page.evaluate(markControl, "wnd[1]/tbar[0]/btn[12]")).toBe("no control named wnd[1]/tbar[0]/btn[12]");
+    expect(await page.evaluate(markControl, "wnd[1]/tbar[0]/btnSPOP-OPTION2")).toMatchObject({ sid: "wnd[1]/usr/btnSPOP-OPTION2" });
+    const r = await refused({ do: "press", id: "wnd[1]/tbar[0]/btn[12]" });
+    expect(r.message).toContain('No control "wnd[1]/tbar[0]/btn[12]" on this screen');
+    expect(r.ms).toBeLessThan(3000);
+    expect(await page.evaluate(() => (window as unknown as { cancelled?: number }).cancelled)).toBeUndefined();
+  });
+
+  test("a control of the popup is pressed", async () => {
+    expect(await act(session, { do: "press", id: "btnSPOP-OPTION2" })).toContain("pressed wnd[1]/usr/btnSPOP-OPTION2");
+    expect(await page.evaluate(() => (window as unknown as { no?: number }).no)).toBe(1);
+  });
+});

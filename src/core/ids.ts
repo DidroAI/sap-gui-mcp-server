@@ -40,15 +40,17 @@ export type Resolved = { id: string } | { none: true } | { several: string[] };
  *    (a popup is in front of what it covers), then the one whose id ends
  *    with the handle;
  * 3. for a full id that is not on the screen: its last segment, by the same
- *    rule (models rebuild ids and get the path wrong).
+ *    rule (models rebuild ids and get the path wrong), among the controls of
+ *    the window the id names: `wnd[1]/tbar[0]/btn[12]` never means a button
+ *    of the main window.
  */
 export function resolveId(ids: Iterable<string>, ident: string): Resolved {
   const all = [...new Set(ids)];
   const want = ident.trim();
   if (!want) return { none: true };
   if (all.includes(want)) return { id: want };
-  const pick = (handle: string): Resolved => {
-    let hits = all.filter((id) => names(id, handle));
+  const pick = (handle: string, among: string[] = all): Resolved => {
+    let hits = among.filter((id) => names(id, handle));
     if (!hits.length) return { none: true };
     if (hits.length > 1) {
       const top = Math.max(...hits.map(windowOf));
@@ -62,7 +64,11 @@ export function resolveId(ids: Iterable<string>, ident: string): Resolved {
   };
   const found = pick(want);
   if (!("none" in found) || !want.startsWith("wnd[")) return found;
-  return pick(want.slice(want.lastIndexOf("/") + 1));
+  const wnd = windowOf(want);
+  return pick(
+    want.slice(want.lastIndexOf("/") + 1),
+    all.filter((id) => windowOf(id) === wnd),
+  );
 }
 
 /** The text of the error for a handle that names several controls. */

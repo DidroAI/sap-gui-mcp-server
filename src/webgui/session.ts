@@ -702,10 +702,15 @@ export class WebGuiSession {
   }
 
   /** Types a command into the command field and sends it. */
+  /** Does a popup block the windows behind it (Web GUI draws a layer over them)? */
+  async blocked(): Promise<boolean> {
+    return (await this.frame.locator("#urPopupWindowBlockLayer, #sesTimeoutPopupWindow").filter({ visible: true }).count().catch(() => 0)) > 0;
+  }
+
   async okCode(command: string): Promise<void> {
     const ok = this.frame.locator("#ToolbarOkCode");
     // A popup blocks the main window: the click would wait for its timeout.
-    if ((await this.frame.locator("#urPopupWindowBlockLayer, #sesTimeoutPopupWindow").filter({ visible: true }).count().catch(() => 0)) > 0)
+    if (await this.blocked())
       throw new ActionError("A popup window is open and blocks the command field: answer or close the popup first (see the WINDOW lines of sap_look).");
     await ok.click();
     await ok.fill("");
