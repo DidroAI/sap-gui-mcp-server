@@ -35,7 +35,7 @@ describe("files SAP writes to the local machine in Web GUI", () => {
   test("a file that appears with an action is copied out and named in the answer", async () => {
     const dir = await mkdtemp(join(tmpdir(), "sapdl-"));
     const env = { SAP_DOWNLOAD_DIR: dir };
-    const { session, state } = fakeSession([], () => ({ base64: b64("a\tb\n"), size: 4 }));
+    const { session, state, handlers } = fakeSession([], () => ({ base64: b64("a\tb\n"), size: 4 }));
     await watchFiles(session, env);
     expect(await collectFiles(session, env)).toEqual([]);
     state.files = [file("/list.txt", "1", 4)];
@@ -43,6 +43,14 @@ describe("files SAP writes to the local machine in Web GUI", () => {
       `SAP wrote the file "list.txt" (4 bytes). Web GUI keeps such a file in its own store inside the browser, not on a disk: the server copied it to ${join(dir, "list.txt")}.`,
     ]);
     expect(await readFile(join(dir, "list.txt"), "utf8")).toBe("a\tb\n");
+    // Web GUI may hand the same file to the browser as a download as well: still one line.
+    state.files = [file("/list.txt", "1", 4), file("/two.txt", "5", 4)];
+    handlers.download?.({ suggestedFilename: () => "two.txt", saveAs: async () => {} });
+    const both = await collectFiles(session, env);
+    expect(both.length).toBe(1);
+    expect(both[0]).toContain(`the server copied it to ${join(dir, "two.txt")}.`);
+    state.files = [file("/list.txt", "1", 4)];
+    await collectFiles(session, env);
     // The same file is not news again; replaced (new content id), it is.
     expect(await collectFiles(session, env)).toEqual([]);
     state.files = [file("/list.txt", "2", 9)];

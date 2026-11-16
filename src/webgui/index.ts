@@ -107,7 +107,7 @@ async function discover(env: Env): Promise<{ tab: ChromeTab; info: SessionInfo }
 
 /** The last line of a view read while Web GUI is still busy with a step. */
 export const STILL_WORKING =
-  "NOTE SAP is still working on a step (Web GUI has locked the page until its answer is drawn): this screen is from before that step and will change. Look again in a moment; an action now would wait for the step to end.";
+  "NOTE SAP is still working on a step (Web GUI has locked the page until its answer is drawn): this screen is from before that step and will change. Look again in a moment, and act when the step has ended.";
 
 /** The view of a tab whose SAP session has ended. */
 export function endedView(said: string): string {
