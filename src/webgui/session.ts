@@ -365,12 +365,15 @@ export class WebGuiSession {
     }
   }
 
-  /** Did the page draw two frames within `ms`? It has then handled the input sent before. */
-  private framesDrawn(ms: number): Promise<boolean> {
+  /**
+   * Did the page draw two frames within `ms`? It has then handled the input
+   * sent before. `unreadable` is the answer when the page cannot be asked.
+   */
+  private framesDrawn(ms: number, unreadable = false): Promise<boolean> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const drawn = this.frame
       .evaluate(() => new Promise<boolean>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)))))
-      .catch(() => false);
+      .catch(() => unreadable);
     const late = new Promise<boolean>((resolve) => {
       timer = setTimeout(() => resolve(false), ms);
     });
@@ -423,9 +426,8 @@ export class WebGuiSession {
    * tab, at once in the tab in front).
    */
   async framesSlow(): Promise<boolean> {
-    const drawn = this.frame.evaluate(() => new Promise<boolean>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))).catch(() => true);
-    const late = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 200));
-    return !(await Promise.race([drawn, late]));
+    // A page that cannot be asked does not count as slow.
+    return !(await this.framesDrawn(200, true));
   }
 
   /**
