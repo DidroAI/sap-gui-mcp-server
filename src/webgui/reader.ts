@@ -26,7 +26,7 @@ import { readRows } from "../core/rows.js";
 import { ActionError, type Action, type Assessment, type LookOptions } from "../core/types.js";
 import { LOGON_REFUSAL, okcodeKind } from "../core/words.js";
 import { assessAction, popupButton, questionRefusal } from "./assess.js";
-import { checkedNow, clean, clickForRoundtrip, clickListLine, clickMenuRow, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlLook, pressOverflow, setCalendar, setRefusal, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
+import { checkedNow, clean, clickForRoundtrip, clickListLine, clickMenuRow, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlLook, openTextCell, pressOverflow, setCalendar, setRefusal, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
 import { LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
 import { chooseEntry, entriesOf, markScrolled, notOnScreen, scrollTo, selectRow } from "./lists.js";
 import { extractFacts, markControl, markRow, markSelector, menuRowOpen, openOverlay, scrollControl, topWindowOpen } from "./page.js";
@@ -406,7 +406,7 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       const refusal = setRefusal(c);
       if (refusal) throw new ActionError(refusal);
       if (c.readonly) throw new ActionError(`${c.sid} is read-only`);
-      await typeInto(session, loc, String(a.value ?? ""));
+      await typeInto(session, c.drawnAsText ? await openTextCell(session, c, loc) : loc, String(a.value ?? ""));
       return `set ${c.sid}`;
     }
     case "press":

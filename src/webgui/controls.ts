@@ -112,8 +112,24 @@ export function setRefusal(c: MarkedControl): string | undefined {
   if (c.type === "GuiPasswordField" || c.inputType === "password") return `${c.sid} is a password field: this server never types a password. Type it yourself.`;
   if (c.type === "GuiOKCodeField") return 'The command field takes {"do":"okcode","value":"..."}, not "set".';
   if (!FIELD_TYPES.has(c.type)) return `${c.sid} is a ${typeName(c.type)}, not a field: "set" types into fields only. Use "press" for a button, "select" for a tab or a menu entry.`;
-  if (c.tag !== "INPUT" && c.tag !== "TEXTAREA" && c.type !== "GuiTextEdit") return `${c.sid} cannot be typed into (it is shown as text).`;
+  if (c.tag !== "INPUT" && c.tag !== "TEXTAREA" && c.type !== "GuiTextEdit" && !c.drawnAsText) return `${c.sid} cannot be typed into (it is shown as text).`;
   return undefined;
+}
+
+/**
+ * A field drawn as text until it is clicked (a table cell of S/4HANA 2025):
+ * clicks it and gives the input Web GUI puts in its place, marked. Throws
+ * when no input comes.
+ */
+export async function openTextCell(session: WebGuiSession, c: MarkedControl, loc: Locator): Promise<Locator> {
+  await session.closeSuggestions();
+  await loc.click({ timeout: 5000 });
+  for (let i = 0; i < 40; i++) {
+    const now = await evalLs(session, markControl, c.sid).catch(() => "gone");
+    if (isExactly(now, c.sid) && !now.drawnAsText && (now.tag === "INPUT" || now.tag === "TEXTAREA")) return marked(session);
+    await session.page.waitForTimeout(50);
+  }
+  throw new ActionError(`${c.sid} did not open for typing after a click: the cell stays shown as text. Look at the screen (a message may have to be answered first).`);
 }
 
 /** Types a value into a field as a person does: select all, delete, type; no line break (it would be Enter). */

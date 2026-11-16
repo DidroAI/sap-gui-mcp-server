@@ -42,6 +42,31 @@ const POPUP = `${HEAD}
 <script>document.getElementById('B1').focus(); document.addEventListener('keydown', function (e) { if (e.key === 'Enter') window.pressed = (window.pressed || []).concat('ENTER'); });</script>
 </body></html>`;
 
+const T = "wnd[0]/usr/tblSAPMV45ATCTRL_U_ERF_AUFTRAG";
+const cellSpan = (dom: string, id: string, type: string, text: string, ro: boolean) =>
+  `<span class="lsField lsField--table${ro ? " lsField--readonly" : ""}"><span role="textbox" tabindex="0" id="${dom}" ct="CBS" style="display:inline-block;min-width:80px;height:20px"${ro ? ' aria-readonly="true" readonly' : ' onclick="openCell(this)"'}
+    lsdata="${ls({ "1": "FREETEXT", "21": { SID: `${T}/${id}`, Type: type, value: text } })}">${text}</span></span>`;
+const td = (r: number, c: number, id: string, inner: string) =>
+  `<td id="tc[${r},${c}]" subct="STC" lsmatrixrowindex="${r}" lsmatrixcolindex="${c}" lsdata="${ls({ "7": { SID: `${T}/${id}`, Type: "SAPTABLECSCELL" } })}">${inner}</td>`;
+const th = (c: number, name: string, title: string) =>
+  `<th id="tc[0,${c}]" subct="HC" lsmatrixrowindex="0" lsmatrixcolindex="${c}" lsdata="${ls({ "7": title, "17": { SID: `${T}/col${name}`, Type: "GuiTableColumn" } })}">${title}</th>`;
+const TABLE = `${HEAD}
+<table id="tc" ct="STCS" style="width:600px" lsdata="${ls({ "10": "MULTI", "34": { SID: T, Type: "GuiTableControl", ColumnIds: ["VBAP-POSNR", "RV45A-MABNR", "RV45A-KWMENG"] } })}">
+  <tr>${th(1, "VBAP-POSNR", "Item")}${th(2, "RV45A-MABNR", "Material")}${th(3, "RV45A-KWMENG", "Order Quantity")}</tr>
+  <tr>${td(1, 1, "txtVBAP-POSNR[0,0]", cellSpan("c11", "txtVBAP-POSNR[0,0]", "GuiTextField", "10", true))}${td(1, 2, "ctxtRV45A-MABNR[1,0]", cellSpan("c12", "ctxtRV45A-MABNR[1,0]", "GuiCTextField", "", false))}${td(1, 3, "txtRV45A-KWMENG[2,0]", cellSpan("c13", "txtRV45A-KWMENG[2,0]", "GuiTextField", "", false))}</tr>
+</table>
+<script>
+  // As Web GUI does: a click on the text box puts an input in its place, whose lsdata holds the ids as JSON in a string.
+  function openCell(span) {
+    var own = JSON.parse(span.getAttribute('lsdata'));
+    var input = document.createElement('input');
+    input.id = span.id; input.setAttribute('ct', 'CBS'); input.value = span.innerText;
+    input.setAttribute('lsdata', JSON.stringify({ '1': 'FREETEXT', '21': JSON.stringify(own['21']) }));
+    span.replaceWith(input); input.focus();
+  }
+</script>
+</body></html>`;
+
 const refusal = (p: Promise<unknown>): Promise<string> =>
   p.then(
     () => "",
@@ -94,5 +119,28 @@ describe.skipIf(!exe)("Web GUI reader: SAP GUI for HTML of S/4HANA 2025, in a br
     expect(await pressed()).toEqual([]);
     expect(await act({ do: "press", id: "btnSPOP-OPTION2" })).toBe("pressed wnd[1]/usr/btnSPOP-OPTION2");
     expect(await pressed()).toEqual(["No"]);
+  });
+
+  test("a table cell drawn as a text box is a field: read with its column, read-only or not", async () => {
+    await load(TABLE);
+    const full = await fullView();
+    expect(full).toContain(`${T}/txtVBAP-POSNR[0,0]  field  Item = "10"  (read-only)`);
+    expect(full).toContain(`${T}/ctxtRV45A-MABNR[1,0]  field  Material = ""  (edit)`);
+    expect(full).toContain(`${T}/txtRV45A-KWMENG[2,0]  field  Order Quantity = ""  (edit)`);
+    // Each cell once: not also as the cell around it.
+    expect(full.filter((l) => l.includes("txtVBAP-POSNR[0,0]"))).toHaveLength(1);
+    const compact = await compactView();
+    expect(compact).toContain("0 Item=txtVBAP-POSNR (read-only), 1 Material=ctxtRV45A-MABNR, 2 Order Quantity=txtRV45A-KWMENG");
+    expect(compact).toContain("row 0: Item=10");
+  });
+
+  test("set on such a cell clicks it open and types; the input's ids (JSON in a string) are read back", async () => {
+    await load(TABLE);
+    expect(await act({ do: "set", id: "ctxtRV45A-MABNR[1,0]", value: "TG11" })).toBe(`set ${T}/ctxtRV45A-MABNR[1,0]`);
+    expect(await act({ do: "set", id: "txtRV45A-KWMENG[2,0]", value: "5" })).toBe(`set ${T}/txtRV45A-KWMENG[2,0]`);
+    const full = await fullView();
+    expect(full).toContain(`${T}/ctxtRV45A-MABNR[1,0]  field  Material = "TG11"  (edit)`);
+    expect(full).toContain(`${T}/txtRV45A-KWMENG[2,0]  field  Order Quantity = "5"  (edit)`);
+    expect(await refusal(act({ do: "set", id: "txtVBAP-POSNR[0,0]", value: "20" }))).toContain("is read-only");
   });
 });

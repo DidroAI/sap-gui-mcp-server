@@ -319,13 +319,23 @@ export function extractLook(limits: {
       case "GuiCTextField":
       case "GuiTextField":
       case "GuiPasswordField": {
-        if (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA") break;
+        // S/4HANA 2025 draws a table cell as a text box that is not an input (<span role="textbox">) until it
+        // is clicked: it is the field all the same, with its value as its text.
+        const drawnAsText = el.tagName !== "INPUT" && el.tagName !== "TEXTAREA";
+        if (drawnAsText && el.getAttribute("role") !== "textbox") break;
+        let colTitle = "";
         if (/\/tbl[^/]+\/[^/]+\[\d+,\d+\]$/.test(sid)) {
           // A table-control cell (the input inside the cell).
           const tbl = el.closest("[data-ls*=\"Type:'GuiTableControl'\"]");
           if (tbl && !inView(el, tbl.getBoundingClientRect())) break;
+          // S/4HANA 2025 gives a cell no tooltip: it is named by its column's title.
+          if (tbl && !tip) {
+            const c = el.closest("td[lsmatrixcolindex]")?.getAttribute("lsmatrixcolindex");
+            const th = c ? Array.from(tbl.querySelectorAll("th[lsmatrixcolindex]")).find((x) => x.getAttribute("lsmatrixcolindex") === c) : undefined;
+            colTitle = headTitle(th);
+          }
         }
-        const lab = nameOf(el, sid);
+        const lab = nameOf(el, sid) || (tip ? "" : colTitle);
         if (lab) usedLabels.add(el.id);
         const described = describedBy.get(el.id);
         const ro = fieldLocked(el);
@@ -333,7 +343,7 @@ export function extractLook(limits: {
         const secret =
           type === "GuiPasswordField" ||
           (h as HTMLInputElement).type === "password";
-        const val = secret ? (h.value ? "***" : "") : norm(h.value ?? "");
+        const val = secret ? (h.value ? "***" : "") : norm(drawnAsText ? h.innerText : (h.value ?? ""));
         // A required entry: Web GUI marks the field or its label (aria-required, a --required class); SAP GUI draws a "?" in it.
         const lbl = labelEl.get(el.id);
         const required =
@@ -342,7 +352,7 @@ export function extractLook(limits: {
             /--required\b|Required\b|urEdf2Req/.test(`${el.closest(".lsField")?.className ?? ""} ${el.className} ${lbl?.className ?? ""} ${lbl?.firstElementChild?.className ?? ""}`));
         out(
           modal,
-          `${sid}  field  ${lab || tip} = "${val}"${described && !secret ? ` ${described}` : ""}  (${ro ? "read-only" : "edit"})${required ? "  required" : ""}${cursorTold && document.activeElement === el ? "  (cursor here)" : ""}`,
+          `${sid}  field  ${lab || tip || norm(el.getAttribute("aria-label")) || norm(el.getAttribute("placeholder"))} = "${val}"${described && !secret ? ` ${described}` : ""}  (${ro ? "read-only" : "edit"})${required ? "  required" : ""}${cursorTold && document.activeElement === el ? "  (cursor here)" : ""}`,
         );
         break;
       }
@@ -512,8 +522,9 @@ export function extractLook(limits: {
           el.querySelectorAll("td[data-ls*=\"Type:'SAPTABLECSCELL'\"]"),
         )) {
           const ci = info(td);
+          // A cell that holds a control of its own (an input, a checkbox, the text box of S/4HANA 2025) is listed as that control.
           if (
-            td.querySelector("input,[data-ls*='GuiCheckBox']") ||
+            td.querySelector("input,[data-ls*='GuiCheckBox'],[role='textbox'][data-ls*='SID:']") ||
             !inView(td, box)
           )
             continue;
@@ -1000,8 +1011,17 @@ export function extractViewer(start: number): {
  */
 export function normalizeLsdata(): number {
   const lit = (v: unknown): string => {
-    if (typeof v === "string")
+    if (typeof v === "string") {
+      // S/4HANA 2025 writes the ids of a table cell's input as JSON inside a string ("21":"{\"SID\":...}").
+      if (v.startsWith('{"SID":')) {
+        try {
+          return lit(JSON.parse(v));
+        } catch {
+          /* a text that only looks like it */
+        }
+      }
       return `'${v.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
+    }
     if (Array.isArray(v)) return `[${v.map(lit).join(",")}]`;
     if (v && typeof v === "object")
       return `{${Object.entries(v as Record<string, unknown>)
@@ -1041,6 +1061,8 @@ export interface MarkedControl {
   overflow: string;
   /** The button's DOM id ("" when not a button): its entry in the ">>" menu is "<id>-BtnMenu". */
   dom: string;
+  /** A field drawn as text until it is clicked (a table cell of S/4HANA 2025, <span role="textbox">): a click makes it an input. */
+  drawnAsText: boolean;
 }
 
 /** Runs in the Web GUI frame: marks the control an id names and describes it. */
@@ -1154,6 +1176,7 @@ export function markControl(ident: string): MarkedControl | string {
       h.el.tagName === "INPUT" ? (h.el as HTMLInputElement).type || "text" : "",
     overflow: opener && !visible(h.el) ? opener.id : "",
     dom: h.el.id,
+    drawnAsText: h.el.tagName !== "INPUT" && h.el.tagName !== "TEXTAREA" && h.el.getAttribute("role") === "textbox" && /^Gui(C?Text|Password)Field$/.test(h.type),
   };
 }
 
