@@ -151,7 +151,7 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
     const before = named ? await freshView(session) : await freshView(session).catch(() => "");
     const resolved = named ? { ...a, id: resolveIn(before, String(a.id)) } : a;
     // A control of a window behind a popup takes nothing: said at once, with the popup, not after a click has timed out.
-    const covered = a.id === undefined ? undefined : behindPopup(before, isMenuPath(String(a.id)) ? "wnd[0]/mbar" : String(resolved.id), a.do);
+    const covered = a.id === undefined ? undefined : behindPopup(before, isMenuPath(String(a.id)) ? `wnd[0]/mbar/${String(a.id).replace(/^wnd\[0\]\/mbar\//, "")}` : String(resolved.id), a.do);
     if (covered && a.do !== "scroll" && (await session.blocked())) throw new ActionError(covered);
     const done = await run(session, resolved);
     let nothing = session.posts === mark && !done.endsWith(NOTHING_TO_SAP) ? nothingSent(a) : undefined;

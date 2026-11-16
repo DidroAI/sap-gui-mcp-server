@@ -5,9 +5,6 @@
  */
 import { shortIds } from "../core/ids.js";
 
-/** The window a control id is in; -1 for an id without a window (a handle, an HTML viewer control). */
-export const windowIn = (id: string): number => Number(/^wnd\[(\d+)\]/.exec(id)?.[1] ?? -1);
-
 export interface Popup {
   /** Its window number: 1 and up. */
   n: number;
@@ -43,7 +40,7 @@ export function popupButtons(view: string, p: Popup): string {
     .map((l) => l.split("  ", 1)[0] ?? "");
   const short = shortIds(ids);
   const buttons = p.lines
-    .filter((l) => l.startsWith(`wnd[${p.n}]/`) && l.split("  ")[1] === "button")
+    .filter((l) => l.startsWith("wnd[") && l.split("  ")[1] === "button")
     .map((l) => {
       const [id = "", , ...rest] = l.split("  ");
       return `${short.get(id) ?? id} "${rest.join("  ").replace(/"/g, "'")}"`;
@@ -58,13 +55,32 @@ export function popupName(view: string, p: Popup): string {
 }
 
 /**
+ * The window whose block of the view lists control `id`; -1 when the view
+ * does not list it. Not the id's own prefix: a control of a popup can carry
+ * an id of the main window (the Performance Assistant's buttons are
+ * `wnd[0]/dialogshell/...` in window 1).
+ */
+export function windowListing(view: string, id: string): number {
+  let w = -1;
+  for (const l of view.split("\n")) {
+    const m = /^WINDOW wnd\[(\d+)\]/.exec(l);
+    if (m) w = Number(m[1]);
+    else if (l.startsWith("WINDOW ")) w = -1;
+    else if (l.startsWith(`${id}  `)) return w;
+  }
+  return -1;
+}
+
+/**
  * Why an action on control `id` cannot run while a popup is in front of its
- * window, or undefined: the control is in the popup, or no popup is open.
+ * window, or undefined: the control is in the popup, the view does not list
+ * it, or no popup is open. The menu bar (`wnd[0]/mbar`) is the main window's.
  */
 export function behindPopup(view: string, id: string, doing: string): string | undefined {
   const p = topPopup(view);
-  const w = windowIn(id);
-  if (!p || w < 0 || w >= p.n) return undefined;
+  if (!p) return undefined;
+  const w = /^wnd\[0\]\/mbar(\/|$)/.test(id) ? 0 : windowListing(view, id);
+  if (w < 0 || w >= p.n) return undefined;
   return `${id} is behind a popup, so "${doing}" was not done: ${popupName(view, p)} is open and SAP takes nothing in the window behind it. Answer the popup first.`;
 }
 
