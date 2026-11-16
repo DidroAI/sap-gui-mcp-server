@@ -581,7 +581,7 @@ export class WebGuiSession {
    * is done with the answer: its page is unlocked, or, where it does not say,
    * its loading sign is gone.
    *
-   * `answered`: the wait follows a step's request. The quiet period is a
+   * `after: "answer"`: the wait follows a step's request. The quiet period is a
    * guess at "no second request follows" (a step can be two round trips with
    * a timer between them). Where Web GUI's event queue is watched the guess
    * is not needed: the step is over when the page is unlocked, no request is
@@ -591,7 +591,7 @@ export class WebGuiSession {
    * its unlock and the end of the old 300 ms, and sent nothing. Not in a tab
    * Chrome draws once a second.
    *
-   * `typed`: the wait follows typing into a field, which sends SAP nothing
+   * `after: "typing"`: the wait follows typing into a field, which sends SAP nothing
    * (the list of earlier entries is asked for on the side, half a second
    * later, and waits for no one). Where the queue is watched, the page is
    * ready for the next input when it is unlocked with no request under way,
@@ -621,7 +621,7 @@ export class WebGuiSession {
     }
     if (leadMs > 0) await this.pause(leadMs);
     let checked = 0;
-    // The step was seen over on the look before (see `answered`).
+    // After an answer: the step was seen over on the look before.
     let calm = false;
     while (Date.now() < deadline) {
       // A round trip that failed on the network never ends: the caller reports it.
