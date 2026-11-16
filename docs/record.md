@@ -1,6 +1,6 @@
 # Turn an agent's run into a test
 
-Status: design note and working prototype, 2026-11-14, branch `feat/record`.
+Status: working prototype.
 What was run and what is only written is listed under
 [What was checked](#what-was-checked).
 
@@ -77,7 +77,7 @@ Rules:
   system's data.
 
 Cost while recording: two extra reads of the screen per action. On Web GUI
-(our ECC) a full read took 30 to 50 ms; an `okcode` took about 1.2 s with or
+(an ECC demo system) a full read took 30 to 50 ms; an `okcode` took about 1.2 s with or
 without recording.
 
 ### Marking checks, variables and captures
@@ -275,15 +275,15 @@ pure function from the recording to a text file.
 **Manual test cases.** Cloud ALM's test management API creates a manual test
 case with `POST calm-testmanagement/v1/ManualTestCases`: a title, activities
 (`toActivities`) and, in each, actions (`toActions`) with a title, a
-description, an expected result and an evidence flag. A Cloud ALM MCP
-server can wrap this as a tool `calm_create_test_case`
-(`title`, `activities[].title`, `activities[].steps[]` with `title`,
-`description`, `expected`, `evidence`), add the project and scope, refuse a
-duplicate title and ask the user before writing.
+description, an expected result and an evidence flag.
 
-The export is that tool's input, as
-`{"tool":"calm_create_test_case","arguments":{...}}`. An agent with both
-servers passes `arguments` on; nothing in this server calls Cloud ALM.
+The export is a JSON file shaped as the input of an MCP tool named
+`calm_create_test_case`, as `{"tool":"calm_create_test_case","arguments":{...}}`,
+with `title`, `activities[].title` and `activities[].steps[]` (`title`,
+`description`, `expected`, `evidence`). A Cloud ALM MCP server that offers
+such a tool (none ships with this project) can take `arguments` as they are;
+otherwise map them to the API fields above. Nothing in this server calls
+Cloud ALM.
 
 - One activity per screen the test works on, titled `VA03: Display Sales
   Order: Initial Screen`. Opening a transaction belongs to the screen it
@@ -296,8 +296,8 @@ servers passes `arguments` on; nothing in this server calls Cloud ALM.
 - Evidence is asked on steps with a check and on steps that write.
 - A first activity, "Preparation", holds the system, the surface and the
   test data (`<order> = 19097`).
-- The tool's limits are kept (250 and 500 characters for titles, 4000 for
-  texts, 50 steps per activity, 30 activities).
+- Sizes are kept within 250 and 500 characters for titles, 4000 for
+  texts, 50 steps per activity and 30 activities.
 
 **Automated test cases.** Cloud ALM does not store automated tests; it shows
 those of a connected test automation tool and starts them there. As far as
@@ -308,7 +308,7 @@ results back. SAP's own providers are the test automation tool for S/4HANA
 Cloud and Tricentis Test Automation; UiPath documents the same connection
 for its Test Manager. So "export to an automated Cloud ALM test case" is not
 a file: it is a service that implements the provider side and runs
-`replay`. That belongs to the platform (section 5). The exact endpoint
+`replay`, and it is not part of this server. The exact endpoint
 contract was not read (it is on SAP Business Accelerator Hub); sources:
 [SAP KBA 3628967](https://userapps.support.sap.com/sap/support/knowledge/en/3628967),
 [SAP expert portal, Test Preparation](https://support.sap.com/en/alm/sap-cloud-alm/implementation/sap-cloud-alm-implementation-expert-portal/test-preparation.html),
@@ -358,15 +358,15 @@ A stand-alone `@playwright/test` spec for Web GUI. It logs on from
 Covered: command field, typing, keys, buttons, tabs, radio buttons,
 checkboxes, double-click and value help on a control with an id. Tree nodes,
 ALV grid cells, toolbars inside controls and dropdown entries have no id of
-their own in the page (our driver reaches them by node key, row and column);
+their own in the page (the server's driver reaches them by node key, row and column);
 those steps are written as `test.fixme` with the reason, never as a guessed
 click. For such tests, `replay` is the runner.
 
 **playwright-sap** ([playwright-sap.dev](https://playwright-sap.dev/)) is an
 open-source Playwright fork with SAP locators. `locateSID` takes exactly the
 id we record, so the `playwright-sap` target writes the same spec with
-`page.locateSID(id)` in place of our helper. Two limits, measured in our
-probe (X-266, run 2): as shipped (1.1.6) its id match expects JSON in
+`page.locateSID(id)` in place of the spec's own helper. Two limits, seen with version
+1.1.6: as shipped its id match expects JSON in
 `lsdata` and finds nothing on NetWeaver 7.5; and it has no locator for tree
 nodes, grid cells or popup list rows either. The plain target is the default
 because it works on both `lsdata` forms and needs no fork.
@@ -386,49 +386,10 @@ file format a recorder can write. What they do take is a step list with
 control ids and data, which the recording already is. A converter for one of
 them is work to do with a client who owns the tool.
 
-## 5. Open source and the platform
-
-**Open source, in this server:** record, replay, export. The file format is
-open and documented here.
-
-- It is what makes the server useful beyond one conversation: the run an
-  agent did once becomes something a person can keep, read and run again
-  without a model.
-- It costs us nothing to give away: the value of one test file is small, and
-  the pieces around it (drivers, guard, compact view) are already open.
-- It makes the file a place where others can meet us: a test tool that reads
-  `sap-gui-test/1`, or a recorder that writes it.
-
-**The platform, private:** everything that is about many tests, many runs and
-the project they serve.
-
-| Open source (one test, one session, one machine) | Platform (the project) |
-| --- | --- |
-| record a run, mark checks | which processes need a test at all: every process that runs in ECC needs a path in S/4HANA, and each path a test |
-| replay on a session the user has open | sessions the platform opens itself: logons, test users, several systems, in parallel, on a schedule |
-| variables and captures in one file | test data: which customer, which material, which open period, per system; data sets; preparing and cleaning up |
-| pass or fail, the screen at the failure, JUnit | runs over time, evidence (screenshots, documents created), defects, sign-off |
-| export to Cloud ALM, VBS, Playwright, Gherkin | synchronisation with Cloud ALM or Jira: test cases, results, and being the "automated" provider Cloud ALM calls |
-| find a control again by its field name | repair: when a replay fails on S/4HANA because the screen is another one, an agent proposes the changed steps and a person accepts them |
-
-The link between the two is the file. The platform stores recordings,
-attaches each to a process step of the map (the recorded transaction,
-program and screens are exactly what the map knows), and runs them. The
-ECC-to-S/4 case is the one the format was shaped for: a test recorded on ECC
-names fields by SAP field name, most of which survive the conversion, so its
-replay on S/4HANA either passes, passes with "found under another id", or
-fails at a named step with the screen. Each of the three is information the
-coverage view needs. How often ECC recordings replay on S/4HANA is not
-measured yet.
-
-Two things stay out of open source on purpose: opening sessions (the server
-never logs on, and should not start), and anything that decides what to
-test.
-
 ## What was checked
 
-Run, on our ECC (system ABA, client 800) through Web GUI in a Chrome of this
-work only, read-only (nothing was saved in SAP):
+Run on an SAP ERP 6.0 demo system through Web GUI in Chrome, read-only
+(nothing was saved in SAP):
 
 - **Record:** through the MCP tools, a five-step VA03 run: `/nVA03`, type
   order 19097, Enter, open the tab "Item overview", Back. Checks on the net
@@ -487,15 +448,10 @@ Not run:
    "The row whose material is M-08" needs a way to name a row.
 6. **Fiori.** Field checks need the reader of this file to understand the
    Fiori view, or the Fiori view to move towards the common format. The
-   other branch that changes the readers decides this.
 7. **Format of the view.** Replay reads facts from the text view
    (`src/record/screen.ts`). If the view changes, that file changes. A
    structured screen from the drivers would be firmer, and is a larger
    change to the `Driver` contract.
-8. **The system's refusal of new logons** seen during the check is not
-   understood; it matters for anything that runs specs from a new browser.
-9. **Cloud ALM as "automated" provider:** read the endpoint contract on SAP
-   Business Accelerator Hub before designing the platform side.
 
 ## Files
 

@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     strategy:
@@ -16,6 +20,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node: [22, 24]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     name: check (${{ matrix.os }}, Node ${{ matrix.node }})
     steps:
       - uses: actions/checkout@v4
@@ -27,7 +32,49 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
+      # No SAP system is needed: SAP GUI is a fake, Web GUI and Fiori are synthetic pages.
+      # Browser tests skip without SAP_TEST_CHROME; the PowerShell parse test runs on Windows only.
       - run: bun run test
       - run: bun run build
       - name: The built command runs on plain Node
-        run: node dist/cli.js --version
+        run: |
+          node dist/cli.js --version
+          node dist/cli.js --help
+      - name: The package holds only what should ship
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          npm pack --dry-run --json > pack.json
+          node -e '
+            const files = JSON.parse(require("fs").readFileSync("pack.json", "utf8"))[0].files.map((f) => f.path);
+            const bad = files.filter((p) => !/^(dist\/|skills\/|README\.md$|CHANGELOG\.md$|LICENSE$|package\.json$)/.test(p) || p.endsWith(".map"));
+            for (const need of ["dist/cli.js", "dist/index.js", "dist/sapgui/ps/host.ps1", "LICENSE", "README.md", "CHANGELOG.md"])
+              if (!files.includes(need)) bad.push(`missing: ${need}`);
+            if (bad.length) { console.error(bad.join("\n")); process.exit(1); }
+            console.log(`${files.length} files, all expected`);
+          '
+      # The built server against the fake SAP GUI (COM, through Windows PowerShell).
+      # Not yet run on a CI runner: kept non-blocking until it has passed once.
+      - name: SAP GUI surface end to end, against the fake SAP GUI
+        if: matrix.os == 'windows-latest'
+        continue-on-error: true
+        run: node test/sapgui/e2e.mjs
+
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: bench
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: bun install --frozen-lockfile
+      - run: npx tsc --noEmit
+      # Task files and checkers only; a benchmark run needs your own SAP systems.
+      - run: node --test test/*.test.ts
