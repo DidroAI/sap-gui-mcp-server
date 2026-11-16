@@ -285,7 +285,13 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
           }
         // No such button in the popup: give the popup the keyboard focus (a click on its title bar
         // does nothing else), so the key reaches it and not the screen behind.
-        if (top > 0) await f.locator(".urPWTitleText").filter({ visible: true }).last().click({ timeout: 3000 }).catch(() => {});
+        if (top > 0) {
+          // Said, so the agent knows the key went to the popup and that no button of it is bound to this key by id.
+          const title = /^WINDOW wnd\[\d+\]  "(.*)"$/m.exec(windowBlock(await freshView(session).catch(() => ""), top))?.[1];
+          await f.locator(".urPWTitleText").filter({ visible: true }).last().click({ timeout: 3000 }).catch(() => {});
+          await session.roundtrip(() => session.pressKey(k), LOCAL_KEY.test(k) ? 800 : SURE_START_MS);
+          return `key ${k} (sent to the popup${title === undefined ? "" : ` "${title}"`}, which has no toolbar button for it)`;
+        }
       }
       // An SAP function key always sends a request: it is waited for, also when the browser is slow to
       // hand the key on. Keys that only move in the page (Tab, arrows) send none.
