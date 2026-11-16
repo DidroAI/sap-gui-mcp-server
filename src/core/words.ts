@@ -288,6 +288,11 @@ export const SAFE_WORDS: WordRow<SafeLanguage>[] = [
     words: { en: ["print preview"], de: ["druckvorschau", "druckansicht"], fr: ["aperçu avant impression"], es: ["presentación preliminar", "vista previa"] },
   },
   {
+    // A preview shows what would be printed or issued ("Header output preview"); nothing is issued.
+    means: "preview",
+    words: { en: ["preview"], de: ["vorschau"], es: ["previsualización"] },
+  },
+  {
     means: "choose or select",
     words: {
       en: ["choose", "select", "select all", "deselect all"],
@@ -357,7 +362,16 @@ const wholeWords = (words: string[]) => new RegExp(`(?<![\\p{L}\\p{N}])(${words.
 
 const COMMIT_RE = COMMIT_WORDS.map((row) => ({ means: row.means, re: wholeWords(Object.values(row.words).flat()) }));
 const CANCEL_RE = new RegExp(`(?<![\\p{L}\\p{N}])(${CANCEL_WORDS.join("|")})\\s+(?!\\()[\\p{L}]`, "iu");
-const SAFE_RE = SAFE_WORDS.map((row) => ({ means: row.means, re: wholeWords(Object.values(row.words).flat()) }));
+/**
+ * German writes "Status overview" as one word, "Statusübersicht": a whole-word
+ * match on "übersicht" misses it. These nouns only show something, whatever
+ * stands before them in a compound ("Positionsübersicht", "Ausgabevorschau").
+ */
+const SAFE_COMPOUND_ENDS_DE = ["übersicht", "anzeige", "vorschau", "information", "informationen", "historie", "dokumentation", "hilfe"];
+const SAFE_RE = [
+  ...SAFE_WORDS.map((row) => ({ means: row.means, re: wholeWords(Object.values(row.words).flat()) })),
+  { means: "show information", re: new RegExp(`(?<![\\p{L}\\p{N}])\\p{L}+(${SAFE_COMPOUND_ENDS_DE.join("|")})(?![\\p{L}\\p{N}])`, "giu") },
+];
 
 const clean = (s: string | undefined) => (s ?? "").replace(/\s+/g, " ").trim();
 
@@ -411,6 +425,95 @@ export function safeWord(language: string | undefined | null, ...texts: (string 
       if (re.test(t)) return means;
     }
   }
+  return undefined;
+}
+
+// ---- screens that only display, and functions that act --------------------------------
+
+/**
+ * The verb SAP puts in the title of a screen opened to display an object
+ * ("Display Standard Order 19121: Overview", "Standardauftrag 19121
+ * anzeigen: Übersicht"), and the verbs of the same screen opened to change
+ * it. Only the languages SAFE_WORDS covers.
+ */
+const DISPLAY_TITLE_RE = wholeWords(["display", "anzeigen", "afficher", "visualizar"]);
+const CHANGE_TITLE_RE = wholeWords([
+  ..."change|maintain|edit|process|enter".split("|"),
+  ..."ändern|pflegen|bearbeiten|erfassen".split("|"),
+  ..."modifier|gérer|traiter|saisir".split("|"),
+  ..."modificar|actualizar|tratar|entrar".split("|"),
+]);
+
+/** Does a window title say that the screen displays an object and does not change it? */
+export function displayTitle(language: string | undefined | null, title: string | undefined): boolean {
+  if (!languageCovered(language)) return false;
+  const t = clean(title);
+  DISPLAY_TITLE_RE.lastIndex = 0;
+  CHANGE_TITLE_RE.lastIndex = 0;
+  return DISPLAY_TITLE_RE.test(t) && !CHANGE_TITLE_RE.test(t) && !commitWord(t);
+}
+
+/**
+ * Words for functions that do something beyond the screen without being a
+ * commit word: printing and issuing output, running or scheduling a program,
+ * starting a workflow, mass processing, closing a period. They are not
+ * commits on their own ("Process" on an entry screen only goes on), but
+ * where a rule lets unknown functions run because the screen only displays,
+ * a function named like this is held back. German is matched inside
+ * compounds ("Nachrichtenausgabe"); the others from the start of a word.
+ */
+const ACT_WORDS: Record<SafeLanguage, string> = {
+  en: "print\\p{L}*|output|issu\\p{L}*|execut\\p{L}*|runs?|start\\p{L}*|process\\p{L}*|repeat\\p{L}*|generat\\p{L}*|transfer\\p{L}*|copy|copies|trigger\\p{L}*|mass|background|batch input|jobs?|e?-?mail\\p{L}*|fax|workflow\\p{L}*|archiv\\p{L}*|reorgani[sz]\\p{L}*|convert\\p{L}*|clos\\p{L}* period|period-end|subscri\\p{L}*",
+  de: "\\p{L}*(druck|ausgabe|ausgeben|ausführ|starten|verarbeit|wiederhol|generier|übertrag|umbuch|kopier|einplan|auslös|massen|hintergrund|batch-input|job|mail|fax|workflow|archivier|reorganis|abschluss|verschieben|umsetz|abonnier)\\p{L}*",
+  fr: "imprim\\p{L}*|impression|sortie|édit\\p{L}*|exécut\\p{L}*|lancer|lancement|démarr\\p{L}*|trait\\p{L}*|répét\\p{L}*|générer|génération|transf\\p{L}*|copier|copie|planifi\\p{L}*|déclench\\p{L}*|masse|arrière-plan|batch input|jobs?|e?-?mail\\p{L}*|télécopie|workflow|archiv\\p{L}*|clôtur\\p{L}*",
+  es: "imprim\\p{L}*|impresión|salida|emit\\p{L}*|emisión|ejecut\\p{L}*|iniciar|inicio|proces\\p{L}*|tratamiento|repet\\p{L}*|generar|generación|transf\\p{L}*|traslad\\p{L}*|copiar|copia|planificar|programar|desencaden\\p{L}*|masiv\\p{L}*|fondo|batch input|jobs?|e?-?mail\\p{L}*|fax|workflow|archiv\\p{L}*|cierre",
+};
+const ACT_RE = new RegExp(`(?<![\\p{L}\\p{N}])(${Object.values(ACT_WORDS).join("|")})(?![\\p{L}\\p{N}])`, "iu");
+
+/** Does a text name a function that acts beyond the screen (print, issue output, run, schedule...)? The word, or undefined. */
+export function actWord(...texts: (string | undefined)[]): string | undefined {
+  for (const text of texts) {
+    const m = ACT_RE.exec(clean(text));
+    if (m) return m[0].toLowerCase();
+  }
+  return undefined;
+}
+
+/** Words in the title of a report that say it lists or shows: "Material Document List", "Vendor Line Item Display". */
+const LIST_RE = wholeWords([
+  ..."display|list|lists|overview|report|analysis|log|logs|monitor|information|statistics|evaluation".split("|"),
+  ..."anzeigen|anzeige|liste|übersicht|bericht|auswertung|analyse|protokoll|information|statistik".split("|"),
+  ..."afficher|affichage|synthèse|rapport|journal|statistiques".split("|"),
+  ..."visualizar|visualización|lista|resumen|informe|análisis|estadística".split("|"),
+]);
+
+/** Does the title of a report say that it lists or shows something? */
+export function listTitle(title: string | undefined): boolean {
+  LIST_RE.lastIndex = 0;
+  return LIST_RE.test(clean(title));
+}
+
+/**
+ * A report that can update the database usually has a switch for it on its
+ * selection screen: a "Test Run" box (ticked: nothing is written), or an
+ * "Update Run" choice. They are known by their label, in the languages of
+ * COMMIT_WORDS, and by the name of the parameter in their id (TESTRUN,
+ * P_TEST, X_TESTL, P_SIMU; ECHTL, P_UPDATE), which is the same in every
+ * logon language.
+ */
+const TEST_RUN_RE =
+  /(?<!\p{L})(test\s?run|test\s?mode|test\s?only|trial run|dry run|simul|testlauf|testmodus|exécution (de |du )?test|mode (de )?test|ejecución de (test|prueba)|modo (de )?(test|prueba)|execução de teste|modo de teste|esecuzione (di )?test|proefrun)/iu;
+const UPDATE_RUN_RE =
+  /(?<!\p{L})(update run|production run|productive run|live run|real run|update (the )?database|echtlauf|produktivlauf|verbuchungslauf|exécution réelle|mode réel|ejecución real|modo real|execução (real|produtiva)|esecuzione (reale|produttiva)|productierun)/iu;
+const TEST_RUN_ID_RE = /(?:^|_)X?(TEST|SIMU)/i;
+const UPDATE_RUN_ID_RE = /(?:^|_)X?(ECHT|UPDAT|PROD)/i;
+
+/** What a checkbox or radio button of a selection screen switches: a run without writing, a run that writes, or neither. */
+export function runSwitch(name: string, label: string): "test" | "update" | undefined {
+  if (UPDATE_RUN_RE.test(label)) return "update";
+  if (TEST_RUN_RE.test(label)) return "test";
+  if (TEST_RUN_ID_RE.test(name)) return "test";
+  if (UPDATE_RUN_ID_RE.test(name)) return "update";
   return undefined;
 }
 
@@ -570,7 +673,7 @@ export function okcodeKind(value: string | undefined): Okcode {
   const key = /^\/(\d+)$/.exec(u);
   if (key) return { kind: "key", key: Number(key[1]) };
   if (/^\/(NEX|NEND|I\d*)$/.test(u)) return { kind: "closes" };
-  const start = /^\/[NO*]\s*([A-Z0-9_/]*)$/.exec(u);
+  const start = /^\/[NO*]\s*([A-Z0-9_/.]*)$/.exec(u);
   if (start) return start[1] === "EX" || start[1] === "END" ? { kind: "closes" } : { kind: "transaction", tcode: start[1] ?? "" };
   if (u.startsWith("/")) return { kind: "unknown", code: u };
   if (safeCode(u)) return { kind: "safe" };
