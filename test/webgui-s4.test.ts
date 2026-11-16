@@ -289,6 +289,14 @@ describe.skipIf(!exe)("Web GUI reader: SAP GUI for HTML of S/4HANA 2025, in a br
     expect((await fullView()).some((l) => l.includes("  menu  "))).toBe(false);
   }, 20_000);
 
+  test("a menu behind a popup is refused at once", async () => {
+    await load(MENU);
+    await page.evaluate(() => document.body.insertAdjacentHTML("beforeend", '<div id="urPopupWindowBlockLayer" style="position:fixed;inset:0"></div>'));
+    const t0 = Date.now();
+    expect(await refusal(act({ do: "select", id: "menu[1]/menu[0]" }))).toContain("A popup window is open and blocks the menu");
+    expect(Date.now() - t0).toBeLessThan(2000);
+  });
+
   test("a menu entry the menu bar does not have is said at once", async () => {
     await load(MENU);
     const t0 = Date.now();
