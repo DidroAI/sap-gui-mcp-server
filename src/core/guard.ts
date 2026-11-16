@@ -83,8 +83,10 @@ export function okcodeKind(value: unknown): Okcode {
   return { kind: "transaction", tcode: t };
 }
 
-/** The transaction an okcode would open ("/nVA01", "/oVA01", "/*VA01", "VA01"), if any. */
+/** The transaction an okcode would open ("/nVA01", "/oVA01", "/*VA01", "VA01"), or the Fiori app an open action names, if any. */
 export function tcodeOf(action: Action): string | undefined {
+  // Fiori: the app an open action names, as the lists spell an intent ("#SalesOrder-manage?..." -> "SALESORDER-MANAGE").
+  if (action.do === "open") return typeof action.app === "string" ? /^#?([A-Za-z0-9_]+-[A-Za-z0-9_]+)/.exec(action.app.trim())?.[1]?.toUpperCase() : undefined;
   if (action.do !== "okcode") return undefined;
   const k = okcodeKind(action.value);
   return k.kind === "transaction" ? k.tcode : undefined;
@@ -131,6 +133,7 @@ export function sessionRefusal(policy: Policy, s: Pick<SessionInfo, "transaction
 
 /** Does this action leave the current transaction ("/n", a session close, or opening a transaction the lists allow)? */
 export function leavesTransaction(policy: Policy, action: Action): boolean {
+  if (action.do === "open") return !!tcodeOf(action) && !tcodeRefusal(policy, tcodeOf(action));
   if (action.do !== "okcode" || typeof action.value !== "string") return false;
   if (/^\/n$/i.test(action.value.trim())) return true;
   const k = okcodeKind(action.value);

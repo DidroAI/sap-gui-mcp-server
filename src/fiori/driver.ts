@@ -16,8 +16,8 @@ import type { ChromeTab } from "../browser/chrome.js";
 import { type Action, ActionError, type Assessment, type Driver, type LookOptions, type SessionInfo } from "../core/types.js";
 import { webguiActInFrame, webguiAssessInFrame, webguiLookInFrame } from "../webgui/index.js";
 import { LOGON_REFUSAL } from "../core/words.js";
-import { assessAction, keyOf } from "./risk.js";
-import { type ControlRequest, type ControlResult, TARGET_ATTR, ui5Control, ui5Idle, ui5Info, type Ui5Info, ui5Logon, ui5Look } from "./ui5.js";
+import { assessAction, intentOf, keyOf } from "./risk.js";
+import { type ControlRequest, type ControlResult, TARGET_ATTR, ui5Back, ui5Control, ui5Idle, ui5Info, type Ui5Info, ui5Logon, ui5Look, ui5Open } from "./ui5.js";
 
 export const WEBGUI_MARK = "WEBGUI FRAME";
 const WEBGUI_URL = /\/sap\/bc\/gui\/sap\/its\//i;
@@ -42,6 +42,10 @@ const OPS: Record<string, ControlRequest["op"]> = {
 /** Is this URL a Web GUI page of its own (the Web GUI surface's tab, not ours)? */
 export const isWebguiUrl = (url: string) => WEBGUI_URL.test(url);
 export const isLaunchpadUrl = (url: string) => LAUNCHPAD_URL.test(url);
+
+const KEY_HELP = "Fiori keys: Enter, Space, Escape, Tab, Shift+Tab, F4, Delete, Backspace, ArrowDown, ArrowUp, ArrowLeft, ArrowRight, PageDown, PageUp, Home, End, Back, Control+S, Control+Enter (or SAP GUI's 0, 3, 4, 11, 12).";
+const unknownKey = (action: Action) => new ActionError(`Unknown key ${JSON.stringify(action.key ?? action.value ?? "")}. ${KEY_HELP}`);
+const OPEN_HELP = 'open takes the intent of a launchpad app, e.g. {"do":"open","app":"#SalesOrder-manage"} (parameters allowed: "#SalesOrder-display?SalesOrder=4711"); never a URL: the tab stays on its launchpad.';
 
 const within = <T>(p: Promise<T>, ms: number, otherwise: T): Promise<T> =>
   Promise.race([p.catch(() => otherwise), new Promise<T>((r) => setTimeout(() => r(otherwise), ms))]);
@@ -173,8 +177,13 @@ export class FioriDriver implements Driver {
       .join("  ");
     const parts: string[] = [head];
     for (const f of ui5) {
-      const r = await f.evaluate(ui5Look, { compact: options.compact }).catch((e: Error) => `[frame error] ${e.message.split("\n")[0]}`);
+      const r = await f.evaluate(ui5Look, { compact: options.compact, ...(options.id ? { id: options.id } : {}) }).catch((e: Error) => `[frame error] ${e.message.split("\n")[0]}`);
       if (r) parts.push(r);
+    }
+    if (options.id) {
+      // One control: its lines only, also the part of it below the fold.
+      if (parts.length === 1) throw new ActionError(`No control "${options.id}" on this Fiori screen (a control of a Web GUI app inside the launchpad is read with the whole screen). Take the id from sap_look: the text after # in the compact view.`);
+      return `${parts.join("\n")}${options.rows ? '\n(Fiori reads the rows the page has loaded, not a range: "rows" was not used. For more rows: {"do":"scroll","id":"<the table>","how":"bottom"}, then look again.)' : ""}`;
     }
     if (!ui5.length) parts.push("[SAPUI5 is not running in this tab: a logon page, or the app is still loading]");
     for (const f of wf) {
@@ -233,9 +242,16 @@ export class FioriDriver implements Driver {
 
   async assess(action: Action): Promise<Assessment> {
     await this.refuseLogon();
+    // Opening an app is the launchpad's, whatever app is on screen.
+    if (action.do === "open") {
+      if (!intentOf(action.app)) throw new ActionError(OPEN_HELP);
+      return assessAction(action, undefined);
+    }
     const { ui5, webgui: wf } = await this.frames();
     const frame = await this.toWebgui(action, ui5, wf);
     if (frame) return webguiAssessInFrame(frame, action);
+    // A key the surface does not have fails here, before the user is asked to confirm it.
+    if (action.do === "key" && ui5.length && !keyOf(action)) throw unknownKey(action);
     if (WEBGUI_ONLY.has(action.do)) return { risk: "read", reason: `"${action.do}" needs a Web GUI screen, and none is open in this tab` };
     // The focused control and the open dialog's default button (Enter and Space press them), and the page's language.
     const here = (await this.control({ handle: "", op: "facts" }, ui5))?.result;
@@ -249,6 +265,7 @@ export class FioriDriver implements Driver {
 
   async act(action: Action): Promise<string> {
     await this.refuseLogon();
+    if (action.do === "open") return this.open(action);
     const { ui5, webgui: wf } = await this.frames();
     const frame = await this.toWebgui(action, ui5, wf);
     if (frame) {
@@ -261,14 +278,14 @@ export class FioriDriver implements Driver {
 
     if (action.do === "key") {
       const k = keyOf(action);
-      if (!k) throw new ActionError(`Unknown key ${JSON.stringify(action.key ?? action.value ?? "")}. Fiori keys: Enter, Escape, Tab, Shift+Tab, F4, ArrowDown, ArrowUp, PageDown, PageUp, Home, End, Back, Control+S, Control+Enter (or SAP GUI's 0, 3, 4, 11, 12).`);
-      if (k.name === "back") await this.page.mainFrame().evaluate(() => history.back());
-      else await this.page.keyboard.press(k.press);
+      if (!k) throw unknownKey(action);
+      if (k.name === "back") return `key Back: ${await this.back()}; ${await this.idle()}`;
+      await this.page.keyboard.press(k.press);
       return `key ${k.press}; ${await this.idle()}`;
     }
 
     const op = OPS[action.do];
-    if (!op) throw new ActionError(`Unknown action "${action.do}" for Fiori. Use set, press (or click), dblclick, select, check, combo, key, f4 or scroll.`);
+    if (!op) throw new ActionError(`Unknown action "${action.do}" for Fiori. Use set, press (or click), dblclick, select, check, combo, key, f4, scroll or open.`);
     const id = action.id ?? "";
     if (!id && op !== "scroll") throw new ActionError(`"${action.do}" needs the id of a control from sap_look.`);
     const value = op === "combo" || (op === "select" && action.value == null) ? (action.key ?? action.value) : action.value;
@@ -301,11 +318,30 @@ export class FioriDriver implements Driver {
             // A dropdown the API cannot set: open it, then pick the entry by its text.
             await target.click({ timeout: 8000 });
             await this.page.waitForTimeout(500);
-            await f
-              .getByRole("option", { name: String(value ?? ""), exact: false })
-              .first()
-              .click({ timeout: 8000 });
+            // The dropdown's own entries: the list is a popover (tokens of a filter field are "options" too).
+            const inList = f.locator(".sapMPopover").filter({ visible: true }).getByRole("option").filter({ visible: true });
+            const options = (await inList.count().catch(() => 0)) > 0 ? inList : f.getByRole("option").filter({ visible: true });
+            const wanted = String(value ?? "").trim();
+            if (!wanted) {
+              // No entry named: say what the list holds and choose nothing.
+              const texts = (await options.allInnerTexts().catch(() => [])).map((t) => t.replace(/\s+/g, " ").trim()).filter(Boolean);
+              await this.page.keyboard.press("Escape");
+              await unmark();
+              return `combo ${r.note}: nothing chosen. Entries: ${texts.slice(0, 60).join(" | ") || "(none shown)"}${texts.length > 60 ? ` ... (${texts.length} in all)` : ""}; ${await this.idle()}`;
+            }
+            const entry = options.filter({ hasText: wanted }).first();
+            if (!(await entry.count())) {
+              const texts = (await options.allInnerTexts().catch(() => [])).map((t) => t.replace(/\s+/g, " ").trim()).filter(Boolean);
+              await this.page.keyboard.press("Escape");
+              throw new ActionError(`no entry "${wanted}" in ${r.note}. Entries: ${texts.slice(0, 60).join(" | ") || "(none shown)"}`);
+            }
+            await entry.click({ timeout: 8000 });
           }
+          break;
+        case "FOCUSENTER":
+          // A row with no free place to click: Enter on the row is its press.
+          await target.focus({ timeout: 8000 });
+          await this.page.keyboard.press("Enter");
           break;
         case "NOITEM":
         case "DISABLED":
@@ -323,6 +359,38 @@ export class FioriDriver implements Driver {
       await unmark();
     }
     return `${action.do} ${r.note}; ${await this.idle()}`;
+  }
+
+  /** Opens a launchpad app by its intent: the launchpad's own hash, on the page the tab is on. */
+  private async open(action: Action): Promise<string> {
+    const app = intentOf(action.app);
+    if (!app) throw new ActionError(OPEN_HELP);
+    const r = await within(this.page.mainFrame().evaluate(ui5Open, app), 8000, "NOANSWER");
+    if (r === "NOSHELL") throw new ActionError("open works in a Fiori launchpad tab only; this tab runs no launchpad. In a Web GUI tab use okcode.");
+    if (r === "NOANSWER") throw new ActionError("The launchpad did not answer within 8 s, so nothing was opened. Look at the screen, then try again.");
+    const note = await this.idle();
+    return r === "SAME" ? `open ${app}: this app is already on screen; ${note}` : `open ${app}; ${note}`;
+  }
+
+  /** Back, the launchpad's way: its back button; without one, history, but never out of the launchpad. */
+  private async back(): Promise<string> {
+    const top = this.page.mainFrame();
+    const r = await within(top.evaluate(ui5Back, TARGET_ATTR), 5000, "HISTORY");
+    if (r === "BUTTON") {
+      const target = top.locator(`[${TARGET_ATTR}]`).first();
+      try {
+        await target.click({ timeout: 5000 });
+        return "the launchpad's back button";
+      } catch {
+        throw new ActionError("Back: the launchpad's back button is covered (a popup may be open); look at the screen again.");
+      } finally {
+        await top.evaluate((attr) => document.querySelectorAll(`[${attr}]`).forEach((e) => e.removeAttribute(attr)), TARGET_ATTR).catch(() => {});
+      }
+    }
+    if (r === "HOME") return "there is no page to go back to in this tab, so the launchpad's home page was opened";
+    if (r === "ATHOME") return "this is the launchpad's home page, there is nothing to go back to";
+    await top.evaluate(() => history.back());
+    return "browser history";
   }
 
   async screenshot(): Promise<Buffer> {
