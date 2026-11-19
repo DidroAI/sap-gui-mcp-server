@@ -248,10 +248,12 @@ function asRecorded(step: Step, screen: ParsedScreen, vars: Record<string, strin
 
 /**
  * The popup a recorded step confirms, if that is what it does: by its
- * Continue button (wnd[1]/tbar[0]/btn[0]). On the DIAG method a popup is
- * confirmed with its Enter key ({"do":"key","key":0}) or one of its buttons,
- * whose ids do not name the window: the step was done on a popup
- * (`step.on.popup`), and actions there always go to the window on top.
+ * Continue button (wnd[1]/tbar[0]/btn[0]). On the DIAG method, whose ids do
+ * not name the window, only a popup the recorder saw as a plain message
+ * (`step.on.message`: text and a Continue, no question) confirmed by Enter
+ * or a press, in a step not rated a write. The answer to a question (Yes,
+ * Save, any button of a popup that asks) is never one: a replay that skips
+ * it would pass without the write.
  */
 function confirming(step: Step, diag = false): string | undefined {
   const a = step.action;
@@ -260,7 +262,7 @@ function confirming(step: Step, diag = false): string | undefined {
     if (m) return m[1];
   }
   const popup = step.on?.popup;
-  if (!diag || !popup || !a) return undefined;
+  if (!diag || !popup || !a || !step.on?.message || step.risk === "commit") return undefined;
   if (a.do === "press" || (a.do === "key" && vkeyNumber(a.key ?? a.value) === 0)) return popup;
   return undefined;
 }
@@ -418,11 +420,22 @@ export async function replay(driver: Driver, policy: Policy, recorded: SapTest, 
         r.action = actionText(action);
         // The recording confirmed an Information popup here that SAP did not show this time: nothing to answer.
         const confirms = confirming(step, diag);
+        // On the DIAG method a popup is named by its place only (wnd[1]): the one on show must be the one recorded.
+        const recordedPopup = diag ? step.on?.popup : undefined;
+        const shown = recordedPopup ? screen.windows.find((w) => w.id === recordedPopup) : undefined;
+        const other = !!shown && !!step.on?.title && !!shown.title && !sameText(step.on.title, shown.title, vars);
         if (runs && confirms && !screen.windows.some((w) => w.id === confirms)) {
-          r.warnings.push(`the recording confirmed a popup here ("${step.on?.title ?? ""}") that SAP did not show this time: step skipped`);
-          r.ms = Date.now() - s0;
-          options.onStep?.(r);
-          continue;
+          // Its action is not sent; the screen is judged and its checks run as for any step (where the Continue would have led).
+          r.warnings.push(`the recording confirmed a popup here ("${step.on?.title ?? ""}") that SAP did not show this time: its answer was not sent`);
+          runs = false;
+        } else if (runs && recordedPopup && (!shown || other)) {
+          // A question's answer (or a popup not known to be a plain message) is never skipped, nor given to another popup.
+          r.failures.push(
+            other
+              ? `the recording answered the popup "${step.on?.title ?? ""}" here, and SAP shows the popup "${shown?.title ?? ""}" instead: nothing was pressed`
+              : `the recording answered the popup "${step.on?.title ?? ""}" here (${actionText(action)}), and SAP did not show it this time. An answer to a question is never skipped, so the step fails: look at what changed in the steps before it`,
+          );
+          throw undefined;
         }
         if (runs) {
           await guarded(driver, policy, action);
