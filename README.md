@@ -212,6 +212,8 @@ the mouse, at the place SAP gave each field, so SAP GUI's window must be on
 the screen, and a typed value reaches SAP (and the view) with the next Enter
 or function key. It cannot read connections encrypted with SNC. The server
 must be running before you log on, since SAP GUI connects through it.
+`sap_record` and `sap_replay` work with it; a test recorded this way names
+controls by SAP field name and is replayed with the same method.
 
 ### Web GUI and Fiori in Chrome
 

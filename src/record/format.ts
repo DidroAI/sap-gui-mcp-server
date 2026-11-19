@@ -77,6 +77,8 @@ export const testSchema = z.object({
     at: z.string(),
     by: z.string().optional(),
     surface: z.string(),
+    /** SAP GUI: "diag" when recorded through the DIAG method (its ids are SAP field names); absent for scripting. */
+    method: z.string().optional(),
     system: z.string().optional(),
     client: z.string().optional(),
   }),
