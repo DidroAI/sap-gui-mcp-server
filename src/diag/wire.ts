@@ -60,7 +60,8 @@ export const ITEM = {
  * come together (0b 0a 13, then the list text): 2 and 3 is the split under
  * which both appear as items of their own, the 0b value reads as a row and a
  * column that place the texts where the list shows them, and the 13 value
- * equals the length of the text after it (170 of 172 times).
+ * is the width of the text after it: its length 170 of 172 times, less for
+ * the 2 texts that carry icon and tooltip markup.
  */
 const SIZE = new Map<number, number>([
   [ITEM.windowStart, 16],

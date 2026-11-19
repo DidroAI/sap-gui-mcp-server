@@ -37,7 +37,8 @@ import { type DiagItem, hasId, ID, NiFramer, parseItems, parseMessage } from "./
  * GUI's item 01, which names none; a server item 04 is answered by an empty
  * 04 from SAP GUI and followed by more 04 or by a 06, and only the parts
  * joined name the function; a 06 alone (a progress indicator) is never
- * answered.
+ * answered. Long answers from SAP GUI come in 04 parts the same way, the
+ * last one an 01.
  */
 const RFC_PART = {
   /** A call that waits for SAP GUI's answer. */
