@@ -234,10 +234,14 @@ function windowLines(w: DiagWindow, top: boolean, o: Required<DiagViewOptions>):
 
 /** The view of a screen: see the top of this file for the format. */
 /** One short line each when bytes were lost before the screen, or when the decoder met parts it could not read. */
+/** The start of the line a view ends with when bytes were lost: the recorder and the replay look for it. */
+export const DAMAGED_NOTE = "note  bytes were lost on the connection";
+
 function decoderNotes(s: DiagScreen): string[] {
   const out: string[] = [];
-  if (s.damaged) out.push("note  bytes were lost on the connection while SAP sent this screen or earlier: parts of it may be missing or old. A control SAP sends again is read afresh.");
-  if (s.unread?.length) out.push(`note  parts of this screen were not read: ${s.unread.slice(0, 3).join("; ")}${s.unread.length > 3 ? `; and ${s.unread.length - 3} more` : ""}`);
+  if (s.damaged) out.push(`${DAMAGED_NOTE} while SAP sent this screen or earlier: parts of it may be missing or old. A control SAP sends again is read afresh.`);
+  // What the decoder met and could not read: said plainly, with its technical name in parentheses (for doctor and bug reports).
+  if (s.unread?.length) out.push(`note  SAP sent something with this screen that this reader cannot read yet (${s.unread.slice(0, 3).join("; ")}${s.unread.length > 3 ? `; and ${s.unread.length - 3} more` : ""}); everything else is shown`);
   return out;
 }
 

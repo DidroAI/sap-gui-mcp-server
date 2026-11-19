@@ -205,7 +205,7 @@ describe("unusual but valid traffic", () => {
     const odd = screen("Odd", { more: [idItem(0x33, 0x01, "?"), RESET, elementList(elem.unknown(2, 1, "strange"))] });
     const { decoder, screens } = feed([odd, act("/00"), screen("Plain")]);
     expect(screens[0]?.unread).toEqual(["item 10/33/01", "element type 99"]);
-    expect(diagView(screens[0] as DiagScreen)).toContain("note  parts of this screen were not read: item 10/33/01; element type 99");
+    expect(diagView(screens[0] as DiagScreen)).toContain("note  SAP sent something with this screen that this reader cannot read yet (item 10/33/01; element type 99); everything else is shown");
     expect(screens[1]?.unread).toBeUndefined();
     expect(diagView(screens[1] as DiagScreen)).not.toContain("note");
     expect(decoder.notes.get("element type 99")).toBe(1);
