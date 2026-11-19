@@ -63,40 +63,52 @@ The first public version.
 ### SAP GUI without scripting (DIAG method, experimental)
 
 - **Reading.** The decoder is our own (MIT), its item types, ids and sizes
-  established from captured traffic. On six captured ECC screens the view
-  holds 99% of the texts and values that scripting reads, every ALV cell,
-  tree node, table-control column and popup entry, at about 13,000 tokens
-  for the six (scripting's compact view: about 15,000). Controls of an
-  ended transaction no longer show on the next one.
+  established from captured traffic. On the ECC screens captured while it
+  was built, the view held nearly all the texts and values that SAP GUI
+  scripting reads of the same screens, including ALV cells, tree nodes,
+  table-control columns and popup entries. Controls of an ended
+  transaction no longer show on the next one.
 - **The view, as on the other surfaces.** The status bar is the `sbar` line,
   so errors and warnings come first in an answer; greyed-out buttons, keys,
   menus and tree nodes are marked, and `sap_look` with `id "mbar"` lists
   every menu entry; empty read-only fields show as `NAME@col=""`; a value
   typed with `set` shows as typed until SAP gets it with the next Enter,
   and a field that then shows something else is reported.
-- **Ids.** A field name, `{FCODE}`, `FIELD[n]` (the table's own row number,
-  as the view prints it; a row not on show is scrolled to) or `@row,col`.
-  Ids written nearly right (another case, a scripting id, a table column
-  index) resolve when they mean one thing; a name several controls share is
-  refused with their places; an unknown id is refused with the closest ones.
-  What SAP greys out is refused before any input.
-- **Actions.** Every action of the other surfaces: dropdowns, scrolling
-  (table controls, lists, grids), grid and tree actions, grid toolbars,
-  row selection, `sap_look` with `id`, `rows` and `cols`. An action ends
-  when SAP has answered every request it caused, read from the traffic, not
-  after a timer; `timing` says where the time went. The cell size comes
-  from what SAP GUI reports, and same-titled sessions are told apart.
+- **Ids.** A field name, `{FCODE}` of a push button or tab, a toolbar
+  button or key by its text, `FIELD[n]` (the table's own row number, as the
+  view prints it; a row not on show is scrolled to, and nothing is done if
+  it does not come) or `@row,col`. Scripting cell ids `FIELD[col,row]`
+  count the row from the first row on show. Toolbar buttons and function
+  keys carry no function code in the traffic, so `{CODE}` does not name
+  them: the refusal lists the screen's keys.
+- **Actions.** `okcode`, `key`, `set`, `press`, `click`, `dblclick`,
+  `select`, `check`, `focus` (fields), `f4` (fields), `combo`, vertical
+  `scroll`, `tree`, `grid`, `toolbar`, and `sap_look` with `id`, `rows` and
+  `cols`. Refused, with what to do instead: `focus`, `f4`, `set` or
+  `check` where their first click would press, tick or open something;
+  scrolling or reading other rows while typed values have not reached SAP;
+  sideways scrolling; a grid toolbar button named by part of its name;
+  input to a window that cannot be told apart without doubt from another
+  SAP GUI window. The guard judges the input sent: a click on a push button
+  or a box with a function code is rated as pressing it, a click on an
+  element the reader cannot classify as a write.
+- **Waits.** An action ends when SAP has answered the request of its last
+  input, read from the traffic, not after a timer; `timing` says where the
+  time went. A lost or unreadable answer ends the wait with "session state
+  unknown", and the next `sap_look` recovers.
 - **Record and replay.** Tests name controls the way the actions do and
   record the method (a `diag` test is not replayed through scripting, nor
   exported to VBS). Information popups are passed with their Enter key; a
-  recorded popup confirmation is skipped when SAP does not show the popup;
+  recorded Enter on a popup that only informed is not sent when SAP does
+  not show it; the answer to a question is never skipped (the step fails);
   a screen damaged in transit is never judged.
 - **Robustness.** Lost or garbled bytes no longer blind the connection: the
-  decoder finds its place again, and the view says when a screen may miss
-  parts (`note  bytes were lost…`) or holds something it cannot read yet.
-  The relay outlives a failing reader, closed connections are let go, and
-  `doctor` reports what was lost or not read, and SNC (not readable).
-- **Not verified live yet:** the new actions, waits, cell sizes, window
+  decoder finds its place again (in linear time), and the view says when a
+  screen may miss parts or holds something it cannot read yet. Compressed
+  blocks over 64 MB are refused. The relay outlives a failing reader or
+  capture, closed connections are let go, router messages go to stderr,
+  and `doctor` reports what was lost or not read, and SNC (not readable).
+- **Not verified live yet:** the actions, waits, cell sizes, window
   matching and record/replay ran against synthetic traffic and captures
   only, not against SAP GUI.
 
