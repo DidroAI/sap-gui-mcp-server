@@ -1,9 +1,10 @@
 /**
  * replay.ts [capture] [ranges.json] [outdir]: replays a relay log through
- * DiagDecoder and writes, for each screen of ranges.json, the view
- * (<outdir>/diag/<screen>/view.txt) and the model (<outdir>/json/<screen>.json)
- * as they stand at the end of the screen's byte range, to compare the decoder's
- * output with what SAP GUI showed.
+ * DiagDecoder and writes, for each screen of ranges.json, the two views the
+ * surface gives (<outdir>/diag/<screen>/view.txt as sap_look shows it,
+ * full.txt with every row, as sap_look full=true) and the model
+ * (<outdir>/json/<screen>.json) as they stand at the end of the screen's byte
+ * range, to compare the decoder's output with what SAP GUI showed.
  *
  * The relay log: records of direction (1 byte: 0 SAP GUI to server, 1 server
  * to SAP GUI), time (float64 LE), length (uint32 LE), bytes. ranges.json:
@@ -51,6 +52,7 @@ while (at + 13 <= data.length) {
     mkdirSync(join(outdir, "diag", name), { recursive: true });
     mkdirSync(join(outdir, "json"), { recursive: true });
     writeFileSync(join(outdir, "diag", name, "view.txt"), view);
+    writeFileSync(join(outdir, "diag", name, "full.txt"), diagView(screen, { maxRows: 100_000 }));
     writeFileSync(join(outdir, "json", `${name}.json`), JSON.stringify(screen, null, 1));
     console.log(`${name}: ${view.length} characters, ${view.split("\n").length} lines`);
   }
