@@ -119,6 +119,8 @@ export function itemKey(it: { type: number; id: number; sid: number }): string {
 export const MAX_FRAME = 8 << 20;
 /** After a loss, the longest frame taken as the place to start again: a false start this long would hold up reading for its whole length. */
 const RESYNC_MAX = 1 << 20;
+/** The framer's buffer is let go once empty when it grew past this. */
+const SMALL_STORE = 1 << 20;
 /** Item types a message may start with when it is not compressed. */
 const FIRST_ITEM: ReadonlySet<number> = new Set<number>([...SIZE.keys(), ITEM.short, ITEM.long, ITEM.xml]);
 /** Candidate starts kept while looking for the next frame after a loss. */
@@ -199,7 +201,11 @@ function wholeFrames(c: Buffer): boolean {
  * to start. To tell, a frame is held until the start of the next one has
  * arrived, unless the bytes received end exactly with it (as they do when
  * the sender waits). Memory stays bounded: a length over MAX_FRAME counts as
- * garbled, and the search keeps at most about RESYNC_MAX bytes.
+ * garbled, and the search keeps at most about RESYNC_MAX bytes. Time stays
+ * linear: the bytes held are kept in one buffer that grows by doubling, so a
+ * chunk is copied in once, not the bytes held before it again with every
+ * chunk (as a search over many small chunks would); a payload is copied
+ * once when it is handed out.
  */
 export class NiFramer {
   /** Bytes dropped so far. */
@@ -207,12 +213,13 @@ export class NiFramer {
 
   /** Bytes held, waiting for the rest of a frame or for the next place a frame starts. */
   get buffered(): number {
-    return this.size;
+    return this.end - this.start;
   }
 
-  /** Bytes received and not handed out yet, in the chunks they came in. */
-  private parts: Buffer[] = [];
-  private size = 0;
+  /** Bytes received and not handed out yet: `store` from `start` to `end`. */
+  private store: Buffer = Buffer.alloc(0);
+  private start = 0;
+  private end = 0;
   /** How many bytes are needed before looking again (a frame's whole length while it arrives in small chunks). */
   private need = 0;
   /** Looking for the next frame after a loss: bytes dropped so far, why, candidate starts (offsets in buf), how far buf was scanned. */
@@ -233,16 +240,15 @@ export class NiFramer {
     // A frame whose length was garbled upward would swallow the frames after it, up to MAX_FRAME bytes. When a
     // chunk that does not end it is made of whole frames by itself, those are taken instead and the waiting frame is
     // dropped (senders write one or more whole frames at a time, so chunks often start and end with them).
-    if (!this.search && this.size >= 4 && this.size + c.length !== this.need && wholeFrames(c)) {
-      this.loss(out, this.size, "a frame cut short: the bytes after it start new frames");
-      this.parts = [];
-      this.size = 0;
+    if (!this.search && this.buffered >= 4 && this.buffered + c.length !== this.need && wholeFrames(c)) {
+      this.loss(out, this.buffered, "a frame cut short: the bytes after it start new frames");
+      this.start = 0;
+      this.end = 0;
       this.need = 0;
     }
-    this.parts.push(c);
-    this.size += c.length;
-    if (this.size < this.need) return out;
-    const buf = this.parts.length === 1 ? (this.parts[0] as Buffer) : Buffer.concat(this.parts, this.size);
+    this.append(c);
+    if (this.buffered < this.need) return out;
+    const buf = this.store.subarray(this.start, this.end);
     let i = 0;
     let need = 0;
     for (;;) {
@@ -285,15 +291,39 @@ export class NiFramer {
         need = buf.length - i + 1;
         break;
       }
-      out.push(next === "frame" ? { payload: buf.subarray(i + 4, end) } : { payload: buf.subarray(i + 4, end), suspect: true });
+      // A copy: the store is written over by later chunks.
+      const payload = Buffer.from(buf.subarray(i + 4, end));
+      out.push(next === "frame" ? { payload } : { payload, suspect: true });
       i = end;
     }
-    // Copy what is kept: the payloads handed out must not keep a large buffer alive, nor the kept bytes the caller's.
-    const rest = i >= buf.length ? undefined : Buffer.from(buf.subarray(i));
-    this.parts = rest ? [rest] : [];
-    this.size = rest?.length ?? 0;
+    this.start += i;
+    if (this.start >= this.end) {
+      this.start = 0;
+      this.end = 0;
+      // A large frame's room is not kept once it is out.
+      if (this.store.length > SMALL_STORE) this.store = Buffer.alloc(0);
+    }
     this.need = need;
     return out;
+  }
+
+  /** Adds a chunk to the bytes held: in place when there is room, else in a buffer of twice the size needed. */
+  private append(c: Buffer): void {
+    const live = this.end - this.start;
+    if (this.end + c.length > this.store.length) {
+      const want = live + c.length;
+      if (want <= this.store.length >> 1) {
+        this.store.copy(this.store, 0, this.start, this.end);
+      } else {
+        const bigger = Buffer.allocUnsafe(Math.max(want * 2, 4096));
+        this.store.copy(bigger, 0, this.start, this.end);
+        this.store = bigger;
+      }
+      this.start = 0;
+      this.end = live;
+    }
+    c.copy(this.store, this.end);
+    this.end += c.length;
   }
 
   private loss(out: FrameEvent[], bytes: number, why: string): void {
