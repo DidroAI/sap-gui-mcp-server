@@ -1,10 +1,11 @@
 /**
- * compare.ts <capture.bin> <ranges.json> [base-ref]: replays a relay log
- * through the decoder of this working tree and through the decoder of
- * `base-ref` (default `main`), and compares, for each screen of ranges.json,
- * the text view and the screen model as they stand at the end of the
- * screen's byte range. Prints "same" or the lines that differ, then the
- * notes (what was not understood) of both decoders.
+ * compare.ts <capture.bin> <ranges.json | --steps> [base-ref]: replays a
+ * relay log through the decoder of this working tree and through the decoder
+ * of `base-ref` (default `main`), and compares, for each screen of
+ * ranges.json, the text view and the screen model as they stand at the end
+ * of the screen's byte range; with `--steps`, the screen of every dialog
+ * step instead. Prints "same" or the lines that differ, then the notes (what
+ * was not understood) of both decoders.
  *
  * The capture and ranges.json have the format replay.ts reads. Captures
  * hold real SAP data: they stay out of Git, and so does what this prints.
@@ -22,7 +23,7 @@ import * as mine from "../../src/diag/index.js";
 
 const [capture, rangesFile, baseRef = "main"] = process.argv.slice(2);
 if (!capture || !rangesFile) {
-  console.error("usage: bun scripts/diag-dev/compare.ts <capture.bin> <ranges.json> [base-ref]");
+  console.error("usage: bun scripts/diag-dev/compare.ts <capture.bin> <ranges.json | --steps> [base-ref]");
   process.exit(2);
 }
 
@@ -35,7 +36,8 @@ execFileSync("tar", ["-x", "-C", dir], { input: tar });
 const base = (await import(join(dir, "src/diag/index.ts"))) as Diag;
 
 const data = readFileSync(capture);
-const ranges = JSON.parse(readFileSync(rangesFile, "utf8")) as Record<string, [number, number]>;
+const steps = rangesFile === "--steps";
+const ranges = steps ? {} : (JSON.parse(readFileSync(rangesFile, "utf8")) as Record<string, [number, number]>);
 
 interface Out {
   views: Map<string, string>;
@@ -46,6 +48,12 @@ interface Out {
 function replay(diag: Diag): Out {
   const decoder = new diag.DiagDecoder();
   const out: Out = { views: new Map(), models: new Map(), notes: decoder.notes };
+  if (steps)
+    decoder.onScreen = (screen, mode) => {
+      const name = `step ${out.views.size + 1} (mode ${mode})`;
+      out.views.set(name, diag.diagView(screen));
+      out.models.set(name, JSON.stringify(screen, null, 1));
+    };
   let at = 0;
   while (at + 13 <= data.length) {
     const dir = data[at] === 0 ? 0 : 1;
@@ -95,7 +103,9 @@ const after = replay(mine);
 rmSync(dir, { recursive: true, force: true });
 
 let differences = 0;
-for (const name of Object.keys(ranges)) {
+const names = steps ? [...new Set([...before.views.keys(), ...after.views.keys()])] : Object.keys(ranges);
+if (steps) console.log(`${before.views.size} dialog steps with ${baseRef}, ${after.views.size} with this tree`);
+for (const name of names) {
   for (const [what, a, b] of [["view", before.views.get(name) ?? "", after.views.get(name) ?? ""] as const, ["model", before.models.get(name) ?? "", after.models.get(name) ?? ""] as const]) {
     if (a === b) {
       console.log(`${name} ${what}: same (${a.split("\n").length} lines)`);
