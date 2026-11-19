@@ -99,6 +99,61 @@ describe("the router", () => {
     expect((await read(4)).toString()).toBe("re:x");
   });
 
+  test("two connections at once: each tap gets its own bytes, in order", async () => {
+    const sap = await fakeSap();
+    const taps: [number, string][][] = [];
+    const router = await startRouter({
+      port: 0,
+      onConnection: () => {
+        const seen: [number, string][] = [];
+        taps.push(seen);
+        return { data: (d, c) => seen.push([d, c.toString()]), close() {} };
+      },
+    });
+    open.push(router);
+    const port = (router.address() as { port: number }).port;
+    const a = await client(port);
+    const b = await client(port);
+    for (const c of [a, b]) {
+      c.sock.write(request([["127.0.0.1", 0], ["127.0.0.1", sap]]));
+      await c.read(12);
+    }
+    for (let i = 0; i < 5; i++) {
+      a.sock.write(`a${i}`);
+      b.sock.write(`b${i}`);
+      expect((await a.read(5)).toString()).toBe(`re:a${i}`);
+      expect((await b.read(5)).toString()).toBe(`re:b${i}`);
+    }
+    const flat = (seen: [number, string][]) => seen.map(([d, c]) => `${d}:${c}`).join("|");
+    expect(taps.length).toBe(2);
+    expect(flat(taps[0] ?? [])).toBe([0, 1, 2, 3, 4].map((i) => `0:a${i}|1:re:a${i}`).join("|"));
+    expect(flat(taps[1] ?? [])).toBe([0, 1, 2, 3, 4].map((i) => `0:b${i}|1:re:b${i}`).join("|"));
+  });
+
+  test("a tap that fails never breaks SAP GUI's connection", async () => {
+    const sap = await fakeSap();
+    const logged: string[] = [];
+    const router = await startRouter({
+      port: 0,
+      log: (m) => logged.push(m),
+      onConnection: () => ({
+        data: () => {
+          throw new Error("decoder bug");
+        },
+        close() {},
+      }),
+    });
+    open.push(router);
+    const { sock, read } = await client((router.address() as { port: number }).port);
+    sock.write(request([["127.0.0.1", 0], ["127.0.0.1", sap]]));
+    await read(12);
+    sock.write("one");
+    expect((await read(6)).toString()).toBe("re:one");
+    sock.write("two");
+    expect((await read(6)).toString()).toBe("re:two");
+    expect(logged.filter((m) => m.includes("decoder bug")).length).toBe(1);
+  });
+
   test("drops a client that does not route", async () => {
     const router = await startRouter({ port: 0 });
     open.push(router);
