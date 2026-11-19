@@ -1,17 +1,30 @@
 /**
- * RFC calls as they travel inside DIAG (RFC_TR items): the server calls
- * function modules of the SAP GUI front end (the control framework).
+ * RFC calls as they travel inside DIAG (the RFC items, id 08): the server
+ * calls function modules of the SAP GUI front end (the control framework),
+ * and SAP GUI answers.
  *
  * The payload of a call is a list of fields, each
  *
  *   id 2, length 2 (big-endian), data, id 2 again
  *
- * and ends with ff ff. The ids used here: 0102 function name; 0201 name of
- * an import parameter, 0203 its value; 0205 name of an export parameter;
- * 0301 name of a table, 0302 its row length and row count (two uint32),
- * then its rows: one 0304 field per row, or 0305 fields of up to 250 bytes
- * that together hold `7b 02 ?? ea`, the compressed length (uint32) and one
- * LZH block with all rows.
+ * and ends with ff ff (all 73 calls and answers of the captures do). What
+ * each id read here holds, as the captured calls show it:
+ *
+ *   0102  the function's name ("OLE_FLUSH_CALL"); only in calls, not in answers
+ *   0201  a parameter's name, followed by 0203, its value
+ *   0301  a table's name, followed by 0302: row length and row count (uint32 each)
+ *   0304  one row of that table, as many as the count; the server's rows have
+ *         the row length, some of SAP GUI's are a single byte
+ *   0305  up to 250 bytes of the table's rows, packed: the parts joined are
+ *         7b 02 ?? ea, the packed length (uint32), and one LZH block that
+ *         unpacks to row length x row count bytes (120 of 120 tables);
+ *         an empty 0306 follows the last part
+ *
+ * The other ids (a header of about twenty fields before the function name:
+ * host names, release, user, client) are not read.
+ *
+ * Example (synthetic): 01 02 00 04 "Z_GO" 01 02 | ff ff is a call of Z_GO
+ * without parameters.
  */
 import { lzhDecompress } from "./lzh.js";
 
@@ -38,7 +51,8 @@ export interface RfcCall {
   problem?: string;
 }
 
-const F = { FUNCTION: 0x0102, PARAM_NAME: 0x0201, PARAM_VALUE: 0x0203, TABLE_NAME: 0x0301, TABLE_INFO: 0x0302, TABLE_ROW: 0x0304, TABLE_PACKED: 0x0305, END: 0xffff } as const;
+/** Field ids, named by what their data is. */
+const FIELD = { functionName: 0x0102, paramName: 0x0201, paramValue: 0x0203, tableName: 0x0301, tableShape: 0x0302, tableRow: 0x0304, tablePacked: 0x0305, end: 0xffff } as const;
 
 /** The fields of a call. Stops at ff ff or where the bytes stop being fields. */
 export function rfcFields(b: Buffer, start = 0): { fields: RfcField[]; end: number; complete: boolean } {
@@ -46,7 +60,7 @@ export function rfcFields(b: Buffer, start = 0): { fields: RfcField[]; end: numb
   let i = start;
   while (i + 2 <= b.length) {
     const id = b.readUInt16BE(i);
-    if (id === F.END) return { fields, end: i + 2, complete: true };
+    if (id === FIELD.end) return { fields, end: i + 2, complete: true };
     if (i + 4 > b.length) break;
     const n = b.readUInt16BE(i + 2);
     if (i + 6 + n > b.length || b.readUInt16BE(i + 4 + n) !== id) return { fields, end: i, complete: false };
@@ -73,7 +87,7 @@ function unpackRows(packed: Buffer, t: RfcTable): void {
   else if (data.length) t.rows.push(data);
 }
 
-/** One RFC call from the payload of an RFC_TR item (or of several joined). Never throws. */
+/** One RFC call from the payload of an RFC item (or of several parts joined). Never throws. */
 export function parseRfc(payload: Buffer): RfcCall {
   const call: RfcCall = { function: "", params: new Map(), tables: new Map() };
   const { fields, complete } = rfcFields(payload);
@@ -86,20 +100,20 @@ export function parseRfc(payload: Buffer): RfcCall {
     packed = [];
   };
   for (const f of fields) {
-    if (f.id === F.FUNCTION) call.function = f.data.toString("latin1");
-    else if (f.id === F.PARAM_NAME) param = f.data.toString("latin1");
-    else if (f.id === F.PARAM_VALUE && param !== undefined) {
+    if (f.id === FIELD.functionName) call.function = f.data.toString("latin1");
+    else if (f.id === FIELD.paramName) param = f.data.toString("latin1");
+    else if (f.id === FIELD.paramValue && param !== undefined) {
       call.params.set(param, f.data);
       param = undefined;
-    } else if (f.id === F.TABLE_NAME) {
+    } else if (f.id === FIELD.tableName) {
       closeTable();
       table = { name: f.data.toString("latin1"), rowLength: 0, count: 0, rows: [] };
       call.tables.set(table.name, table);
-    } else if (f.id === F.TABLE_INFO && table && f.data.length >= 8) {
+    } else if (f.id === FIELD.tableShape && table && f.data.length >= 8) {
       table.rowLength = f.data.readUInt32BE(0);
       table.count = f.data.readUInt32BE(4);
-    } else if (f.id === F.TABLE_ROW && table) table.rows.push(f.data);
-    else if (f.id === F.TABLE_PACKED && table) packed.push(f.data);
+    } else if (f.id === FIELD.tableRow && table) table.rows.push(f.data);
+    else if (f.id === FIELD.tablePacked && table) packed.push(f.data);
   }
   closeTable();
   return call;
