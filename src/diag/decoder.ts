@@ -102,6 +102,7 @@ class Mode {
     const mine = (what: string) => note(what, this);
     this.classic = new ClassicState(mine);
     this.controls = new Controls(mine);
+    this.classic.modeEnded = (m) => this.controls.endMode(m);
   }
 }
 
@@ -273,7 +274,7 @@ export class DiagDecoder {
         if (inner.problem) this.note(`inner stream: ${inner.problem}`, mode);
         mode.classic.apply(inner.items);
       }
-    } else if (call.function === "OLE_FLUSH_CALL") mode.controls.serverCall(call, mode.classic.utf8, mode.classic.revision);
+    } else if (call.function === "OLE_FLUSH_CALL") mode.controls.serverCall(call, mode.classic.utf8, mode.classic.revision, mode.classic.session.internalMode);
     else if (call.function !== "SAPGUI_PROGRESS_INDICATOR") this.note(`RFC call ${call.function}`, mode);
     return it.sid === RFC_PART.call;
   }

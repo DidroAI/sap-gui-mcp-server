@@ -356,6 +356,55 @@ describe("DiagDecoder: controls", () => {
     return q;
   }
 
+  /** A container 115 in GRID1 with a splitter 116 and a text editor 117 in it, as VA03's header texts are made. */
+  function editorQueue(): Queue {
+    const q = new Queue();
+    const gui = q.object("2-");
+    q.verb(gui, "CreateControl", "C", [115, "SAPGUI.CONTAINERCTRL.1", 0, 10], true);
+    q.verb(gui, "LinkContainer", "C", [115, "GRID1"]);
+    q.verb(gui, "CreateControl", "C", [116, "SAPGUI.SplitterCtrl.1", 0, 115], true);
+    const editor = q.verb(gui, "CreateControl", "C", [117, "SAPGUI.TextEditCtrl.1", 0, 116], true);
+    q.verb(editor, "TextStream", "S", ["Deliver to gate 1"]);
+    return q;
+  }
+  /** Another transaction's container 115 in GRID1 with a grid 116: the shell ids are SAP GUI's again. */
+  function gridOnlyQueue(): Queue {
+    const q = new Queue();
+    const gui = q.object("2-");
+    q.verb(gui, "CreateControl", "C", [115, "SAPGUI.CONTAINERCTRL.1", 0, 10], true);
+    q.verb(gui, "LinkContainer", "C", [115, "GRID1"]);
+    q.verb(gui, "CreateControl", "C", [116, "SAPGUI.GridViewCtrl.1", 0, 115], true);
+    return q;
+  }
+  const internalMode = (n: number) => idItem(0x06, 0x0a, [0, n]);
+  const kinds = (s: DiagScreen | undefined) => (s?.windows[0]?.controls ?? []).map((c) => `${c.id} ${c.kind}`);
+
+  test("the controls of an internal mode go when the server ends it (session item 15)", () => {
+    const { screens } = run(
+      message([internalMode(1), rfcItem(0, editorQueue().build()), END], { compress: true }),
+      [0, message([rfcItem(1, queueAnswer({ 1: "10" })), END], { info: 0 })],
+      message([internalMode(1), ...screenHead(), ...custom("GRID1", 2), END]),
+      // /n: the internal mode ends, the next transaction starts in another one; its screen has a GRID1 too.
+      message([internalMode(1), idItem(0x06, 0x15), END], { info: 2 }),
+      message([internalMode(2), ...screenHead(), ...custom("GRID1", 2), END]),
+    );
+    expect(kinds(screens[0])).toEqual(["115 container", "116 splitter", "117 text"]);
+    expect(kinds(screens[1])).toEqual([]);
+  });
+
+  test("a shell id made again: the old control and what hung in it are gone", () => {
+    const { screens } = run(
+      message([rfcItem(0, editorQueue().build()), END], { compress: true }),
+      [0, message([rfcItem(1, queueAnswer({ 1: "10" })), END], { info: 0 })],
+      message([...screenHead(), ...custom("GRID1", 2), END]),
+      message([rfcItem(0, gridOnlyQueue().build()), END], { compress: true }),
+      [0, message([rfcItem(1, queueAnswer({ 1: "11" })), END], { info: 0 })],
+      message([...screenHead(), ...custom("GRID1", 2), END]),
+    );
+    expect(kinds(screens[0])).toEqual(["115 container", "116 splitter", "117 text"]);
+    expect(kinds(screens[1])).toEqual(["115 container", "116 grid"]);
+  });
+
   test("an ALV grid: columns by position with their header texts, rows, total row count", () => {
     const { screens } = run(message([rfcItem(0, gridQueue().build()), END], { compress: true }), [0, message([rfcItem(1, queueAnswer({ 1: "10", 3: "11" })), END], { info: 0 })], message([...screenHead(), ...custom("GRID1", 2), END]));
     expect(screens.length).toBe(1);
