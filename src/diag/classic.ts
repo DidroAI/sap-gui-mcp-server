@@ -142,6 +142,8 @@ export class ClassicState {
   private listWidth = 0;
   /** What the next scrolling item (sub-id 02 of the window id) is about. */
   private scrollOf: "table" | "list" | undefined;
+  /** Called when the server ends an internal mode (session sub-id 15), with its number (sub-id 0a of the same message). */
+  modeEnded?: (internalMode: number) => void;
 
   constructor(private readonly note: (what: string) => void) {}
 
@@ -303,6 +305,12 @@ export class ClassicState {
         return;
       case 0x0a:
         if (v.length >= 2) this.session.internalMode = v.readUInt16BE(0);
+        return;
+      case 0x15:
+        // Empty, in a message of its own (header byte 5 = 2) where an internal mode ends: after /n, and when
+        // a transaction is left for the menu. Its controls are gone in SAP GUI: those of the next transaction
+        // reuse their shell ids (cap-1: VA03's 115..122, then VA05's 115 and 116).
+        this.modeEnded?.(this.session.internalMode ?? 0);
         return;
       case 0x0b: {
         // "E: text": the type, a colon, the text.
