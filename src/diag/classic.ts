@@ -130,6 +130,8 @@ export class ClassicState {
   utf8 = true;
   /** Counts a screen change: goes up each time the server starts a window anew. */
   revision = 0;
+  /** Per window: the revision at which its menus, keys and GUI status were last sent (they are carried over while unchanged). */
+  readonly chromeSent = new WeakMap<WindowState, number>();
 
   private cur: WindowState | undefined;
   private path: Level[] = [];
@@ -272,6 +274,7 @@ export class ClassicState {
       w.guiStatus = before.guiStatus;
       w.guiStatusProgram = before.guiStatusProgram;
     }
+    this.chromeSent.set(w, before ? (this.chromeSent.get(before) ?? this.revision) : this.revision + 1);
     // A window replaces itself and closes those above it.
     this.windows.length = Math.min(this.windows.length, index);
     while (this.windows.length < index) this.windows.push(newWindow(this.windows.length));
@@ -321,6 +324,7 @@ export class ClassicState {
         return;
       case 0x10:
         this.win().guiStatus = s();
+        this.chromeSent.set(this.win(), this.revision);
         return;
       case 0x23: {
         // uint32 code page, a byte, then its number and name as strings: "4110", "utf-8".
@@ -440,6 +444,7 @@ export class ClassicState {
       entries.push({ path: [...e.subarray(2, 6)].filter((x) => x > 0), flags: e[6] ?? 0, vkey: e[7] ?? 0, text: strings[0] ?? "", accel: strings[1] ?? "", info: strings[2] ?? "" });
       i += n;
     }
+    this.chromeSent.set(w, this.revision);
     if (sid === 0x01 || sid === 0x02) {
       if (sid === 0x01) w.menus = [];
       for (const e of entries) {
