@@ -259,7 +259,8 @@ window must be on the screen.
   dropdown, a list line, or an element the reader cannot classify (`check`
   only on checkboxes and radio buttons, `set` only on fields).
 - `scroll`, and `sap_look` with `rows` that would scroll, while values typed
-  with `set` have not reached SAP: a page key would send them.
+  with `set` or boxes ticked with `check` have not reached SAP: a page key
+  would send them. The view marks them `(typed, …)` and `(ticked, …)`.
 - A table control is not paged when its first row on show has no plain
   field to put the cursor in.
 - Sideways scrolling (the view already has every column SAP sent).
@@ -271,7 +272,8 @@ window must be on the screen.
   through the router), or when that window is minimized.
 - The guard rates an action by the input it sends: any click on a push
   button or a box with a function code is judged as pressing it, and a
-  click on an element the reader cannot classify is treated as a write.
+  click on a button in a table-control row or on an element the reader
+  cannot classify is treated as a write.
 
 **Waits.** An action ends when SAP has answered the request its last input
 made (and every request before it), as seen in the traffic, not after a
@@ -279,11 +281,14 @@ fixed time. If SAP GUI sent nothing after a key or a click, or SAP has not
 answered within the action's `timeout` (60 s by default), the answer says
 so; `sap_look` during a step still running says the screen will change.
 If SAP's answer was lost or could not be read on the connection, the action
-says the session state is unknown; the next action is refused until a
-`sap_look`, which takes the last screen read whole as the state.
+says the session state is unknown; the next action is refused until any
+`sap_look` (with or without an id), which takes the last screen read whole
+as the state. Bytes lost on the connection that cannot be told to one
+session never cut another session's step short.
 
 **Windows.** Several sessions (`/o`) are matched to their windows by title,
-by the system and client in the status bar, by the status bar's message,
+by the system and client in the status bar's system field (never read
+from the status message), by the status bar's message,
 and by the window each was first matched to without doubt.
 
 **Record and replay.** `sap_record` and `sap_replay` work with it: a test

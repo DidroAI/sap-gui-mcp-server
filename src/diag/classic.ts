@@ -809,6 +809,11 @@ export class ClassicState {
    * an empty string; a dropdown five strings, the id of its value list second
    * and the key fourth. Example (synthetic):
    * "10    \0" "6\0" "0\0" is a field of width 6 holding "10".
+   *
+   * A cell of any other element type (a push button in the row, a type not
+   * in the captures) is never taken for a field: a button cell becomes a
+   * button, anything else "other", with its first string as its text (the
+   * strings it takes are not known: three are assumed, and noted).
    */
   private tableRow(v: Buffer): void {
     const b = this.build;
@@ -829,11 +834,16 @@ export class ClassicState {
         const valueList = tokens[t + 1] ?? "";
         t += 5;
         cells.push({ column, kind: "dropdown", text: hidden ? "" : key, key: hidden ? "" : key, input, hidden, ...(valueList ? { valueList } : {}) });
-      } else {
+      } else if (FIELDS.has(ref.etype)) {
         const text = (tokens[t] ?? "").trim();
         const maxLength = Number(tokens[t + 1] ?? "") || 0;
         t += 3;
         cells.push({ column, kind: "field", text: hidden ? "" : text, input: input && ref.etype !== EL.outputField, hidden, ...(maxLength ? { maxLength } : {}) });
+      } else {
+        const text = iconText((tokens[t] ?? "").trim()).text;
+        t += 3;
+        if (ref.etype !== EL.button) this.note(`table cell element type ${ref.etype}`);
+        cells.push({ column, kind: ref.etype === EL.button ? "button" : "other", text: hidden ? "" : text, input, hidden });
       }
     });
     if (t > tokens.length) this.note(`table ${b.table.name}: a row has fewer values than cells`);
