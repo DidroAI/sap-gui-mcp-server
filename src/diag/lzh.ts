@@ -20,6 +20,12 @@
 import { constants, deflateRawSync, inflateRawSync } from "node:zlib";
 
 export const LZH_HEADER = 8;
+/**
+ * The largest block decompressed: the header's length is not trusted beyond
+ * it (a garbled header could ask for 4 GB). A DIAG message or an RFC table
+ * block is far smaller.
+ */
+export const MAX_LZH_OUTPUT = 64 << 20;
 
 export class LzhError extends Error {}
 
@@ -45,6 +51,7 @@ export function lzhDecompress(block: Uint8Array): Buffer {
   if (view[5] !== 0x1f || view[6] !== 0x9d) throw new LzhError("no compression magic");
   if (((view[4] ?? 0) & 0x0f) !== 2) throw new LzhError(`compression algorithm ${(view[4] ?? 0) & 0x0f} is not LZH`);
   if (length === 0) return Buffer.alloc(0);
+  if (length > MAX_LZH_OUTPUT) throw new LzhError(`compressed block of ${length} bytes once decompressed, more than the ${MAX_LZH_OUTPUT >> 20} MB this reader accepts: not read`);
   const padding = (view[LZH_HEADER] ?? 0) & 3;
   let out: Buffer;
   try {

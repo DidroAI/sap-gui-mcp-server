@@ -54,3 +54,12 @@ describe("SAP LZH", () => {
     expect(() => lzhDecompress(cut)).toThrow(LzhError);
   });
 });
+
+describe("SAP LZH: the output is bounded", () => {
+  test("a header asking for more than 64 MB is refused before inflating", () => {
+    const block = lzhCompress(TEXT);
+    block.writeUInt32LE(0xfffffff0, 0);
+    expect(() => lzhDecompress(block)).toThrow(LzhError);
+    expect(() => lzhDecompress(block)).toThrow("more than the 64 MB");
+  });
+});
