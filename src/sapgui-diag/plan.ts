@@ -657,8 +657,8 @@ export function planPlain(s: DiagScreen, action: Action, target: PlainTarget | u
       const f4 = action.do === "f4";
       // A click on a field only moves the cursor; buttons, tabs, a checkbox with a function code, double-clicks and F4 go
       // to SAP. An element this reader cannot classify may: a short look for SAP's answer.
-      const goes = f4 || twice || x.kind === "tab" || (x.kind === "element" && (x.element.kind === "button" || !!x.element.fcode));
-      const unknown = x.kind === "element" && x.element.kind === "other";
+      const goes = f4 || twice || x.kind === "tab" || (x.kind === "element" && (x.element.kind === "button" || !!x.element.fcode)) || (x.kind === "cell" && x.cellKind === "button");
+      const unknown = (x.kind === "element" && x.element.kind === "other") || (x.kind === "cell" && x.cellKind === "other");
       return { steps: [{ do: f4 ? "f4" : twice ? "dblclick" : "click", x: px, y: py, settle: 150 }], note: `${action.do} on ${x.what}`, answer: goes ? "yes" : unknown ? "maybe" : "no" };
     }
     default:

@@ -116,6 +116,8 @@ export class DiagDecoder {
    * not decompress or throws, a message that ends a step without a window.
    */
   onTrouble?: (mode: number | undefined) => void;
+  /** Called for every message from the server, with its mode: what tells one session's silence from another's. */
+  onServerMessage?: (mode: number) => void;
   /** What was not understood, with how often: unknown items, element types, pieces that broke off, lost bytes. At most MAX_NOTES different ones. */
   readonly notes = new Map<string, number>();
   /** Bytes dropped from the stream because they were lost or garbled in transit. */
@@ -216,6 +218,13 @@ export class DiagDecoder {
     const number = msg.header[0] ?? 0;
     const mode = this.mode(number);
     this.current = mode;
+    if (dir === 1) {
+      try {
+        this.onServerMessage?.(number);
+      } catch {
+        // the listener's failure is not the decoder's
+      }
+    }
     if (msg.problem) this.note(msg.problem, mode);
     if (msg.broken || suspect) {
       // Read what can be read, but the screen this message ends may be wrong: say so on it.

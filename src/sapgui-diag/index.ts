@@ -129,6 +129,11 @@ export function assessDiag(s: DiagScreen, action: Action, target?: Target): Asse
       // Never rated safer than a button: what it does when clicked is not known.
       if (e.kind === "other") return commit(`${action.do} on an element this reader cannot classify (${e.name || `@${e.row},${e.col}`}, type ${e.etype}) is treated as a write`);
     }
+    // A push button in a table-control row (Details, Delete...) or a cell of a type not known: what it does is not in the traffic.
+    if (target?.kind === "cell" && (target.cellKind === "button" || target.cellKind === "other")) {
+      const text = clean(target.window.tables.find((t) => t.name === target.table)?.rows.find((r) => r.index === target.index)?.cells[target.column]?.text);
+      return commit(`${action.do} on ${target.cellKind === "button" ? `the button "${text}"` : "an element this reader cannot classify"} in row ${target.index} of the table ${target.table} is treated as a write`);
+    }
   }
   switch (action.do) {
     case "focus":
@@ -461,6 +466,8 @@ export interface Typed {
   /** A cell of a table control: the table, the table's own row number (as the view prints it) and the column index. */
   table?: { name: string; index: number; column: number };
   value: string;
+  /** A checkbox or radio button ticked or cleared by `check`: its new state (SAP gets it with the next Enter, like a typed value). */
+  checked?: boolean;
 }
 
 /** A copy of the screen with the typed values in their fields, marked as typed. */
@@ -472,11 +479,11 @@ export function withTyped(s: DiagScreen, typed: Typed[]): DiagScreen {
     if (!w || w.program !== t.program || w.dynpro !== t.dynpro) continue;
     if (t.table) {
       const cell = w.tables.find((x) => x.name === t.table?.name)?.rows.find((r) => r.index === t.table?.index)?.cells[t.table.column];
-      if (cell) Object.assign(cell, { text: t.value, typed: true });
+      if (cell) Object.assign(cell, t.checked !== undefined ? { checked: t.checked, typed: true } : { text: t.value, typed: true });
       continue;
     }
     const e = w.elements.find((x) => x.name === t.name && x.row === t.row && x.col === t.col);
-    if (e) Object.assign(e, { text: t.value, typed: true, required: false });
+    if (e) Object.assign(e, t.checked !== undefined ? { checked: t.checked, typed: true } : { text: t.value, typed: true, required: false });
   }
   return copy;
 }
@@ -497,7 +504,12 @@ export function typedMisses(typed: Typed[], after: DiagScreen): string[] {
   for (const t of typed) {
     const w = after.windows[t.window];
     if (!w || w.program !== t.program || w.dynpro !== t.dynpro) continue;
-    const now = t.table ? w.tables.find((x) => x.name === t.table?.name)?.rows.find((r) => r.index === t.table?.index)?.cells[t.table.column]?.text : w.elements.find((x) => x.name === t.name && x.row === t.row && x.col === t.col)?.text;
+    const target = t.table ? w.tables.find((x) => x.name === t.table?.name)?.rows.find((r) => r.index === t.table?.index)?.cells[t.table.column] : w.elements.find((x) => x.name === t.name && x.row === t.row && x.col === t.col);
+    if (t.checked !== undefined) {
+      if (target && !!target.checked !== t.checked) out.push(`${t.name}${t.table ? `[${t.table.index}]` : ""} is ${target.checked ? "ticked" : "not ticked"} after this step, not as it was set: SAP changed it or did not take it.`);
+      continue;
+    }
+    const now = target?.text;
     if (now === undefined || sameValue(now, t.value)) continue;
     out.push(`${t.name}${t.table ? `[${t.table.index}]` : ""} shows "${clean(now)}" after this step, not the typed "${t.value}": SAP changed it or did not take it.`);
   }
@@ -593,13 +605,14 @@ export class DiagDriver implements Driver {
   }
 
   async look(options: LookOptions): Promise<string> {
-    if (options.id?.trim().toLowerCase() === "mbar") return menuView(this.screen());
-    if (options.id) return lookControl({ screen: () => this.screen(), scrollTo: (id, row) => this.scrollTo(id, row).then(() => undefined) }, options);
-    // SAP's answer to the last step was lost or unreadable: this look takes the last screen read as the state.
-    const recovered = this.conn.traffic.recover(this.mode);
+    // SAP's answer to the last step was lost or unreadable: any look (whole, by id, the menus) takes the last screen read as the state.
+    const recovered = this.conn.traffic.recover(this.mode)
+      ? "\nNOTE SAP's answer to the last step was lost or could not be read on the connection: this is the last screen read whole, and actions now go on from it. The session state is not known for sure: if SAP GUI shows another screen, press Enter in SAP GUI once and look again."
+      : "";
+    if (options.id?.trim().toLowerCase() === "mbar") return menuView(this.screen()) + recovered;
+    if (options.id) return (await lookControl({ screen: () => this.screen(), scrollTo: (id, row) => this.scrollTo(id, row).then(() => undefined) }, options)) + recovered;
     const view = diagView(withTyped(this.screen(), this.typed()), options.compact ? {} : { maxRows: 100_000 });
-    if (recovered)
-      return `${view}\nNOTE SAP's answer to the last step was lost or could not be read on the connection: this is the last screen read whole, and actions now go on from it. The session state is not known for sure: if SAP GUI shows another screen, press Enter in SAP GUI once and look again.`;
+    if (recovered) return view + recovered;
     return this.conn.traffic.pending(this.mode) ? `${view}\nNOTE SAP is still working on a step: this screen is from before it and will change. Look again in a moment, and act when the step has ended.` : view;
   }
 
@@ -734,7 +747,7 @@ export class DiagDriver implements Driver {
     if (!traffic.pending(this.mode)) return;
     if (!traffic.troubled(this.mode)) await traffic.wait(this.mode, -1, Date.now(), { requestMs: 0, answerMs: BUSY_MS, quietMs: 0, maxSettleMs: 0 });
     if (traffic.troubled(this.mode))
-      throw new ActionError("SAP's answer to the last step was lost or could not be read on the connection, so the session state is unknown and nothing was sent. Look first (sap_look): the look takes the last screen read as the state, and actions go on from there.");
+      throw new ActionError("SAP's answer to the last step was lost or could not be read on the connection, so the session state is unknown and nothing was sent. Look first (any sap_look, with or without an id): the look takes the last screen read as the state, and actions go on from there.");
     if (traffic.pending(this.mode)) throw new ActionError('SAP is still working on the last step. Look again in a moment (sap_look); a long step can be given more time with "timeout" (seconds).');
   }
 
@@ -752,7 +765,7 @@ export class DiagDriver implements Driver {
     const typed = n.kind === "tree" ? [] : this.typed();
     if (typed.length)
       throw new ActionError(
-        `${typed.length} value${typed.length === 1 ? " typed" : "s typed"} on this screen (${typed.map((t) => (t.table ? `${t.name}[${t.table.index}]` : t.name)).join(", ")}) ${typed.length === 1 ? "has" : "have"} not reached SAP yet, and scrolling ${n.id} would send ${typed.length === 1 ? "it" : "them"}: nothing was scrolled. Send ${typed.length === 1 ? "it" : "them"} first with Enter ({"do":"key","key":0}), then scroll or read again.`,
+        `${typed.length} change${typed.length === 1 ? "" : "s"} on this screen (${typed.map((t) => `${t.table ? `${t.name}[${t.table.index}]` : t.name}${t.checked !== undefined ? (t.checked ? " ticked" : " cleared") : " typed"}`).join(", ")}) ${typed.length === 1 ? "has" : "have"} not reached SAP yet, and scrolling ${n.id} would send ${typed.length === 1 ? "it" : "them"}: nothing was scrolled. Send ${typed.length === 1 ? "it" : "them"} first with Enter ({"do":"key","key":0}), then scroll or read again.`,
       );
     if (n.kind === "dropdown") throw new ActionError(`${n.id} is a dropdown: it does not scroll.`);
     if (n.kind === "tree") return `every node SAP sent of ${n.id} is in the view (sap_look with "id":"${n.id}" and "rows" reads any of them): nothing to scroll`;
@@ -870,6 +883,8 @@ export class DiagDriver implements Driver {
         if (!target && /^(set|focus|check|click|dblclick|press|select|f4)$/.test(action.do)) throw new ActionError(noTargetText(s, String(action.id ?? action.name ?? "")));
         plan = planPlain(s, action, target, g, local(named));
         if (action.do === "set" && (target?.kind === "element" || target?.kind === "cell")) plan = { ...plan, note: this.keepTyped(target, String(action.value ?? ""), s) };
+        // A box ticked without a function code stays in SAP GUI until the next Enter: kept like a typed value.
+        if (action.do === "check" && plan.answer === "no" && (target?.kind === "element" || target?.kind === "cell")) this.keepTicked(target, s);
       }
     }
     const before = this.conn.steps.get(this.mode) ?? 0;
@@ -885,6 +900,20 @@ export class DiagDriver implements Driver {
     if (after && moved && s.message?.type === "A" && after.message?.type !== "A")
       lines.push(`SAP ended transaction ${s.session.tcode ?? ""} after the termination message "${clean(s.message.text)}": input that was not saved there is lost. The screen below is where SAP went; start the transaction again to retry.`);
     return lines.join("\n");
+  }
+
+  /** Keeps the new state of a checkbox or radio button until SAP gets it with the next step. */
+  private keepTicked(t: Extract<Target, { kind: "element" | "cell" }>, s: DiagScreen): void {
+    const shown = withTyped(s, this.typed());
+    const w = shown.windows[t.window.index];
+    const now = t.kind === "element" ? w?.elements.find((x) => x.name === t.element.name && x.row === t.row && x.col === t.col) : w?.tables.find((x) => x.name === t.table)?.rows.find((r) => r.index === t.index)?.cells[t.column];
+    const radio = now?.kind === "radio";
+    const checked = radio ? true : !now?.checked;
+    const step = this.conn.steps.get(this.mode) ?? 0;
+    const name = t.kind === "element" ? t.element.name : (t.what.split(" ")[0] ?? "");
+    const kept = this.typed().filter((x) => !(x.window === t.window.index && x.row === t.row && x.col === t.col && x.name === name));
+    kept.push({ step, window: t.window.index, program: t.window.program, dynpro: t.window.dynpro, name, row: t.row, col: t.col, ...(t.kind === "cell" ? { table: { name: t.table, index: t.index, column: t.column } } : {}), value: "", checked });
+    this.conn.typed.set(this.mode, kept);
   }
 
   /** Keeps a value typed into a field or a table cell until SAP gets it with the next step; the note of the set. */
@@ -1035,6 +1064,7 @@ export function sapguiDiagSurface(env: Record<string, string | undefined>, optio
         c.traffic.screen(mode);
       };
       c.decoder.onTrouble = (mode) => c.traffic.trouble(mode);
+      c.decoder.onServerMessage = (mode) => c.traffic.serverMessage(mode);
       conns.push(c);
       const capture = new Capture(env.SAP_DIAG_CAPTURE, `diag-${Date.now()}-${c.n}.bin`);
       let said = false;

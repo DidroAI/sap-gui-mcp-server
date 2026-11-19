@@ -100,10 +100,18 @@ export interface ModeFacts {
   routed?: number;
 }
 
-/** System id and client as SAP GUI's status bar shows them ("ABA (1) 800"), or undefined. */
-export function systemOf(info: string | undefined): { system: string; client: string } | undefined {
-  const m = /\b([A-Z][A-Z0-9]{2})\s*\(\d+\)\s*(\d{3})\b/.exec(info ?? "");
-  return m ? { system: m[1] as string, client: m[2] as string } : undefined;
+/**
+ * System id and client from the status bar's system field ("ABA (1) 800"),
+ * or undefined. Only a text that is that field and nothing else counts: the
+ * status message ("Order XYZ (1) 100 saved", `status`) is never read as it.
+ */
+export function systemOf(info: string | undefined, status?: string): { system: string; client: string } | undefined {
+  for (const part of (info ?? "").split(" | ")) {
+    if (status !== undefined && norm(part) === norm(status)) continue;
+    const m = /^\s*([A-Z][A-Z0-9]{2})\s*\(\d+\)\s*(\d{3})\s*$/.exec(part);
+    if (m) return { system: m[1] as string, client: m[2] as string };
+  }
+  return undefined;
 }
 
 const norm = (s: string | undefined) => (s ?? "").replace(/\s+/g, " ").trim();
@@ -121,7 +129,7 @@ export function pickWindow(windows: HostWindow[], mode: ModeFacts, bound: Map<nu
   const titled = sessions.filter((w) => norm(w.title) === title);
   if (!titled.length) return `No SAP GUI window titled "${mode.title}" is open on this desktop.`;
   // A window whose status bar shows another system or client is a session that is not this one (maybe not routed at all).
-  const sys = (w: HostWindow) => systemOf(w.info);
+  const sys = (w: HostWindow) => systemOf(w.info, w.status);
   const mismatch = (w: HostWindow) => {
     const s = sys(w);
     return !!s && ((!!mode.system && s.system !== mode.system) || (!!mode.client && s.client !== mode.client));

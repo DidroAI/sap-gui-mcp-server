@@ -78,7 +78,7 @@ function elementText(e: DiagElement): string {
     case "checkbox":
     case "radio": {
       const box = e.kind === "checkbox" ? `[${e.checked ? "x" : " "}]` : `(${e.checked ? "o" : " "})`;
-      return `${box} ${one(e.text || e.label || "")} ${e.name}${at}${e.input ? "" : " (read-only)"}`;
+      return `${box} ${one(e.text || e.label || "")} ${e.name}${at}${e.input ? "" : " (read-only)"}${e.typed ? " (ticked, sent with the next Enter)" : ""}`;
     }
     case "dropdown":
       return `${e.name}${at}=dropdown ${e.input ? `[${e.key ?? ""}]` : quote(e.key ?? "")}`;
@@ -118,8 +118,9 @@ function tableLines(t: DiagTable, maxRows: number): string[] {
       const cell = r.cells[c.index];
       if (!cell || cell.hidden) continue;
       if (cell.kind === "checkbox" || cell.kind === "radio") {
-        if (cell.checked) cells.push(`${handle(c.index)}=[x]`);
-      } else if (cell.text || cell.typed) cells.push(`${handle(c.index)}=${cell.input ? `[${one(cell.text)}]` : one(cell.text)}${cell.typed ? ` ${TYPED}` : ""}`);
+        if (cell.checked || cell.typed) cells.push(`${handle(c.index)}=[${cell.checked ? "x" : " "}]${cell.typed ? " (ticked, sent with the next Enter)" : ""}`);
+      } else if (cell.kind === "button" || cell.kind === "other") cells.push(`${handle(c.index)}=<${one(cell.text)}>${cell.kind === "other" ? " (element this reader cannot classify)" : ""}`);
+      else if (cell.text || cell.typed) cells.push(`${handle(c.index)}=${cell.input ? `[${one(cell.text)}]` : one(cell.text)}${cell.typed ? ` ${TYPED}` : ""}`);
     }
     out.push(`  row ${r.index} r${r.row}: ${cells.join("; ")}`);
   }

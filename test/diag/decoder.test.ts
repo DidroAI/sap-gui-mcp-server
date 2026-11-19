@@ -614,3 +614,27 @@ describe("DiagDecoder: controls", () => {
   });
 });
 
+
+describe("table-control cells of a type that is not a field", () => {
+  test("a push button in a row is a button, an unknown type is other: never a field that takes input", () => {
+    const table = tableControl({
+      program: "ZPROG",
+      name: "TC_ITEMS",
+      title: "Items",
+      columns: [
+        { name: "ZITM-POSNR", title: "Item", width: 6 },
+        { name: "ZITM-DETAIL", title: "Details", width: 4, etype: 115 },
+        { name: "ZITM-ODD", title: "Odd", width: 4, etype: 119 },
+      ],
+      rows: [{ values: ["    10", "Det", "Odd"] }],
+    });
+    const { screens } = run(message([...screenHead(), RESET, areaLevel(5, 1, 0, 90, 6), areaName("TC_ITEMS", "ZPROG", "0140"), ...table, END], { compress: true }));
+    const cells = screens[0]?.windows[0]?.tables[0]?.rows[0]?.cells;
+    expect(cells?.map((c) => [c.kind, c.text])).toEqual([
+      ["field", "10"],
+      ["button", "Det"],
+      ["other", "Odd"],
+    ]);
+    expect(screens[0]?.unread?.some((u) => u.includes("table cell element type 119"))).toBe(true);
+  });
+});

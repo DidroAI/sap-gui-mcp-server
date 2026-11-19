@@ -19,13 +19,17 @@
  * move): the wait then also needs a request made after the last input began
  * (`last`), so that it does not end on the answer to an earlier one.
  *
- * When the answer is lost or cannot be read (bytes lost on the connection,
- * a message that does not decompress: the decoder calls `trouble`), no
- * screen comes for the request. The wait then stops once the server has
- * been quiet for LOST_QUIET_MS and says that the session state is unknown;
- * the request stays open (so a next action is refused, not sent into a busy
- * SAP) until a screen of the mode comes or a look takes the last screen read
- * as the state (`recover`). Nothing waits forever.
+ * When the answer is lost or cannot be read, no screen comes for the
+ * request. A message of this mode that breaks off or does not decompress
+ * (the decoder calls `trouble(mode)`) is this session's: its wait stops once
+ * this session has had no message from the server for LOST_QUIET_MS (other
+ * sessions' traffic does not count) and says that the session state is
+ * unknown. Bytes lost on the connection (`trouble()`) cannot be told to one
+ * session: they never cut a wait short, so another session's long step
+ * runs on; the wait ends at its timeout. Either way the request stays open
+ * (a next action is refused, not sent into a busy SAP) until a screen of
+ * the mode comes or a look takes the last screen read as the state
+ * (`recover`). Nothing waits forever.
  *
  * SAP GUI also sends, in user items (id 0x04), the pixel size of its
  * character cell (sid 0x04: height, width, then two more numbers, uint16
@@ -88,8 +92,10 @@ interface ModeState {
   answeredAt: number;
   /** Numbers of the last requests of this mode, to count them. */
   recent: number[];
-  /** Bytes of SAP's answer to the open request were lost or could not be read (`trouble`). */
-  trouble: boolean;
+  /** SAP's answer to the open request may be lost: "mode" when a message of this mode broke, "connection" when bytes of the connection were lost (`trouble`). */
+  trouble: false | "mode" | "connection";
+  /** Time of the last message from the server for this mode. */
+  lastServerAt: number;
 }
 
 export class Traffic {
@@ -110,7 +116,7 @@ export class Traffic {
   private state(mode: number): ModeState {
     let m = this.modes.get(mode);
     if (!m) {
-      m = { lastRequest: 0, lastRequestAt: 0, answered: 0, answeredAt: 0, recent: [], trouble: false };
+      m = { lastRequest: 0, lastRequestAt: 0, answered: 0, answeredAt: 0, recent: [], trouble: false, lastServerAt: 0 };
       this.modes.set(mode, m);
     }
     return m;
@@ -174,8 +180,17 @@ export class Traffic {
    * its screen.
    */
   trouble(mode?: number): void {
-    for (const [n, m] of this.modes) if ((mode === undefined || n === mode) && m.lastRequest > m.answered) m.trouble = true;
+    for (const [n, m] of this.modes) {
+      if (m.lastRequest <= m.answered) continue;
+      if (mode === undefined) m.trouble ||= "connection";
+      else if (n === mode) m.trouble = "mode";
+    }
     this.wake();
+  }
+
+  /** A message from the server for this mode came (the decoder read its header). */
+  serverMessage(mode: number): void {
+    this.state(mode).lastServerAt = this.now();
   }
 
   /** Is the open request of this mode one whose answer was damaged? */
@@ -257,9 +272,9 @@ export class Traffic {
       while (m.answered < m.lastRequest && this.open) {
         const left = answerEnd - this.now();
         if (left <= 0) break;
-        if (m.trouble) {
-          // The answer was damaged: once the server is quiet, no screen will come for it.
-          const quiet = Math.max(this.lastServerAt, m.lastRequestAt) + (o.lostMs ?? LOST_QUIET_MS) - this.now();
+        if (m.trouble === "mode") {
+          // This session's answer was damaged: once the server is quiet for this session, no screen will come for it.
+          const quiet = Math.max(m.lastServerAt, m.lastRequestAt) + (o.lostMs ?? LOST_QUIET_MS) - this.now();
           if (quiet <= 0) {
             out.unknown = true;
             break;

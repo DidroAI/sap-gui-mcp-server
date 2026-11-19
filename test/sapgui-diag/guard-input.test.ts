@@ -243,7 +243,7 @@ describe("finding 11: a window is bound only without doubt", () => {
     expect(bound.size).toBe(0);
   });
   test("a window whose status bar shows another system or client is never the session", () => {
-    const w: HostWindow[] = [{ hwnd: 22, kind: "session", title: "SAP Easy Access", info: "| ABC (1) 200 | host1" }];
+    const w: HostWindow[] = [{ hwnd: 22, kind: "session", title: "SAP Easy Access", info: "Ready | ABC (1) 200 | host1" }];
     expect(pickWindow(w, { key: "0:0", title: "SAP Easy Access", system: "XYZ", client: "100" }, new Map(), () => true)).toContain("show another system or client");
   });
   test("the status bar's system field confirms the right one; a minimized match is refused, not used", () => {
@@ -326,7 +326,7 @@ describe("finding 9: a lost answer never leaves the session refused for good", (
     f.traffic.client(request());
     f.traffic.trouble(0);
     const t0 = Date.now();
-    await expect(f.d.act({ do: "key", key: 0 })).rejects.toThrow("Look first (sap_look)");
+    await expect(f.d.act({ do: "key", key: 0 })).rejects.toThrow("any sap_look, with or without an id");
     expect(Date.now() - t0).toBeLessThan(500);
     expect(await f.d.look({ compact: true })).toContain("NOTE SAP's answer to the last step was lost");
     expect(f.traffic.pending(0)).toBe(false);
@@ -371,5 +371,93 @@ describe("finding 12: the wait ends on the answer to the last input", () => {
     const r = await t.wait(0, mark, Date.now(), { requestMs: 1000, answerMs: 2000, quietMs: 60, maxSettleMs: 1500 }, last);
     expect(Date.now() - t0).toBeGreaterThanOrEqual(250);
     expect(r).toMatchObject({ answered: true, requests: 2 });
+  });
+});
+
+describe("recheck: a push button or an unknown cell in a table-control row", () => {
+  const rowButtons = (): DiagScreen => {
+    const t = structuredClone(TABLE);
+    t.columns.push({ index: 3, position: 3, name: "ZPOS-DEL", title: "Delete", width: 4, col: 32, visible: true }, { index: 4, position: 4, name: "ZPOS-ODD", title: "Odd", width: 4, col: 38, visible: true });
+    for (const r of t.rows) r.cells.push({ ...cell(3, "Delete", "button") }, { ...cell(4, "?", "other") });
+    return screen([main({ tables: [t] })]);
+  };
+  test("press or click on it is a write, and the plan waits for SAP's answer; set and focus are refused", () => {
+    const s = rowButtons();
+    expect(assess(s, { do: "press", id: "ZPOS-DEL[11]" }).risk).toBe("commit");
+    expect(assess(s, { do: "click", id: "ZPOS-ODD[11]" }).risk).toBe("commit");
+    expect(plan(s, { do: "press", id: "ZPOS-DEL[11]" }).answer).toBe("yes");
+    expect(plan(s, { do: "click", id: "ZPOS-ODD[11]" }).answer).toBe("maybe");
+    expect(() => plan(s, { do: "set", id: "ZPOS-DEL[11]", value: "x" })).toThrow("does not take text");
+    expect(() => plan(s, { do: "focus", id: "ZPOS-ODD[11]" })).toThrow("cannot classify");
+  });
+});
+
+describe("recheck: the system field, not the status message", () => {
+  test("a status message that looks like a system field does not refuse the only window", () => {
+    const w: HostWindow[] = [{ hwnd: 22, kind: "session", title: "SAP Easy Access", status: "Order XYZ (1) 100 saved", info: "Order XYZ (1) 100 saved | ABA (1) 800" }];
+    expect(pickWindow(w, { key: "0:0", title: "SAP Easy Access", system: "ABA", client: "800" }, new Map(), () => true)).toMatchObject({ hwnd: 22 });
+    const msgOnly: HostWindow[] = [{ hwnd: 22, kind: "session", title: "SAP Easy Access", status: "Order XYZ (1) 100 saved", info: "Order XYZ (1) 100 saved" }];
+    expect(pickWindow(msgOnly, { key: "0:0", title: "SAP Easy Access", system: "ABA", client: "800" }, new Map(), () => true)).toMatchObject({ hwnd: 22 });
+  });
+});
+
+describe("recheck: any look recovers a lost answer", () => {
+  const request = () => message([windowStart(), idItem(0x04, 0x26, [0, 0, 0, 1])], { info: 0 });
+  test("sap_look with an id clears it too, and says so", async () => {
+    const f = fake(screen());
+    f.traffic.client(request());
+    f.traffic.trouble(0);
+    expect(await f.d.look({ compact: true, id: "TC_ITEMS" })).toContain("NOTE SAP's answer to the last step was lost");
+    expect(f.traffic.pending(0)).toBe(false);
+    await f.d.act({ do: "key", key: 3 });
+    expect(acts(f)).toEqual(["key"]);
+  });
+});
+
+describe("recheck: a loss is scoped to the session it hit", () => {
+  const request = (mode: number) => message([windowStart(), idItem(0x04, 0x26, [0, 0, 0, 1])], { info: 0, mode });
+  test("bytes lost on the connection do not cut another session's long step short", async () => {
+    const t = new Traffic();
+    const mark = t.mark();
+    t.client(Buffer.concat([request(0), request(1)]));
+    t.trouble(); // bytes lost: whose, nobody knows
+    const t0 = Date.now();
+    const r = await t.wait(1, mark, Date.now(), { requestMs: 100, answerMs: 600, quietMs: 0, maxSettleMs: 0, lostMs: 100 });
+    expect(r.unknown).toBeUndefined();
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(550);
+    // ...and a look still recovers that session
+    expect(t.troubled(1)).toBe(true);
+  });
+  test("a broken message of one session times that session by its own silence, not the connection's", async () => {
+    const t = new Traffic();
+    const mark = t.mark();
+    t.client(Buffer.concat([request(0), request(1)]));
+    t.trouble(0);
+    // the other session keeps talking
+    const busy = setInterval(() => {
+      t.server();
+      t.serverMessage(1);
+    }, 30);
+    try {
+      const t0 = Date.now();
+      const r = await t.wait(0, mark, Date.now(), { requestMs: 100, answerMs: 3000, quietMs: 0, maxSettleMs: 0, lostMs: 150 });
+      expect(r.unknown).toBe(true);
+      expect(Date.now() - t0).toBeLessThan(1000);
+      expect(t.troubled(1)).toBe(false);
+    } finally {
+      clearInterval(busy);
+    }
+  });
+});
+
+describe("recheck: a box ticked and not sent is held back like a typed value", () => {
+  test("after check on a box without a function code: the view marks it, scroll and look with rows are refused", async () => {
+    const f = fake(screen());
+    await f.d.act({ do: "check", id: "ZHDR-FLAG" });
+    expect(acts(f)).toEqual(["click"]);
+    expect(await f.d.look({ compact: true })).toContain("[x] Flag ZHDR-FLAG@20 (ticked, sent with the next Enter)");
+    await expect(f.d.act({ do: "scroll", id: "TC_ITEMS", to: "next" })).rejects.toThrow("ZHDR-FLAG ticked) has not reached SAP yet");
+    await expect(f.d.look({ compact: true, id: "TC_ITEMS", rows: { from: 20, to: 25 } })).rejects.toThrow("not reached SAP yet");
+    expect(acts(f)).toEqual(["click"]);
   });
 });
