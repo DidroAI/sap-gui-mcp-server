@@ -56,6 +56,9 @@ export class FakeDiagSap implements Surface {
   popupsFor = new Map<string, DiagPopup[]>();
   popups: DiagPopup[] = [];
   acts: Action[] = [];
+  /** After an Enter, this many looks show the screen marked damaged (bytes lost on the connection). */
+  damageAfterEnter = 0;
+  private damagedLooks = 0;
   // Drifts.
   /** The initial screen names its order field ZORD-AUFNR. */
   orderField = "ZORD-VBELN";
@@ -194,7 +197,10 @@ export class FakeDiagSap implements Surface {
       throw new ActionError(`key ${n} does nothing on the popup "${p.title}"`);
     }
     this.status = undefined;
-    if (n === 0) this.enter();
+    if (n === 0) {
+      this.enter();
+      this.damagedLooks = this.damageAfterEnter;
+    }
     else if (n === 3 || n === 12) {
       this.send();
       if (this.transaction === "ZA03" && this.dynpro !== "0100") this.dynpro = "0100";
@@ -263,7 +269,14 @@ export class FakeDiagSap implements Surface {
         return { ...self.info };
       },
       valid: async () => true,
-      look: async (o) => diagView(self.screen(), o.compact ? {} : { maxRows: 100_000 }),
+      look: async (o) => {
+        const s = self.screen();
+        if (self.damagedLooks > 0) {
+          self.damagedLooks--;
+          s.damaged = true;
+        }
+        return diagView(s, o.compact ? {} : { maxRows: 100_000 });
+      },
       assess: async (a): Promise<Assessment> => {
         const s = self.screen();
         return assessDiag(s, a, resolveTarget(s, a));

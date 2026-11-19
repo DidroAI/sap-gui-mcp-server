@@ -23,6 +23,7 @@
  */
 import { isLogonScreen } from "../core/words.js";
 import { keyName } from "../diag/text.js";
+import { DAMAGED_NOTE } from "../diag/view.js";
 import type { Control, ParsedScreen } from "./screen.js";
 
 /** Lines of the DIAG view start their windows with `WINDOW <n>`; scripting and Web GUI with `WINDOW wnd[<n>]`. */
@@ -310,6 +311,7 @@ export function parseDiagView(text: string): ParsedScreen {
   }
   const top = out.windows.at(-1);
   if (top?.title) out.title = top.title;
+  if (lines.some((l) => l.startsWith(DAMAGED_NOTE))) out.damaged = true;
   const main = /^WINDOW 0 /m.test(text);
   if (main && isLogonScreen(out.program, out.screen)) out.logon = true;
   return out;
