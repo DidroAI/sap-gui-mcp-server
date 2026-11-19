@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { DiagDecoder } from "../../src/diag/decoder.js";
-import { diagView } from "../../src/diag/view.js";
+import type { DiagScreen } from "../../src/diag/screen.js";
+import { diagView, menuView, statusLine } from "../../src/diag/view.js";
+import { statusTop, withStatus } from "../../src/server.js";
 import { elem, elementList, areaLevel, areaName, END, keys, listCell, listHead, menus, message, Queue, sessionInfo, RESET, rfcItem, screenHead, windowStart, areaSize, tabList, tableControl, tabstripHeader, title } from "./build.js";
 
 function view(frames: Buffer[], options = {}): string[] {
@@ -86,13 +88,13 @@ describe("diagView", () => {
   const lines = view([message(SCREEN, { compress: true })]);
 
   test("header, window, status, menus, keys and toolbar", () => {
-    expect(lines.slice(0, 6)).toEqual(["TRANSACTION ZT01  PROGRAM ZPROG  SCREEN 100  SYSTEM XYZ (100)  USER TESTER  MODE 0", "status  S: Order 4711 saved", 'WINDOW 0  "Synthetic Order: Overview"  area 20x100', "menu: Order | Edit", "keys: Back (F3)", "toolbar: Copy: Copy the order (F8)"]);
+    expect(lines.slice(0, 6)).toEqual(["TRANSACTION ZT01  PROGRAM ZPROG  SCREEN 100  SYSTEM XYZ (100)  USER TESTER  MODE 0", "sbar  status  S: Order 4711 saved", 'WINDOW 0  "Synthetic Order: Overview"  area 20x100', 'menu: Order | Edit  (every entry: sap_look id "mbar")', "keys: Back (F3)", "toolbar: Copy: Copy the order (F8)"]);
   });
 
   test("one line per screen row: labels, fields by SAP name and column, their state", () => {
     expect(lines).toContain('r1  ZHDR-TXT@0="Order"  ZHDR-ID@17="4711"  Net value  ZHDR-NETWR@56="1.250,00"  ZHDR-WAERK@78="EUR"');
-    // An empty read-only field is left out; an empty input field is not.
-    expect(lines).toContain("r2  Customer  ZHDR-KUNNR@17=[]  <Create customer>{NEWC}@60");
+    // An empty field shows as empty, read-only ("") or open for input ([]).
+    expect(lines).toContain('r2  Customer  ZHDR-KUNNR@17=[]  ZHDR-NAME@29=""  <Create customer>{NEWC}@60');
     expect(lines).toContain("r3  -- Shipping --");
     expect(lines).toContain("r4  [x] Complete ZHDR-DONE@1  Block  ZHDR-LIFSK@30=dropdown [07]  ZHDR-TYPE@40=[] (required)");
   });
@@ -128,7 +130,7 @@ describe("diagView", () => {
     const out = view([message([...screenHead(), menus(1, [[[1], "Order"]]), keys(4, [[3, "Back"]]), RESET, elementList(elem.label(2, 1, "Order Type"), elem.field(2, 20, "", { width: 4 }), elem.name(2, 20, "ZHDR-TYPE")), ...popup])]);
     expect(out.slice(1)).toEqual([
       'WINDOW 0  "Synthetic Order: Overview"  area 20x100',
-      "menu: Order",
+      'menu: Order  (every entry: sap_look id "mbar")',
       "(behind the popup: its keys and toolbar are left out)",
       "r2  Order Type  ZHDR-TYPE@20=[]",
       'WINDOW 1 popup  "Order Type (40 Entries)"  ZPOPUP 0120  at r3 c24  area 12x34',
@@ -237,5 +239,74 @@ describe("diagView", () => {
       "  (1 more nodes in closed folders)",
       'r8  text-editor SIDE (shell 105) (read-only)  "Deliver to \\"gate 1\\""',
     ]);
+  });
+});
+
+describe("the status bar in the form the server reads", () => {
+  const screen = (type: string, text: string) => {
+    const decoder = new DiagDecoder();
+    decoder.push(1, message([...screenHead(), RESET, elementList(elem.label(2, 1, "Order"), elem.field(2, 20, "123", { width: 10 }), elem.name(2, 20, "VBAK-VBELN")), sessionInfo(0x0b, `${type}: ${text}`), END]));
+    return decoder.screen() as DiagScreen;
+  };
+  test("an error is put first by the server, and kept in an answer of changes only", () => {
+    const v = diagView(screen("E", "Document 123 does not exist"));
+    expect(v.split("\n")[1]).toBe("sbar  status  E: Document 123 does not exist");
+    // An answer that holds only what changed, without the status bar: the error is added at its end and on top.
+    const shown = "CHANGED 1 of 9 lines (same screen; sap_look shows all of it):\n~ r2  Order  VBAK-VBELN@20=[123]";
+    expect(withStatus(shown, v)).toBe(`${shown}\n= sbar  status  E: Document 123 does not exist`);
+    expect(statusTop(shown, v)).toBe("STATUS E: Document 123 does not exist  (error: correct the input it names, then Enter)");
+    expect(statusTop(shown, diagView(screen("S", "Order saved")))).toBeUndefined();
+  });
+  test("a warning, and a termination marked as one", () => {
+    expect(statusTop("x", diagView(screen("W", "Check the date")))).toStartWith("STATUS W: Check the date  (warning:");
+    expect(statusLine({ type: "A", text: "Transaction ended", id: "V1", number: "001" })).toBe("sbar  status  A: Transaction ended  (V1 001)  (termination message: SAP ends the transaction when it is confirmed, and unsaved input is lost)");
+    expect(statusTop("x", `H\n${statusLine({ type: "A", text: "Transaction ended" })}`)).toStartWith("STATUS A: Transaction ended");
+  });
+});
+
+describe("what SAP greys out is shown and marked", () => {
+  const frames = [
+    ...screenHead(),
+    menus(1, [
+      [[1], "Order"],
+      [[1, 1], "Create"],
+      [[1, 2], "Delete", 0],
+      [[2], "Extras", 0],
+      [[2, 1], "Log"],
+    ]),
+    keys(3, [
+      [8, "Copy", "Copy the order"],
+      [17, "Assign", "Assign users", 0],
+    ]),
+    keys(4, [[3, "Back"]]),
+    RESET,
+    elementList(elem.button(12, 1, "Create item", "POAN", true), elem.button(12, 20, "Display item", "ITEM")),
+    END,
+  ];
+  const lines = view([message(frames)]);
+  test("a greyed-out push button, top menu and toolbar button", () => {
+    expect(lines).toContain('menu: Order | Extras (greyed out)  (every entry: sap_look id "mbar")');
+    expect(lines).toContain("toolbar: Copy: Copy the order (F8)");
+    expect(lines).toContain("greyed out (SAP does not offer it on this screen): Assign: Assign users (Shift+F5)");
+    expect(lines).toContain("r12  <Create item>{POAN}@1 (greyed out)  <Display item>{ITEM}@20");
+  });
+  test("every menu entry, with what is greyed out (also below a greyed-out menu)", () => {
+    const decoder = new DiagDecoder();
+    decoder.push(1, message(frames));
+    expect(menuView(decoder.screen() as DiagScreen).split("\n")).toEqual([
+      'mbar  menubar  every entry; an entry with a key runs with {"do":"key","key":"<key>"}',
+      "  Order",
+      "    Create",
+      "    Delete  (greyed out: SAP does not offer it on this screen)",
+      "  Extras  (greyed out: SAP does not offer it on this screen)",
+      "    Log  (greyed out: SAP does not offer it on this screen)",
+    ]);
+  });
+  test("a greyed-out tree node", () => {
+    const decoder = new DiagDecoder();
+    decoder.push(1, message([...screenHead(), END]));
+    const s = structuredClone(decoder.screen() as DiagScreen);
+    s.windows[0]?.controls.push({ id: 7, kind: "tree", type: "SAP.TableTreeControl.1", container: "SIDE", area: { row: 2, col: 1, width: 40, height: 10 }, tree: { headers: [], nodes: [{ key: "N1", parent: "", depth: 0, text: "Locked", items: {}, folder: false, expanded: false, hidden: false, disabled: true }] } });
+    expect(diagView(s, { chrome: false })).toContain("  Locked (greyed out)  {N1}");
   });
 });

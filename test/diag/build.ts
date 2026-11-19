@@ -86,8 +86,8 @@ function menuEntry(path: number[], flags: number, vkey: number, text: string, ac
 }
 /** The menu bar (sid 1) or the entries of its menus (sid 2): entries as [path, text, flags]. */
 export const menus = (sid: 1 | 2, entries: [number[], string, number?][]): Buffer => idItem(0x0b, sid, Buffer.concat(entries.map(([path, text, flags]) => menuEntry(path, flags ?? 0x02, 0, text, text.slice(0, 1)))), true);
-/** The toolbar (sid 3) or the function keys (sid 4): entries as [vkey, text, tooltip]. */
-export const keys = (sid: 3 | 4, entries: [number, string, string?][]): Buffer => idItem(0x0b, sid, Buffer.concat(entries.map(([vkey, text, info], i) => menuEntry([i], 0x02, vkey, text, "", info ?? ""))), true);
+/** The toolbar (sid 3) or the function keys (sid 4): entries as [vkey, text, tooltip, flags] (flags 0: greyed out). */
+export const keys = (sid: 3 | 4, entries: [number, string, string?, number?][]): Buffer => idItem(0x0b, sid, Buffer.concat(entries.map(([vkey, text, info, flags], i) => menuEntry([i], flags ?? 0x02, vkey, text, "", info ?? ""))), true);
 
 // ---- areas ----
 
@@ -119,9 +119,10 @@ export const elem = {
   /** The SAP field name of the element just before. */
   name: (row: number, col: number, name: string): Buffer => element(114, row, col, 0, name),
   tooltip: (row: number, col: number, text: string): Buffer => element(120, row, col, 0, `<Propertybag><DefaultTooltip>${text}</DefaultTooltip></Propertybag>\0`),
-  button: (row: number, col: number, text: string, fcode: string): Buffer => {
+  /** A push button; `disabled`: SAP greys it out (the protected attribute). */
+  button: (row: number, col: number, text: string, fcode: string, disabled = false): Buffer => {
     const padded = text.padEnd(text.length + 4);
-    return element(115, row, col, 0, cat([padded.length, 1], u16(19 + padded.length + 1), u16(19), padded, [0], `=${fcode}`, [0, 0]));
+    return element(115, row, col, disabled ? PROTECTED : 0, cat([padded.length, 1], u16(19 + padded.length + 1), u16(19), padded, [0], `=${fcode}`, [0, 0]));
   },
   check: (row: number, col: number, text: string, checked: boolean, readOnly = false): Buffer => element(128, row, col, readOnly ? PROTECTED : 0, cat([checked ? 0x58 : 0x20], u16(text.length), [0, 0, 0, 0, 0], u16(text.length), text)),
   frame: (row: number, col: number, rows: number, cols: number, text: string): Buffer => element(127, row, col, PROTECTED, cat(u16(rows), u16(cols), text)),
