@@ -53,7 +53,10 @@ class Tally {
   }
   print(): void {
     const total = this.ok + this.bad.length;
-    if (!total) return console.log(`${this.name}: no vectors`);
+    if (!total) {
+      console.log(`${this.name}: no vectors`);
+      return;
+    }
     console.log(`${this.name}: ${this.ok} of ${total} agree`);
     for (const b of listAll ? this.bad : this.bad.slice(0, 5)) console.log(`  ${b}`);
     if (!listAll && this.bad.length > 5) console.log(`  ... ${this.bad.length - 5} more (--list)`);
@@ -139,7 +142,7 @@ const BAG_ATOM = 120;
 const TAB_ATOM = 116;
 const FIELD_ATOMS = new Set([130, 131, 132]);
 const fromHex = (h: { hex?: string } | undefined): string => Buffer.from(h?.hex ?? "", "hex").toString("utf8");
-const squeeze = (s: string): string => s.replace(/[\u0000\s]+/g, " ").trim();
+const squeeze = (s: string): string => s.replaceAll("\0", " ").replace(/\s+/g, " ").trim();
 
 /**
  * One item of atoms, read alone by our screen reader, against the other
