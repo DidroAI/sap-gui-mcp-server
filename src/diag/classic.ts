@@ -285,7 +285,7 @@ export class ClassicState {
     if (index === 0) this.message = undefined;
   }
 
-  /** Session and screen facts, by sub-id; each was told by its value in the captures (a 3-letter system id, "800", a transaction code, a program name...). */
+  /** Session and screen facts, by sub-id; each was told by its value in the captures (a 3-letter system id, a 3-digit client, a transaction code, a program name...). */
   private sessionInfo(sid: number, v: Buffer): void {
     const s = () => clean(this.text(v));
     switch (sid) {
