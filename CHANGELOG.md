@@ -59,6 +59,12 @@ The first public version.
   `sap-gui-mcp-server replay` run it again with no model.
 - `export` writes a SAP Cloud ALM manual test case, a SAP GUI script (VBS),
   a Playwright spec, or a Gherkin feature.
+- Recording and replay work on the `diag` method too: steps, checks and
+  captures name controls the way its actions do (`VBAK-VBELN`, `{T\01}`,
+  `VBAP-MATNR[0]`), Information popups are passed with their Enter key, and
+  the test records the method, so a replay refuses to run a `diag` test
+  through scripting (and the other way). A `diag` test does not export to
+  VBS.
 
 ### Command line
 
