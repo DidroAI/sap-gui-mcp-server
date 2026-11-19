@@ -17,7 +17,11 @@ The first public version.
   allowed, or to a DevTools endpoint named in `SAP_CHROME_CDP`.
 - **SAP GUI without scripting (experimental)**: `SAP_GUI_METHOD=diag` reads
   the screen from SAP GUI's DIAG traffic through a local SAProuter, and acts
-  with the keyboard and mouse.
+  with the keyboard and mouse. It has every action of the other surfaces
+  (dropdowns, scrolling, grid and tree actions, grid toolbars, `sap_look`
+  with `id`, `rows` and `cols`), waits for SAP's answer in the traffic
+  instead of a timer, takes the cell size SAP GUI reports, and tells
+  same-titled sessions apart.
 - Sessions are found by themselves; `sap_use` switches between them.
 
 ### Tools

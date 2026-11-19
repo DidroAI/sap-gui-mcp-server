@@ -1,6 +1,6 @@
 # SAP GUI for Windows without SAP GUI scripting: the functions of the host.
 # Copied from the screen method (explore/no-scripting); the DIAG method uses
-# windows, area, act and screenshot: it reads screens from the traffic.
+# windows, area, act, buttons and screenshot: it reads screens from the traffic.
 #
 # Scripting is often switched off (sapgui/user_scripting = FALSE). SAP GUI then
 # gives a program very little: its screen area is drawn, not built from Windows
@@ -86,6 +86,8 @@ public static class SapScreen {
   [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr h);
   /** BM_CLICK, posted: the button's action may open a popup, and this must not wait for it. */
   public static void PushButton(IntPtr h) { PostMessage(h, 0x00F5, IntPtr.Zero, IntPtr.Zero); }
+  /** The window that owns this one (GW_OWNER): a SAP GUI popup is owned by its session window. */
+  public static long Owner(IntPtr h) { return (long)GetWindow(h, 4); }
 
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
   [StructLayout(LayoutKind.Sequential)] struct KEYBDINPUT { public ushort vk; public ushort scan; public uint flags; public uint time; public IntPtr extra; }
@@ -357,7 +359,7 @@ function Sap-Windows {
     $r = [SapScreen]::Rect($h)
     if ($r[0] -le -4000 -or $r[2] -le 0) { continue }
     if ($cls -eq 'SAP_FRONTEND_SESSION') { [void]$out.Add(@{ hwnd = [long]$h; kind = 'session'; title = [SapScreen]::Title($h) }) }
-    elseif ($cls -eq '#32770' -and [SapScreen]::Title($h) -notmatch '^SAP Logon') { [void]$out.Add(@{ hwnd = [long]$h; kind = 'popup'; title = [SapScreen]::Title($h) }) }
+    elseif ($cls -eq '#32770' -and [SapScreen]::Title($h) -notmatch '^SAP Logon') { [void]$out.Add(@{ hwnd = [long]$h; kind = 'popup'; title = [SapScreen]::Title($h); owner = [SapScreen]::Owner($h) }) }
   }
   , $out
 }
@@ -365,8 +367,25 @@ function Sap-Windows {
 function Op-Windows {
   $fg = [long][SapScreen]::GetForegroundWindow()
   $list = New-List
-  foreach ($w in (Sap-Windows)) { $w.foreground = ($w.hwnd -eq $fg); $w.rect = [SapScreen]::Rect([IntPtr]$w.hwnd); [void]$list.Add($w) }
+  foreach ($w in (Sap-Windows)) {
+    $w.foreground = ($w.hwnd -eq $fg); $w.rect = [SapScreen]::Rect([IntPtr]$w.hwnd)
+    # The status bar's text tells apart two sessions with the same title (the DIAG method compares it with SAP's message).
+    if ($w.kind -eq 'session') { $w.status = (Status-Text ([IntPtr]$w.hwnd) $w.rect) }
+    [void]$list.Add($w)
+  }
   @{ windows = $list }
+}
+
+# The text of a session window's status bar: the first Edit child with text in its bottom strip.
+function Status-Text([IntPtr]$h, $rect) {
+  foreach ($c in [SapScreen]::Descendants($h)) {
+    if ([SapScreen]::Class($c) -ne 'Edit') { continue }
+    $r = [SapScreen]::Rect($c)
+    if ($r[1] -le $rect[1] + $rect[3] - 90) { continue }
+    $t = [SapScreen]::Text($c)
+    if ($t) { return $t }
+  }
+  ''
 }
 
 # The windows of one session, bottom first: the session window, then the
@@ -381,10 +400,11 @@ function Session-Windows([long]$hwnd) {
   [void]$out.Add($me)
   $sessions = @($all | Where-Object { $_.kind -eq 'session' })
   $popups = @($all | Where-Object { $_.kind -eq 'popup' })
-  # With several sessions open, popups go to the session highest in z-order.
-  if ($popups.Count -and $sessions.Count -and $sessions[0].hwnd -eq $hwnd) {
-    for ($i = $popups.Count - 1; $i -ge 0; $i--) { [void]$out.Add($popups[$i]) }
-  }
+  # A popup owned by this session window is its own. One whose owner is no session window (owner 0) goes,
+  # as before, to the session highest in z-order: SAP GUI's popups are modal.
+  $ids = @{}; foreach ($x in $sessions) { $ids[[long]$x.hwnd] = $true }
+  $mine = @($popups | Where-Object { [long]$_.owner -eq $hwnd -or (-not $ids.ContainsKey([long]$_.owner) -and $sessions.Count -and $sessions[0].hwnd -eq $hwnd) })
+  for ($i = $mine.Count - 1; $i -ge 0; $i--) { [void]$out.Add($mine[$i]) }
   , $out
 }
 
@@ -666,15 +686,22 @@ function Op-Act($req) {
   }
   elseif ($do -eq 'key') { Send-VKey ([int]$a['key']) }
   elseif ($do -eq 'top') { [SapScreen]::Key(0x24, $true, $false, $false) }  # Ctrl+Home: first cell of a grid
+  elseif ($do -eq 'vk') {
+    # A Windows key with modifiers, count times: Home, the arrows, Page Down, Enter, Shift+Space...
+    $n = [Math]::Max(1, [int]$a['count'])
+    for ($i = 0; $i -lt $n; $i++) { [SapScreen]::Key([byte][int]$a['vk'], [bool]$a['ctrl'], [bool]$a['shift'], [bool]$a['alt']) }
+  }
   elseif ($do -eq 'down') { for ($i = 0; $i -lt [int]$a['count']; $i++) { [SapScreen]::Key(0x28, $false, $false, $false) } }
   elseif ($do -eq 'press') {
-    # A toolbar button by its name: a posted BM_CLICK, no mouse.
+    # A toolbar button by its name: a posted BM_CLICK, no mouse. "within": only a button whose middle is in that rect (a grid's toolbar).
     $name = [string]$a['name']
+    $in = $a['within']
     $hit = [IntPtr]::Zero
     foreach ($c in [SapScreen]::Descendants($top)) {
       if ([SapScreen]::Class($c) -ne 'Button') { continue }
       $r = [SapScreen]::Rect($c)
       if ($r[2] -lt 4 -or $r[3] -lt 4) { continue }
+      if ($null -ne $in) { $mx = $r[0] + $r[2] / 2; $my = $r[1] + $r[3] / 2; if ($mx -lt $in[0] -or $mx -gt $in[0] + $in[2] -or $my -lt $in[1] -or $my -gt $in[1] + $in[3]) { continue } }
       if ([SapScreen]::Button($c)[0] -eq $name) { $hit = $c; break }
     }
     if ($hit -eq [IntPtr]::Zero) { throw "NOT_FOUND: no button named $name" }
@@ -729,6 +756,7 @@ function Start-Host {
       elseif ($op -eq 'screen') { $res = Op-Screen $req }
       elseif ($op -eq 'act') { $res = Op-Act $req }
       elseif ($op -eq 'area') { $res = Op-Area $req }
+      elseif ($op -eq 'buttons') { $res = @{ buttons = (Frame-Buttons ([IntPtr][long]$req['session'])) } }
       elseif ($op -eq 'screenshot') { $res = Op-Screenshot $req }
       elseif ($op -eq 'doctor') { $res = Op-Doctor }
       else { throw "UNKNOWN_OP: $op" }
