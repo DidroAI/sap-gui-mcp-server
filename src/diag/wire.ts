@@ -115,28 +115,227 @@ export function itemKey(it: { type: number; id: number; sid: number }): string {
   return hasId(it.type) ? `${h(it.type)}/${h(it.id)}/${h(it.sid)}` : h(it.type);
 }
 
-/** Splits one direction of a TCP stream into NI payloads. Keeps what is incomplete for the next chunk. */
-export class NiFramer {
-  private pending: Buffer[] = [];
-  private size = 0;
+/** The largest NI frame read. A longer length is taken as garbled (the captures' largest frame is about 13 KB), so a connection never holds more. */
+export const MAX_FRAME = 8 << 20;
+/** After a loss, the longest frame taken as the place to start again: a false start this long would hold up reading for its whole length. */
+const RESYNC_MAX = 1 << 20;
+/** Item types a message may start with when it is not compressed. */
+const FIRST_ITEM: ReadonlySet<number> = new Set<number>([...SIZE.keys(), ITEM.short, ITEM.long, ITEM.xml]);
+/** Candidate starts kept while looking for the next frame after a loss. */
+const MAX_CANDIDATES = 64;
 
+type Verdict = "frame" | "more" | "bad";
+
+/**
+ * Does a frame start at `i`? "more" when the bytes so far do not tell yet.
+ * A frame starts with its length and then a keep-alive, the opening block,
+ * or a DIAG header whose compression byte is 0 (then an item type or
+ * nothing), 1 (then the compression magic 1f 9d) or 2-3 (encrypted).
+ * `strict` (when looking for a restart point) also wants byte 5 of the
+ * header 0-3 and a frame no longer than RESYNC_MAX.
+ */
+function frameAt(buf: Buffer, i: number, strict: boolean): Verdict {
+  if (buf.length - i < 4) return "more";
+  const n = buf.readUInt32BE(i);
+  if (n < MESSAGE_HEADER || n > (strict ? RESYNC_MAX : MAX_FRAME)) return "bad";
+  const have = buf.length - i - 4;
+  const p = i + 4;
+  if (n === NI_PING.length) {
+    if (have < n) return "more";
+    const s = buf.toString("latin1", p, p + n);
+    if (s === NI_PING || s === NI_PONG) return "frame";
+  }
+  let h = p;
+  if (buf[p] === 0xff) {
+    if (have < 4) return "more";
+    if (buf.readInt32BE(p) === -1) {
+      if (n < OPENING_BLOCK + MESSAGE_HEADER) return "bad";
+      if (have < OPENING_BLOCK + MESSAGE_HEADER + 1) return "more";
+      if (buf.readUInt32LE(p + 30) !== n - OPENING_BLOCK) return "bad";
+      h = p + OPENING_BLOCK;
+    }
+  }
+  const rest = n - (h - p);
+  const got = have - (h - p);
+  if (got < MESSAGE_HEADER) return "more";
+  const compression = buf[h + 7] as number;
+  if (compression > 3 || (strict && (buf[h + 5] as number) > 3)) return "bad";
+  if (compression === 1) {
+    if (rest < MESSAGE_HEADER + 8) return "bad";
+    if (got < MESSAGE_HEADER + 7) return "more";
+    return buf[h + MESSAGE_HEADER + 5] === 0x1f && buf[h + MESSAGE_HEADER + 6] === 0x9d ? "frame" : "bad";
+  }
+  if (compression === 0 && rest > MESSAGE_HEADER) {
+    if (got < MESSAGE_HEADER + 1) return "more";
+    return FIRST_ITEM.has(buf[h + MESSAGE_HEADER] as number) ? "frame" : "bad";
+  }
+  return "frame";
+}
+
+/** A frame's payload (`suspect` when the next frame does not start where it ends), or bytes dropped from the stream. */
+export type FrameEvent = { payload: Buffer; suspect?: true } | { lost: number; why: string };
+
+/** True when `c` is one or more whole frames, each starting as a restart point must. */
+function wholeFrames(c: Buffer): boolean {
+  let j = 0;
+  while (j < c.length) {
+    if (frameAt(c, j, true) !== "frame") return false;
+    j += 4 + c.readUInt32BE(j);
+  }
+  return j === c.length;
+}
+
+/**
+ * Splits one direction of a TCP stream into NI payloads. Keeps what is
+ * incomplete for the next chunk.
+ *
+ * Bytes lost or garbled in transit would shift every length that follows,
+ * and the stream would never be read again. So each frame must start like
+ * one (`frameAt`); when one does not, the framer looks for the next place
+ * where a frame starts and the frame after it starts too (or the frame ends
+ * exactly where the bytes received so far end), drops what lies before, and
+ * reports it as a loss. A frame that the next one does not follow is handed
+ * out as `suspect`: a byte lost inside it shifted where the next one seemed
+ * to start. To tell, a frame is held until the start of the next one has
+ * arrived, unless the bytes received end exactly with it (as they do when
+ * the sender waits). Memory stays bounded: a length over MAX_FRAME counts as
+ * garbled, and the search keeps at most about RESYNC_MAX bytes.
+ */
+export class NiFramer {
+  /** Bytes dropped so far. */
+  lost = 0;
+
+  /** Bytes held, waiting for the rest of a frame or for the next place a frame starts. */
+  get buffered(): number {
+    return this.size;
+  }
+
+  /** Bytes received and not handed out yet, in the chunks they came in. */
+  private parts: Buffer[] = [];
+  private size = 0;
+  /** How many bytes are needed before looking again (a frame's whole length while it arrives in small chunks). */
+  private need = 0;
+  /** Looking for the next frame after a loss: bytes dropped so far, why, candidate starts (offsets in buf), how far buf was scanned. */
+  private search: { dropped: number; why: string; candidates: number[]; scanned: number } | undefined;
+
+  /** The payloads of the frames completed by this chunk. */
   push(chunk: Uint8Array): Buffer[] {
-    if (chunk.length) {
-      this.pending.push(Buffer.from(chunk.buffer, chunk.byteOffset, chunk.length));
-      this.size += chunk.length;
-    }
     const out: Buffer[] = [];
-    if (this.size < 4) return out;
-    let buf = this.pending.length === 1 ? (this.pending[0] as Buffer) : Buffer.concat(this.pending);
-    while (buf.length >= 4) {
-      const n = buf.readUInt32BE(0);
-      if (buf.length < 4 + n) break;
-      out.push(buf.subarray(4, 4 + n));
-      buf = buf.subarray(4 + n);
-    }
-    this.pending = buf.length ? [buf] : [];
-    this.size = buf.length;
+    for (const e of this.read(chunk)) if ("payload" in e) out.push(e.payload);
     return out;
+  }
+
+  /** What this chunk completes, in stream order: frames, and the bytes dropped before or between them. */
+  read(chunk: Uint8Array): FrameEvent[] {
+    const c = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.length);
+    const out: FrameEvent[] = [];
+    if (!c.length) return out;
+    // A frame whose length was garbled upward would swallow the frames after it, up to MAX_FRAME bytes. When a
+    // chunk that does not end it is made of whole frames by itself, those are taken instead and the waiting frame is
+    // dropped (senders write one or more whole frames at a time, so chunks often start and end with them).
+    if (!this.search && this.size >= 4 && this.size + c.length !== this.need && wholeFrames(c)) {
+      this.loss(out, this.size, "a frame cut short: the bytes after it start new frames");
+      this.parts = [];
+      this.size = 0;
+      this.need = 0;
+    }
+    this.parts.push(c);
+    this.size += c.length;
+    if (this.size < this.need) return out;
+    const buf = this.parts.length === 1 ? (this.parts[0] as Buffer) : Buffer.concat(this.parts, this.size);
+    let i = 0;
+    let need = 0;
+    for (;;) {
+      if (this.search) {
+        const found = this.resume(buf, i);
+        if (found === undefined) {
+          // Nothing yet: keep only what may still start a frame.
+          const keep = Math.min(this.search.candidates[0] ?? Number.POSITIVE_INFINITY, this.search.scanned);
+          this.search.dropped += keep - i;
+          this.search.candidates = this.search.candidates.map((q) => q - keep);
+          this.search.scanned -= keep;
+          i = keep;
+          need = buf.length - i + 1;
+          break;
+        }
+        const { dropped, why } = this.search;
+        this.search = undefined;
+        this.loss(out, dropped + found - i, why);
+        i = found;
+        continue;
+      }
+      const v = frameAt(buf, i, false);
+      if (v === "more") {
+        need = buf.length - i + 1;
+        break;
+      }
+      const n = buf.readUInt32BE(i);
+      if (v === "bad") {
+        this.search = { dropped: 0, why: `no NI frame starts where one should (length ${n})`, candidates: [], scanned: i + 1 };
+        continue;
+      }
+      const end = i + 4 + n;
+      if (buf.length < end) {
+        need = end - i;
+        break;
+      }
+      // Hold the frame until the next one shows whether it starts where this one ends.
+      const next = end === buf.length ? "frame" : frameAt(buf, end, false);
+      if (next === "more") {
+        need = buf.length - i + 1;
+        break;
+      }
+      out.push(next === "frame" ? { payload: buf.subarray(i + 4, end) } : { payload: buf.subarray(i + 4, end), suspect: true });
+      i = end;
+    }
+    // Copy what is kept: the payloads handed out must not keep a large buffer alive, nor the kept bytes the caller's.
+    const rest = i >= buf.length ? undefined : Buffer.from(buf.subarray(i));
+    this.parts = rest ? [rest] : [];
+    this.size = rest?.length ?? 0;
+    this.need = need;
+    return out;
+  }
+
+  private loss(out: FrameEvent[], bytes: number, why: string): void {
+    this.lost += bytes;
+    out.push({ lost: bytes, why });
+  }
+
+  /**
+   * Looks for a restart point from `from` on. A candidate is confirmed when
+   * its frame ends where the bytes end, or the frame after it starts
+   * plausibly too. Gives the first confirmed offset, or undefined (then
+   * `search.candidates` and `search.scanned` say what to look at again).
+   */
+  private resume(buf: Buffer, from: number): number | undefined {
+    const s = this.search as NonNullable<NiFramer["search"]>;
+    const check = (q: number): Verdict => {
+      const v = frameAt(buf, q, true);
+      if (v !== "frame") return v;
+      const end = q + 4 + buf.readUInt32BE(q);
+      if (end > buf.length) return "more";
+      if (end === buf.length) return "frame";
+      const next = frameAt(buf, end, false);
+      return next === "frame" ? "frame" : next;
+    };
+    let kept: number[] = [];
+    for (const q of s.candidates) {
+      if (q < from) continue;
+      const v = check(q);
+      if (v === "frame") return q;
+      if (v === "more") kept.push(q);
+    }
+    let q = Math.max(s.scanned, from);
+    for (; q < buf.length; q++) {
+      const v = check(q);
+      if (v === "frame") return q;
+      if (v === "more") kept.push(q);
+    }
+    // Too many open candidates: the oldest give way, so that the search moves on.
+    if (kept.length > MAX_CANDIDATES) kept = kept.slice(-MAX_CANDIDATES);
+    s.candidates = kept;
+    s.scanned = q;
+    return undefined;
   }
 }
 
@@ -148,6 +347,8 @@ export interface DiagMessage {
   items: DiagItem[];
   /** What stopped the parsing early, if anything. */
   problem?: string;
+  /** The payload breaks off or does not decompress: damaged in transit, or not DIAG. (An unknown item type stops the parsing too, but is not damage.) */
+  broken?: true;
 }
 
 /**
@@ -166,48 +367,49 @@ export function parseMessage(payload: Buffer): DiagMessage | undefined {
     body = body.subarray(OPENING_BLOCK);
     dp = true;
   }
-  if (body.length < MESSAGE_HEADER) return { header: body, dp, items: [], problem: `payload of ${body.length} bytes is shorter than a DIAG header` };
+  if (body.length < MESSAGE_HEADER) return { header: body, dp, items: [], problem: `payload of ${body.length} bytes is shorter than a DIAG header`, broken: true };
   const header = body.subarray(0, MESSAGE_HEADER);
   let data = body.subarray(MESSAGE_HEADER);
   const compression = header[7] ?? 0;
   if (compression === 1) {
-    if (!isLzh(data)) return { header, dp, items: [], problem: "compressed message without an LZH header" };
+    if (!isLzh(data)) return { header, dp, items: [], problem: "compressed message without an LZH header", broken: true };
     try {
       data = lzhDecompress(data);
     } catch (e) {
-      return { header, dp, items: [], problem: e instanceof Error ? e.message : String(e) };
+      return { header, dp, items: [], problem: e instanceof Error ? e.message : String(e), broken: true };
     }
   } else if (compression !== 0) {
     return { header, dp, items: [], problem: `encrypted message (SNC, compression flag ${compression}): not readable` };
   }
-  const { items, problem } = parseItems(data);
-  return problem === undefined ? { header, dp, items } : { header, dp, items, problem };
+  const { items, problem, cut } = parseItems(data);
+  if (problem === undefined) return { header, dp, items };
+  return cut ? { header, dp, items, problem, broken: true } : { header, dp, items, problem };
 }
 
 /** The items of a decompressed message, or of an inner stream found in an RFC blob. */
-export function parseItems(data: Buffer): { items: DiagItem[]; problem?: string; end: number } {
+export function parseItems(data: Buffer): { items: DiagItem[]; problem?: string; end: number; cut?: true } {
   const items: DiagItem[] = [];
   let i = 0;
   while (i < data.length) {
     const type = data[i] as number;
     if (hasId(type)) {
       const head = type === ITEM.short ? 5 : 7;
-      if (i + head > data.length) return { items, problem: `item header cut at ${i}`, end: i };
+      if (i + head > data.length) return { items, problem: `item header cut at ${i}`, end: i, cut: true };
       const n = type === ITEM.short ? data.readUInt16BE(i + 3) : data.readUInt32BE(i + 3);
-      if (i + head + n > data.length) return { items, problem: `item ${itemKey({ type, id: data[i + 1] ?? 0, sid: data[i + 2] ?? 0 })} of ${n} bytes cut at ${i}`, end: i };
+      if (i + head + n > data.length) return { items, problem: `item ${itemKey({ type, id: data[i + 1] ?? 0, sid: data[i + 2] ?? 0 })} of ${n} bytes cut at ${i}`, end: i, cut: true };
       items.push({ type, id: data[i + 1] as number, sid: data[i + 2] as number, value: data.subarray(i + head, i + head + n) });
       i += head + n;
     } else if (type === ITEM.xml) {
-      if (i + 5 > data.length) return { items, problem: `item header cut at ${i}`, end: i };
+      if (i + 5 > data.length) return { items, problem: `item header cut at ${i}`, end: i, cut: true };
       const n = data.readUInt32BE(i + 1);
-      if (i + 5 + n > data.length) return { items, problem: `xml item of ${n} bytes cut at ${i}`, end: i };
+      if (i + 5 + n > data.length) return { items, problem: `xml item of ${n} bytes cut at ${i}`, end: i, cut: true };
       items.push({ type, id: 0, sid: 0, value: data.subarray(i + 5, i + 5 + n) });
       i += 5 + n;
     } else {
       const n = SIZE.get(type);
       // Without a known size the rest cannot be split into items: stop here, with what was read.
       if (n === undefined) return { items, problem: `unknown item type 0x${type.toString(16)} at ${i}`, end: i };
-      if (i + 1 + n > data.length) return { items, problem: `item 0x${type.toString(16)} cut at ${i}`, end: i };
+      if (i + 1 + n > data.length) return { items, problem: `item 0x${type.toString(16)} cut at ${i}`, end: i, cut: true };
       items.push({ type, id: 0, sid: 0, value: data.subarray(i + 1, i + 1 + n) });
       i += 1 + n;
     }
