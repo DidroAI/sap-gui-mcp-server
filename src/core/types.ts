@@ -21,6 +21,8 @@ export interface SessionInfo {
   transaction?: string;
   /** Window or tab title. */
   title?: string;
+  /** SAP GUI: how the server reads it, when not by SAP GUI scripting ("diag": the DIAG method). */
+  method?: string;
   /** Where it lives: "SAP GUI connection 0", "Chrome tab 'Display Sales Order'", ... */
   where: string;
   /** For browser tabs: the URL without query string or fragment. */

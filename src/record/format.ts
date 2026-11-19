@@ -60,7 +60,13 @@ const step = z.object({
   /** What this step is for, in the recorder's words. */
   note: z.string().optional(),
   /** The screen the action was done on. */
-  on: screenRef.optional(),
+  /**
+   * The screen the step was done on; `popup`: the popup window on top then
+   * (wnd[1]...), if one was; `message`: that popup only informed (text and a
+   * Continue, no question, no input), so a replay may skip the step when SAP
+   * does not show it.
+   */
+  on: screenRef.extend({ popup: z.string().optional(), message: z.boolean().optional() }).optional(),
   /** The screen and status bar the action led to. */
   after: screenRef.extend({ status: statusMessage.optional() }).optional(),
   expect: z.array(check).optional(),
@@ -77,6 +83,8 @@ export const testSchema = z.object({
     at: z.string(),
     by: z.string().optional(),
     surface: z.string(),
+    /** SAP GUI: "diag" when recorded through the DIAG method (its ids are SAP field names); absent for scripting. */
+    method: z.string().optional(),
     system: z.string().optional(),
     client: z.string().optional(),
   }),

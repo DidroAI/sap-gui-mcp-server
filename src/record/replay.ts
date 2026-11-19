@@ -22,6 +22,7 @@ import { actionText, normalizeAction, type NormalizedAction } from "../core/acti
 import { commandFieldRefusal, decide, leavesTransaction, type Policy, sessionRefusal, systemAllowed } from "../core/guard.js";
 import type { Assessment, Driver } from "../core/types.js";
 import { compact } from "../core/compact.js";
+import { vkeyNumber } from "../sapgui/keys.js";
 import { captureValue, evaluate } from "./checks.js";
 import { actionWith, fill, inputsOf, type SapTest, type Step } from "./format.js";
 import { applyCapture, type Phase, type Proposal, propose, type Repair, type RepairRecord, RepairRefused, repairRefusal, runRepairActions } from "./repair.js";
@@ -197,6 +198,10 @@ const popupOf = (s: ParsedScreen) => {
   const w = topWindowOf(s);
   return w && w.id !== "wnd[0]" ? w : undefined;
 };
+/** The action that presses a button: by its id, or on the DIAG method a function key or toolbar button by its key. */
+const pressOf = (c: Control): NormalizedAction => (c.vkey !== undefined && !c.id.startsWith("wnd[") ? normalizeAction({ do: "key", key: c.vkey }) : normalizeAction({ do: "press", id: c.id }));
+/** A popup's Continue: SAP GUI's green tick (wnd[1]/tbar[0]/btn[0]), on the DIAG method the popup's Enter key. */
+const continueOf = (mine: Control[], window: string) => mine.find((c) => c.id === `${window}/tbar[0]/btn[0]`) ?? mine.find((c) => c.zone === "bar" && c.vkey === 0);
 const editable = (c: Control) => (c.type === "field" || c.type === "dropdown" || c.type === "textedit") && !/\(read-only\)|\(display\)/.test(c.rest);
 
 /** What to do about the window in front, when it is one the replay may meet without a recording of it. */
@@ -211,23 +216,23 @@ export function detour(screen: ParsedScreen): Detour | undefined {
       .join(" ")
       .replace(/\s+/g, " ");
     const what = `popup "${pop.title}"${words ? ` (${words.slice(0, 200)})` : ""}`;
-    const go = mine.find((c) => c.id === `${pop.id}/tbar[0]/btn[0]`);
+    const go = continueOf(mine, pop.id);
     const question =
-      mine.some((c) => c.type === "button" && c.id.includes("/usr/")) ||
+      mine.some((c) => c.type === "button" && (c.id.includes("/usr/") || c.zone === "area")) ||
       mine.some(editable) ||
       mine.some((c) => /^(table|grid|list|tree|checkbox|radio|dropdown|textedit|html-viewer)$/.test(c.type)) ||
       /\?\s*$/.test(words) ||
       /\?/.test(pop.title);
     if (!go || question) return { kind: "stop", what };
-    return { kind: "pass", what, action: normalizeAction({ do: "press", id: go.id }), answer: `pressed ${go.label || "Continue"}` };
+    return { kind: "pass", what, action: pressOf(go), answer: `pressed ${go.label || "Continue"}` };
   }
   for (const o of OPTIONAL_SCREENS) {
     if (!o.is(screen)) continue;
     const go = screen.controls.find((c) => c.type === "button" && c.window === "wnd[0]" && o.button.test(c.label));
     const what = `${o.what} screen "${screen.title ?? ""}"`;
     if (!go) return { kind: "stop", what: `${what} (no Continue button the replay could press)` };
-    const ways = screen.controls.filter((c) => c.type === "button" && /^wnd\[0\]\/tbar\[1\]\//.test(c.id)).map((c) => c.label);
-    return { kind: "choice", what, action: normalizeAction({ do: "press", id: go.id }), answer: `pressed ${go.label}`, ways };
+    const ways = screen.controls.filter((c) => c.type === "button" && (/^wnd\[0\]\/tbar\[1\]\//.test(c.id) || (c.window === "wnd[0]" && c.zone === "bar" && c.rest.endsWith("(toolbar)")))).map((c) => c.label);
+    return { kind: "choice", what, action: pressOf(go), answer: `pressed ${go.label}`, ways };
   }
   return undefined;
 }
@@ -241,12 +246,50 @@ function asRecorded(step: Step, screen: ParsedScreen, vars: Record<string, strin
   return !was.title || !screen.title || sameText(was.title, screen.title, vars);
 }
 
-/** The popup a recorded step confirms with its Continue button (wnd[1]/tbar[0]/btn[0]), if that is what it does. */
-function confirming(step: Step): string | undefined {
-  if (step.action?.do !== "press") return undefined;
-  const m = /^(wnd\[[1-9]\])\/tbar\[0\]\/btn\[0\]$/.exec(step.target?.id ?? String(step.action.id ?? ""));
-  return m?.[1];
+/**
+ * The popup a recorded step confirms, if that is what it does: by its
+ * Continue button (wnd[1]/tbar[0]/btn[0]). On the DIAG method, whose ids do
+ * not name the window, only a popup the recorder saw as a plain message
+ * (`step.on.message`: text and a Continue, no question) confirmed by Enter
+ * or a press, in a step not rated a write. The answer to a question (Yes,
+ * Save, any button of a popup that asks) is never one: a replay that skips
+ * it would pass without the write.
+ */
+function confirming(step: Step, diag = false): string | undefined {
+  const a = step.action;
+  if (a?.do === "press") {
+    const m = /^(wnd\[[1-9]\])\/tbar\[0\]\/btn\[0\]$/.exec(step.target?.id ?? String(a.id ?? ""));
+    if (m) return m[1];
+  }
+  const popup = step.on?.popup;
+  if (!diag || !popup || !a || !step.on?.message || step.risk === "commit") return undefined;
+  if (a.do === "press" || (a.do === "key" && vkeyNumber(a.key ?? a.value) === 0)) return popup;
+  return undefined;
 }
+
+/** How long a step waits, at most, for a screen that came whole after one marked damaged (DIAG method). */
+const DAMAGED_MS = 5000;
+
+/**
+ * The screen a step is judged on, when the DIAG method marked it damaged
+ * (bytes lost on the connection): read again until an undamaged one comes,
+ * within the step's own timeout (seconds) or DAMAGED_MS. Still damaged then:
+ * undefined, and the step fails for that reason, not on a check.
+ */
+async function undamaged(driver: Driver, screen: ParsedScreen, timeout: unknown): Promise<ParsedScreen | undefined> {
+  if (!screen.damaged) return screen;
+  const t = Number(timeout);
+  const until = Date.now() + (Number.isFinite(t) && t > 0 ? t * 1000 : DAMAGED_MS);
+  let now = screen;
+  while (now.damaged && Date.now() < until) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    now = await read(driver);
+  }
+  return now.damaged ? undefined : now;
+}
+
+const DAMAGED_TEXT =
+  "screen damaged in transit: bytes were lost on the connection while SAP sent it, and no whole screen came after it, so the step was not judged. Look at the screen (sap_look), then run the replay again from this step";
 
 /** At most this many unrecorded windows are answered after one step (VA02 shows two Information popups in a row). */
 const MAX_DETOURS = 5;
@@ -282,6 +325,11 @@ export async function replay(driver: Driver, policy: Policy, recorded: SapTest, 
   if (!Number.isInteger(from) || from < 1 || from > test.steps.length) return finish(`"from" is a step of the test, 1 to ${test.steps.length} (got ${from})`);
   if (resumed) result.from = from;
   if (info.surface !== test.recorded.surface) return finish(`the test was recorded on ${test.recorded.surface}; this session is ${info.surface}. Ids differ between Fiori and SAP GUI screens.`);
+  // SAP GUI read by scripting and by the DIAG method name controls differently (wnd[0]/usr/ctxtVBAK-VBELN, VBAK-VBELN).
+  const method = (m: string | undefined) => (m === "diag" ? "the DIAG method (SAP_GUI_METHOD=diag)" : "SAP GUI scripting");
+  const diag = test.recorded.method === "diag";
+  if (info.surface === "sapgui" && method(info.method) !== method(test.recorded.method))
+    return finish(`the test was recorded through ${method(test.recorded.method)}; this session is read through ${method(info.method)}. The two name controls differently: replay it with the method it was recorded with`);
 
   /** A clean start: popups left open are closed, and the recording's first transaction is opened fresh. */
   const cleanStart = async (at: ParsedScreen): Promise<ParsedScreen> => {
@@ -371,18 +419,36 @@ export async function replay(driver: Driver, policy: Policy, recorded: SapTest, 
         }
         r.action = actionText(action);
         // The recording confirmed an Information popup here that SAP did not show this time: nothing to answer.
-        const confirms = confirming(step);
+        const confirms = confirming(step, diag);
+        // On the DIAG method a popup is named by its place only (wnd[1]): the one on show must be the one recorded.
+        const recordedPopup = diag ? step.on?.popup : undefined;
+        const shown = recordedPopup ? screen.windows.find((w) => w.id === recordedPopup) : undefined;
+        const other = !!shown && !!step.on?.title && !!shown.title && !sameText(step.on.title, shown.title, vars);
         if (runs && confirms && !screen.windows.some((w) => w.id === confirms)) {
-          r.warnings.push(`the recording confirmed a popup here ("${step.on?.title ?? ""}") that SAP did not show this time: step skipped`);
-          r.ms = Date.now() - s0;
-          options.onStep?.(r);
-          continue;
+          // Its action is not sent; the screen is judged and its checks run as for any step (where the Continue would have led).
+          r.warnings.push(`the recording confirmed a popup here ("${step.on?.title ?? ""}") that SAP did not show this time: its answer was not sent`);
+          runs = false;
+        } else if (runs && recordedPopup && (!shown || other)) {
+          // A question's answer (or a popup not known to be a plain message) is never skipped, nor given to another popup.
+          r.failures.push(
+            other
+              ? `the recording answered the popup "${step.on?.title ?? ""}" here, and SAP shows the popup "${shown?.title ?? ""}" instead: nothing was pressed`
+              : `the recording answered the popup "${step.on?.title ?? ""}" here (${actionText(action)}), and SAP did not show it this time. An answer to a question is never skipped, so the step fails: look at what changed in the steps before it`,
+          );
+          throw undefined;
         }
         if (runs) {
           await guarded(driver, policy, action);
           screen = await read(driver);
         }
         phase = "landing";
+        // A screen with bytes lost on the way is not judged: the next whole one is waited for.
+        const whole = await undamaged(driver, screen, action.timeout);
+        if (!whole) {
+          r.failures.push(DAMAGED_TEXT);
+          throw undefined;
+        }
+        screen = whole;
         // Windows SAP showed that the recording does not have here: passed when they only inform, else the step fails.
         for (let k = 0; k < MAX_DETOURS && !asRecorded(step, screen, vars); k++) {
           const d = detour(screen);
@@ -400,6 +466,12 @@ export async function replay(driver: Driver, policy: Policy, recorded: SapTest, 
           await guarded(driver, policy, d.action);
           r.warnings.push(`SAP showed ${a(d.what)} that the recording does not have: the replay ${d.answer}${d.kind === "choice" ? ', as "choices":"continue" asked; what was saved may differ from the recording' : ""}`);
           screen = await read(driver);
+          const after = await undamaged(driver, screen, action.timeout);
+          if (!after) {
+            r.failures.push(DAMAGED_TEXT);
+            throw undefined;
+          }
+          screen = after;
         }
         const landed = sessionRefusal(policy, await driver.refresh());
         if (landed) r.failures.push(`this led to a transaction the replay may not work in: ${landed}`);
@@ -408,12 +480,20 @@ export async function replay(driver: Driver, policy: Policy, recorded: SapTest, 
         let judged = step;
         if (!asRecorded(step, screen, vars) && !popupOf(screen)) {
           let j = i + 1;
-          while (test.steps[j] && confirming(test.steps[j] as Step)) j++;
+          while (test.steps[j] && confirming(test.steps[j] as Step, diag)) j++;
           const last = test.steps[j - 1];
           if (j > i + 1 && last && asRecorded(last, screen, vars)) judged = { ...step, ...(last.after ? { after: last.after } : {}) };
         }
         if (!r.failures.length) implicit(judged, screen, strict, r, vars);
-      } else if (!repair) screen = await read(driver);
+      } else if (!repair) {
+        screen = await read(driver);
+        const whole = await undamaged(driver, screen, undefined);
+        if (!whole) {
+          r.failures.push(DAMAGED_TEXT);
+          throw undefined;
+        }
+        screen = whole;
+      }
       // On the wrong screen or after an error, the marked checks would only repeat the failure.
       if (r.failures.length) throw undefined;
       phase = "check";

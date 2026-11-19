@@ -534,7 +534,7 @@ describe("replay: windows the recording does not have", () => {
     s.sap.popupsFor.clear();
     const r = await replay(s.sap.driver(), s.policy, t);
     expect(r.passed).toBe(true);
-    expect(r.steps[3]?.warnings[0]).toContain("that SAP did not show this time: step skipped");
+    expect(r.steps[3]?.warnings[0]).toContain("that SAP did not show this time: its answer was not sent");
   });
 
   test("a replay can start with a popup open: an Information popup is confirmed, a question cancelled", async () => {

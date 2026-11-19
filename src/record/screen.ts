@@ -11,7 +11,10 @@
  *   wnd[0]/sbar  status  S: Order 19097 saved
  * Fiori has its own (a `FIORI <intent>` header, indented control lines,
  * `TOAST "..."`): only the header, the toasts and the text are read from it.
+ * The DIAG method (SAP_GUI_METHOD=diag) has its own too, read in diag-screen.ts.
  */
+
+import { isDiagView, parseDiagView } from "./diag-screen.js";
 
 export interface ScreenRef {
   /** Transaction code, or on Fiori the app's intent. */
@@ -38,6 +41,10 @@ export interface Control {
   /** Field and dropdown: the value. Checkbox and radio: "true" or "false". Tab: "selected" or "". Others: their text. */
   value: string;
   window: string;
+  /** DIAG view: "area" for an element of the screen area, "bar" for a function key or toolbar button. */
+  zone?: "area" | "bar";
+  /** DIAG view, function keys and toolbar: the virtual key that does what the button does. */
+  vkey?: number;
 }
 
 export interface ParsedScreen extends ScreenRef {
@@ -48,6 +55,10 @@ export interface ParsedScreen extends ScreenRef {
   controls: Control[];
   logon: boolean;
   text: string;
+  /** "diag" when the view is the DIAG method's (its ids are SAP field names, function codes, FIELD[n]). */
+  method?: "diag";
+  /** DIAG method: bytes were lost on the connection, so parts of this screen may be missing or old. */
+  damaged?: boolean;
 }
 
 const unquote = (s: string) => s.replace(/\\(.)/g, "$1");
@@ -82,6 +93,7 @@ function control(id: string, type: string, rest: string, window: string): Contro
 }
 
 export function parseScreen(text: string): ParsedScreen {
+  if (isDiagView(text)) return parseDiagView(text);
   const lines = text.split("\n");
   const head = lines[0] ?? "";
   const out: ParsedScreen = { windows: [], controls: [], logon: false, text };
@@ -186,7 +198,10 @@ export interface Located {
  */
 export function locate(screen: ParsedScreen, id: string): Located | undefined {
   const cs = screen.controls;
-  const exact = cs.find((c) => c.id === id);
+  // The same id in two windows (a DIAG field name under a popup and on it): the top window's is the one an action reaches.
+  const top = screen.windows.at(-1)?.id;
+  const exacts = cs.filter((c) => c.id === id);
+  const exact = exacts.find((c) => c.window === top) ?? exacts[0];
   if (exact) return { control: exact, by: "exact" };
   const tail = cs.filter((c) => c.id.endsWith(`/${id}`));
   if (tail.length === 1 && tail[0]) return { control: tail[0], by: id.startsWith("wnd[") ? "segment" : "exact" };

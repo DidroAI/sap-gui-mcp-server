@@ -92,6 +92,8 @@ export interface ControlState {
   readOnly?: boolean;
   /** Screen revision at which the server last touched it. */
   touched: number;
+  /** The internal mode it was made in (session sub-id 0a): it ends with that mode. */
+  internalMode?: number;
 }
 
 function kindOf(type: string): DiagControlKind {
@@ -184,7 +186,7 @@ export class Controls {
   constructor(private readonly note: (what: string) => void) {}
 
   /** A call of the server to SAP GUI. Returns true when it changed a control. */
-  serverCall(call: RfcCall, utf8: boolean, revision: number): boolean {
+  serverCall(call: RfcCall, utf8: boolean, revision: number, internalMode?: number): boolean {
     if (call.function !== "OLE_FLUSH_CALL") return false;
     const tables = new Map<string, DataTable>();
     for (const inner of queueCalls(call.tables.get("RFC_QUEUE"))) {
@@ -214,7 +216,9 @@ export class Controls {
         if (!id) return;
         const type = arg(1);
         const parent = made.get(p[3]?.at ?? -1) ?? (Number(arg(3)) || undefined);
-        const c: ControlState = { id, type, kind: kindOf(type), touched: revision, ...(parent !== undefined ? { parent } : {}) };
+        // A shell id is SAP GUI's while its control lives: one made again means the old control, and what hung in it, is gone.
+        if (this.controls.has(id)) this.dropTree(id);
+        const c: ControlState = { id, type, kind: kindOf(type), touched: revision, ...(parent !== undefined ? { parent } : {}), ...(internalMode !== undefined ? { internalMode } : {}) };
         if (c.kind === "grid") c.grid = { columns: [], cells: new Map(), totalRows: 0 };
         if (c.kind === "tree") c.tree = { nodes: new Map(), order: [], expanded: new Set(), allExpanded: false, headers: [] };
         this.controls.set(id, c);
@@ -343,6 +347,31 @@ export class Controls {
     } else return false;
     c.touched = revision;
     return true;
+  }
+
+  /** Forgets a control and every control that hangs in it. */
+  private dropTree(id: number): void {
+    const gone = new Set([id]);
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const c of this.controls.values())
+        if (c.parent !== undefined && gone.has(c.parent) && !gone.has(c.id)) {
+          gone.add(c.id);
+          grew = true;
+        }
+    }
+    for (const g of gone) this.controls.delete(g);
+  }
+
+  /** The server ended an internal mode: SAP GUI frees the controls made in it. Returns true when one was dropped. */
+  endMode(internalMode: number): boolean {
+    let changed = false;
+    for (const [id, c] of this.controls) {
+      if (c.internalMode !== internalMode) continue;
+      this.controls.delete(id);
+      changed = true;
+    }
+    return changed;
   }
 
   /** Forgets the controls of a dynpro that was on the screen and is not any more (a closed value help). `on` says whether a dynpro is on show. */

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { DiagDecoder } from "../../src/diag/decoder.js";
 import type { DiagScreen } from "../../src/diag/screen.js";
-import { appl, areaSize, atom_, atoms, container, containerName, EOM, keys, listCell, listHead, menus, message, Queue, queueAnswer, r3info, RESET, rfcCall, rfcItem, screenHead, scroll2, ses, tabButtons, tableControl, tabstripHeader, title } from "./build.js";
+import { idItem, areaSize, elem, elementList, areaLevel, areaName, END, keys, listCell, listHead, menus, message, Queue, queueAnswer, sessionInfo, RESET, rfcCall, rfcItem, screenHead, scrollState, windowStart, tabList, tableControl, tabstripHeader, title } from "./build.js";
 
 /** A decoder fed with server messages (or [direction, bytes] pairs); the screens it gave. */
 function run(...frames: (Buffer | [0 | 1, Buffer])[]): { decoder: DiagDecoder; screens: DiagScreen[]; modes: number[] } {
@@ -36,40 +36,40 @@ const ORDER = [
     [8, "Copy"],
   ]),
   RESET,
-  container(3, 0, 0, 100, 4),
-  containerName("HEADER", "ZPROG", "0110"),
-  atoms(
-    atom_.field(0, 0, "Order", { output: true, width: 16 }),
-    atom_.name(0, 0, "ZHDR-TXT"),
-    atom_.field(0, 17, "4711", { width: 10, readOnly: true, valueHelp: true }),
-    atom_.name(0, 17, "ZHDR-ID"),
-    atom_.tooltip(0, 17, "Order number"),
-    atom_.label(0, 40, "Net value"),
-    atom_.field(0, 56, "       1.250,00", { readOnly: true }),
-    atom_.name(0, 56, "ZHDR-NETWR"),
-    atom_.field(0, 78, "EUR", { readOnly: true }),
-    atom_.name(0, 78, "ZHDR-WAERK"),
+  areaLevel(3, 0, 0, 100, 4),
+  areaName("HEADER", "ZPROG", "0110"),
+  elementList(
+    elem.field(0, 0, "Order", { output: true, width: 16 }),
+    elem.name(0, 0, "ZHDR-TXT"),
+    elem.field(0, 17, "4711", { width: 10, readOnly: true, valueHelp: true }),
+    elem.name(0, 17, "ZHDR-ID"),
+    elem.tooltip(0, 17, "Order number"),
+    elem.label(0, 40, "Net value"),
+    elem.field(0, 56, "       1.250,00", { readOnly: true }),
+    elem.name(0, 56, "ZHDR-NETWR"),
+    elem.field(0, 78, "EUR", { readOnly: true }),
+    elem.name(0, 78, "ZHDR-WAERK"),
   ),
   RESET,
-  container(3, 0, 0, 100, 4),
-  containerName("HEADER", "ZPROG", "0110"),
-  container(3, 1, 2, 80, 2),
-  containerName("PARTNER", "ZPROG", "0120"),
-  atoms(atom_.label(0, 0, "Customer"), atom_.field(0, 17, "", { width: 10 }), atom_.name(0, 17, "ZHDR-KUNNR"), atom_.button(0, 60, "@0Y\\QCreate customer@", "NEWC"), atom_.name(0, 60, "BT_NEWC"), atom_.check(1, 0, "Complete", true, true), atom_.name(1, 0, "ZHDR-DONE")),
+  areaLevel(3, 0, 0, 100, 4),
+  areaName("HEADER", "ZPROG", "0110"),
+  areaLevel(3, 1, 2, 80, 2),
+  areaName("PARTNER", "ZPROG", "0120"),
+  elementList(elem.label(0, 0, "Customer"), elem.field(0, 17, "", { width: 10 }), elem.name(0, 17, "ZHDR-KUNNR"), elem.button(0, 60, "@0Y\\QCreate customer@", "NEWC"), elem.name(0, 60, "BT_NEWC"), elem.check(1, 0, "Complete", true, true), elem.name(1, 0, "ZHDR-DONE")),
   RESET,
-  container(8, 5, 0, 100, 12),
-  containerName("TABS", "ZPROG", "0100"),
+  areaLevel(8, 5, 0, 100, 12),
+  areaName("TABS", "ZPROG", "0100"),
   tabstripHeader("TABS", "T\\02", 2),
-  tabButtons(atom_.tab(0, "Sales", "T\\01"), atom_.name(0, 0, "TABS-TAB01"), atom_.tab(1, "Items", "T\\02"), atom_.name(0, 1, "TABS-TAB02")),
+  tabList(elem.tab(0, "Sales", "T\\01"), elem.name(0, 0, "TABS-TAB01"), elem.tab(1, "Items", "T\\02"), elem.name(0, 1, "TABS-TAB02")),
   RESET,
-  container(8, 5, 0, 100, 12),
-  containerName("TABS", "ZPROG", "0100"),
-  container(9, 2, 1, 98, 9),
-  scroll2(11, 98, 0, 0, 9, 98),
-  containerName("BODY", "ZPROG", "0130"),
-  atoms(atom_.frame(0, 0, 5, 60, "Shipping"), atom_.label(1, 1, "Block"), atom_.dropdown(1, 17, "07"), atom_.name(1, 17, "ZHDR-LIFSK"), atom_.field(2, 17, "?", { width: 4 }), atom_.name(2, 17, "ZHDR-TYPE"), atom_.field(3, 17, "secret", { hidden: true }), atom_.name(3, 17, "ZHDR-PWD"), atom_.label(10, 1, "Far down"), atom_.unknown(4, 1, "odd")),
-  appl(0x09, 0x0b, [1, 0, 1, 0, 19, 0, 0, 0, 0, 0]),
-  EOM,
+  areaLevel(8, 5, 0, 100, 12),
+  areaName("TABS", "ZPROG", "0100"),
+  areaLevel(9, 2, 1, 98, 9),
+  scrollState(11, 98, 0, 0, 9, 98),
+  areaName("BODY", "ZPROG", "0130"),
+  elementList(elem.frame(0, 0, 5, 60, "Shipping"), elem.label(1, 1, "Block"), elem.dropdown(1, 17, "07"), elem.name(1, 17, "ZHDR-LIFSK"), elem.field(2, 17, "?", { width: 4 }), elem.name(2, 17, "ZHDR-TYPE"), elem.field(3, 17, "secret", { hidden: true }), elem.name(3, 17, "ZHDR-PWD"), elem.label(10, 1, "Far down"), elem.unknown(4, 1, "odd")),
+  idItem(0x09, 0x0b, [1, 0, 1, 0, 19, 0, 0, 0, 0, 0]),
+  END,
 ];
 
 describe("DiagDecoder: a classic screen", () => {
@@ -150,13 +150,13 @@ describe("DiagDecoder: a classic screen", () => {
 
   test("the cursor, and what was not understood", () => {
     expect(w?.focus).toEqual({ row: 1, col: 19, name: "ZHDR-KUNNR" });
-    expect(decoder.notes.get("atom type 99")).toBe(1);
+    expect(decoder.notes.get("element type 99")).toBe(1);
     expect(w?.elements.find((e) => e.etype === 99)?.text).toBe("odd");
   });
 });
 
 describe("DiagDecoder: steps and modes", () => {
-  const first = message([...screenHead({ title: "First" }), EOM]);
+  const first = message([...screenHead({ title: "First" }), END]);
 
   test("bytes may come in any chunks", () => {
     const stream = Buffer.concat([message(ORDER, { compress: true, padding: 2 }), first]);
@@ -176,24 +176,24 @@ describe("DiagDecoder: steps and modes", () => {
 
   test("a call to SAP GUI that wants an answer does not end the step; the screen comes after", () => {
     const call = rfcItem(0, rfcCall("Z_ASK_GUI", { WHAT: "x" }));
-    const { screens, decoder } = run(message([...screenHead({ title: "Asked" }), call, EOM]), [0, message([rfcItem(1, rfcCall("")), EOM], { info: 0 })], message([EOM]));
+    const { screens, decoder } = run(message([...screenHead({ title: "Asked" }), call, END]), [0, message([rfcItem(1, rfcCall("")), END], { info: 0 })], message([END]));
     expect(screens.length).toBe(1);
     expect(screens[0]?.windows[0]?.title).toBe("Asked");
     expect(decoder.notes.get("RFC call Z_ASK_GUI")).toBe(1);
   });
 
   test("a large screen arrives inside an RFC call, in fragments, and ends with an empty message", () => {
-    const inner = Buffer.concat([...screenHead({ title: "Large", program: "ZBIG", dynpro: "0200" }), RESET, atoms(atom_.label(3, 1, "Inside"))]);
+    const inner = Buffer.concat([...screenHead({ title: "Large", program: "ZBIG", dynpro: "0200" }), RESET, elementList(elem.label(3, 1, "Inside"))]);
     const blob = rfcCall("GUICORE_BLOB_DIAG_PARSER", { STREAM: inner });
     const cut = Math.floor(blob.length / 2);
-    const { screens } = run(message([r3info(0x02, "XYZ"), rfcItem(4, blob.subarray(0, cut)), EOM], { compress: true }), [0, message([rfcItem(4, Buffer.alloc(0)), EOM], { info: 0 })], message([rfcItem(6, blob.subarray(cut)), EOM], { info: 2, compress: true }), message([], { info: 1 }));
+    const { screens } = run(message([sessionInfo(0x02, "XYZ"), rfcItem(4, blob.subarray(0, cut)), END], { compress: true }), [0, message([rfcItem(4, Buffer.alloc(0)), END], { info: 0 })], message([rfcItem(6, blob.subarray(cut)), END], { info: 2, compress: true }), message([], { info: 1 }));
     expect(screens.length).toBe(1);
     expect(screens[0]?.windows[0]).toMatchObject({ title: "Large", program: "ZBIG", dynpro: "0200" });
     expect(screens[0]?.windows[0]?.elements[0]).toMatchObject({ kind: "label", text: "Inside", row: 3, col: 1 });
   });
 
   test("each mode of the connection has its own screen", () => {
-    const { decoder, modes } = run(message([...screenHead({ title: "Mode zero" }), EOM]), message([...screenHead({ title: "Mode one", tcode: "ZT02" }), EOM], { mode: 1 }), message([...screenHead({ title: "Mode zero again" }), EOM]));
+    const { decoder, modes } = run(message([...screenHead({ title: "Mode zero" }), END]), message([...screenHead({ title: "Mode one", tcode: "ZT02" }), END], { mode: 1 }), message([...screenHead({ title: "Mode zero again" }), END]));
     expect(modes).toEqual([0, 1, 0]);
     expect([...decoder.screens().keys()].sort()).toEqual([0, 1]);
     expect(decoder.screens().get(1)).toMatchObject({ mode: 1, step: 1, session: { tcode: "ZT02" } });
@@ -203,15 +203,15 @@ describe("DiagDecoder: steps and modes", () => {
   });
 
   test("the status bar belongs to its step; the command the user sent is kept", () => {
-    const withMessage = message([...screenHead(), r3info(0x0b, "E: Enter a customer"), appl(0x0c, 0x03, ["E", "ZMSG".padEnd(20), "042", " "].join("\0")), EOM]);
-    const { screens } = run(withMessage, [0, message([appl(0x0c, 0x04, "/nZT02"), EOM], { info: 0, dp: true })], message([...screenHead({ title: "Next" }), EOM]));
+    const withMessage = message([...screenHead(), sessionInfo(0x0b, "E: Enter a customer"), idItem(0x0c, 0x03, ["E", "ZMSG".padEnd(20), "042", " "].join("\0")), END]);
+    const { screens } = run(withMessage, [0, message([idItem(0x0c, 0x04, "/nZT02"), END], { info: 0, dp: true })], message([...screenHead({ title: "Next" }), END]));
     expect(screens[0]?.message).toEqual({ type: "E", text: "Enter a customer", id: "ZMSG", number: "042" });
     expect(screens[1]?.message).toBeUndefined();
     expect(screens[1]?.lastCommand).toBe("/nZT02");
   });
 
   test("menus and keys stay when the server sends the window again without them", () => {
-    const { screens } = run(message([...screenHead(), menus(1, [[[1], "Order"]]), keys(4, [[3, "Back"]]), EOM]), message([...screenHead({ title: "Again" }), EOM]));
+    const { screens } = run(message([...screenHead(), menus(1, [[[1], "Order"]]), keys(4, [[3, "Back"]]), END]), message([...screenHead({ title: "Again" }), END]));
     expect(screens[1]?.windows[0]?.title).toBe("Again");
     expect(screens[1]?.windows[0]?.menus.map((m) => m.text)).toEqual(["Order"]);
     expect(screens[1]?.windows[0]?.keys.map((k) => k.text)).toEqual(["Back"]);
@@ -225,8 +225,8 @@ describe("DiagDecoder: steps and modes", () => {
       decoder.push(1, framed(junk));
       decoder.push(0, framed(junk));
       decoder.push(1, framed(Buffer.from([0, 0, 0, 0, 0, 1, 0, 1, 9, 9, 9])));
-      decoder.push(1, message([appl(0x33, 0x44, "what"), appl(0x09, 0x02, Buffer.from([0, 5, 1, 2, 3]), true), appl(0x09, 0x0e, Buffer.alloc(8), true), appl(0x09, 0x08, "a\0b\0", true), rfcItem(0, Buffer.from("not an rfc call")), rfcItem(9, Buffer.alloc(3))]));
-      decoder.push(1, message([...screenHead({ title: "Still alive" }), EOM]));
+      decoder.push(1, message([idItem(0x33, 0x44, "what"), idItem(0x09, 0x02, Buffer.from([0, 5, 1, 2, 3]), true), idItem(0x09, 0x0e, Buffer.alloc(8), true), idItem(0x09, 0x08, "a\0b\0", true), rfcItem(0, Buffer.from("not an rfc call")), rfcItem(9, Buffer.alloc(3))]));
+      decoder.push(1, message([...screenHead({ title: "Still alive" }), END]));
     }).not.toThrow();
     expect(decoder.screen()?.windows[0]?.title).toBe("Still alive");
     expect(decoder.notes.get("item 10/33/44")).toBe(1);
@@ -237,13 +237,13 @@ describe("DiagDecoder: steps and modes", () => {
 describe("DiagDecoder: popup, list, table control", () => {
   test("a modal popup with a list over the main window", () => {
     const popup = [
-      ses({ index: 1, row: 3, col: 24, rows: 12, cols: 34 }),
+      windowStart({ index: 1, row: 3, col: 24, rows: 12, cols: 34 }),
       areaSize(12, 34),
-      r3info(0x0d, "ZPOPUP".padEnd(40)),
-      r3info(0x0e, "0120"),
+      sessionInfo(0x0d, "ZPOPUP".padEnd(40)),
+      sessionInfo(0x0e, "0120"),
       keys(4, [[12, "Cancel"]]),
       title("Order Type (4 Entries)"),
-      r3info(0x0b, "I: Choose one"),
+      sessionInfo(0x0b, "I: Choose one"),
       ...listHead(5),
       ...listCell(0, 0, "0444944442", true),
       ...listCell(1, 1, "@\\QOrder type@Type"),
@@ -253,9 +253,9 @@ describe("DiagDecoder: popup, list, table control", () => {
       ...listCell(3, 6, "Standard order"),
       ...listCell(4, 1, "7"),
       ...listCell(4, 6, "Seven"),
-      EOM,
+      END,
     ];
-    const { screens } = run(message([...screenHead(), RESET, atoms(atom_.label(2, 1, "Order Type")), ...popup], { compress: true }), message([...screenHead({ title: "Closed" }), EOM]));
+    const { screens } = run(message([...screenHead(), RESET, elementList(elem.label(2, 1, "Order Type")), ...popup], { compress: true }), message([...screenHead({ title: "Closed" }), END]));
     const s = screens[0] as DiagScreen;
     expect(s.windows.length).toBe(2);
     expect(s.windows[0]?.elements[0]?.text).toBe("Order Type");
@@ -289,7 +289,7 @@ describe("DiagDecoder: popup, list, table control", () => {
       rows: [{ values: ["    10", "WIDGET-1", "X", "PC", "A widget"], readOnly: true }, { values: ["    20", "WIDGET-2", " ", "", ""] }, { values: ["______", "__________________", " ", "__", "____________________"], hidden: true }],
       total: 7,
     });
-    const { screens } = run(message([...screenHead(), RESET, container(3, 4, 2, 90, 8), containerName("ITEMS", "ZPROG", "0140"), container(5, 1, 0, 90, 6), containerName("TC_ITEMS", "ZPROG", "0140"), ...table, EOM], { compress: true }));
+    const { screens } = run(message([...screenHead(), RESET, areaLevel(3, 4, 2, 90, 8), areaName("ITEMS", "ZPROG", "0140"), areaLevel(5, 1, 0, 90, 6), areaName("TC_ITEMS", "ZPROG", "0140"), ...table, END], { compress: true }));
     const t = screens[0]?.windows[0]?.tables[0];
     expect(t).toMatchObject({ name: "TC_ITEMS", program: "ZPROG", title: "All items", row: 5, col: 2, width: 90, height: 6, totalRows: 7, visibleRows: 3, path: ["ITEMS:ZPROG:0140"] });
     expect(t?.columns.map((c) => [c.name, c.title, c.position, c.width])).toEqual([
@@ -321,7 +321,7 @@ describe("DiagDecoder: popup, list, table control", () => {
 });
 
 describe("DiagDecoder: controls", () => {
-  const custom = (name: string, row: number) => [RESET, container(10, row, 1, 80, 10), containerName(name, "ZPROG", "0100")];
+  const custom = (name: string, row: number) => [RESET, areaLevel(10, row, 1, 80, 10), areaName(name, "ZPROG", "0100")];
 
   /** A grid in container GRID1: field catalog and cells from the data provider. */
   function gridQueue(): Queue {
@@ -356,8 +356,57 @@ describe("DiagDecoder: controls", () => {
     return q;
   }
 
+  /** A container 115 in GRID1 with a splitter 116 and a text editor 117 in it, as VA03's header texts are made. */
+  function editorQueue(): Queue {
+    const q = new Queue();
+    const gui = q.object("2-");
+    q.verb(gui, "CreateControl", "C", [115, "SAPGUI.CONTAINERCTRL.1", 0, 10], true);
+    q.verb(gui, "LinkContainer", "C", [115, "GRID1"]);
+    q.verb(gui, "CreateControl", "C", [116, "SAPGUI.SplitterCtrl.1", 0, 115], true);
+    const editor = q.verb(gui, "CreateControl", "C", [117, "SAPGUI.TextEditCtrl.1", 0, 116], true);
+    q.verb(editor, "TextStream", "S", ["Deliver to gate 1"]);
+    return q;
+  }
+  /** Another transaction's container 115 in GRID1 with a grid 116: the shell ids are SAP GUI's again. */
+  function gridOnlyQueue(): Queue {
+    const q = new Queue();
+    const gui = q.object("2-");
+    q.verb(gui, "CreateControl", "C", [115, "SAPGUI.CONTAINERCTRL.1", 0, 10], true);
+    q.verb(gui, "LinkContainer", "C", [115, "GRID1"]);
+    q.verb(gui, "CreateControl", "C", [116, "SAPGUI.GridViewCtrl.1", 0, 115], true);
+    return q;
+  }
+  const internalMode = (n: number) => idItem(0x06, 0x0a, [0, n]);
+  const kinds = (s: DiagScreen | undefined) => (s?.windows[0]?.controls ?? []).map((c) => `${c.id} ${c.kind}`);
+
+  test("the controls of an internal mode go when the server ends it (session item 15)", () => {
+    const { screens } = run(
+      message([internalMode(1), rfcItem(0, editorQueue().build()), END], { compress: true }),
+      [0, message([rfcItem(1, queueAnswer({ 1: "10" })), END], { info: 0 })],
+      message([internalMode(1), ...screenHead(), ...custom("GRID1", 2), END]),
+      // /n: the internal mode ends, the next transaction starts in another one; its screen has a GRID1 too.
+      message([internalMode(1), idItem(0x06, 0x15), END], { info: 2 }),
+      message([internalMode(2), ...screenHead(), ...custom("GRID1", 2), END]),
+    );
+    expect(kinds(screens[0])).toEqual(["115 container", "116 splitter", "117 text"]);
+    expect(kinds(screens[1])).toEqual([]);
+  });
+
+  test("a shell id made again: the old control and what hung in it are gone", () => {
+    const { screens } = run(
+      message([rfcItem(0, editorQueue().build()), END], { compress: true }),
+      [0, message([rfcItem(1, queueAnswer({ 1: "10" })), END], { info: 0 })],
+      message([...screenHead(), ...custom("GRID1", 2), END]),
+      message([rfcItem(0, gridOnlyQueue().build()), END], { compress: true }),
+      [0, message([rfcItem(1, queueAnswer({ 1: "11" })), END], { info: 0 })],
+      message([...screenHead(), ...custom("GRID1", 2), END]),
+    );
+    expect(kinds(screens[0])).toEqual(["115 container", "116 splitter", "117 text"]);
+    expect(kinds(screens[1])).toEqual(["115 container", "116 grid"]);
+  });
+
   test("an ALV grid: columns by position with their header texts, rows, total row count", () => {
-    const { screens } = run(message([rfcItem(0, gridQueue().build()), EOM], { compress: true }), [0, message([rfcItem(1, queueAnswer({ 1: "10", 3: "11" })), EOM], { info: 0 })], message([...screenHead(), ...custom("GRID1", 2), EOM]));
+    const { screens } = run(message([rfcItem(0, gridQueue().build()), END], { compress: true }), [0, message([rfcItem(1, queueAnswer({ 1: "10", 3: "11" })), END], { info: 0 })], message([...screenHead(), ...custom("GRID1", 2), END]));
     expect(screens.length).toBe(1);
     const controls = screens[0]?.windows[0]?.controls ?? [];
     const grid = controls.find((c) => c.kind === "grid");
@@ -436,7 +485,7 @@ describe("DiagDecoder: controls", () => {
   const TREE_ANSWER = queueAnswer({ 1: "10", 3: "11", 5: "12", 6: "13", 17: "14", 18: "15" });
 
   test("a tree: nodes in display order with depth, folders, expansion, item texts and headers", () => {
-    const { screens } = run(message([rfcItem(0, treeQueue().build()), EOM]), [0, message([rfcItem(1, TREE_ANSWER), EOM], { info: 0 })], message([...screenHead(), ...custom("SPLIT", 3), EOM]));
+    const { screens } = run(message([rfcItem(0, treeQueue().build()), END]), [0, message([rfcItem(1, TREE_ANSWER), END], { info: 0 })], message([...screenHead(), ...custom("SPLIT", 3), END]));
     const tree = screens[0]?.windows[0]?.controls.find((c) => c.kind === "tree");
     expect(tree).toMatchObject({ id: 105, container: "SPLIT", area: { row: 3, col: 1 } });
     expect(tree?.tree?.headers).toEqual(["Text type", "Lang."]);
@@ -458,8 +507,8 @@ describe("DiagDecoder: controls", () => {
     const editor = later.object(15);
     later.verb(editor, "ReadOnly", "S", [1]);
     later.verb(editor, "TextStream", "S", ["Second text"]);
-    const screen = message([...screenHead(), ...custom("SPLIT", 3), EOM]);
-    const { screens } = run(message([rfcItem(0, treeQueue().build()), EOM]), [0, message([rfcItem(1, TREE_ANSWER), EOM], { info: 0 })], screen, [0, message([EOM], { info: 0 })], message([rfcItem(0, later.build()), EOM]), [0, message([rfcItem(1, queueAnswer({})), EOM], { info: 0 })], screen);
+    const screen = message([...screenHead(), ...custom("SPLIT", 3), END]);
+    const { screens } = run(message([rfcItem(0, treeQueue().build()), END]), [0, message([rfcItem(1, TREE_ANSWER), END], { info: 0 })], screen, [0, message([END], { info: 0 })], message([rfcItem(0, later.build()), END]), [0, message([rfcItem(1, queueAnswer({})), END], { info: 0 })], screen);
     expect(screens.length).toBe(2);
     expect(screens[0]?.windows[0]?.controls.find((c) => c.kind === "text")).toMatchObject({ id: 120, text: "First text", readOnly: false, container: "SPLIT" });
     expect(screens[1]?.windows[0]?.controls.find((c) => c.kind === "text")).toMatchObject({ id: 120, text: "Second text", readOnly: true });
@@ -506,12 +555,12 @@ describe("DiagDecoder: controls", () => {
     fill.verb(help, "createResultDialog", "C", [{ at: fill.object("") }, 0, "", 0]);
     return [make.build(), fill.build()];
   }
-  const dummyPopup = [ses({ index: 1, row: 1, col: 1, rows: 5, cols: 5 }), areaSize(5, 5), r3info(0x0d, "ZHELP".padEnd(40)), r3info(0x0e, "0100"), title("MCX_DUMMY_POPUP"), EOM];
-  const answer = (handles: Record<number, string>): [0, Buffer] => [0, message([rfcItem(1, queueAnswer(handles)), EOM], { info: 0 })];
+  const dummyPopup = [windowStart({ index: 1, row: 1, col: 1, rows: 5, cols: 5 }), areaSize(5, 5), sessionInfo(0x0d, "ZHELP".padEnd(40)), sessionInfo(0x0e, "0100"), title("MCX_DUMMY_POPUP"), END];
+  const answer = (handles: Record<number, string>): [0, Buffer] => [0, message([rfcItem(1, queueAnswer(handles)), END], { info: 0 })];
 
   test("the control-based value help: a hit list tied to an empty popup dynpro, with its caption as the title", () => {
     const [make, fill] = valueHelp(8) as [Buffer, Buffer];
-    const { screens } = run(message([...screenHead(), EOM]), [0, message([EOM], { info: 0 })], message([rfcItem(0, make), EOM]), answer({ 2: "8" }), message([rfcItem(0, fill), EOM]), answer({}), message([...screenHead(), ...dummyPopup]));
+    const { screens } = run(message([...screenHead(), END]), [0, message([END], { info: 0 })], message([rfcItem(0, make), END]), answer({ 2: "8" }), message([rfcItem(0, fill), END]), answer({}), message([...screenHead(), ...dummyPopup]));
     const popup = screens[1]?.windows[1];
     expect(popup).toMatchObject({ index: 1, modal: true, title: "Order Type (1)", dynproTitle: "MCX_DUMMY_POPUP", program: "ZHELP", dynpro: "0100" });
     expect(popup?.controls).toEqual([
@@ -542,15 +591,15 @@ describe("DiagDecoder: controls", () => {
 
   test("the value help is found without SAP GUI's answer too (only the server's side was seen)", () => {
     const [make, fill] = valueHelp(8) as [Buffer, Buffer];
-    const { screens } = run(message([rfcItem(0, make), EOM]), message([rfcItem(0, fill), EOM]), message([...screenHead(), ...dummyPopup]));
+    const { screens } = run(message([rfcItem(0, make), END]), message([rfcItem(0, fill), END]), message([...screenHead(), ...dummyPopup]));
     expect(screens[0]?.windows[1]?.title).toBe("Order Type (1)");
     expect(screens[0]?.windows[1]?.controls[0]?.grid?.rows.length).toBe(3);
   });
 
   test("a closed value help is gone: the same popup dynpro later starts empty", () => {
     const [make, fill] = valueHelp(8) as [Buffer, Buffer];
-    const user: [0, Buffer] = [0, message([EOM], { info: 0 })];
-    const { screens, decoder } = run(message([rfcItem(0, make), EOM]), answer({ 2: "8" }), message([rfcItem(0, fill), EOM]), answer({}), message([...screenHead(), ...dummyPopup]), user, message([...screenHead({ title: "Closed" }), EOM]), user, message([...screenHead(), ...dummyPopup]));
+    const user: [0, Buffer] = [0, message([END], { info: 0 })];
+    const { screens, decoder } = run(message([rfcItem(0, make), END]), answer({ 2: "8" }), message([rfcItem(0, fill), END]), answer({}), message([...screenHead(), ...dummyPopup]), user, message([...screenHead({ title: "Closed" }), END]), user, message([...screenHead(), ...dummyPopup]));
     expect(screens.map((s) => s.windows.length)).toEqual([2, 1, 2]);
     expect(screens[0]?.windows[1]?.controls.length).toBe(1);
     expect(screens[1]?.windows[0]?.controls).toEqual([]);
@@ -559,9 +608,33 @@ describe("DiagDecoder: controls", () => {
   });
 
   test("a control whose container is not on the screen is not on the screen", () => {
-    const { screens } = run(message([rfcItem(0, treeQueue().build()), EOM]), [0, message([rfcItem(1, TREE_ANSWER), EOM], { info: 0 })], message([...screenHead(), ...custom("OTHER", 3), EOM]));
+    const { screens } = run(message([rfcItem(0, treeQueue().build()), END]), [0, message([rfcItem(1, TREE_ANSWER), END], { info: 0 })], message([...screenHead(), ...custom("OTHER", 3), END]));
     expect(screens[0]?.windows[0]?.controls).toEqual([]);
     expect(screens[0]?.windows[0]?.containers.map((c) => c.name)).toEqual(["OTHER"]);
   });
 });
 
+
+describe("table-control cells of a type that is not a field", () => {
+  test("a push button in a row is a button, an unknown type is other: never a field that takes input", () => {
+    const table = tableControl({
+      program: "ZPROG",
+      name: "TC_ITEMS",
+      title: "Items",
+      columns: [
+        { name: "ZITM-POSNR", title: "Item", width: 6 },
+        { name: "ZITM-DETAIL", title: "Details", width: 4, etype: 115 },
+        { name: "ZITM-ODD", title: "Odd", width: 4, etype: 119 },
+      ],
+      rows: [{ values: ["    10", "Det", "Odd"] }],
+    });
+    const { screens } = run(message([...screenHead(), RESET, areaLevel(5, 1, 0, 90, 6), areaName("TC_ITEMS", "ZPROG", "0140"), ...table, END], { compress: true }));
+    const cells = screens[0]?.windows[0]?.tables[0]?.rows[0]?.cells;
+    expect(cells?.map((c) => [c.kind, c.text])).toEqual([
+      ["field", "10"],
+      ["button", "Det"],
+      ["other", "Odd"],
+    ]);
+    expect(screens[0]?.unread?.some((u) => u.includes("table cell element type 119"))).toBe(true);
+  });
+});
