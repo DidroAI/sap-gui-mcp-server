@@ -33,7 +33,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ClassicState } from "../../src/diag/classic.js";
 import { lzhDecompress } from "../../src/diag/lzh.js";
-import { type DiagItem, parseItems, parseMessage, T } from "../../src/diag/wire.js";
+import { type DiagItem, ITEM, parseItems, parseMessage } from "../../src/diag/wire.js";
 
 const args = process.argv.slice(2);
 const folder = args.find((a) => !a.startsWith("--"));
@@ -263,9 +263,9 @@ function itemsProblem(ours: DiagItem[], problem: string | undefined, theirs: Oth
     } else if (existsSync(blob)) {
       // The stream ends at its end-of-message item; what the file holds after it is not part of it.
       const read = parseItems(readFileSync(blob));
-      const end = read.items.findIndex((it) => it.type === T.EOM);
+      const end = read.items.findIndex((it) => it.type === ITEM.end);
       const mine = end < 0 ? read.items : read.items.slice(0, end + 1);
-      const theirEnd = other.items.findIndex((it) => it.type === T.EOM);
+      const theirEnd = other.items.findIndex((it) => it.type === ITEM.end);
       const theirs = theirEnd < 0 ? other.items : other.items.slice(0, theirEnd + 1);
       items += mine.length;
       inner.add(name, itemsProblem(mine, end < 0 ? read.problem : undefined, theirs));
