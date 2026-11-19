@@ -1,10 +1,12 @@
 /**
  * The text view of a DiagScreen, for an agent.
  *
- * A header line (transaction, program, screen, system, user, mode), then per
- * window a WINDOW line, its status bar, menus, keys and toolbar, and the
- * screen area: one line per row of the screen, `r<row>` first, the elements
- * of the row from left to right.
+ * A header line (transaction, program, screen, system, user, mode), the
+ * status bar in the form every surface writes it (`sbar  status  E: text`,
+ * so the server puts an error, a warning or a termination first and keeps
+ * it in an answer of changes only), then per window a WINDOW line, its
+ * menus, keys and toolbar, and the screen area: one line per row of the
+ * screen, `r<row>` first, the elements of the row from left to right.
  *
  *   label text                      a label
  *   NAME@17="value"                 a read-only field: SAP field name, column, value
@@ -13,6 +15,12 @@
  *   NAME@17=dropdown [key]          a dropdown: the selected key
  *   <text>{FCODE}@70                a push button and its function code
  *   -- text --                      a group box
+ *
+ * What SAP shows greyed out is kept and marked "(greyed out)": a push
+ * button, a tree node, a top menu; keys and toolbar buttons are listed on a
+ * line of their own. A value typed in SAP GUI that SAP has not received yet
+ * (the surface marks it, `typed`) shows as `NAME@17=[value] (typed, sent
+ * with the next Enter)`.
  *
  * Row and column are character cells from the top left of the window's
  * screen area: what an action needs to place the cursor. Tabs give their
@@ -23,10 +31,12 @@
  * many rows are left out.
  *
  * Left out, and in the model: read-only fields with no content, hidden
- * elements, tooltips of fields, the entries below the menu bar, what a
- * window behind a popup cannot do (its keys and toolbar).
+ * elements, tooltips of fields, the entries below the menu bar (`menuView`
+ * lists them), what a window behind a popup cannot do (its keys and
+ * toolbar).
  */
-import type { DiagControl, DiagElement, DiagKey, DiagList, DiagScreen, DiagTable, DiagTabstrip, DiagWindow } from "./screen.js";
+import type { DiagControl, DiagElement, DiagKey, DiagList, DiagMenuEntry, DiagScreen, DiagStatus, DiagTable, DiagTabstrip, DiagWindow } from "./screen.js";
+import { keyName } from "./text.js";
 
 export interface DiagViewOptions {
   /** Rows shown per table, list, grid or tree before the rest is counted (default 50). */
@@ -38,6 +48,22 @@ export interface DiagViewOptions {
 const one = (s: string): string => s.replace(/\s*\n\s*/g, " ").trim();
 const quote = (s: string): string => `"${one(s).replace(/"/g, '\\"')}"`;
 
+/** What marks something SAP shows greyed out: it takes no click on this screen. */
+export const GREYED = "(greyed out)";
+/** What marks a value typed in SAP GUI that SAP has not received yet. */
+export const TYPED = "(typed, sent with the next Enter)";
+
+/**
+ * The status bar line: `sbar  status  E: text  (V1 302)`, the form the
+ * scripting and Web GUI views write, which the server reads (statusTop,
+ * withStatus) and record/screen.ts parses. A termination (A) or exit (X)
+ * message is marked: SAP ends the transaction.
+ */
+export function statusLine(m: DiagStatus): string {
+  const mark = m.type === "A" ? "  (termination message: SAP ends the transaction when it is confirmed, and unsaved input is lost)" : m.type === "X" ? "  (exit message: SAP ended the transaction with a runtime error, and unsaved input is lost)" : "";
+  return `sbar  status  ${m.type ? `${m.type}: ` : ""}${one(m.text)}${m.id ? `  (${m.id} ${m.number ?? ""})`.replace(/ \)$/, ")") : ""}${mark}`;
+}
+
 function elementText(e: DiagElement): string {
   const at = `@${e.col}`;
   switch (e.kind) {
@@ -46,7 +72,8 @@ function elementText(e: DiagElement): string {
     case "group":
       return e.text ? `-- ${one(e.text)} --` : "";
     case "button":
-      return `<${one(e.text || e.tooltip || e.name)}>${e.fcode ? `{${e.fcode}}` : ""}${at}`;
+      // A push button that takes no input is one SAP greys out.
+      return `<${one(e.text || e.tooltip || e.name)}>${e.fcode ? `{${e.fcode}}` : ""}${at}${e.input ? "" : ` ${GREYED}`}`;
     case "checkbox":
     case "radio": {
       const box = e.kind === "checkbox" ? `[${e.checked ? "x" : " "}]` : `(${e.checked ? "o" : " "})`;
@@ -56,7 +83,7 @@ function elementText(e: DiagElement): string {
       return `${e.name}${at}=dropdown ${e.input ? `[${e.key ?? ""}]` : quote(e.key ?? "")}`;
     case "field":
       if (!e.input && !e.text) return "";
-      return `${e.name}${at}=${e.input ? `[${one(e.text)}]` : quote(e.text)}${e.required ? " (required)" : ""}`;
+      return `${e.name}${at}=${e.input ? `[${one(e.text)}]` : quote(e.text)}${e.typed ? ` ${TYPED}` : e.required ? " (required)" : ""}`;
     default:
       return e.text ? `${e.name}${at} ${one(e.text)}` : "";
   }
@@ -81,7 +108,7 @@ function tableLines(t: DiagTable, maxRows: number): string[] {
     if (!c) return String(i);
     return c.title && count.get(c.title) === 1 ? c.title : `${c.title}(${c.name})`;
   };
-  const filled = t.rows.filter((r) => !r.empty);
+  const filled = t.rows.filter((r) => !r.empty || r.cells.some((c) => c.typed));
   const out = [`r${t.row}  table ${t.name}${t.title ? ` ${quote(t.title)}` : ""}  ${t.totalRows ?? t.rows.length} rows (${filled.length} with data on show), ${columns.length} columns: ${columns.map((c) => `${one(c.title || c.tooltip || "")} ${c.name}`.trim()).join(" | ")}`];
   for (const r of filled.slice(0, maxRows)) {
     const cells: string[] = [];
@@ -90,12 +117,12 @@ function tableLines(t: DiagTable, maxRows: number): string[] {
       if (!cell || cell.hidden) continue;
       if (cell.kind === "checkbox" || cell.kind === "radio") {
         if (cell.checked) cells.push(`${handle(c.index)}=[x]`);
-      } else if (cell.text) cells.push(`${handle(c.index)}=${cell.input ? `[${one(cell.text)}]` : one(cell.text)}`);
+      } else if (cell.text || cell.typed) cells.push(`${handle(c.index)}=${cell.input ? `[${one(cell.text)}]` : one(cell.text)}${cell.typed ? ` ${TYPED}` : ""}`);
     }
     out.push(`  row ${r.index} r${r.row}: ${cells.join("; ")}`);
   }
   if (filled.length > maxRows) out.push(`  ... ${filled.length - maxRows} more rows`);
-  const empty = t.rows.filter((r) => r.empty);
+  const empty = t.rows.filter((r) => !filled.includes(r));
   if (empty.length) out.push(`  (${empty.length} empty ${empty.length === 1 ? "row" : "rows"} below, from r${empty[0]?.row}${empty.some((r) => r.cells.some((c) => c.input && !c.hidden)) ? ", open for input" : ""})`);
   return out;
 }
@@ -143,7 +170,7 @@ function controlLines(c: DiagControl, maxRows: number): string[] {
     const out = [`${where}tree ${id}  ${shown.length} nodes on show${c.tree.headers.length ? `; columns: ${c.tree.headers.map(one).join(" | ")}` : ""}`];
     for (const n of shown.slice(0, maxRows * 4)) {
       const texts = [...new Set([n.text, ...Object.values(n.items)].map(one).filter(Boolean))].join(" | ");
-      out.push(`  ${"  ".repeat(n.depth)}${n.folder ? (n.expanded ? "[-] " : "[+] ") : ""}${texts || "(no text)"}${n.key === c.tree.selected ? " (selected)" : ""}  {${n.key}}`);
+      out.push(`  ${"  ".repeat(n.depth)}${n.folder ? (n.expanded ? "[-] " : "[+] ") : ""}${texts || "(no text)"}${n.key === c.tree.selected ? " (selected)" : ""}${n.disabled ? ` ${GREYED}` : ""}  {${n.key}}`);
     }
     if (shown.length > maxRows * 4) out.push(`  ... ${shown.length - maxRows * 4} more nodes on show`);
     const closed = c.tree.nodes.length - shown.length;
@@ -159,7 +186,7 @@ function windowLines(w: DiagWindow, top: boolean, o: Required<DiagViewOptions>):
   const place = w.position ? `  at r${w.position.row} c${w.position.col}` : "";
   const out = [`WINDOW ${w.index}${w.modal ? " popup" : ""}  ${quote(w.title)}${w.index > 0 ? `  ${w.program} ${w.dynpro}` : ""}${place}  area ${w.size.rows}x${w.size.cols}`];
   if (o.chrome) {
-    if (w.menus.length) out.push(`menu: ${w.menus.map((m) => one(m.text)).join(" | ")}`);
+    if (w.menus.length) out.push(`menu: ${w.menus.map((m) => `${one(m.text)}${m.enabled ? "" : ` ${GREYED}`}`).join(" | ")}${w.index === 0 ? '  (every entry: sap_look id "mbar")' : ""}`);
     if (top) {
       // A key that is also a toolbar button is written once, with the button's text.
       const toolbar = w.toolbar.filter((k) => k.enabled);
@@ -167,6 +194,10 @@ function windowLines(w: DiagWindow, top: boolean, o: Required<DiagViewOptions>):
       const keys = w.keys.filter((k) => k.enabled && !onToolbar.has(k.vkey));
       if (keys.length) out.push(`keys: ${keys.map(keyText).join(" | ")}`);
       if (toolbar.length) out.push(`toolbar: ${toolbar.map(keyText).join(" | ")}`);
+      // Greyed out: on the screen, and taking no click. Said, so that "not here" and "not now" differ.
+      const offered = new Set([...toolbar, ...keys].map((k) => k.vkey));
+      const grey = [...w.toolbar, ...w.keys].filter((k, i, all) => !k.enabled && !offered.has(k.vkey) && (k.text || k.tooltip) && all.findIndex((x) => x.vkey === k.vkey) === i);
+      if (grey.length) out.push(`greyed out (SAP does not offer it on this screen): ${grey.map(keyText).join(" | ")}`);
     } else out.push("(behind the popup: its keys and toolbar are left out)");
   }
   // Everything of the screen area by row; within a row, the plain elements first.
@@ -205,9 +236,30 @@ export function diagView(s: DiagScreen, options: DiagViewOptions = {}): string {
   const main = s.windows[0];
   const head = [`TRANSACTION ${s.session.tcode ?? ""}`, `PROGRAM ${main?.program ?? ""}`, `SCREEN ${main?.dynpro.replace(/^0+(?=\d)/, "") ?? ""}`, `SYSTEM ${s.session.system ?? ""}${s.session.client ? ` (${s.session.client})` : ""}`, ...(s.session.user ? [`USER ${s.session.user}`] : []), `MODE ${s.mode}`];
   const out = [head.join("  ")];
-  if (s.message?.text) out.push(`status  ${s.message.type ? `${s.message.type}: ` : ""}${one(s.message.text)}${s.message.id ? `  (${s.message.id} ${s.message.number ?? ""})` : ""}`);
+  if (s.message?.text) out.push(statusLine(s.message));
   s.windows.forEach((w, i) => {
     out.push(...windowLines(w, i === s.windows.length - 1, o));
   });
+  return out.join("\n");
+}
+
+/**
+ * Every entry of the main window's menu bar (`sap_look id "mbar"`), as the
+ * Web GUI lists them: indented by level, with the key that runs an entry
+ * and what SAP greys out.
+ */
+export function menuView(s: DiagScreen): string {
+  const menus = s.windows[0]?.menus ?? [];
+  if (!menus.length) return "mbar  menubar  (this screen has no menu bar the server can read)";
+  const out = ['mbar  menubar  every entry; an entry with a key runs with {"do":"key","key":"<key>"}'];
+  const walk = (entries: DiagMenuEntry[], depth: number, grey: boolean) => {
+    for (const m of entries) {
+      if (m.separator || !m.text) continue;
+      const off = grey || !m.enabled;
+      out.push(`  ${"  ".repeat(depth)}${one(m.text)}${m.vkey !== undefined ? ` (${keyName(m.vkey)})` : ""}${m.fcode ? `  {${m.fcode}}` : ""}${off ? "  (greyed out: SAP does not offer it on this screen)" : ""}`);
+      walk(m.children, depth + 1, off);
+    }
+  };
+  walk(menus, 0, false);
   return out.join("\n");
 }
