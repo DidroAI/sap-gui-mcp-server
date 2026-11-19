@@ -126,11 +126,14 @@ export interface DiagMenuEntry {
   separator: boolean;
   /** Function key bound to the entry, when it has one. */
   vkey?: number;
-  /** Function code, when the server sends it. */
-  fcode?: string;
   children: DiagMenuEntry[];
 }
 
+/**
+ * A toolbar button or a function key. The traffic gives no function code
+ * for them (bytes 14-19 of the menu entry are zero in every capture), so
+ * they are named by key and text only.
+ */
 export interface DiagKey {
   /** SAP virtual key number: 0 Enter, 1-12 F1-F12, 13-24 Shift+, 25-36 Ctrl+, 37-48 Ctrl+Shift+. */
   vkey: number;
@@ -140,7 +143,6 @@ export interface DiagKey {
   tooltip: string;
   icon: string;
   enabled: boolean;
-  fcode?: string;
 }
 
 export type DiagElementKind = "field" | "label" | "checkbox" | "radio" | "button" | "dropdown" | "group" | "other";

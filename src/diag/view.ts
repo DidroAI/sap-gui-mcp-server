@@ -271,7 +271,7 @@ export function menuView(s: DiagScreen): string {
     for (const m of entries) {
       if (m.separator || !m.text) continue;
       const off = grey || !m.enabled;
-      out.push(`  ${"  ".repeat(depth)}${one(m.text)}${m.vkey !== undefined ? ` (${keyName(m.vkey)})` : ""}${m.fcode ? `  {${m.fcode}}` : ""}${off ? "  (greyed out: SAP does not offer it on this screen)" : ""}`);
+      out.push(`  ${"  ".repeat(depth)}${one(m.text)}${m.vkey !== undefined ? ` (${keyName(m.vkey)})` : ""}${off ? "  (greyed out: SAP does not offer it on this screen)" : ""}`);
       walk(m.children, depth + 1, off);
     }
   };

@@ -116,6 +116,20 @@ describe("look at one control", () => {
     expect(out).not.toContain("Item=");
     expect(out).toContain("rows 2 to 7 of 9");
   });
+  test("a classic list of 30 lines read whole: every page, not only the last", async () => {
+    let first = 0;
+    const page = (f: number) => ({ rows: Array.from({ length: 10 }, (_, i) => ({ row: 2 + i, cells: [{ col: 1, text: `LINE-${f + i}`, width: 8 }] })), totalRows: 30, firstRow: f });
+    const out = await lookControl(
+      {
+        screen: () => screen({ list: page(first) }),
+        scrollTo: async (_id, r) => {
+          first = Math.min(r, 20);
+        },
+      },
+      { compact: true, id: "list", rows: { from: 0, to: 29 } },
+    );
+    for (const n of [0, 9, 10, 19, 20, 29]) expect(out).toContain(`LINE-${n}`);
+  });
   test("an unknown id lists what the screen has", async () => {
     await expect(lookControl({ screen: () => screen({ controls: [tree] }), scrollTo: async () => {} }, { compact: true, id: "NOPE" })).rejects.toThrow("It has: TREE_CONT");
   });

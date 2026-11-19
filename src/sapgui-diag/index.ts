@@ -27,7 +27,7 @@
  * The actions are planned in plan.ts and wait for SAP's answer in the
  * traffic (traffic.ts); pixels and windows are in geometry.ts.
  */
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import type { Server } from "node:net";
 import { join } from "node:path";
 import { ONE_LINE_NOTE, oneLine } from "../core/action.js";
@@ -39,7 +39,7 @@ import { HostError, MAX_TIMEOUT_MS, powershellExe, PsHost, READ_TIMEOUT_MS } fro
 import type { Transport } from "../sapgui/facts.js";
 import { vkeyNumber } from "../sapgui/keys.js";
 import { type Cells, cellMetrics, cellsFromEnv, type HostWindow, pickWindow, type Rect } from "./geometry.js";
-import { type Geometry, type Named, namedControl, type Plan, planCombo, planGrid, planGridScroll, planPage, planPlain, planTableRow, planToolbar, planTree, position, scrollables, scrollTarget, type Step, type TreeChange } from "./plan.js";
+import { type Geometry, type Named, namedControl, type Plan, plainMisuse, planCombo, planGrid, planGridScroll, planPage, planPlain, planTableRow, planToolbar, planTree, position, scrollables, scrollTarget, type Step, type TreeChange, toolbarKey } from "./plan.js";
 import { type Hop, startRouter } from "./router.js";
 import { lookControl } from "./rows.js";
 import { MAYBE_REQUEST_MS, Traffic, type WaitOptions, waitNote, waitOptions } from "./traffic.js";
@@ -102,11 +102,11 @@ export function assessDiag(s: DiagScreen, action: Action, target?: Target): Asse
     if (SAVE_VKEYS.has(n)) return commit(`${how}: Save (Ctrl+S)`);
     const k = keyOf(w, n);
     const named = k ? `${how} "${clean(k.text)}"` : how;
-    if (k && (commitWord(k.text, k.tooltip) || commitCode(k.fcode))) return commit(named);
+    if (k && commitWord(k.text, k.tooltip)) return commit(named);
     const q = n === 0 || (k && !/^(no|cancel|back|exit)$/.test(safeWord(lang, k.text) ?? "")) ? commitQuestion(s) : undefined;
     if (q && n !== 12 && n !== 3 && n !== 15) return commit(`${named} on the popup "${q.slice(0, 90)}"`);
     if (n === 4 || n === 1) return { risk: "read", reason: n === 4 ? "value help" : "help" };
-    if (SAFE_VKEYS.has(n) || (k && (safeCode(k.fcode) || safeWord(lang, k.text, k.tooltip)))) return { risk: "navigate", reason: named };
+    if (SAFE_VKEYS.has(n) || (k && safeWord(lang, k.text, k.tooltip))) return { risk: "navigate", reason: named };
     return commit(`${named} is not known to be safe, so it is treated as a write`);
   };
   const assessButton = (e: DiagElement, how: string): Assessment => {
@@ -118,6 +118,18 @@ export function assessDiag(s: DiagScreen, action: Action, target?: Target): Asse
     if (safeCode(e.fcode) || means) return { risk: "navigate", reason: named };
     return commit(`${named} is not known to be safe, so it is treated as a write`);
   };
+  // The input decides, not the verb: focus, f4, set, check, click, press... all start with a mouse click at the
+  // target (plan.ts planPlain), and a click on a push button, a toolbar key or a box with a function code presses it.
+  const onRowOrNode = (action.row !== undefined || action.node !== undefined) && !!namedControl(s, action.id);
+  if (/^(focus|f4|set|check|press|click|dblclick|select)$/.test(action.do) && !onRowOrNode) {
+    if (target?.kind === "key") return assessKey(target.key.vkey, `${action.do} on button "${clean(target.key.text || target.key.tooltip)}"`);
+    if (target?.kind === "element") {
+      const e = target.element;
+      if (e.kind === "button" || (e.fcode && e.kind !== "field")) return assessButton(e, `${action.do} on ${e.kind === "button" ? "button" : e.kind} `);
+      // Never rated safer than a button: what it does when clicked is not known.
+      if (e.kind === "other") return commit(`${action.do} on an element this reader cannot classify (${e.name || `@${e.row},${e.col}`}, type ${e.etype}) is treated as a write`);
+    }
+  }
   switch (action.do) {
     case "focus":
     case "f4":
@@ -164,8 +176,8 @@ export function assessDiag(s: DiagScreen, action: Action, target?: Target): Asse
       return { risk: "navigate", reason: "grid cell" };
     case "toolbar": {
       const b = clean(String(action.button ?? ""));
-      const k = [...w.toolbar, ...w.keys].find((x) => x.enabled && (clean(x.fcode).toLowerCase() === b.toLowerCase() || clean(x.text).toLowerCase() === b.toLowerCase() || clean(x.tooltip).toLowerCase() === b.toLowerCase()));
-      if (k) return assessKey(k.vkey, `toolbar button "${clean(k.text || k.tooltip) || k.fcode}"`);
+      const k = toolbarKey(w, b);
+      if (k) return assessKey(k.vkey, `toolbar button "${clean(k.text || k.tooltip)}"`);
       if (safeCode(b)) return { risk: "navigate", reason: `toolbar button ${b}` };
       if (commitWord(b) || commitCode(b)) return commit(`toolbar button "${b}"`);
       if (safeWord(lang, b)) return { risk: "navigate", reason: `toolbar button "${b}"` };
@@ -198,7 +210,7 @@ export function assessDiag(s: DiagScreen, action: Action, target?: Target): Asse
 /** What an action's id means on the screen. */
 export type Target =
   | { kind: "element"; element: DiagElement; window: DiagWindow; row: number; col: number; what: string }
-  | { kind: "cell"; window: DiagWindow; row: number; col: number; width: number; input: boolean; table: string; index: number; column: number; what: string }
+  | { kind: "cell"; window: DiagWindow; row: number; col: number; width: number; input: boolean; cellKind: DiagElement["kind"]; table: string; index: number; column: number; what: string }
   | { kind: "list"; window: DiagWindow; row: number; col: number; what: string }
   | { kind: "tab"; window: DiagWindow; row: number; col: number; text: string; what: string }
   | { kind: "key"; key: DiagKey; what: string }
@@ -244,10 +256,7 @@ function lookup(w: DiagWindow, raw: string, action: Action, ci: boolean): Found 
     }
     const b = w.elements.find((e) => !!e.fcode && same(e.fcode, fc, ci) && !e.hidden);
     if (b) return { target: { kind: "element", element: b, window: w, row: b.row, col: b.col, what: `button "${clean(b.text || b.tooltip)}"` } };
-    // An enabled key first: a greyed-out toolbar button may share its function code with a key that works.
-    const ks = [...w.toolbar, ...w.keys].filter((x) => !!x.fcode && same(x.fcode, fc, ci));
-    const k = ks.find((x) => x.enabled) ?? ks[0];
-    if (k) return { target: { kind: "key", key: k, what: `button "${clean(k.text || k.tooltip)}"` } };
+    // Toolbar buttons and function keys are not found here: SAP's traffic gives them no function code (noTargetText says so).
     // a tree node by its key: its line among the nodes on show
     for (const c of w.controls) {
       if (!c.tree || !c.area) continue;
@@ -281,7 +290,7 @@ function lookup(w: DiagWindow, raw: string, action: Action, ci: boolean): Found 
       const c = t.columns.find((x) => same(x.name, name, ci));
       // n is the table's own row number, as the view prints it ("row n"), not the n-th row on show.
       const r = t.rows.find((x) => x.index === index);
-      if (c && r) return { target: { kind: "cell", window: w, row: r.row, col: c.col, width: c.width, input: !!r.cells[c.index]?.input, table: t.name, index, column: c.index, what: `${c.name} in row ${index}` } };
+      if (c && r) return { target: { kind: "cell", window: w, row: r.row, col: c.col, width: c.width, input: !!r.cells[c.index]?.input, cellKind: r.cells[c.index]?.kind ?? "field", table: t.name, index, column: c.index, what: `${c.name} in row ${index}` } };
     }
     return { none: true };
   }
@@ -295,7 +304,8 @@ function lookup(w: DiagWindow, raw: string, action: Action, ci: boolean): Found 
   if (e) return { target: { kind: "element", element: e, window: w, row: e.row, col: e.col, what: `${e.kind} ${e.name}` } };
   // a toolbar button by its text ("Back", "Display document flow")
   const k = [...w.toolbar, ...w.keys].find((x) => clean(x.text).toLowerCase() === raw.toLowerCase());
-  if (k && (action.do === "press" || action.do === "click")) return { target: { kind: "key", key: k, what: `button "${clean(k.text)}"` } };
+  // Any action that clicks finds it too: so that the guard judges a focus or a check on it as pressing it.
+  if (k && /^(press|click|dblclick|select|focus|f4|set|check)$/.test(action.do)) return { target: { kind: "key", key: k, what: `button "${clean(k.text)}"` } };
   return { none: true };
 }
 
@@ -305,11 +315,14 @@ function lookup(w: DiagWindow, raw: string, action: Action, ci: boolean): Found 
  * written nearly right when it then means one thing only:
  * - in another case (`vbak-vbeln`, `{head}`): SAP names are upper case;
  * - as a scripting id or handle (`wnd[0]/usr/ctxtVBAK-VBELN`, `ctxtVBAK-VBELN`);
- * - a table cell with a column and a row (`RV45A-MABNR[3,0]`): the field's
- *   name and the row say which cell it is, the column index does not;
+ * - a table cell with a column and a row (`RV45A-MABNR[3,0]`), as SAP GUI
+ *   scripting names it: the field's name and the row say which cell it is,
+ *   the column index does not. Scripting counts the row from the first row
+ *   on show (src/sapgui: "cell ids still count from the first row on
+ *   screen"), so the table's first row on show is added to it;
  * - a table's own name with a cell's place (`TC_ITEMS[1,0]`): the cell at
- *   that column (as the table shows them) and row; a grid's with [col,row]:
- *   that row;
+ *   that column (as the table shows them) and row on show; a grid's with
+ *   [col,row]: that row;
  * - `NAME[0]` for a field that is not in a table: the field.
  */
 export function findTarget(s: DiagScreen, action: Action): Found {
@@ -331,14 +344,17 @@ export function findTarget(s: DiagScreen, action: Action): Found {
     const two = /^(.+)\[(\d+),(\d+)\]$/.exec(f);
     if (two) {
       const [, name = "", col = "", row = ""] = two;
+      // Scripting's row is counted from the table's first row on show; the view's FIELD[n] is the table's own row.
+      const first = (t: { rows: { index: number }[] }) => t.rows[0]?.index ?? 0;
       const table = w.tables.find((t) => same(t.name, name, true));
       if (table) {
         const c = [...table.columns].sort((a, b) => a.position - b.position)[Number(col)];
-        const hit = c && unique(lookup(w, `${c.name}[${row}]`, action, false));
+        const hit = c && unique(lookup(w, `${c.name}[${first(table) + Number(row)}]`, action, false));
         if (hit) return hit;
         continue;
       }
-      const hit = unique(lookup(w, `${name}[${row}]`, action, true));
+      const owner = w.tables.find((t) => t.columns.some((c) => same(c.name, name, true)));
+      const hit = unique(lookup(w, `${name}[${owner ? first(owner) + Number(row) : row}]`, action, true));
       if (hit) return hit;
     }
     const zero = /^(.+)\[0\]$/.exec(f);
@@ -394,7 +410,13 @@ export function noTargetText(s: DiagScreen, ident: string): string {
     .sort((a, b) => a.d - b.d)
     .slice(0, 3)
     .map((x) => x.id);
-  return `No control "${ident}" on this screen${close.length ? ` (closest: ${close.join(", ")})` : ""}. Use a field name, {FCODE}, FIELD[n] or @row,col from sap_look (the screen may have changed).`;
+  const w = active(s);
+  const keys = [...w.toolbar, ...w.keys].filter((k) => k.enabled && (k.text || k.tooltip));
+  // {CODE} for a toolbar button or a function key: the traffic carries no function code for them.
+  const code = /^\{.+\}$/.test(ident.trim()) && keys.length
+    ? ` Toolbar buttons and function keys cannot be named by a function code: SAP's traffic does not carry one for them. Press them by key ({"do":"key","key":3}) or by text ({"do":"press","id":"Back"}); this screen has ${keys.slice(0, 12).map((k) => `${k.key} "${clean(k.text || k.tooltip)}"`).join(", ")}${keys.length > 12 ? ", ..." : ""}. A function code can also go through the command field: {"do":"okcode","value":"<code>"}.`
+    : "";
+  return `No control "${ident}" on this screen${close.length ? ` (closest: ${close.join(", ")})` : ""}. Use a field name, {FCODE} of a button or tab, FIELD[n] or @row,col from sap_look (the screen may have changed).${code}`;
 }
 
 /** The refusal for a button, a key, a tree node or a menu entry SAP shows greyed out: SAP would do nothing with it. */
@@ -422,12 +444,7 @@ export function greyedRefusal(s: DiagScreen, action: Action, target: Target | un
     const ks = all.filter((k) => k.vkey === n);
     if (n !== undefined && n !== 0 && ks.length && ks.every((k) => !k.enabled)) return greyedOut(`key ${ks[0]?.key ?? n} "${clean(ks[0]?.text || ks[0]?.tooltip)}"`);
   }
-  if (action.do === "okcode") {
-    const v = String(action.value ?? "").trim().toUpperCase();
-    const ks = all.filter((k) => k.fcode && k.fcode.toUpperCase() === v);
-    const live = w.elements.some((e) => e.fcode?.toUpperCase() === v && e.input) || w.tabstrips.some((t) => t.tabs.some((x) => x.fcode.toUpperCase() === v));
-    if (v && ks.length && ks.every((k) => !k.enabled) && !live) return greyedOut(`function ${v} ("${clean(ks[0]?.text || ks[0]?.tooltip)}")`);
-  }
+  // An okcode is not checked against the toolbar: its buttons carry no function code in the traffic.
   return undefined;
 }
 
@@ -493,6 +510,8 @@ export interface DriverShared {
   bound: Map<number, string>;
   /** Is a "connection:mode" still open? */
   live(key: string): boolean;
+  /** The titles of every open routed mode's screen: how many windows of a title may be routed. */
+  routedTitles?(): string[];
   env: Record<string, string | undefined>;
 }
 
@@ -576,7 +595,11 @@ export class DiagDriver implements Driver {
   async look(options: LookOptions): Promise<string> {
     if (options.id?.trim().toLowerCase() === "mbar") return menuView(this.screen());
     if (options.id) return lookControl({ screen: () => this.screen(), scrollTo: (id, row) => this.scrollTo(id, row).then(() => undefined) }, options);
+    // SAP's answer to the last step was lost or unreadable: this look takes the last screen read as the state.
+    const recovered = this.conn.traffic.recover(this.mode);
     const view = diagView(withTyped(this.screen(), this.typed()), options.compact ? {} : { maxRows: 100_000 });
+    if (recovered)
+      return `${view}\nNOTE SAP's answer to the last step was lost or could not be read on the connection: this is the last screen read whole, and actions now go on from it. The session state is not known for sure: if SAP GUI shows another screen, press Enter in SAP GUI once and look again.`;
     return this.conn.traffic.pending(this.mode) ? `${view}\nNOTE SAP is still working on a step: this screen is from before it and will change. Look again in a moment, and act when the step has ended.` : view;
   }
 
@@ -594,6 +617,9 @@ export class DiagDriver implements Driver {
     // Something SAP greys out is refused here, before the guard could ask the user to confirm it.
     const grey = greyedRefusal(s, action, target);
     if (grey) throw new ActionError(grey);
+    // focus, f4, set or check where their first click would press, tick or open something: refused, not confirmed.
+    const misuse = target && !((action.row !== undefined || action.node !== undefined) && namedControl(s, action.id)) ? plainMisuse(action, target) : undefined;
+    if (misuse) throw new ActionError(misuse);
     return assessDiag(s, action, target);
   }
 
@@ -607,7 +633,10 @@ export class DiagDriver implements Driver {
   /** The SAP GUI windows of this session (the session window, then its popups), with their screen areas. */
   private async windows(s: DiagScreen): Promise<WindowFacts[]> {
     const all = await this.host.request<{ windows: HostWindow[] }>("windows", {}, READ_TIMEOUT_MS);
-    const mine = pickWindow(all.windows, { key: this.key, title: s.windows[0]?.title ?? "", ...(s.message?.text ? { status: s.message.text } : {}) }, this.shared.bound, this.shared.live);
+    const title = s.windows[0]?.title ?? "";
+    const routed = this.shared.routedTitles?.().filter((t) => t.replace(/\s+/g, " ").trim() === title.replace(/\s+/g, " ").trim()).length ?? 1;
+    const facts = { key: this.key, title, routed, ...(s.message?.text ? { status: s.message.text } : {}), ...(s.session.system ? { system: s.session.system } : {}), ...(s.session.client ? { client: s.session.client } : {}) };
+    const mine = pickWindow(all.windows, facts, this.shared.bound, this.shared.live);
     if (typeof mine === "string") throw new ActionError(mine);
     const res = await this.host.request<{ windows: WindowFacts[] }>("area", { session: mine.hwnd }, READ_TIMEOUT_MS);
     return res.windows;
@@ -652,15 +681,20 @@ export class DiagDriver implements Driver {
     const main = !active(s).modal;
     const decode0 = traffic.decodeMs;
     const mark = traffic.mark();
+    // A mark before the last input too: the request it makes is the one whose answer ends the wait.
+    let last = mark;
     const tIn = Date.now();
-    for (const step of plan.steps) await this.send(session, main, step);
+    for (const [i, step] of plan.steps.entries()) {
+      if (i === plan.steps.length - 1) last = traffic.mark();
+      await this.send(session, main, step);
+    }
     const inputEnd = Date.now();
     if (plan.tree) this.remember(plan.tree);
     let note = plan.note;
     let answered = false;
     const timing: ActTiming = { total: 0, input: inputEnd - tIn, start: 0, sap: 0, settle: 0, decode: 0, requests: 0 };
     if (plan.answer !== "no" && plan.steps.length) {
-      const r = await traffic.wait(this.mode, mark, inputEnd, { ...o, requestMs: plan.answer === "yes" ? o.requestMs : MAYBE_REQUEST_MS });
+      const r = await traffic.wait(this.mode, mark, inputEnd, { ...o, requestMs: plan.answer === "yes" ? o.requestMs : MAYBE_REQUEST_MS }, plan.answer === "yes" ? last : mark);
       Object.assign(timing, { start: r.start, sap: r.sap, settle: r.settle, requests: r.requests });
       answered = r.answered;
       const miss = waitNote(r, { ...o, requestMs: plan.answer === "yes" ? o.requestMs : MAYBE_REQUEST_MS }, plan.answer === "yes");
@@ -698,7 +732,9 @@ export class DiagDriver implements Driver {
   private async idle(): Promise<void> {
     const traffic = this.conn.traffic;
     if (!traffic.pending(this.mode)) return;
-    await traffic.wait(this.mode, -1, Date.now(), { requestMs: 0, answerMs: BUSY_MS, quietMs: 0, maxSettleMs: 0 });
+    if (!traffic.troubled(this.mode)) await traffic.wait(this.mode, -1, Date.now(), { requestMs: 0, answerMs: BUSY_MS, quietMs: 0, maxSettleMs: 0 });
+    if (traffic.troubled(this.mode))
+      throw new ActionError("SAP's answer to the last step was lost or could not be read on the connection, so the session state is unknown and nothing was sent. Look first (sap_look): the look takes the last screen read as the state, and actions go on from there.");
     if (traffic.pending(this.mode)) throw new ActionError('SAP is still working on the last step. Look again in a moment (sap_look); a long step can be given more time with "timeout" (seconds).');
   }
 
@@ -712,6 +748,12 @@ export class DiagDriver implements Driver {
     let s = this.screen();
     let n = namedControl(s, id);
     if (!n) throw new ActionError(`No control "${id}" on this screen. It has: ${scrollables(s).map((x) => x.id).join(", ") || "nothing that scrolls"}.`);
+    // A page key, or a grid's row fetch, sends what was typed: a scroll or a read must not.
+    const typed = n.kind === "tree" ? [] : this.typed();
+    if (typed.length)
+      throw new ActionError(
+        `${typed.length} value${typed.length === 1 ? " typed" : "s typed"} on this screen (${typed.map((t) => (t.table ? `${t.name}[${t.table.index}]` : t.name)).join(", ")}) ${typed.length === 1 ? "has" : "have"} not reached SAP yet, and scrolling ${n.id} would send ${typed.length === 1 ? "it" : "them"}: nothing was scrolled. Send ${typed.length === 1 ? "it" : "them"} first with Enter ({"do":"key","key":0}), then scroll or read again.`,
+      );
     if (n.kind === "dropdown") throw new ActionError(`${n.id} is a dropdown: it does not scroll.`);
     if (n.kind === "tree") return `every node SAP sent of ${n.id} is in the view (sap_look with "id":"${n.id}" and "rows" reads any of them): nothing to scroll`;
     if (typeof to === "string" && ["right", "left", "rightmost", "leftmost"].includes(to)) throw new ActionError(`Scrolling sideways is not supported by the DIAG method: the view already has every column SAP sent.`);
@@ -770,8 +812,11 @@ export class DiagDriver implements Driver {
     if (cell && !resolveTarget(s, action)) {
       const table = active(s).tables.find((t) => t.columns.some((c) => c.name === cell[1]));
       if (table && !table.rows.some((r) => r.index === Number(cell[2])) && (table.totalRows === undefined || Number(cell[2]) < table.totalRows)) {
-        await this.scrollTo(table.name, Number(cell[2]), o);
+        const said = await this.scrollTo(table.name, Number(cell[2]), o);
         s = this.screen();
+        // Never the n-th row on show instead: when the page keys did not bring row n, nothing is done.
+        const again = active(s).tables.find((t) => t.name === table.name);
+        if (!again?.rows.some((r) => r.index === Number(cell[2]))) throw new ActionError(`Row ${cell[2]} of the table ${table.name} is not on show after scrolling (${said}), so nothing was done in it. Look at the screen (sap_look) and scroll the table there first.`);
       }
     }
     const wins = await this.windows(s);
@@ -795,6 +840,9 @@ export class DiagDriver implements Driver {
           const r = await this.host.request<{ buttons: { name: string; tip: string; enabled: boolean; x: number; y: number }[] }>("buttons", { session: wins[0]?.hwnd }, READ_TIMEOUT_MS);
           p = planToolbar(s, action, g, r.buttons ?? []) as Plan;
         }
+        // The guard judged the agent's word; the button found is judged too, and a write it was not rated as is refused.
+        if (p.pressed && commitWord(...p.pressed) && assessDiag(s, action).risk !== "commit")
+          throw new ActionError(`The button found for "${String(action.button ?? "")}" is "${clean(p.pressed[0] || p.pressed[1])}", which may write to SAP: nothing was pressed. Name it by its own text so that it is judged as what it is.`);
         plan = p;
         break;
       }
@@ -903,34 +951,105 @@ export function decodingCheck(conns: { decoder: DiagDecoder }[]): DoctorCheck | 
 export interface DiagSurfaceOptions {
   port?: number;
   transport?: Transport;
+  /** Where the router's messages go (a route refused, reading the traffic failed); stderr when not given. */
   log?: (m: string) => void;
+}
+
+/** The server's log: stderr, since stdout carries the MCP protocol. */
+const stderrLog = (m: string): void => {
+  process.stderr.write(`sap-gui-mcp DIAG router: ${m}\n`);
+};
+
+/** The most router messages doctor shows. */
+const KEPT_EVENTS = 5;
+
+/**
+ * SAP_DIAG_CAPTURE=<folder>: a copy of the raw traffic, to debug the
+ * decoder. Opt-in; it holds SAP data and the logon, so the file is made
+ * readable by its owner only (0600, where the OS honours it). A capture that
+ * fails is stopped and said (`failed`), never the decoding nor the logon.
+ */
+export class Capture {
+  failed: string | undefined;
+  private file: string | undefined;
+
+  constructor(folder: string | undefined, name: string) {
+    if (!folder) return;
+    try {
+      mkdirSync(folder, { recursive: true });
+      this.file = join(folder, name);
+      writeFileSync(this.file, Buffer.alloc(0), { mode: 0o600, flag: "wx" });
+    } catch (e) {
+      this.stop(e);
+    }
+  }
+
+  get on(): boolean {
+    return this.file !== undefined;
+  }
+
+  write(dir: 0 | 1, chunk: Buffer): void {
+    if (!this.file) return;
+    try {
+      const head = Buffer.alloc(13);
+      head[0] = dir;
+      head.writeDoubleLE(Date.now() / 1000, 1);
+      head.writeUInt32LE(chunk.length, 9);
+      appendFileSync(this.file, Buffer.concat([head, chunk]), { mode: 0o600 });
+    } catch (e) {
+      this.stop(e);
+    }
+  }
+
+  private stop(e: unknown): void {
+    this.failed = `the capture (SAP_DIAG_CAPTURE) failed and was stopped; reading goes on: ${(e as Error).message}`;
+    this.file = undefined;
+  }
 }
 
 export function sapguiDiagSurface(env: Record<string, string | undefined>, options: DiagSurfaceOptions = {}): Surface & { router: Promise<Server> } {
   const port = options.port ?? Number(env.SAP_DIAG_PORT ?? 3298);
   const conns: Connection[] = [];
   let n = 0;
+  // What the router said that went wrong (route refused, reading failed, capture failed), for doctor.
+  const events: string[] = [];
+  const say = options.log ?? stderrLog;
+  const log = (m: string) => {
+    if (!m.startsWith("routed to ")) {
+      events.push(m);
+      if (events.length > KEPT_EVENTS) events.shift();
+    }
+    try {
+      say(m);
+    } catch {
+      // a log that fails never stops the traffic
+    }
+  };
   const router = startRouter({
     port,
-    ...(options.log ? { log: options.log } : {}),
+    log,
     onConnection(target) {
       const c: Connection = { n: n++, target, decoder: new DiagDecoder(), open: true, traffic: new Traffic(), steps: new Map(), typed: new Map() };
       c.decoder.onScreen = (_s, mode) => {
         c.steps.set(mode, (c.steps.get(mode) ?? 0) + 1);
         c.traffic.screen(mode);
       };
+      c.decoder.onTrouble = (mode) => c.traffic.trouble(mode);
       conns.push(c);
-      // SAP_DIAG_CAPTURE=<folder>: keep the raw traffic, to debug the decoder (it holds SAP data: keep it local).
-      const capture = env.SAP_DIAG_CAPTURE ? join(env.SAP_DIAG_CAPTURE, `diag-${Date.now()}-${c.n}.bin`) : undefined;
-      if (capture) mkdirSync(env.SAP_DIAG_CAPTURE as string, { recursive: true });
+      const capture = new Capture(env.SAP_DIAG_CAPTURE, `diag-${Date.now()}-${c.n}.bin`);
+      let said = false;
+      const sayCapture = () => {
+        if (capture.failed && !said) {
+          said = true;
+          log(capture.failed);
+        }
+      };
+      sayCapture();
       return {
         data: (dir, chunk) => {
-          if (capture) {
-            const head = Buffer.alloc(13);
-            head[0] = dir;
-            head.writeDoubleLE(Date.now() / 1000, 1);
-            head.writeUInt32LE(chunk.length, 9);
-            appendFileSync(capture, Buffer.concat([head, chunk]));
+          if (capture.on) {
+            capture.write(dir, chunk);
+            sayCapture();
           }
           // The tracker sees SAP GUI's requests before the decoder, and SAP's bytes before the screen they make.
           if (dir === 0) c.traffic.client(chunk);
@@ -958,6 +1077,7 @@ export function sapguiDiagSurface(env: Record<string, string | undefined>, optio
       const c = conns.find((x) => x.n === cn);
       return !!c?.open && c.decoder.screens().has(mode as number);
     },
+    routedTitles: () => conns.filter((c) => c.open).flatMap((c) => [...c.decoder.screens().values()].map((x) => x.windows[0]?.title ?? "")),
     env,
   };
   const input = () => (host ??= new PsHost(env, { command: powershellExe(env), args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", INPUT_SCRIPT] }));
@@ -995,6 +1115,7 @@ export function sapguiDiagSurface(env: Record<string, string | undefined>, optio
       );
       const reading = decodingCheck(conns.filter((c) => c.open));
       if (reading) checks.push(reading);
+      if (events.length) checks.push({ ok: false, check: "DIAG router messages", detail: events.join("; "), fix: "A refused route is a connection entry whose SAProuter string does not lead on from this router; a failed capture is a folder that cannot be written (SAP_DIAG_CAPTURE)." });
       return checks;
     },
   };

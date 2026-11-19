@@ -154,6 +154,25 @@ describe("the router", () => {
     expect(logged.filter((m) => m.includes("decoder bug")).length).toBe(1);
   });
 
+  test("a tap that cannot start (a capture folder that cannot be made) never refuses the logon", async () => {
+    const sap = await fakeSap();
+    const logged: string[] = [];
+    const router = await startRouter({
+      port: 0,
+      log: (m) => logged.push(m),
+      onConnection: () => {
+        throw new Error("EACCES: capture folder");
+      },
+    });
+    open.push(router);
+    const { sock, read } = await client((router.address() as { port: number }).port);
+    sock.write(request([["127.0.0.1", 0], ["127.0.0.1", sap]]));
+    expect((await read(12)).subarray(4).toString("latin1")).toBe("NI_PONG\0");
+    sock.write("one");
+    expect((await read(6)).toString()).toBe("re:one");
+    expect(logged.some((m) => m.includes("could not start") && m.includes("EACCES"))).toBe(true);
+  });
+
   test("drops a client that does not route", async () => {
     const router = await startRouter({ port: 0 });
     open.push(router);

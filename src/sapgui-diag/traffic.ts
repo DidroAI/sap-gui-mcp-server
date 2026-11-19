@@ -14,10 +14,23 @@
  * the input began has been answered by a screen of that mode: no timer
  * guesses when SAP has finished.
  *
+ * A plan of several inputs (a click, arrow keys, then F2) can make SAP GUI
+ * send a request before its last input (rows fetched while the arrows
+ * move): the wait then also needs a request made after the last input began
+ * (`last`), so that it does not end on the answer to an earlier one.
+ *
+ * When the answer is lost or cannot be read (bytes lost on the connection,
+ * a message that does not decompress: the decoder calls `trouble`), no
+ * screen comes for the request. The wait then stops once the server has
+ * been quiet for LOST_QUIET_MS and says that the session state is unknown;
+ * the request stays open (so a next action is refused, not sent into a busy
+ * SAP) until a screen of the mode comes or a look takes the last screen read
+ * as the state (`recover`). Nothing waits forever.
+ *
  * SAP GUI also sends, in user items (id 0x04), the pixel size of its
  * character cell (sid 0x04: height, width, then two more numbers, uint16
- * big-endian). On SAP GUI 8.00, Quartz, 100% it sent 27 and 8 (X-271's
- * measured 8 x 27 px). Read here for the pixel mapping (geometry.ts).
+ * big-endian). On SAP GUI 8.00, Quartz, 100% it sent 27 and 8, which is
+ * the cell measured on screen. Read here for the pixel mapping (geometry.ts).
  */
 import { ID, ITEM, NiFramer, parseMessage } from "../diag/wire.js";
 
@@ -37,11 +50,15 @@ export interface WaitOptions {
   quietMs: number;
   /** The quiet wait never adds more than this. */
   maxSettleMs: number;
+  /** After a damaged answer: the server's quiet that ends the wait (LOST_QUIET_MS when not given). */
+  lostMs?: number;
 }
 
 export const DEFAULT_WAIT: WaitOptions = { requestMs: 3000, answerMs: 60_000, quietMs: 60, maxSettleMs: 1500 };
 /** For an input that may stay inside SAP GUI (a click in a grid, a tree node): a short look for a request. */
 export const MAYBE_REQUEST_MS = 700;
+/** After bytes of the answer were lost or unreadable: how long the server must be quiet before the wait gives up on that answer. */
+export const LOST_QUIET_MS = 3000;
 
 export interface WaitResult {
   /** A request of this mode was seen after the input began. */
@@ -50,6 +67,10 @@ export interface WaitResult {
   answered: boolean;
   /** The connection closed while waiting. */
   closed: boolean;
+  /** A request came, but none after the last input began (the last input made SAP GUI send nothing). */
+  lastMissing?: boolean;
+  /** The answer was lost or could not be read: the session state is unknown. */
+  unknown?: boolean;
   /** Requests seen for this mode since the input began. */
   requests: number;
   /** Milliseconds: input end to the first request (0 when it came during the input), first request to the last answer, then the quiet wait. */
@@ -67,6 +88,8 @@ interface ModeState {
   answeredAt: number;
   /** Numbers of the last requests of this mode, to count them. */
   recent: number[];
+  /** Bytes of SAP's answer to the open request were lost or could not be read (`trouble`). */
+  trouble: boolean;
 }
 
 export class Traffic {
@@ -87,7 +110,7 @@ export class Traffic {
   private state(mode: number): ModeState {
     let m = this.modes.get(mode);
     if (!m) {
-      m = { lastRequest: 0, lastRequestAt: 0, answered: 0, answeredAt: 0, recent: [] };
+      m = { lastRequest: 0, lastRequestAt: 0, answered: 0, answeredAt: 0, recent: [], trouble: false };
       this.modes.set(mode, m);
     }
     return m;
@@ -141,7 +164,38 @@ export class Traffic {
       m.answered = m.lastRequest;
       m.answeredAt = this.now();
     }
+    m.trouble = false;
     this.wake();
+  }
+
+  /**
+   * Bytes from the server were lost, or a message of it could not be read
+   * (of this mode, or of any when undefined): an open request may never get
+   * its screen.
+   */
+  trouble(mode?: number): void {
+    for (const [n, m] of this.modes) if ((mode === undefined || n === mode) && m.lastRequest > m.answered) m.trouble = true;
+    this.wake();
+  }
+
+  /** Is the open request of this mode one whose answer was damaged? */
+  troubled(mode: number): boolean {
+    const m = this.modes.get(mode);
+    return !!m && m.trouble && m.lastRequest > m.answered;
+  }
+
+  /**
+   * Takes the last screen read as the state of the mode after a damaged
+   * answer (the request is closed). True when it did.
+   */
+  recover(mode: number): boolean {
+    const m = this.modes.get(mode);
+    if (!m?.trouble || m.lastRequest <= m.answered) return false;
+    m.answered = m.lastRequest;
+    m.answeredAt = this.now();
+    m.trouble = false;
+    this.wake();
+    return true;
   }
 
   closed(): void {
@@ -176,13 +230,16 @@ export class Traffic {
    * Waits for SAP's answer to what the input since `mark` made SAP GUI send
    * for `mode`. `inputEnd` is when the input ended. With `requestMs` 0 no
    * request is awaited (an input that stays in SAP GUI): only one that came.
+   * `last`: a mark taken before the plan's last input; a request after it
+   * is waited for too (the answer to an earlier request does not end it).
    */
-  async wait(mode: number, mark: number, inputEnd: number, o: WaitOptions): Promise<WaitResult> {
+  async wait(mode: number, mark: number, inputEnd: number, o: WaitOptions, last = mark): Promise<WaitResult> {
     const m = this.state(mode);
     const out: WaitResult = { requested: false, answered: false, closed: false, requests: 0, start: 0, sap: 0, settle: 0 };
     const seen = () => m.lastRequest > mark;
-    // 1. the request
-    while (!seen() && this.open) {
+    const seenLast = () => m.lastRequest > Math.max(mark, last);
+    // 1. the request, made by the last input
+    while (!seenLast() && this.open) {
       const left = inputEnd + o.requestMs - this.now();
       if (left <= 0) break;
       await this.next(left);
@@ -190,6 +247,7 @@ export class Traffic {
     if (!this.open) out.closed = true;
     if (!seen()) return out;
     out.requested = true;
+    if (!seenLast()) out.lastMissing = true;
     const first = this.now();
     out.start = Math.max(0, first - inputEnd);
     // 2. the answers, then quiet; a request that comes during the quiet wait is waited for too
@@ -199,6 +257,16 @@ export class Traffic {
       while (m.answered < m.lastRequest && this.open) {
         const left = answerEnd - this.now();
         if (left <= 0) break;
+        if (m.trouble) {
+          // The answer was damaged: once the server is quiet, no screen will come for it.
+          const quiet = Math.max(this.lastServerAt, m.lastRequestAt) + (o.lostMs ?? LOST_QUIET_MS) - this.now();
+          if (quiet <= 0) {
+            out.unknown = true;
+            break;
+          }
+          await this.next(Math.min(left, quiet));
+          continue;
+        }
         await this.next(left);
       }
       if (!this.open) out.closed = true;
@@ -232,6 +300,9 @@ const seconds = (ms: number) => String(Math.round(ms / 100) / 10);
 export function waitNote(r: WaitResult, o: WaitOptions, expected: boolean): string | undefined {
   if (r.closed) return "the SAP GUI connection closed during the step";
   if (!r.requested) return expected ? `SAP GUI sent nothing to SAP within ${seconds(o.requestMs)} s: the input may have missed, or the key or button is not active on this screen. Look (sap_look) before trying again` : undefined;
+  if (r.unknown)
+    return "SAP's answer to this step was lost or could not be read on the connection, so the session state is unknown: look (sap_look) before anything else. The look shows the last screen read whole and takes it as the state; if SAP GUI shows something else, press Enter in SAP GUI once";
+  if (r.lastMissing && expected && r.answered) return `SAP GUI sent nothing to SAP for the last input of this action within ${seconds(o.requestMs)} s (only for an earlier one): the last key may have missed. Look (sap_look) before trying again`;
   if (!r.answered)
     return `SAP has not answered within ${seconds(o.answerMs)} s: the step is still running in SAP. Look again later (sap_look) before the next action; a long step can be given more time with "timeout" (seconds)`;
   return undefined;

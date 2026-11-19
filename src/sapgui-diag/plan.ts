@@ -16,7 +16,7 @@
  */
 import { ONE_LINE_NOTE, oneLine } from "../core/action.js";
 import { ActionError, type Action } from "../core/types.js";
-import type { DiagControl, DiagElement, DiagScreen, DiagTable, DiagTreeNode, DiagWindow } from "../diag/index.js";
+import type { DiagControl, DiagElement, DiagElementKind, DiagKey, DiagScreen, DiagTable, DiagTreeNode, DiagWindow } from "../diag/index.js";
 import { vkeyNumber } from "../sapgui/keys.js";
 import { type Cells, gridPitch, type Rect, treePitch } from "./geometry.js";
 
@@ -61,6 +61,8 @@ export interface Plan {
   /** For a change SAP gets only with the next step: a check on the next screen. */
   later?: (next: DiagScreen) => string | undefined;
   tree?: TreeChange;
+  /** The name and tooltip of the toolbar button the plan presses, as found on the screen: judged again before it is pressed. */
+  pressed?: string[];
 }
 
 /** What planning needs to know of the window: pixels of cells, and the Windows controls that SAP GUI draws grids and trees in. */
@@ -120,7 +122,8 @@ export function namedControl(s: DiagScreen, raw: string | undefined): Named | un
   if (cell) {
     for (const table of w.tables) {
       const col = table.columns.find((x) => lower(x.name) === lower(cell[1]));
-      const r = table.rows.find((x) => x.index === Number(cell[2])) ?? table.rows[Number(cell[2])];
+      // The table's own row number, never the n-th row on show: a row not on show names nothing here.
+      const r = table.rows.find((x) => x.index === Number(cell[2]));
       const c = col && r ? r.cells[col.index] : undefined;
       if (col && r && c?.kind === "dropdown")
         return { kind: "dropdown", window: w, id, cell: { table, row: r.index }, element: { kind: "dropdown", name: col.name, text: c.text, row: r.row, col: col.col, width: col.width, input: c.input, hidden: c.hidden, path: [], etype: 0, ...(c.key !== undefined ? { key: c.key } : {}), ...(c.valueList ? { valueList: c.valueList } : {}) } };
@@ -259,8 +262,10 @@ function gridFocus(n: Named & { kind: "grid" }, g: Geometry, row: number, col: n
   const rect = hostControl(g, "SAPALVGrid", gx, gy);
   if (!rect) throw new ActionError(`The grid ${n.id} was not found on the screen (its window, class SAPALVGrid).`);
   const pitch = gridPitch(g.cells);
-  // A click on the first data row gives the grid the focus; Ctrl+Home goes to the first cell, the arrows count from there (and scroll).
-  const steps: Step[] = [{ do: "click", x: rect[0] + 60, y: rect[1] + pitch + Math.floor(pitch / 2), settle: 150 }, { do: "vk", vk: VK.HOME, ctrl: true, settle: 100 }];
+  // A click on the header of the first column gives the grid the focus without touching a data cell (a hotspot fires
+  // on a single click, an editable checkbox ticks); Ctrl+Home goes to the first cell, the arrows count from there (and scroll).
+  // Not the header's left corner: with row selectors that one selects every row.
+  const steps: Step[] = [{ do: "click", x: rect[0] + 60, y: rect[1] + Math.floor(pitch / 2), settle: 150 }, { do: "vk", vk: VK.HOME, ctrl: true, settle: 100 }];
   if (row > 0) steps.push({ do: "vk", vk: VK.DOWN, count: row, settle: 120 });
   if (col !== undefined && col > 0) steps.push({ do: "vk", vk: VK.RIGHT, count: col, settle: 80 });
   return { steps, rect };
@@ -410,21 +415,33 @@ export function buttonWords(button: string): string[] {
 }
 
 /**
+ * The screen's toolbar button or function key a toolbar action names: by
+ * its text or tooltip, or by the words of a known ALV function code. SAP's
+ * traffic gives these buttons a key, a text and a tooltip, but no function
+ * code, so a code is matched only through those words.
+ */
+export function toolbarKey(w: DiagWindow, button: string): DiagKey | undefined {
+  const words = buttonWords(button);
+  return [...w.toolbar, ...w.keys].find((x) => x.enabled && (words.includes(lower(x.text)) || words.includes(lower(x.tooltip))));
+}
+
+/**
  * toolbar: a button of a grid's toolbar. A full-screen ALV list puts its
- * toolbar into the screen's own toolbar: those buttons have a function key
- * or a function code, sent by keyboard or through the command field. A
- * grid in a container draws its own toolbar, which the traffic does not
- * describe: its buttons are found by their accessible names (`buttons`,
- * from the host) inside the grid's place on the screen and pushed without
- * the mouse.
+ * toolbar into the screen's own toolbar: those buttons have a function key,
+ * found by text or tooltip (`toolbarKey`) and sent by keyboard. A grid in a
+ * container draws its own toolbar, which the traffic does not describe: its
+ * buttons are found by their accessible names (`buttons`, from the host)
+ * inside the grid's place on the screen and pushed without the mouse. The
+ * agent's own text must be a button's whole name or tooltip; only the
+ * words of a known ALV code may start one (`ALV_BUTTONS`).
  */
 export function planToolbar(s: DiagScreen, action: Action, g: Geometry, buttons?: { name: string; tip: string; enabled: boolean; x: number; y: number }[]): Plan | "need-buttons" {
   const n = need(s, action, ["grid", "tree"], "grid") as Named & { kind: "grid" | "tree" };
   const b = clean(action.button);
   if (!b) throw new ActionError(`toolbar needs "button": a function code (e.g. "&SORT_ASC") or the button's text, e.g. {"do":"toolbar","id":"${n.id}","button":"&MB_FILTER"}`);
   const w = n.window;
-  const k = [...w.toolbar, ...w.keys].find((x) => x.enabled && (lower(x.fcode) === lower(b) || lower(x.text) === lower(b) || lower(x.tooltip) === lower(b)));
-  if (k) return { steps: [{ do: "key", key: k.vkey }], note: `pressed toolbar button "${clean(k.text || k.tooltip) || k.fcode}" (${k.key})`, answer: "yes" };
+  const k = toolbarKey(w, b);
+  if (k) return { steps: [{ do: "key", key: k.vkey }], note: `pressed toolbar button "${clean(k.text || k.tooltip)}" (${k.key})`, answer: "yes", pressed: [k.text, k.tooltip] };
   if (!buttons) return "need-buttons";
   const area = n.control.area;
   let inside = buttons;
@@ -438,13 +455,14 @@ export function planToolbar(s: DiagScreen, action: Action, g: Geometry, buttons?
     inside = buttons.filter((x) => x.x >= r[0] && x.x <= r[0] + r[2] && x.y >= r[1] && x.y <= r[1] + r[3]);
   }
   const words = buttonWords(b);
-  const hit = inside.find((x) => words.includes(lower(x.name))) ?? inside.find((x) => words.some((wd) => lower(x.tip).startsWith(wd) || lower(x.name).startsWith(wd)));
+  const alv = ALV_BUTTONS[b.toUpperCase()] ?? [];
+  const hit = inside.find((x) => words.includes(lower(x.name)) || words.includes(lower(x.tip))) ?? inside.find((x) => alv.some((wd) => lower(x.tip).startsWith(wd) || lower(x.name).startsWith(wd)));
   if (!hit) {
     const names = inside.map((x) => clean(x.name || x.tip)).filter(Boolean);
     throw new ActionError(`No toolbar button "${b}" on the grid ${n.id}.${names.length ? ` Its buttons: ${names.join(", ")}.` : " Its toolbar was not found on the screen."}`);
   }
   if (!hit.enabled) throw new ActionError(`The toolbar button "${clean(hit.name)}" of ${n.id} is greyed out: SAP does not offer it now.`);
-  return { steps: [{ do: "press", name: hit.name, ...(within ? { within } : {}) }], note: `pressed toolbar button "${clean(hit.name)}" of ${n.id}`, answer: "maybe" };
+  return { steps: [{ do: "press", name: hit.name, ...(within ? { within } : {}) }], note: `pressed toolbar button "${clean(hit.name)}" of ${n.id}`, answer: "maybe", pressed: [hit.name, hit.tip] };
 }
 
 // ---- scrolling ----
@@ -484,12 +502,12 @@ export function planPage(n: Named, target: number, g: Geometry): Plan | undefine
   if (target >= p.first && target < p.first + p.visible) return undefined;
   const steps: Step[] = [];
   if (n.kind === "table") {
+    // The click that gives the table the focus goes into a plain field: a checkbox there would tick, a dropdown open.
     const r = n.table.rows[0];
-    const c = n.table.columns.filter((x) => x.visible).sort((a, b) => a.col - b.col)[0];
-    if (r && c) {
-      const [x, y] = g.at(n.window, r.row, c.col, c.width);
-      steps.push({ do: "click", x, y, settle: 100 });
-    }
+    const c = r ? n.table.columns.filter((x) => x.visible && r.cells[x.index]?.kind === "field" && !r.cells[x.index]?.hidden).sort((a, b) => a.col - b.col)[0] : undefined;
+    if (!r || !c) throw new ActionError(`${n.id} has no plain field in its first row on show to put the cursor in (only checkboxes, dropdowns or nothing), so it is not scrolled: a click there would change it. Scroll it in SAP GUI, or use its own buttons.`);
+    const [x, y] = g.at(n.window, r.row, c.col, c.width);
+    steps.push({ do: "click", x, y, settle: 100 });
   }
   const last = Math.max(0, (p.total ?? 0) - p.visible);
   // SAP's page keys: 80 first page (Ctrl+Page Up), 81 previous (Page Up), 82 next (Page Down), 83 last (Ctrl+Page Down).
@@ -504,7 +522,7 @@ export function planGridScroll(n: Named & { kind: "grid" }, to: number | string,
   if (!n.control.area) throw new ActionError(`The hit list ${n.id} shows all its rows: use sap_look with "id":"${n.id}" to read them.`);
   if (to === "next" || to === "prev") {
     const { steps } = gridFocus(n, g, 0, undefined);
-    // The first click puts the cursor on the top row on show; Page Down or Page Up moves one page from there.
+    // The click on the header gives the grid the focus; Page Down or Page Up moves one page from its current cell.
     return { steps: [steps[0] as Step, { do: "vk", vk: to === "next" ? VK.PAGEDOWN : VK.PAGEUP, settle: 150 }], note: `scrolled ${n.id} one page ${to === "next" ? "down" : "up"}`, answer: "maybe" };
   }
   if (to === "last") {
@@ -523,12 +541,51 @@ export function planGridScroll(n: Named & { kind: "grid" }, to: number | string,
 /** What a plain action's id means (index.ts `resolveTarget`), as far as planning needs it. */
 export type PlainTarget =
   | { kind: "element"; element: DiagElement; window: DiagWindow; row: number; col: number; what: string }
-  | { kind: "cell"; window: DiagWindow; row: number; col: number; width: number; input: boolean; what: string }
+  | { kind: "cell"; window: DiagWindow; row: number; col: number; width: number; input: boolean; cellKind?: DiagElementKind; what: string }
   | { kind: "list"; window: DiagWindow; row: number; col: number; what: string }
   | { kind: "tab"; window: DiagWindow; row: number; col: number; text: string; what: string }
   | { kind: "key"; key: { vkey: number; text: string }; what: string }
   | { kind: "gridrow"; window: DiagWindow; row: number; col: number; index: number; what: string }
   | { kind: "node"; window: DiagWindow; row: number; col: number; line: number; depth: number; header: boolean; what: string };
+
+/** What a plain target is, for the refusals: an element's or a table cell's kind, else the target's kind. */
+function kindOf(x: PlainTarget): string {
+  if (x.kind === "element") return x.element.kind;
+  if (x.kind === "cell") return x.cellKind ?? "field";
+  return x.kind;
+}
+
+/**
+ * Why focus, f4, set or check cannot go to this target without doing more
+ * than they say, or undefined. Each starts with a mouse click at the target
+ * (ps/input-lib.ps1), and on a push button, a toolbar key or a tab that
+ * click presses it, on a checkbox it ticks it, on a dropdown it opens it, on
+ * a list line it can open the line (a hotspot). So:
+ * - set takes a field (or a table cell) that is a field;
+ * - check takes a checkbox or a radio button;
+ * - focus and f4 take a field (a grid row and a tree node are reached by the
+ *   keyboard, see planGrid and planNode).
+ * The driver refuses these before the guard is asked (index.ts `assess`),
+ * and planning refuses them again.
+ */
+export function plainMisuse(action: Action, x: PlainTarget): string | undefined {
+  const k = kindOf(x);
+  const press = k === "button" || k === "key" || k === "tab" ? ` To press it, use {"do":"press","id":"${String(action.id ?? "")}"}.` : "";
+  switch (action.do) {
+    case "set":
+      if (k === "field") return undefined;
+      return `${x.what} does not take text (it is ${k === "key" ? "a toolbar button or function key" : `a ${k}`}), so nothing was typed: a click there would ${k === "checkbox" || k === "radio" ? "tick it" : "press or open it"}.${k === "checkbox" || k === "radio" ? ` Use {"do":"check","id":"${String(action.id ?? "")}"}.` : press}`;
+    case "check":
+      if (k === "checkbox" || k === "radio") return undefined;
+      return `${x.what} is not a checkbox or a radio button, so "check" was not done: it would only click it.${press}`;
+    case "focus":
+    case "f4":
+      if (k === "field" || (action.do === "focus" && (k === "label" || k === "group" || x.kind === "gridrow" || x.kind === "node"))) return undefined;
+      return `"${action.do}" on ${x.what} was not done: it starts with a click there, and a click on ${k === "list" ? "a list line can open it (a hotspot)" : k === "checkbox" || k === "radio" ? "a checkbox or a radio button changes it" : k === "dropdown" ? "a dropdown opens it" : k === "other" ? "an element this reader cannot classify may press it" : "it presses it"}. ${action.do === "f4" ? "Value help is for fields." : "Put the cursor on a field instead."}${press}`;
+    default:
+      return undefined;
+  }
+}
 
 /** The control a grid row or tree node target sits in. */
 function controlAt(t: { window: DiagWindow; row: number; col: number }, want: "grid" | "tree"): DiagControl | undefined {
@@ -555,6 +612,8 @@ export function planPlain(s: DiagScreen, action: Action, target: PlainTarget | u
     case "set": {
       const x = t();
       if (x.kind !== "element" && x.kind !== "cell") throw new ActionError(`${x.what} does not take text.`);
+      const misuse = plainMisuse(action, x);
+      if (misuse) throw new ActionError(misuse);
       if (x.kind === "element" && !x.element.input) throw new ActionError(`${x.what} is read-only.`);
       const [px, py] = g.at(x.window, x.row, x.col, x.kind === "cell" ? x.width : x.element.width);
       // Typed with the keyboard: a line break would be the Enter key, so it is typed as a space.
@@ -569,6 +628,8 @@ export function planPlain(s: DiagScreen, action: Action, target: PlainTarget | u
     case "select":
     case "f4": {
       const x = t();
+      const misuse = plainMisuse(action, x);
+      if (misuse) throw new ActionError(misuse);
       if (x.kind === "key") return { steps: [{ do: "key", key: x.key.vkey }], note: `pressed ${x.what}`, answer: "yes" };
       if (x.kind === "node") {
         const c = controlAt(x, "tree");
@@ -594,10 +655,11 @@ export function planPlain(s: DiagScreen, action: Action, target: PlainTarget | u
       const [px, py] = g.at(x.window, x.row, x.col, width);
       const twice = action.do === "dblclick";
       const f4 = action.do === "f4";
-      // A click on a field only moves the cursor; buttons, tabs, double-clicks and F4 go to SAP.
-      let goes = f4 || twice || x.kind === "tab" || (x.kind === "element" && (x.element.kind === "button" || !!x.element.fcode));
-      if (action.do === "check" || action.do === "focus") goes = false;
-      return { steps: [{ do: f4 ? "f4" : twice ? "dblclick" : "click", x: px, y: py, settle: 150 }], note: `${action.do} on ${x.what}`, answer: goes ? "yes" : "no" };
+      // A click on a field only moves the cursor; buttons, tabs, a checkbox with a function code, double-clicks and F4 go
+      // to SAP. An element this reader cannot classify may: a short look for SAP's answer.
+      const goes = f4 || twice || x.kind === "tab" || (x.kind === "element" && (x.element.kind === "button" || !!x.element.fcode));
+      const unknown = x.kind === "element" && x.element.kind === "other";
+      return { steps: [{ do: f4 ? "f4" : twice ? "dblclick" : "click", x: px, y: py, settle: 150 }], note: `${action.do} on ${x.what}`, answer: goes ? "yes" : unknown ? "maybe" : "no" };
     }
     default:
       throw new ActionError(`"${action.do}" is not supported by the DIAG method.`);

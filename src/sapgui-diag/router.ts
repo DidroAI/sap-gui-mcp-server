@@ -206,32 +206,41 @@ export function startRouter(opts: RouterOptions = {}): Promise<Server> {
   const log = opts.log ?? (() => {});
   const dial = opts.dial ?? ((host: string, port: number) => connect({ host, port }));
   const server = createServer({ pauseOnConnect: false }, async (client) => {
+    let onward: Socket | undefined;
     try {
       const { payload, rest } = await readFirst(client, 10_000);
       const route = parseRoute(payload);
       const target = route.hops[route.next];
       if (!target) throw new Error("the route has no hop after this router");
-      const onward = dial(target.host, servicePort(target.service));
+      const dialled = dial(target.host, servicePort(target.service));
+      onward = dialled;
       await new Promise<void>((res, rej) => {
-        onward.once("connect", () => res());
-        onward.once("error", rej);
+        dialled.once("connect", () => res());
+        dialled.once("error", rej);
       });
       const more = route.next + 1 < route.hops.length;
-      const tap = opts.onConnection?.(more ? (route.hops[route.hops.length - 1] as Hop) : target, route);
+      // A tap that cannot start never refuses the logon: the connection goes on unread.
+      let tap: Tap | undefined;
+      try {
+        tap = opts.onConnection?.(more ? (route.hops[route.hops.length - 1] as Hop) : target, route);
+      } catch (e) {
+        log(`reading this connection could not start (the connection goes on unread): ${(e as Error).message}`);
+      }
       if (more) {
         // another router follows: pass the request on, one hop further
-        onward.write(niFrame(buildRoute({ ...route, next: route.next + 1 })));
-        if (rest.length) onward.write(rest);
-        relay(client, onward, tap, [], log);
+        dialled.write(niFrame(buildRoute({ ...route, next: route.next + 1 })));
+        if (rest.length) dialled.write(rest);
+        relay(client, dialled, tap, [], log);
       } else {
         client.write(niFrame(PONG));
-        if (rest.length) onward.write(rest);
-        relay(client, onward, tap, [rest], log);
+        if (rest.length) dialled.write(rest);
+        relay(client, dialled, tap, [rest], log);
       }
       log(`routed to ${target.host}:${target.service}`);
     } catch (e) {
       log(`route refused: ${(e as Error).message}`);
       client.destroy();
+      onward?.destroy();
     }
   });
   return new Promise((resolve, reject) => {
