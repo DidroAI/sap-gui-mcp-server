@@ -16,6 +16,7 @@ import type { NormalizedAction } from "../core/action.js";
 import type { Driver, SessionInfo } from "../core/types.js";
 import { captureValue, evaluate } from "./checks.js";
 import { type Capture, type Check, FILE_SUFFIX, FORMAT, type Op, parametriseStep, parseTest, type SapTest, serializeTest, slug, type Step, type Subject, withVariable } from "./format.js";
+import { detour } from "./replay.js";
 import { locate, type ParsedScreen, readSettled, refOf } from "./screen.js";
 
 export interface RecorderOptions {
@@ -163,6 +164,7 @@ export class Recorder {
         at: (this.options.now?.() ?? new Date()).toISOString(),
         by: this.options.by,
         surface: info.surface,
+        ...(info.method ? { method: info.method } : {}),
         ...(info.system ? { system: info.system } : {}),
         ...(info.client ? { client: info.client } : {}),
       },
@@ -204,7 +206,16 @@ export class Recorder {
     const found = before && action.id ? locate(before, action.id) : undefined;
     if (found) step.target = { id: found.control.id, type: found.control.type, ...(found.control.label ? { label: found.control.label } : {}) };
     if (risk) step.risk = risk;
-    if (before) step.on = refOf(before);
+    if (before) {
+      step.on = refOf(before);
+      // The popup the step was done on: on the DIAG method its ids do not name the window (replay.ts `confirming`).
+      const popup = before.windows.filter((w) => /^wnd\[[1-9]\d*\]$/.test(w.id)).at(-1);
+      if (popup) {
+        step.on.popup = popup.id;
+        // A popup that only informs: what a replay may skip when SAP does not show it (replay.ts `confirming`).
+        if (detour(before)?.kind === "pass") step.on.message = true;
+      }
+    }
     if (after) step.after = { ...refOf(after), ...(after.status ? { status: after.status } : {}) };
     for (const [name, v] of Object.entries(test.variables)) parametriseStep(step, name, v.value);
     test.steps.push(step);

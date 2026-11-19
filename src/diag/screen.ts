@@ -21,6 +21,10 @@ export interface DiagScreen {
   message?: DiagStatus;
   /** The command the user last sent in the command field (e.g. "/nVA03"), when seen. */
   lastCommand?: string;
+  /** What the decoder met since the mode's last screen and could not read (unknown items, element types, broken pieces), with counts. */
+  unread?: string[];
+  /** Bytes were lost or garbled on the connection while SAP sent this screen, now or when it showed the same program and screen number before: parts of it may be missing or old. */
+  damaged?: boolean;
 }
 
 export interface DiagSession {
@@ -122,11 +126,14 @@ export interface DiagMenuEntry {
   separator: boolean;
   /** Function key bound to the entry, when it has one. */
   vkey?: number;
-  /** Function code, when the server sends it. */
-  fcode?: string;
   children: DiagMenuEntry[];
 }
 
+/**
+ * A toolbar button or a function key. The traffic gives no function code
+ * for them (bytes 14-19 of the menu entry are zero in every capture), so
+ * they are named by key and text only.
+ */
 export interface DiagKey {
   /** SAP virtual key number: 0 Enter, 1-12 F1-F12, 13-24 Shift+, 25-36 Ctrl+, 37-48 Ctrl+Shift+. */
   vkey: number;
@@ -136,7 +143,6 @@ export interface DiagKey {
   tooltip: string;
   icon: string;
   enabled: boolean;
-  fcode?: string;
 }
 
 export type DiagElementKind = "field" | "label" | "checkbox" | "radio" | "button" | "dropdown" | "group" | "other";
@@ -179,6 +185,8 @@ export interface DiagElement {
   path: string[];
   /** Raw element type of the protocol, for debugging. */
   etype: number;
+  /** Typed in SAP GUI and not yet sent to SAP: set by the surface on a copy of the screen, never by the decoder. */
+  typed?: boolean;
 }
 
 export interface DiagTab {
@@ -231,6 +239,8 @@ export interface DiagTableCell {
   key?: string;
   valueList?: string;
   maxLength?: number;
+  /** Typed in SAP GUI and not yet sent to SAP (see DiagElement.typed). */
+  typed?: boolean;
 }
 
 export interface DiagTableRow {

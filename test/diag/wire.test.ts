@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { parseRfc } from "../../src/diag/rfc.js";
 import { NiFramer, parseItems, parseMessage } from "../../src/diag/wire.js";
-import { appl, EOM, message, rfcCall, ses, title, u32 } from "./build.js";
+import { idItem, END, message, rfcCall, windowStart, title, u32 } from "./build.js";
 
 describe("NI frames", () => {
   test("frames are found whatever the chunks", () => {
     const a = message([title("One")]);
-    const b = message([title("Two"), EOM], { compress: true });
+    const b = message([title("Two"), END], { compress: true });
     const stream = Buffer.concat([a, b]);
     for (const size of [1, 3, 7, stream.length]) {
       const framer = new NiFramer();
@@ -21,7 +21,7 @@ describe("DIAG messages", () => {
   const payload = (frame: Buffer) => frame.subarray(4);
 
   test("plain, compressed, and behind the DP header", () => {
-    const items = [ses(), title("Synthetic"), appl(0x09, 0x02, Buffer.alloc(70000)), EOM];
+    const items = [windowStart(), title("Synthetic"), idItem(0x09, 0x02, Buffer.alloc(70000)), END];
     for (const o of [{}, { compress: true }, { compress: true, padding: 3 }, { dp: true }, { dp: true, compress: true }]) {
       const m = parseMessage(payload(message(items, { mode: 2, ...o })));
       expect(m?.problem).toBeUndefined();
@@ -82,5 +82,21 @@ describe("RFC payloads", () => {
     expect(call.function).toBe("Z_SYNTHETIC");
     expect(call.problem).toMatch(/breaks off/);
     expect(parseRfc(Buffer.concat([u32(7), u32(9)])).problem).toBeDefined();
+  });
+});
+
+describe("NI frames after a loss: time stays linear", () => {
+  test("a restart candidate held for 900 KB of small chunks does not copy the held bytes again with every chunk", () => {
+    const framer = new NiFramer();
+    // A garbled length starts a search; then a plausible frame of 900 KB whose end has not come yet keeps its bytes held.
+    const start = Buffer.concat([Buffer.from([0xff, 0xff, 0xff, 0x7f]), u32(900_000), Buffer.from([0, 0, 0, 0, 0, 1, 0, 0, 0x10])]);
+    framer.read(start);
+    const chunk = Buffer.alloc(128);
+    const t0 = performance.now();
+    for (let i = 0; i < 7000; i++) framer.read(chunk);
+    const ms = performance.now() - t0;
+    expect(framer.buffered).toBeGreaterThan(800_000);
+    // Copying the held bytes with every chunk is about 3 GB here: about a second. Linear is a few milliseconds.
+    expect(ms).toBeLessThan(250);
   });
 });
