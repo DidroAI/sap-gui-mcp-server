@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { DiagDecoder } from "../../src/diag/decoder.js";
 import { diagView } from "../../src/diag/view.js";
-import { atom_, atoms, container, containerName, EOM, keys, listCell, listHead, menus, message, Queue, r3info, RESET, rfcItem, screenHead, ses, areaSize, tabButtons, tableControl, tabstripHeader, title } from "./build.js";
+import { elem, elementList, areaLevel, areaName, END, keys, listCell, listHead, menus, message, Queue, sessionInfo, RESET, rfcItem, screenHead, windowStart, areaSize, tabList, tableControl, tabstripHeader, title } from "./build.js";
 
 function view(frames: Buffer[], options = {}): string[] {
   const decoder = new DiagDecoder();
@@ -23,47 +23,47 @@ const SCREEN = [
     [8, "Copy"],
   ]),
   RESET,
-  container(3, 1, 0, 100, 4),
-  containerName("HEADER", "ZPROG", "0110"),
-  atoms(
-    atom_.field(0, 0, "Order", { output: true, width: 16 }),
-    atom_.name(0, 0, "ZHDR-TXT"),
-    atom_.field(0, 17, "4711", { width: 10, readOnly: true }),
-    atom_.name(0, 17, "ZHDR-ID"),
-    atom_.label(0, 40, "Net value"),
-    atom_.field(0, 56, "  1.250,00", { readOnly: true }),
-    atom_.name(0, 56, "ZHDR-NETWR"),
-    atom_.field(0, 78, "EUR", { readOnly: true }),
-    atom_.name(0, 78, "ZHDR-WAERK"),
-    atom_.label(1, 0, "Customer"),
-    atom_.field(1, 17, "", { width: 10 }),
-    atom_.name(1, 17, "ZHDR-KUNNR"),
-    atom_.field(1, 29, "", { output: true, width: 30 }),
-    atom_.name(1, 29, "ZHDR-NAME"),
-    atom_.button(1, 60, "@0Y\\QCreate customer@", "NEWC"),
-    atom_.frame(2, 0, 2, 60, "Shipping"),
-    atom_.check(3, 1, "Complete", true),
-    atom_.name(3, 1, "ZHDR-DONE"),
-    atom_.label(3, 20, "Block"),
-    atom_.dropdown(3, 30, "07"),
-    atom_.name(3, 30, "ZHDR-LIFSK"),
-    atom_.field(3, 40, "?", { width: 4 }),
-    atom_.name(3, 40, "ZHDR-TYPE"),
-    atom_.field(3, 50, "secret", { hidden: true }),
-    atom_.name(3, 50, "ZHDR-PWD"),
+  areaLevel(3, 1, 0, 100, 4),
+  areaName("HEADER", "ZPROG", "0110"),
+  elementList(
+    elem.field(0, 0, "Order", { output: true, width: 16 }),
+    elem.name(0, 0, "ZHDR-TXT"),
+    elem.field(0, 17, "4711", { width: 10, readOnly: true }),
+    elem.name(0, 17, "ZHDR-ID"),
+    elem.label(0, 40, "Net value"),
+    elem.field(0, 56, "  1.250,00", { readOnly: true }),
+    elem.name(0, 56, "ZHDR-NETWR"),
+    elem.field(0, 78, "EUR", { readOnly: true }),
+    elem.name(0, 78, "ZHDR-WAERK"),
+    elem.label(1, 0, "Customer"),
+    elem.field(1, 17, "", { width: 10 }),
+    elem.name(1, 17, "ZHDR-KUNNR"),
+    elem.field(1, 29, "", { output: true, width: 30 }),
+    elem.name(1, 29, "ZHDR-NAME"),
+    elem.button(1, 60, "@0Y\\QCreate customer@", "NEWC"),
+    elem.frame(2, 0, 2, 60, "Shipping"),
+    elem.check(3, 1, "Complete", true),
+    elem.name(3, 1, "ZHDR-DONE"),
+    elem.label(3, 20, "Block"),
+    elem.dropdown(3, 30, "07"),
+    elem.name(3, 30, "ZHDR-LIFSK"),
+    elem.field(3, 40, "?", { width: 4 }),
+    elem.name(3, 40, "ZHDR-TYPE"),
+    elem.field(3, 50, "secret", { hidden: true }),
+    elem.name(3, 50, "ZHDR-PWD"),
   ),
   RESET,
-  container(8, 6, 0, 100, 12),
-  containerName("TABS", "ZPROG", "0100"),
+  areaLevel(8, 6, 0, 100, 12),
+  areaName("TABS", "ZPROG", "0100"),
   tabstripHeader("TABS", "T\\02", 2),
-  tabButtons(atom_.tab(0, "Sales", "T\\01"), atom_.tab(1, "Items", "T\\02")),
+  tabList(elem.tab(0, "Sales", "T\\01"), elem.tab(1, "Items", "T\\02")),
   RESET,
-  container(8, 6, 0, 100, 12),
-  containerName("TABS", "ZPROG", "0100"),
-  container(9, 2, 1, 98, 9),
-  containerName("BODY", "ZPROG", "0130"),
-  container(5, 1, 0, 90, 6),
-  containerName("TC_ITEMS", "ZPROG", "0130"),
+  areaLevel(8, 6, 0, 100, 12),
+  areaName("TABS", "ZPROG", "0100"),
+  areaLevel(9, 2, 1, 98, 9),
+  areaName("BODY", "ZPROG", "0130"),
+  areaLevel(5, 1, 0, 90, 6),
+  areaName("TC_ITEMS", "ZPROG", "0130"),
   ...tableControl({
     program: "ZPROG",
     name: "TC_ITEMS",
@@ -78,8 +78,8 @@ const SCREEN = [
     rows: [{ values: ["    10", "WIDGET-1", "X", "one", ""] }, { values: ["    20", "WIDGET-2", " ", "", "two"], readOnly: true }, { values: ["", "", " ", "", ""] }],
     total: 2,
   }),
-  r3info(0x0b, "S: Order 4711 saved"),
-  EOM,
+  sessionInfo(0x0b, "S: Order 4711 saved"),
+  END,
 ];
 
 describe("diagView", () => {
@@ -124,8 +124,8 @@ describe("diagView", () => {
 
   test("a popup with a list: the window behind keeps its content, not its keys", () => {
     const cells = [...listCell(1, 1, "Type"), ...listCell(1, 6, "Description"), ...listCell(3, 1, "AA"), ...listCell(3, 6, "Standard order"), ...listCell(4, 1, "AB"), ...listCell(4, 6, "Rush order"), ...listCell(5, 2, "odd one")];
-    const popup = [ses({ index: 1, row: 3, col: 24, rows: 12, cols: 34 }), areaSize(12, 34), r3info(0x0d, "ZPOPUP".padEnd(40)), r3info(0x0e, "0120"), keys(4, [[12, "Cancel"]]), title("Order Type (40 Entries)"), ...listHead(41), ...cells, EOM];
-    const out = view([message([...screenHead(), menus(1, [[[1], "Order"]]), keys(4, [[3, "Back"]]), RESET, atoms(atom_.label(2, 1, "Order Type"), atom_.field(2, 20, "", { width: 4 }), atom_.name(2, 20, "ZHDR-TYPE")), ...popup])]);
+    const popup = [windowStart({ index: 1, row: 3, col: 24, rows: 12, cols: 34 }), areaSize(12, 34), sessionInfo(0x0d, "ZPOPUP".padEnd(40)), sessionInfo(0x0e, "0120"), keys(4, [[12, "Cancel"]]), title("Order Type (40 Entries)"), ...listHead(41), ...cells, END];
+    const out = view([message([...screenHead(), menus(1, [[[1], "Order"]]), keys(4, [[3, "Back"]]), RESET, elementList(elem.label(2, 1, "Order Type"), elem.field(2, 20, "", { width: 4 }), elem.name(2, 20, "ZHDR-TYPE")), ...popup])]);
     expect(out.slice(1)).toEqual([
       'WINDOW 0  "Synthetic Order: Overview"  area 20x100',
       "menu: Order",
@@ -161,7 +161,7 @@ describe("diagView", () => {
     );
     q.verb(q.object("2-"), "SetDataFromUrl", "C", ["A", "B", "SAPR3://HITS"]);
     q.verb(help, "createResultDialog", "C", [{ at: q.object("") }]);
-    const popup = [ses({ index: 1, row: 1, col: 1, rows: 5, cols: 5 }), areaSize(5, 5), r3info(0x0d, "ZHELP".padEnd(40)), r3info(0x0e, "0100"), title("MCX_DUMMY_POPUP"), EOM];
+    const popup = [windowStart({ index: 1, row: 1, col: 1, rows: 5, cols: 5 }), areaSize(5, 5), sessionInfo(0x0d, "ZHELP".padEnd(40)), sessionInfo(0x0e, "0100"), title("MCX_DUMMY_POPUP"), END];
     const out = view([message([rfcItem(6, q.build())], { info: 2 }), message([...screenHead(), ...popup])], { chrome: false, maxRows: 2 });
     expect(out.slice(2)).toEqual(['WINDOW 1 popup  "Order Type (1)"  ZHELP 0100  at r1 c1  area 5x5', "grid value-help (shell 115)  3 rows, 2 columns: F0001=F0001 | F0002=F0002", "  row 0: AA | Standard order", "  row 1: AB | Rush order", "  ... 1 more rows (all sent; a higher maxRows shows them)"]);
   });
@@ -223,8 +223,8 @@ describe("diagView", () => {
     const editor = q.verb(gui, "CreateControl", "C", [105, "SAPGUI.TextEditCtrl.1", 0, 103], true);
     q.verb(editor, "ReadOnly", "S", [1]);
     q.verb(editor, "TextStream", "S", ['Deliver to "gate 1"']);
-    const custom = (name: string, row: number) => [RESET, container(10, row, 1, 80, 5), containerName(name, "ZPROG", "0100")];
-    const out = view([message([rfcItem(6, q.build())], { info: 2 }), message([...screenHead(), ...custom("BOX", 2), ...custom("SIDE", 8), EOM])], { chrome: false });
+    const custom = (name: string, row: number) => [RESET, areaLevel(10, row, 1, 80, 5), areaName(name, "ZPROG", "0100")];
+    const out = view([message([rfcItem(6, q.build())], { info: 2 }), message([...screenHead(), ...custom("BOX", 2), ...custom("SIDE", 8), END])], { chrome: false });
     expect(out.slice(2)).toEqual([
       "r2  grid BOX (shell 102)  30 rows, 2 columns: DOC=Sales Document / Sales Doc. / Doc | QTY=Quantity",
       "  row 0: 4711 | 5",

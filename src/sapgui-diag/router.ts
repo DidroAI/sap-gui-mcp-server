@@ -9,9 +9,23 @@
  * its offset moved one hop and that router's answer is returned instead.
  *
  * NI framing: each message is a 4-byte big-endian length and the payload.
- * NI_ROUTE payload: "NI_ROUTE\0", version, NI version, number of hops, talk
- * mode, 2 bytes padding, hops left, route length (uint32 BE), offset of the
- * next hop (uint32 BE), then per hop "host\0service\0password\0".
+ *
+ * The route request, as SAP GUI 8.00 sent it for the router string
+ * /H/127.0.0.1/S/3298/H/<host>/S/3200, with a host name of 10 letters (the
+ * bytes are in test/sapgui-diag/router.test.ts):
+ *
+ *   "NI_ROUTE\0"
+ *   02 28 02 00 00 00 01      7 single bytes
+ *   00 00 00 21               the length of the hop list (33 bytes)
+ *   00 00 00 10               where the next hop starts in it (16)
+ *   "127.0.0.1\0" "3298\0" "\0" "<host>\0" "3200\0" "\0"
+ *
+ * The hop list holds host, service and password of each hop of the router
+ * string, NUL-ended. Byte 2 of the 7 is the number of hops (2) and byte 6
+ * how many are left after the one being contacted (1); the next-hop
+ * position, 16, is the size of the first hop's three strings. Bytes 0, 1
+ * and 3 are passed on as they came; 4 and 5, 0 in the request, are sent
+ * as 0.
  *
  * Nothing here decodes DIAG; `onConnection` gets the raw chunks.
  */
@@ -50,7 +64,7 @@ export function parseRoute(p: Buffer): RouteRequest {
   const niVersion = p[o++] ?? 0;
   o++; // number of hops, recomputed below
   const talkMode = p[o++] ?? 0;
-  o += 2; // padding
+  o += 2; // bytes 4 and 5
   o++; // hops left
   const length = p.readUInt32BE(o);
   const offset = p.readUInt32BE(o + 4);
@@ -141,24 +155,44 @@ function readFirst(sock: Socket, timeoutMs: number): Promise<{ payload: Buffer; 
   });
 }
 
-function relay(client: Socket, server: Socket, tap: Tap | undefined, first: Buffer[]): void {
-  for (const c of first) if (c.length) tap?.data(0, c);
+/**
+ * Relays both ways. The copy given to the tap never stops the traffic: a tap
+ * that throws loses that chunk, not SAP GUI's connection. A side that reads
+ * slower than the other writes pauses the writer, so the relay holds no more
+ * than the sockets' own buffers.
+ */
+function relay(client: Socket, server: Socket, tap: Tap | undefined, first: Buffer[], log: (msg: string) => void = () => {}): void {
+  let tapErrors = 0;
+  const copy = (dir: 0 | 1, c: Buffer) => {
+    try {
+      tap?.data(dir, c);
+    } catch (e) {
+      if (tapErrors++ === 0) log(`reading the traffic failed (the connection goes on): ${(e as Error).message}`);
+    }
+  };
+  for (const c of first) if (c.length) copy(0, c);
   let closed = false;
   const close = () => {
     if (closed) return;
     closed = true;
     client.destroy();
     server.destroy();
-    tap?.close();
+    try {
+      tap?.close();
+    } catch {
+      // the connection is gone either way
+    }
   };
-  client.on("data", (c: Buffer) => {
-    tap?.data(0, c);
-    server.write(c);
-  });
-  server.on("data", (c: Buffer) => {
-    tap?.data(1, c);
-    client.write(c);
-  });
+  const pass = (from: Socket, to: Socket, dir: 0 | 1) =>
+    from.on("data", (c: Buffer) => {
+      copy(dir, c);
+      if (!to.write(c)) {
+        from.pause();
+        to.once("drain", () => from.resume());
+      }
+    });
+  pass(client, server, 0);
+  pass(server, client, 1);
   for (const s of [client, server]) {
     s.on("end", close);
     s.on("error", close);
@@ -188,11 +222,11 @@ export function startRouter(opts: RouterOptions = {}): Promise<Server> {
         // another router follows: pass the request on, one hop further
         onward.write(niFrame(buildRoute({ ...route, next: route.next + 1 })));
         if (rest.length) onward.write(rest);
-        relay(client, onward, tap, []);
+        relay(client, onward, tap, [], log);
       } else {
         client.write(niFrame(PONG));
         if (rest.length) onward.write(rest);
-        relay(client, onward, tap, [rest]);
+        relay(client, onward, tap, [rest], log);
       }
       log(`routed to ${target.host}:${target.service}`);
     } catch (e) {

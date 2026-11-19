@@ -21,6 +21,10 @@ export interface DiagScreen {
   message?: DiagStatus;
   /** The command the user last sent in the command field (e.g. "/nVA03"), when seen. */
   lastCommand?: string;
+  /** What the decoder met since the mode's last screen and could not read (unknown items, element types, broken pieces), with counts. */
+  unread?: string[];
+  /** Bytes were lost or garbled on the connection while SAP sent this screen, now or when it showed the same program and screen number before: parts of it may be missing or old. */
+  damaged?: boolean;
 }
 
 export interface DiagSession {
