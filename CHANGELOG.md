@@ -17,11 +17,7 @@ The first public version.
   allowed, or to a DevTools endpoint named in `SAP_CHROME_CDP`.
 - **SAP GUI without scripting (experimental)**: `SAP_GUI_METHOD=diag` reads
   the screen from SAP GUI's DIAG traffic through a local SAProuter, and acts
-  with the keyboard and mouse. It has every action of the other surfaces
-  (dropdowns, scrolling, grid and tree actions, grid toolbars, `sap_look`
-  with `id`, `rows` and `cols`), waits for SAP's answer in the traffic
-  instead of a timer, takes the cell size SAP GUI reports, and tells
-  same-titled sessions apart.
+  with the keyboard and mouse (see below).
 - Sessions are found by themselves; `sap_use` switches between them.
 
 ### Tools
@@ -63,12 +59,46 @@ The first public version.
   `sap-gui-mcp-server replay` run it again with no model.
 - `export` writes a SAP Cloud ALM manual test case, a SAP GUI script (VBS),
   a Playwright spec, or a Gherkin feature.
-- Recording and replay work on the `diag` method too: steps, checks and
-  captures name controls the way its actions do (`VBAK-VBELN`, `{T\01}`,
-  `VBAP-MATNR[0]`), Information popups are passed with their Enter key, and
-  the test records the method, so a replay refuses to run a `diag` test
-  through scripting (and the other way). A `diag` test does not export to
-  VBS.
+
+### SAP GUI without scripting (DIAG method, experimental)
+
+- **Reading.** The decoder is our own (MIT), its item types, ids and sizes
+  established from captured traffic. On six captured ECC screens the view
+  holds 99% of the texts and values that scripting reads, every ALV cell,
+  tree node, table-control column and popup entry, at about 13,000 tokens
+  for the six (scripting's compact view: about 15,000). Controls of an
+  ended transaction no longer show on the next one.
+- **The view, as on the other surfaces.** The status bar is the `sbar` line,
+  so errors and warnings come first in an answer; greyed-out buttons, keys,
+  menus and tree nodes are marked, and `sap_look` with `id "mbar"` lists
+  every menu entry; empty read-only fields show as `NAME@col=""`; a value
+  typed with `set` shows as typed until SAP gets it with the next Enter,
+  and a field that then shows something else is reported.
+- **Ids.** A field name, `{FCODE}`, `FIELD[n]` (the table's own row number,
+  as the view prints it; a row not on show is scrolled to) or `@row,col`.
+  Ids written nearly right (another case, a scripting id, a table column
+  index) resolve when they mean one thing; a name several controls share is
+  refused with their places; an unknown id is refused with the closest ones.
+  What SAP greys out is refused before any input.
+- **Actions.** Every action of the other surfaces: dropdowns, scrolling
+  (table controls, lists, grids), grid and tree actions, grid toolbars,
+  row selection, `sap_look` with `id`, `rows` and `cols`. An action ends
+  when SAP has answered every request it caused, read from the traffic, not
+  after a timer; `timing` says where the time went. The cell size comes
+  from what SAP GUI reports, and same-titled sessions are told apart.
+- **Record and replay.** Tests name controls the way the actions do and
+  record the method (a `diag` test is not replayed through scripting, nor
+  exported to VBS). Information popups are passed with their Enter key; a
+  recorded popup confirmation is skipped when SAP does not show the popup;
+  a screen damaged in transit is never judged.
+- **Robustness.** Lost or garbled bytes no longer blind the connection: the
+  decoder finds its place again, and the view says when a screen may miss
+  parts (`note  bytes were lost…`) or holds something it cannot read yet.
+  The relay outlives a failing reader, closed connections are let go, and
+  `doctor` reports what was lost or not read, and SNC (not readable).
+- **Not verified live yet:** the new actions, waits, cell sizes, window
+  matching and record/replay ran against synthetic traffic and captures
+  only, not against SAP GUI.
 
 ### Command line
 
