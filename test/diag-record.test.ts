@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -289,5 +289,54 @@ describe("replaying on the DIAG method", () => {
     const r = await replay(sap.driver(), policy, t);
     expect(r.passed).toBe(true);
     expect(r.before).toEqual(['popup "Information" (Welcome) was open: pressed Continue']);
+  });
+
+  test("a recorded Enter on a popup SAP does not show this time is skipped, as scripting skips its Continue", async () => {
+    const sap = new FakeDiagSap();
+    sap.popupsFor.set("5000", [{ title: "Information", text: "Order is blocked for delivery" }]);
+    const s = await setup(sap);
+    await s.rec("start", { name: "diag popup" });
+    await s.act({ do: "okcode", value: "/nZA03" });
+    await s.act({ do: "set", id: "ZORD-VBELN", value: "5000" });
+    await s.act({ do: "key", key: 0 });
+    // Enter on the Information popup: on the DIAG method nothing in the action names the popup.
+    await s.act({ do: "key", key: 0 });
+    await s.rec("assert", { check: "field", id: "ZORD-KUNNR", equals: "2200" });
+    await s.rec("stop");
+    const t = parseTest(await readFile(join(s.dir, "diag-popup.saptest.json"), "utf8"));
+    expect(t.steps[3]?.on).toMatchObject({ title: "Information", popup: "wnd[1]" });
+    expect(t.steps[2]?.on?.popup).toBeUndefined();
+    sap.popupsFor.delete("5000");
+    const acts = sap.acts.length;
+    const { result } = await s.json({ name: "diag popup" });
+    expect(result.passed).toBe(true);
+    expect(result.steps[3]?.warnings).toEqual(['the recording confirmed a popup here ("Information") that SAP did not show this time: step skipped']);
+    // The Enter of step 4 did not run on the overview below.
+    expect(sap.acts.slice(acts).filter((a) => a.do === "key")).toEqual([{ do: "key", key: 0 }]);
+    // With the popup, the same test confirms it as recorded.
+    sap.popupsFor.set("5000", [{ title: "Information", text: "Order is blocked for delivery" }]);
+    expect((await s.json({ name: "diag popup" })).result.passed).toBe(true);
+  });
+
+  test("a screen marked damaged in transit is not judged: the next whole one is waited for, else the step fails for that reason", async () => {
+    const sap = new FakeDiagSap();
+    const { json, dir } = await recordDisplay(sap);
+    // Two looks still damaged, then a whole screen: the replay waits for it and passes.
+    sap.damageAfterEnter = 2;
+    const ok = await json({ name: "diag display" });
+    expect(ok.result.passed).toBe(true);
+    // Damaged for good: step 3 fails as damaged, within its own timeout (1 s here), not on a check.
+    const file = join(dir, "diag-display.saptest.json");
+    const t = parseTest(await readFile(file, "utf8"));
+    (t.steps[2]?.action as Record<string, unknown>).timeout = 1;
+    await writeFile(file, JSON.stringify(t, null, 2));
+    sap.damageAfterEnter = 1000;
+    const t0 = Date.now();
+    const bad = await json({ name: "diag display" });
+    expect(Date.now() - t0).toBeLessThan(4000);
+    expect(bad.result.passed).toBe(false);
+    expect(bad.result.steps[2]?.phase).toBe("landing");
+    expect(bad.result.steps[2]?.failures).toHaveLength(1);
+    expect(bad.result.steps[2]?.failures[0]).toStartWith("screen damaged in transit:");
   });
 });

@@ -22,6 +22,7 @@ import { actionText, normalizeAction, type NormalizedAction } from "../core/acti
 import { commandFieldRefusal, decide, leavesTransaction, type Policy, sessionRefusal, systemAllowed } from "../core/guard.js";
 import type { Assessment, Driver } from "../core/types.js";
 import { compact } from "../core/compact.js";
+import { vkeyNumber } from "../sapgui/keys.js";
 import { captureValue, evaluate } from "./checks.js";
 import { actionWith, fill, inputsOf, type SapTest, type Step } from "./format.js";
 import { applyCapture, type Phase, type Proposal, propose, type Repair, type RepairRecord, RepairRefused, repairRefusal, runRepairActions } from "./repair.js";
@@ -245,12 +246,48 @@ function asRecorded(step: Step, screen: ParsedScreen, vars: Record<string, strin
   return !was.title || !screen.title || sameText(was.title, screen.title, vars);
 }
 
-/** The popup a recorded step confirms with its Continue button (wnd[1]/tbar[0]/btn[0]), if that is what it does. */
-function confirming(step: Step): string | undefined {
-  if (step.action?.do !== "press") return undefined;
-  const m = /^(wnd\[[1-9]\])\/tbar\[0\]\/btn\[0\]$/.exec(step.target?.id ?? String(step.action.id ?? ""));
-  return m?.[1];
+/**
+ * The popup a recorded step confirms, if that is what it does: by its
+ * Continue button (wnd[1]/tbar[0]/btn[0]). On the DIAG method a popup is
+ * confirmed with its Enter key ({"do":"key","key":0}) or one of its buttons,
+ * whose ids do not name the window: the step was done on a popup
+ * (`step.on.popup`), and actions there always go to the window on top.
+ */
+function confirming(step: Step, diag = false): string | undefined {
+  const a = step.action;
+  if (a?.do === "press") {
+    const m = /^(wnd\[[1-9]\])\/tbar\[0\]\/btn\[0\]$/.exec(step.target?.id ?? String(a.id ?? ""));
+    if (m) return m[1];
+  }
+  const popup = step.on?.popup;
+  if (!diag || !popup || !a) return undefined;
+  if (a.do === "press" || (a.do === "key" && vkeyNumber(a.key ?? a.value) === 0)) return popup;
+  return undefined;
 }
+
+/** How long a step waits, at most, for a screen that came whole after one marked damaged (DIAG method). */
+const DAMAGED_MS = 5000;
+
+/**
+ * The screen a step is judged on, when the DIAG method marked it damaged
+ * (bytes lost on the connection): read again until an undamaged one comes,
+ * within the step's own timeout (seconds) or DAMAGED_MS. Still damaged then:
+ * undefined, and the step fails for that reason, not on a check.
+ */
+async function undamaged(driver: Driver, screen: ParsedScreen, timeout: unknown): Promise<ParsedScreen | undefined> {
+  if (!screen.damaged) return screen;
+  const t = Number(timeout);
+  const until = Date.now() + (Number.isFinite(t) && t > 0 ? t * 1000 : DAMAGED_MS);
+  let now = screen;
+  while (now.damaged && Date.now() < until) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    now = await read(driver);
+  }
+  return now.damaged ? undefined : now;
+}
+
+const DAMAGED_TEXT =
+  "screen damaged in transit: bytes were lost on the connection while SAP sent it, and no whole screen came after it, so the step was not judged. Look at the screen (sap_look), then run the replay again from this step";
 
 /** At most this many unrecorded windows are answered after one step (VA02 shows two Information popups in a row). */
 const MAX_DETOURS = 5;
@@ -288,6 +325,7 @@ export async function replay(driver: Driver, policy: Policy, recorded: SapTest, 
   if (info.surface !== test.recorded.surface) return finish(`the test was recorded on ${test.recorded.surface}; this session is ${info.surface}. Ids differ between Fiori and SAP GUI screens.`);
   // SAP GUI read by scripting and by the DIAG method name controls differently (wnd[0]/usr/ctxtVBAK-VBELN, VBAK-VBELN).
   const method = (m: string | undefined) => (m === "diag" ? "the DIAG method (SAP_GUI_METHOD=diag)" : "SAP GUI scripting");
+  const diag = test.recorded.method === "diag";
   if (info.surface === "sapgui" && method(info.method) !== method(test.recorded.method))
     return finish(`the test was recorded through ${method(test.recorded.method)}; this session is read through ${method(info.method)}. The two name controls differently: replay it with the method it was recorded with`);
 
@@ -379,7 +417,7 @@ export async function replay(driver: Driver, policy: Policy, recorded: SapTest, 
         }
         r.action = actionText(action);
         // The recording confirmed an Information popup here that SAP did not show this time: nothing to answer.
-        const confirms = confirming(step);
+        const confirms = confirming(step, diag);
         if (runs && confirms && !screen.windows.some((w) => w.id === confirms)) {
           r.warnings.push(`the recording confirmed a popup here ("${step.on?.title ?? ""}") that SAP did not show this time: step skipped`);
           r.ms = Date.now() - s0;
@@ -391,6 +429,13 @@ export async function replay(driver: Driver, policy: Policy, recorded: SapTest, 
           screen = await read(driver);
         }
         phase = "landing";
+        // A screen with bytes lost on the way is not judged: the next whole one is waited for.
+        const whole = await undamaged(driver, screen, action.timeout);
+        if (!whole) {
+          r.failures.push(DAMAGED_TEXT);
+          throw undefined;
+        }
+        screen = whole;
         // Windows SAP showed that the recording does not have here: passed when they only inform, else the step fails.
         for (let k = 0; k < MAX_DETOURS && !asRecorded(step, screen, vars); k++) {
           const d = detour(screen);
@@ -408,6 +453,12 @@ export async function replay(driver: Driver, policy: Policy, recorded: SapTest, 
           await guarded(driver, policy, d.action);
           r.warnings.push(`SAP showed ${a(d.what)} that the recording does not have: the replay ${d.answer}${d.kind === "choice" ? ', as "choices":"continue" asked; what was saved may differ from the recording' : ""}`);
           screen = await read(driver);
+          const after = await undamaged(driver, screen, action.timeout);
+          if (!after) {
+            r.failures.push(DAMAGED_TEXT);
+            throw undefined;
+          }
+          screen = after;
         }
         const landed = sessionRefusal(policy, await driver.refresh());
         if (landed) r.failures.push(`this led to a transaction the replay may not work in: ${landed}`);
@@ -416,12 +467,20 @@ export async function replay(driver: Driver, policy: Policy, recorded: SapTest, 
         let judged = step;
         if (!asRecorded(step, screen, vars) && !popupOf(screen)) {
           let j = i + 1;
-          while (test.steps[j] && confirming(test.steps[j] as Step)) j++;
+          while (test.steps[j] && confirming(test.steps[j] as Step, diag)) j++;
           const last = test.steps[j - 1];
           if (j > i + 1 && last && asRecorded(last, screen, vars)) judged = { ...step, ...(last.after ? { after: last.after } : {}) };
         }
         if (!r.failures.length) implicit(judged, screen, strict, r, vars);
-      } else if (!repair) screen = await read(driver);
+      } else if (!repair) {
+        screen = await read(driver);
+        const whole = await undamaged(driver, screen, undefined);
+        if (!whole) {
+          r.failures.push(DAMAGED_TEXT);
+          throw undefined;
+        }
+        screen = whole;
+      }
       // On the wrong screen or after an error, the marked checks would only repeat the failure.
       if (r.failures.length) throw undefined;
       phase = "check";

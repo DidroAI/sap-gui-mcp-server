@@ -57,6 +57,8 @@ export interface ParsedScreen extends ScreenRef {
   text: string;
   /** "diag" when the view is the DIAG method's (its ids are SAP field names, function codes, FIELD[n]). */
   method?: "diag";
+  /** DIAG method: bytes were lost on the connection, so parts of this screen may be missing or old. */
+  damaged?: boolean;
 }
 
 const unquote = (s: string) => s.replace(/\\(.)/g, "$1");

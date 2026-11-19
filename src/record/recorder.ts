@@ -205,7 +205,12 @@ export class Recorder {
     const found = before && action.id ? locate(before, action.id) : undefined;
     if (found) step.target = { id: found.control.id, type: found.control.type, ...(found.control.label ? { label: found.control.label } : {}) };
     if (risk) step.risk = risk;
-    if (before) step.on = refOf(before);
+    if (before) {
+      step.on = refOf(before);
+      // The popup the step was done on: on the DIAG method its ids do not name the window (replay.ts `confirming`).
+      const popup = before.windows.filter((w) => /^wnd\[[1-9]\d*\]$/.test(w.id)).at(-1);
+      if (popup) step.on.popup = popup.id;
+    }
     if (after) step.after = { ...refOf(after), ...(after.status ? { status: after.status } : {}) };
     for (const [name, v] of Object.entries(test.variables)) parametriseStep(step, name, v.value);
     test.steps.push(step);
