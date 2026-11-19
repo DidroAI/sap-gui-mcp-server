@@ -176,6 +176,7 @@ End Function
 
 export function exportVbs(test: SapTest): string {
   if (test.recorded.surface === "fiori") throw new Error("a Fiori recording has no SAP GUI scripting ids: it cannot become a SAP GUI script");
+  if (test.recorded.method === "diag") throw new Error("a recording made through the DIAG method names controls by SAP field name, not by SAP GUI scripting id: it cannot become a SAP GUI script");
   const out: string[] = [
     `' ${test.name}`,
     ...(test.description ? [`' ${test.description.replace(/\r?\n/g, " ")}`] : []),

@@ -873,7 +873,7 @@ const NO_GEOMETRY: Geometry = {
 };
 
 function describe(c: Connection, mode: number, s: DiagScreen): SessionInfo {
-  const info: SessionInfo = { id: `${PREFIX}${c.n}:${mode}`, surface: "sapgui", where: `SAP GUI connection to ${c.target.host}:${c.target.service} through the DIAG router, mode ${mode}` };
+  const info: SessionInfo = { id: `${PREFIX}${c.n}:${mode}`, surface: "sapgui", method: "diag", where: `SAP GUI connection to ${c.target.host}:${c.target.service} through the DIAG router, mode ${mode}` };
   if (s.session.system) info.system = s.session.system;
   if (s.session.client) info.client = s.session.client;
   if (s.session.user) info.user = s.session.user;

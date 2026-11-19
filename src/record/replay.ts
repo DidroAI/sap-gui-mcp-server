@@ -197,6 +197,10 @@ const popupOf = (s: ParsedScreen) => {
   const w = topWindowOf(s);
   return w && w.id !== "wnd[0]" ? w : undefined;
 };
+/** The action that presses a button: by its id, or on the DIAG method a function key or toolbar button by its key. */
+const pressOf = (c: Control): NormalizedAction => (c.vkey !== undefined && !c.id.startsWith("wnd[") ? normalizeAction({ do: "key", key: c.vkey }) : normalizeAction({ do: "press", id: c.id }));
+/** A popup's Continue: SAP GUI's green tick (wnd[1]/tbar[0]/btn[0]), on the DIAG method the popup's Enter key. */
+const continueOf = (mine: Control[], window: string) => mine.find((c) => c.id === `${window}/tbar[0]/btn[0]`) ?? mine.find((c) => c.zone === "bar" && c.vkey === 0);
 const editable = (c: Control) => (c.type === "field" || c.type === "dropdown" || c.type === "textedit") && !/\(read-only\)|\(display\)/.test(c.rest);
 
 /** What to do about the window in front, when it is one the replay may meet without a recording of it. */
@@ -211,23 +215,23 @@ export function detour(screen: ParsedScreen): Detour | undefined {
       .join(" ")
       .replace(/\s+/g, " ");
     const what = `popup "${pop.title}"${words ? ` (${words.slice(0, 200)})` : ""}`;
-    const go = mine.find((c) => c.id === `${pop.id}/tbar[0]/btn[0]`);
+    const go = continueOf(mine, pop.id);
     const question =
-      mine.some((c) => c.type === "button" && c.id.includes("/usr/")) ||
+      mine.some((c) => c.type === "button" && (c.id.includes("/usr/") || c.zone === "area")) ||
       mine.some(editable) ||
       mine.some((c) => /^(table|grid|list|tree|checkbox|radio|dropdown|textedit|html-viewer)$/.test(c.type)) ||
       /\?\s*$/.test(words) ||
       /\?/.test(pop.title);
     if (!go || question) return { kind: "stop", what };
-    return { kind: "pass", what, action: normalizeAction({ do: "press", id: go.id }), answer: `pressed ${go.label || "Continue"}` };
+    return { kind: "pass", what, action: pressOf(go), answer: `pressed ${go.label || "Continue"}` };
   }
   for (const o of OPTIONAL_SCREENS) {
     if (!o.is(screen)) continue;
     const go = screen.controls.find((c) => c.type === "button" && c.window === "wnd[0]" && o.button.test(c.label));
     const what = `${o.what} screen "${screen.title ?? ""}"`;
     if (!go) return { kind: "stop", what: `${what} (no Continue button the replay could press)` };
-    const ways = screen.controls.filter((c) => c.type === "button" && /^wnd\[0\]\/tbar\[1\]\//.test(c.id)).map((c) => c.label);
-    return { kind: "choice", what, action: normalizeAction({ do: "press", id: go.id }), answer: `pressed ${go.label}`, ways };
+    const ways = screen.controls.filter((c) => c.type === "button" && (/^wnd\[0\]\/tbar\[1\]\//.test(c.id) || (c.window === "wnd[0]" && c.zone === "bar" && c.rest.endsWith("(toolbar)")))).map((c) => c.label);
+    return { kind: "choice", what, action: pressOf(go), answer: `pressed ${go.label}`, ways };
   }
   return undefined;
 }
@@ -282,6 +286,10 @@ export async function replay(driver: Driver, policy: Policy, recorded: SapTest, 
   if (!Number.isInteger(from) || from < 1 || from > test.steps.length) return finish(`"from" is a step of the test, 1 to ${test.steps.length} (got ${from})`);
   if (resumed) result.from = from;
   if (info.surface !== test.recorded.surface) return finish(`the test was recorded on ${test.recorded.surface}; this session is ${info.surface}. Ids differ between Fiori and SAP GUI screens.`);
+  // SAP GUI read by scripting and by the DIAG method name controls differently (wnd[0]/usr/ctxtVBAK-VBELN, VBAK-VBELN).
+  const method = (m: string | undefined) => (m === "diag" ? "the DIAG method (SAP_GUI_METHOD=diag)" : "SAP GUI scripting");
+  if (info.surface === "sapgui" && method(info.method) !== method(test.recorded.method))
+    return finish(`the test was recorded through ${method(test.recorded.method)}; this session is read through ${method(info.method)}. The two name controls differently: replay it with the method it was recorded with`);
 
   /** A clean start: popups left open are closed, and the recording's first transaction is opened fresh. */
   const cleanStart = async (at: ParsedScreen): Promise<ParsedScreen> => {

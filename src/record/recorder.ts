@@ -163,6 +163,7 @@ export class Recorder {
         at: (this.options.now?.() ?? new Date()).toISOString(),
         by: this.options.by,
         surface: info.surface,
+        ...(info.method ? { method: info.method } : {}),
         ...(info.system ? { system: info.system } : {}),
         ...(info.client ? { client: info.client } : {}),
       },

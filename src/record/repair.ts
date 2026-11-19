@@ -148,7 +148,7 @@ export function confirms(action: NormalizedAction, screen: ParsedScreen): boolea
   if (action.do !== "press" && action.do !== "click") return false;
   const found = action.id ? locate(screen, action.id) : undefined;
   const id = found?.control.id ?? String(action.id ?? "");
-  if (declines(id, found?.control.label ?? "")) return false;
+  if (declines(id, found?.control.label ?? "") || [12, 3, 15].includes(found?.control.vkey ?? -1)) return false;
   // The Enter button of the main toolbar, or any other button of a popup.
   return /^wnd\[0\]\/tbar\[0\]\/btn\[0\]$/.test(id) || isPopup(found?.control.window ?? id);
 }
