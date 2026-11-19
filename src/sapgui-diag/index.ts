@@ -12,11 +12,16 @@
  * Acting is keyboard and mouse (ps/input-lib.ps1): the command field, function
  * keys, and clicks at the cell SAP gave each element, mapped to pixels on the
  * window's screen area. A typed value reaches SAP, and so this reader, at the
- * next Enter or function key.
+ * next Enter or function key: until then the view shows it marked as typed
+ * (`Typed`), and after that step a field that does not show it is reported.
  *
  * Ids in actions: a SAP field name ("VBAK-VBELN"), a function code in braces
  * ("{HEAD}", a button or tab), a table cell "FIELD[n]" (n = row of the table
- * on show, 0-based), or a position "@row,col" (a list line, anything else).
+ * on show, 0-based), or a position "@row,col" (the element there, a list
+ * line, anything else). Ids written nearly right resolve by the rule of
+ * core/ids.ts when they then mean one thing (`findTarget`); a name several
+ * elements share is refused with their places. What SAP greys out is
+ * refused before any input (`greyedRefusal`).
  */
 import { appendFileSync, mkdirSync } from "node:fs";
 import type { Server } from "node:net";
@@ -24,7 +29,8 @@ import { join } from "node:path";
 import { ONE_LINE_NOTE, oneLine } from "../core/action.js";
 import { ActionError, type Action, type Assessment, type DoctorCheck, type Driver, type LookOptions, type SessionInfo, type Surface } from "../core/types.js";
 import { CLOSES_SESSIONS, commitCode, commitWord, isLogonScreen, LOGON_REFUSAL, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
-import { DiagDecoder, type DiagElement, type DiagKey, type DiagScreen, type DiagWindow, diagView } from "../diag/index.js";
+import { DiagDecoder, type DiagElement, type DiagKey, type DiagScreen, type DiagWindow, diagView, menuView } from "../diag/index.js";
+import { notationNote } from "../core/notation.js";
 import { HostError, powershellExe, PsHost, READ_TIMEOUT_MS } from "../sapgui/host.js";
 import type { Transport } from "../sapgui/facts.js";
 import { vkeyNumber } from "../sapgui/keys.js";
@@ -44,6 +50,8 @@ interface Connection {
   /** Bumped on every screen, per mode. */
   steps: Map<number, number>;
   waiters: (() => void)[];
+  /** Per mode: values typed in SAP GUI that SAP has not received yet (see Typed). */
+  typed: Map<number, Typed[]>;
 }
 
 interface WindowFacts {
@@ -170,82 +178,292 @@ export function assessDiag(s: DiagScreen, action: Action, target?: Target): Asse
 /** What an action's id means on the screen. */
 export type Target =
   | { kind: "element"; element: DiagElement; window: DiagWindow; row: number; col: number; what: string }
-  | { kind: "cell"; window: DiagWindow; row: number; col: number; width: number; input: boolean; what: string }
+  | { kind: "cell"; window: DiagWindow; row: number; col: number; width: number; input: boolean; table: string; index: number; column: number; what: string }
   | { kind: "list"; window: DiagWindow; row: number; col: number; what: string }
   | { kind: "tab"; window: DiagWindow; row: number; col: number; text: string; what: string }
   | { kind: "key"; key: DiagKey; what: string }
   | { kind: "gridrow"; window: DiagWindow; row: number; col: number; index: number; what: string }
-  | { kind: "node"; window: DiagWindow; row: number; col: number; line: number; depth: number; header: boolean; what: string };
+  | { kind: "node"; window: DiagWindow; row: number; col: number; line: number; depth: number; header: boolean; disabled: boolean; what: string };
 
-export function resolveTarget(s: DiagScreen, action: Action): Target | undefined {
-  const w = active(s);
-  const raw = String(action.id ?? action.name ?? "").trim();
-  if (!raw) return undefined;
+/** What an id means: one target, several (refused, with the list), or nothing. */
+export type Found = { target: Target } | { several: string[] } | { none: true };
+
+/** The tree nodes on show (those whose parents are all open), in the order they are drawn. */
+function shownNodes(tree: NonNullable<DiagWindow["controls"][number]["tree"]>) {
+  const byKey = new Map(tree.nodes.map((x) => [x.key, x]));
+  return tree.nodes.filter((x) => {
+    if (x.hidden) return false;
+    for (let p = byKey.get(x.parent); p; p = byKey.get(p.parent)) if (!p.expanded) return false;
+    return true;
+  });
+}
+
+const same = (a: string, b: string, ci: boolean) => (ci ? a.toUpperCase() === b.toUpperCase() : a === b);
+
+/**
+ * The target of an id written as the view writes it; `ci` compares names and
+ * function codes in any case. A name that several elements share is refused
+ * with their positions, never guessed among.
+ */
+function lookup(w: DiagWindow, raw: string, action: Action, ci: boolean): Found {
   const pos = /^@(\d+),(\d+)$/.exec(raw);
   if (pos) {
     const row = Number(pos[1]);
     const col = Number(pos[2]);
+    // A field, a button or a box at that place is the element itself; anything else is a point of the screen (a list line).
+    const e = w.elements.find((x) => !x.hidden && x.row === row && x.col <= col && col < x.col + Math.max(1, x.width) && x.kind !== "label" && x.kind !== "group");
+    if (e) return { target: { kind: "element", element: e, window: w, row: e.row, col: e.col, what: `${e.kind} ${e.name || `@${e.row},${e.col}`}` } };
     const cell = w.list?.rows.find((r) => r.row === row)?.cells.find((c) => c.col <= col && col < c.col + Math.max(1, c.width));
-    return { kind: "list", window: w, row, col, what: cell ? `"${clean(cell.text)}"` : `@${row},${col}` };
+    return { target: { kind: "list", window: w, row, col, what: cell ? `"${clean(cell.text)}"` : `@${row},${col}` } };
   }
   const fc = /^\{(.+)\}$/.exec(raw)?.[1];
   if (fc) {
     for (const ts of w.tabstrips) {
-      const t = ts.tabs.find((x) => x.fcode === fc);
-      if (t) return { kind: "tab", window: w, row: t.row, col: t.col, text: clean(t.text), what: `tab "${clean(t.text)}"` };
+      const t = ts.tabs.find((x) => same(x.fcode, fc, ci));
+      if (t) return { target: { kind: "tab", window: w, row: t.row, col: t.col, text: clean(t.text), what: `tab "${clean(t.text)}"` } };
     }
-    const b = w.elements.find((e) => e.fcode === fc && !e.hidden);
-    if (b) return { kind: "element", element: b, window: w, row: b.row, col: b.col, what: `button "${clean(b.text || b.tooltip)}"` };
-    const k = [...w.toolbar, ...w.keys].find((x) => x.fcode === fc);
-    if (k) return { kind: "key", key: k, what: `button "${clean(k.text)}"` };
-    // a tree node by its key: its line among the nodes on show (those whose parents are all open)
+    const b = w.elements.find((e) => !!e.fcode && same(e.fcode, fc, ci) && !e.hidden);
+    if (b) return { target: { kind: "element", element: b, window: w, row: b.row, col: b.col, what: `button "${clean(b.text || b.tooltip)}"` } };
+    // An enabled key first: a greyed-out toolbar button may share its function code with a key that works.
+    const ks = [...w.toolbar, ...w.keys].filter((x) => !!x.fcode && same(x.fcode, fc, ci));
+    const k = ks.find((x) => x.enabled) ?? ks[0];
+    if (k) return { target: { kind: "key", key: k, what: `button "${clean(k.text || k.tooltip)}"` } };
+    // a tree node by its key: its line among the nodes on show
     for (const c of w.controls) {
       if (!c.tree || !c.area) continue;
-      const byKey = new Map(c.tree.nodes.map((x) => [x.key, x]));
-      const shown = c.tree.nodes.filter((x) => {
-        if (x.hidden) return false;
-        for (let p = byKey.get(x.parent); p; p = byKey.get(p.parent)) if (!p.expanded) return false;
-        return true;
-      });
-      const line = shown.findIndex((x) => x.key === fc);
+      const shown = shownNodes(c.tree);
+      const line = shown.findIndex((x) => same(x.key, fc, ci));
       if (line >= 0) {
         const node = shown[line] as (typeof shown)[number];
-        return { kind: "node", window: w, row: c.area.row, col: c.area.col, line, depth: node.depth, header: c.tree.headers.length > 1, what: `tree node "${clean(node.text)}"` };
+        return { target: { kind: "node", window: w, row: c.area.row, col: c.area.col, line, depth: node.depth, header: c.tree.headers.length > 1, disabled: node.disabled, what: `tree node "${clean(node.text)}"` } };
       }
     }
-    return undefined;
+    return { none: true };
   }
   const cell = /^(.+)\[(\d+)\]$/.exec(raw);
   if (cell) {
+    const [, name = "", n = ""] = cell;
+    const index = Number(n);
     // a grid row: the grid's container name and the row number of the view
-    const grid = w.controls.find((c) => c.grid && (c.container === cell[1] || String(c.id) === cell[1] || (!c.area && cell[1] === "value-help")));
+    const grid = w.controls.find((c) => c.grid && ((c.container !== undefined && same(c.container, name, ci)) || String(c.id) === name || (!c.area && same(name, "value-help", ci))));
     if (grid?.grid && !grid.area) {
       // a value help's hit list: a control without a place on the dynpro; it opens with its first row selected
-      const index = Number(cell[2]);
-      if (index >= grid.grid.totalRows) return undefined;
+      if (index >= grid.grid.totalRows) return { none: true };
       const r = grid.grid.rows.find((x) => x.index === index);
-      return { kind: "gridrow", window: w, row: -1, col: -1, index, what: `row ${index} of the hit list${r ? ` (${r.cells.slice(0, 3).join(" | ")})` : ""}` };
+      return { target: { kind: "gridrow", window: w, row: -1, col: -1, index, what: `row ${index} of the hit list${r ? ` (${r.cells.slice(0, 3).join(" | ")})` : ""}` } };
     }
     if (grid?.area && grid.grid) {
-      const index = Number(cell[2]);
-      if (index >= grid.grid.totalRows) return undefined;
+      if (index >= grid.grid.totalRows) return { none: true };
       const r = grid.grid.rows.find((x) => x.index === index);
-      return { kind: "gridrow", window: w, row: grid.area.row, col: grid.area.col, index, what: `row ${index} of ${cell[1]}${r ? ` (${r.cells.slice(0, 4).join(" | ")})` : ""}` };
+      return { target: { kind: "gridrow", window: w, row: grid.area.row, col: grid.area.col, index, what: `row ${index} of ${grid.container ?? name}${r ? ` (${r.cells.slice(0, 4).join(" | ")})` : ""}` } };
     }
     for (const t of w.tables) {
-      const c = t.columns.find((x) => x.name === cell[1]);
-      const r = t.rows[Number(cell[2])];
-      if (c && r) return { kind: "cell", window: w, row: r.row, col: c.col, width: c.width, input: !!r.cells[c.index]?.input, what: `${cell[1]} in row ${cell[2]}` };
+      const c = t.columns.find((x) => same(x.name, name, ci));
+      const r = t.rows[index];
+      if (c && r) return { target: { kind: "cell", window: w, row: r.row, col: c.col, width: c.width, input: !!r.cells[c.index]?.input, table: t.name, index, column: c.index, what: `${c.name} in row ${index}` } };
     }
-    return undefined;
+    return { none: true };
   }
+  const named = w.elements.filter((e) => !e.hidden && !!e.name && same(e.name, raw, ci));
+  // The field a label is named after is meant; for set, the one that takes input.
+  const inputs = action.do === "set" ? named.filter((x) => x.input) : [];
+  const fields = named.filter((x) => x.kind !== "label");
+  const best = inputs.length ? inputs : fields.length ? fields : named;
+  if (best.length > 1) return { several: best.map((e) => `@${e.row},${e.col} (${e.kind} ${e.name}${e.text ? ` "${clean(e.text).slice(0, 30)}"` : ""})`) };
+  const e = best[0];
+  if (e) return { target: { kind: "element", element: e, window: w, row: e.row, col: e.col, what: `${e.kind} ${e.name}` } };
   // a toolbar button by its text ("Back", "Display document flow")
   const k = [...w.toolbar, ...w.keys].find((x) => clean(x.text).toLowerCase() === raw.toLowerCase());
-  const named = w.elements.filter((e) => e.name === raw && !e.hidden);
-  const e = (action.do === "set" ? named.find((x) => x.input) : undefined) ?? named.find((x) => x.kind !== "label") ?? named[0];
-  if (e) return { kind: "element", element: e, window: w, row: e.row, col: e.col, what: `${e.kind} ${e.name}` };
-  if (k && (action.do === "press" || action.do === "click")) return { kind: "key", key: k, what: `button "${clean(k.text)}"` };
+  if (k && (action.do === "press" || action.do === "click")) return { target: { kind: "key", key: k, what: `button "${clean(k.text)}"` } };
+  return { none: true };
+}
+
+/**
+ * What an action's id means on the screen, by the rule every surface uses
+ * (core/ids.ts `resolveId`): the id as the view writes it, then an id
+ * written nearly right when it then means one thing only:
+ * - in another case (`vbak-vbeln`, `{head}`): SAP names are upper case;
+ * - as a scripting id or handle (`wnd[0]/usr/ctxtVBAK-VBELN`, `ctxtVBAK-VBELN`);
+ * - a table cell with a column and a row (`RV45A-MABNR[3,0]`): the field's
+ *   name and the row say which cell it is, the column index does not;
+ * - a table's own name with a cell's place (`TC_ITEMS[1,0]`): the cell at
+ *   that column (as the table shows them) and row; a grid's with [col,row]:
+ *   that row;
+ * - `NAME[0]` for a field that is not in a table: the field.
+ */
+export function findTarget(s: DiagScreen, action: Action): Found {
+  const w = active(s);
+  const raw = String(action.id ?? action.name ?? "").trim();
+  if (!raw) return { none: true };
+  const exact = lookup(w, raw, action, false);
+  if (!("none" in exact)) return exact;
+  const last = raw.includes("/") ? raw.slice(raw.lastIndexOf("/") + 1) : raw;
+  // A scripting type prefix (ctxt, txt, chk, btn...): lower case before SAP's upper-case name, or one of the known ones.
+  const bare = /^[a-z]+[A-Z%<*]/.test(last) ? last.replace(/^[a-z]+/, "") : last.replace(/^(?:ctxt|txt|lbl|chk|rad|cmb|btn|tbl|pwd)(?=.)/i, "");
+  const forms = [...new Set([raw, last, bare])];
+  const unique = (f: Found): { target: Target } | undefined => ("target" in f ? f : undefined);
+  for (const f of forms) {
+    const hit = unique(lookup(w, f, action, true));
+    if (hit) return hit;
+  }
+  for (const f of forms) {
+    const two = /^(.+)\[(\d+),(\d+)\]$/.exec(f);
+    if (two) {
+      const [, name = "", col = "", row = ""] = two;
+      const table = w.tables.find((t) => same(t.name, name, true));
+      if (table) {
+        const c = [...table.columns].sort((a, b) => a.position - b.position)[Number(col)];
+        const hit = c && unique(lookup(w, `${c.name}[${row}]`, action, false));
+        if (hit) return hit;
+        continue;
+      }
+      const hit = unique(lookup(w, `${name}[${row}]`, action, true));
+      if (hit) return hit;
+    }
+    const zero = /^(.+)\[0\]$/.exec(f);
+    if (zero?.[1] && !w.tables.some((t) => t.columns.some((c) => same(c.name, zero[1] as string, true)))) {
+      const hit = unique(lookup(w, zero[1], action, true));
+      if (hit?.target.kind === "element") return hit;
+    }
+  }
+  return { none: true };
+}
+
+/** findTarget for one target: undefined when the id means nothing; a name that means several is refused. */
+export function resolveTarget(s: DiagScreen, action: Action): Target | undefined {
+  const f = findTarget(s, action);
+  if ("several" in f) {
+    const ident = String(action.id ?? action.name ?? "");
+    throw new ActionError(`"${ident}" names ${f.several.length} elements on this screen: ${f.several.slice(0, 8).join(", ")}${f.several.length > 8 ? ", ..." : ""}. Use one of these ids (@row,col).`);
+  }
+  return "target" in f ? f.target : undefined;
+}
+
+/** The ids the active window offers, as the view writes them: what a refused id is compared with. */
+export function idsOf(s: DiagScreen): string[] {
+  const w = active(s);
+  const out: string[] = [];
+  for (const e of w.elements) if (!e.hidden && e.name && e.kind !== "label" && e.kind !== "group") out.push(e.name);
+  for (const e of w.elements) if (!e.hidden && e.fcode) out.push(`{${e.fcode}}`);
+  for (const t of w.tabstrips) for (const tab of t.tabs) if (tab.fcode) out.push(`{${tab.fcode}}`);
+  for (const t of w.tables) for (const c of t.columns) out.push(`${c.name}[0]`);
+  for (const c of w.controls) if (c.grid) out.push(`${c.container ?? (c.area ? String(c.id) : "value-help")}[0]`);
+  for (const k of [...w.toolbar, ...w.keys]) if (k.enabled && k.text) out.push(clean(k.text));
+  return [...new Set(out)];
+}
+
+/** Edits between two strings (Levenshtein), in any case. */
+function distance(a: string, b: string): number {
+  const x = a.toLowerCase();
+  const y = b.toLowerCase();
+  let prev = Array.from({ length: y.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= x.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= y.length; j++) cur[j] = Math.min((prev[j] ?? 0) + 1, (cur[j - 1] ?? 0) + 1, (prev[j - 1] ?? 0) + (x[i - 1] === y[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[y.length] ?? 0;
+}
+
+/** The refusal for an id that means nothing on the screen, with the closest ids the screen has. */
+export function noTargetText(s: DiagScreen, ident: string): string {
+  const want = ident.trim().replace(/^.*\//, "");
+  const close = idsOf(s)
+    .map((id) => ({ id, d: distance(id, want) / Math.max(id.length, want.length, 1) }))
+    .sort((a, b) => a.d - b.d)
+    .slice(0, 3)
+    .map((x) => x.id);
+  return `No control "${ident}" on this screen${close.length ? ` (closest: ${close.join(", ")})` : ""}. Use a field name, {FCODE}, FIELD[n] or @row,col from sap_look (the screen may have changed).`;
+}
+
+/** The refusal for a button, a key, a tree node or a menu entry SAP shows greyed out: SAP would do nothing with it. */
+export const greyedOut = (what: string): string =>
+  `${what} is greyed out: SAP does not offer it on this screen now (in this mode, or for this data), so nothing was clicked. Look at the screen for the function that is offered, or for what has to be chosen first.`;
+
+/**
+ * Why an action goes to something SAP greys out on this screen, or
+ * undefined: said at once, before any input reaches SAP GUI.
+ */
+export function greyedRefusal(s: DiagScreen, action: Action, target: Target | undefined): string | undefined {
+  const w = active(s);
+  const clicks = /^(press|click|dblclick|select|f4)$/.test(action.do);
+  if (target?.kind === "key" && !target.key.enabled && clicks) return greyedOut(target.what);
+  if (target?.kind === "node" && target.disabled && clicks) return greyedOut(target.what);
+  if (target?.kind === "element") {
+    const e = target.element;
+    if (e.kind === "button" && !e.input && clicks) return greyedOut(target.what);
+    if ((e.kind === "checkbox" || e.kind === "radio") && !e.input && (action.do === "check" || clicks))
+      return `${target.what} cannot be changed here: it is greyed out (read-only). It stays ${e.checked ? "checked" : "unchecked"}.`;
+  }
+  const all = [...w.toolbar, ...w.keys];
+  if (action.do === "key") {
+    const n = vkeyNumber(action.key ?? action.value);
+    const ks = all.filter((k) => k.vkey === n);
+    if (n !== undefined && n !== 0 && ks.length && ks.every((k) => !k.enabled)) return greyedOut(`key ${ks[0]?.key ?? n} "${clean(ks[0]?.text || ks[0]?.tooltip)}"`);
+  }
+  if (action.do === "okcode") {
+    const v = String(action.value ?? "").trim().toUpperCase();
+    const ks = all.filter((k) => k.fcode && k.fcode.toUpperCase() === v);
+    const live = w.elements.some((e) => e.fcode?.toUpperCase() === v && e.input) || w.tabstrips.some((t) => t.tabs.some((x) => x.fcode.toUpperCase() === v));
+    if (v && ks.length && ks.every((k) => !k.enabled) && !live) return greyedOut(`function ${v} ("${clean(ks[0]?.text || ks[0]?.tooltip)}")`);
+  }
   return undefined;
+}
+
+/** A value typed in SAP GUI that SAP has not received yet: kept until the next screen comes. */
+export interface Typed {
+  /** The step of the mode it was typed on: it holds while no new screen came. */
+  step: number;
+  window: number;
+  program: string;
+  dynpro: string;
+  name: string;
+  row: number;
+  col: number;
+  /** A cell of a table control: the table, the row of the table on show and the column index. */
+  table?: { name: string; index: number; column: number };
+  value: string;
+}
+
+/** A copy of the screen with the typed values in their fields, marked as typed. */
+export function withTyped(s: DiagScreen, typed: Typed[]): DiagScreen {
+  if (!typed.length) return s;
+  const copy = structuredClone(s);
+  for (const t of typed) {
+    const w = copy.windows[t.window];
+    if (!w || w.program !== t.program || w.dynpro !== t.dynpro) continue;
+    if (t.table) {
+      const cell = w.tables.find((x) => x.name === t.table?.name)?.rows[t.table.index]?.cells[t.table.column];
+      if (cell) Object.assign(cell, { text: t.value, typed: true });
+      continue;
+    }
+    const e = w.elements.find((x) => x.name === t.name && x.row === t.row && x.col === t.col);
+    if (e) Object.assign(e, { text: t.value, typed: true, required: false });
+  }
+  return copy;
+}
+
+/** "0010" and "10", "or" and "OR" are the same value as SAP shows it. */
+const sameValue = (a: string, b: string) => {
+  const n = (v: string) => clean(v).toUpperCase().replace(/^0+(?=\d)/, "");
+  return n(a) === n(b);
+};
+
+/**
+ * After the step that sent them: the typed values the screen does not show,
+ * when it is still the screen they were typed on (a field SAP changed or
+ * did not take). One line each.
+ */
+export function typedMisses(typed: Typed[], after: DiagScreen): string[] {
+  const out: string[] = [];
+  for (const t of typed) {
+    const w = after.windows[t.window];
+    if (!w || w.program !== t.program || w.dynpro !== t.dynpro) continue;
+    const now = t.table ? w.tables.find((x) => x.name === t.table?.name)?.rows[t.table.index]?.cells[t.table.column]?.text : w.elements.find((x) => x.name === t.name && x.row === t.row && x.col === t.col)?.text;
+    if (now === undefined || sameValue(now, t.value)) continue;
+    out.push(`${t.name}${t.table ? `[${t.table.index}]` : ""} shows "${clean(now)}" after this step, not the typed "${t.value}": SAP changed it or did not take it.`);
+  }
+  return out;
 }
 
 class DiagDriver implements Driver {
@@ -275,13 +493,27 @@ class DiagDriver implements Driver {
     return this.conn.open && !!this.conn.decoder.screen(this.mode);
   }
 
+  /** The values typed on the screen on show that SAP has not received yet; those of an earlier screen are dropped. */
+  private typed(): Typed[] {
+    const step = this.conn.steps.get(this.mode) ?? 0;
+    const kept = (this.conn.typed.get(this.mode) ?? []).filter((t) => t.step === step);
+    this.conn.typed.set(this.mode, kept);
+    return kept;
+  }
+
   async look(options: LookOptions): Promise<string> {
-    return diagView(this.screen(), options.compact ? {} : { maxRows: 100_000 });
+    const s = this.screen();
+    if (options.id?.trim().toLowerCase() === "mbar") return menuView(s);
+    return diagView(withTyped(s, this.typed()), options.compact ? {} : { maxRows: 100_000 });
   }
 
   async assess(action: Action): Promise<Assessment> {
     const s = this.screen();
-    return assessDiag(s, action, resolveTarget(s, action));
+    const target = resolveTarget(s, action);
+    // Something SAP greys out is refused here, before the guard could ask the user to confirm it.
+    const grey = greyedRefusal(s, action, target);
+    if (grey) throw new ActionError(grey);
+    return assessDiag(s, action, target);
   }
 
   /** The SAP GUI window of this session (and its popups), by title. */
@@ -333,8 +565,10 @@ class DiagDriver implements Driver {
     let goes = true;
     let note: string;
     const target = resolveTarget(s, action);
+    const grey = greyedRefusal(s, action, target);
+    if (grey) throw new ActionError(grey);
     const need = () => {
-      if (!target) throw new ActionError(`Nothing on the screen matches "${String(action.id ?? action.name ?? "")}": use a field name, {FCODE}, FIELD[n] or @row,col from the view.`);
+      if (!target) throw new ActionError(noTargetText(s, String(action.id ?? action.name ?? "")));
       return target;
     };
     switch (action.do) {
@@ -357,7 +591,13 @@ class DiagDriver implements Driver {
         // Typed with the keyboard: a line break would be the Enter key, so it is typed as a space.
         const single = oneLine(String(action.value ?? ""));
         await send({ do: "set", x, y, value: single.text, settle: 150 });
-        note = `typed into ${t.what}; SAP gets it with the next Enter or function key${single.had ? ` (${ONE_LINE_NOTE})` : ""}`;
+        // SAP, and so this reader, sees the value with the next Enter: until then the view shows it as typed.
+        const name = t.kind === "element" ? t.element.name : t.what.split(" ")[0] ?? "";
+        const typed = this.typed().filter((x) => !(x.window === t.window.index && x.row === t.row && x.col === t.col && x.name === name));
+        typed.push({ step: before, window: t.window.index, program: t.window.program, dynpro: t.window.dynpro, name, row: t.row, col: t.col, ...(t.kind === "cell" ? { table: { name: t.table, index: t.index, column: t.column } } : {}), value: single.text });
+        this.conn.typed.set(this.mode, typed);
+        const notation = notationNote(single.text, diagView(s));
+        note = `set ${t.kind === "cell" ? `${name}[${t.index}]` : name || t.what} = "${single.text}" (typed; SAP gets it with the next Enter or function key)${single.had ? ` (${ONE_LINE_NOTE})` : ""}${notation ? ` (${notation})` : ""}`;
         goes = false;
         break;
       }
@@ -444,10 +684,16 @@ class DiagDriver implements Driver {
       default:
         throw new ActionError(`"${action.do}" is not supported by the DIAG method (okcode, key, set, press, click, dblclick, check, select, f4, focus).`);
     }
+    const sent = goes ? (this.conn.typed.get(this.mode) ?? []).filter((x) => x.step === before) : [];
     if (goes && !(await this.waitStep(before))) return `${note}; SAP has not answered yet`;
     const after = this.conn.decoder.screen(this.mode);
-    const msg = after?.message?.text ? `; status ${after.message.type}: ${after.message.text}` : "";
-    return `${note}${msg}`;
+    // The status bar is the view's (sbar line): the server puts an error, a warning or a termination first.
+    const lines = [note];
+    if (after && sent.length) lines.push(...typedMisses(sent, after));
+    // A termination message that was confirmed: SAP has ended the transaction, and the answer says so.
+    if (goes && after && s.message?.type === "A" && after.message?.type !== "A")
+      lines.push(`SAP ended transaction ${s.session.tcode ?? ""} after the termination message "${clean(s.message.text)}": input that was not saved there is lost. The screen below is where SAP went; start the transaction again to retry.`);
+    return lines.join("\n");
   }
 
   async screenshot(): Promise<Buffer> {
@@ -501,7 +747,7 @@ export function sapguiDiagSurface(env: Record<string, string | undefined>, optio
     port,
     ...(options.log ? { log: options.log } : {}),
     onConnection(target) {
-      const c: Connection = { n: n++, target, decoder: new DiagDecoder(), open: true, steps: new Map(), waiters: [] };
+      const c: Connection = { n: n++, target, decoder: new DiagDecoder(), open: true, steps: new Map(), waiters: [], typed: new Map() };
       c.decoder.onScreen = (_s, mode) => {
         c.steps.set(mode, (c.steps.get(mode) ?? 0) + 1);
         for (const w of c.waiters.splice(0)) w();

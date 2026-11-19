@@ -183,6 +183,8 @@ export interface DiagElement {
   path: string[];
   /** Raw element type of the protocol, for debugging. */
   etype: number;
+  /** Typed in SAP GUI and not yet sent to SAP: set by the surface on a copy of the screen, never by the decoder. */
+  typed?: boolean;
 }
 
 export interface DiagTab {
@@ -235,6 +237,8 @@ export interface DiagTableCell {
   key?: string;
   valueList?: string;
   maxLength?: number;
+  /** Typed in SAP GUI and not yet sent to SAP (see DiagElement.typed). */
+  typed?: boolean;
 }
 
 export interface DiagTableRow {
