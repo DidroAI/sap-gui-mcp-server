@@ -155,24 +155,44 @@ function readFirst(sock: Socket, timeoutMs: number): Promise<{ payload: Buffer; 
   });
 }
 
-function relay(client: Socket, server: Socket, tap: Tap | undefined, first: Buffer[]): void {
-  for (const c of first) if (c.length) tap?.data(0, c);
+/**
+ * Relays both ways. The copy given to the tap never stops the traffic: a tap
+ * that throws loses that chunk, not SAP GUI's connection. A side that reads
+ * slower than the other writes pauses the writer, so the relay holds no more
+ * than the sockets' own buffers.
+ */
+function relay(client: Socket, server: Socket, tap: Tap | undefined, first: Buffer[], log: (msg: string) => void = () => {}): void {
+  let tapErrors = 0;
+  const copy = (dir: 0 | 1, c: Buffer) => {
+    try {
+      tap?.data(dir, c);
+    } catch (e) {
+      if (tapErrors++ === 0) log(`reading the traffic failed (the connection goes on): ${(e as Error).message}`);
+    }
+  };
+  for (const c of first) if (c.length) copy(0, c);
   let closed = false;
   const close = () => {
     if (closed) return;
     closed = true;
     client.destroy();
     server.destroy();
-    tap?.close();
+    try {
+      tap?.close();
+    } catch {
+      // the connection is gone either way
+    }
   };
-  client.on("data", (c: Buffer) => {
-    tap?.data(0, c);
-    server.write(c);
-  });
-  server.on("data", (c: Buffer) => {
-    tap?.data(1, c);
-    client.write(c);
-  });
+  const pass = (from: Socket, to: Socket, dir: 0 | 1) =>
+    from.on("data", (c: Buffer) => {
+      copy(dir, c);
+      if (!to.write(c)) {
+        from.pause();
+        to.once("drain", () => from.resume());
+      }
+    });
+  pass(client, server, 0);
+  pass(server, client, 1);
   for (const s of [client, server]) {
     s.on("end", close);
     s.on("error", close);
@@ -202,11 +222,11 @@ export function startRouter(opts: RouterOptions = {}): Promise<Server> {
         // another router follows: pass the request on, one hop further
         onward.write(niFrame(buildRoute({ ...route, next: route.next + 1 })));
         if (rest.length) onward.write(rest);
-        relay(client, onward, tap, []);
+        relay(client, onward, tap, [], log);
       } else {
         client.write(niFrame(PONG));
         if (rest.length) onward.write(rest);
-        relay(client, onward, tap, [rest]);
+        relay(client, onward, tap, [rest], log);
       }
       log(`routed to ${target.host}:${target.service}`);
     } catch (e) {
