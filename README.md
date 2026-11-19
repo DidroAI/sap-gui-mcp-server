@@ -213,6 +213,18 @@ the screen, and a typed value reaches SAP (and the view) with the next Enter
 or function key. It cannot read connections encrypted with SNC. The server
 must be running before you log on, since SAP GUI connects through it.
 
+All the actions of the other surfaces work, by keyboard first: function
+keys and the command field for buttons, Ctrl+Home and the arrow keys to a
+grid cell or a tree node, Page Down and Page Up for table controls and
+lists. The mouse goes only where SAP GUI has no key (into a field, a
+dropdown, a row selector), at a point computed from the cell size SAP GUI
+reports in the traffic. A dropdown's entries are not in the traffic (SAP
+GUI keeps them): `combo` chooses by the text the dropdown shows, and says
+which key SAP got. An action ends when SAP's answer to the request it made
+has come through the router, not after a fixed time. Several sessions
+(`/o`) are matched to their windows by more than the title (the status bar,
+and the window each was first matched to).
+
 ### Web GUI and Fiori in Chrome
 
 The server attaches to the Chrome you are using, in this order:
@@ -552,6 +564,8 @@ Every setting is an environment variable of the server process.
 | `SAP_SURFACES` | `sapgui,webgui,fiori` on Windows, `webgui,fiori` elsewhere | which kinds of session to look for |
 | `SAP_GUI_METHOD` | scripting | `diag` reads SAP GUI from its traffic instead of scripting (experimental) |
 | `SAP_DIAG_PORT` | `3298` | port of the local SAProuter for `SAP_GUI_METHOD=diag` |
+| `SAP_DIAG_CELL` | from the traffic | `cw,ch[,x0,y0]`: the pixel size of SAP GUI's character cell (and the offset of the first one in the screen area), if the `diag` method's clicks miss on a theme or scaling |
+| `SAP_DIAG_REQUEST_MS` | `3000` | how long the `diag` method waits for SAP GUI to send a request after a key or a click, before it says the input may have missed |
 | `SAP_DIAG_CAPTURE` | off | a folder where the `diag` method keeps the raw traffic, to debug the decoder. It holds everything SAP GUI sent and received, your logon included: keep it local and delete it after use |
 | `SAP_CHROME_CDP` | the running Chrome, Chrome beta or Edge | a Chrome DevTools endpoint to attach to, e.g. `http://127.0.0.1:9333` |
 | `SAP_VIEW` | `diff` | `full`: every action answers with the whole screen |
