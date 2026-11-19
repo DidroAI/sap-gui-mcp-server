@@ -205,11 +205,12 @@ SAP GUI and the SAP system (SAP's DIAG protocol) instead:
    start of its SAProuter string (before your company's router, if there is
    one), and log on again.
 
-The server passes the traffic on unchanged and decodes a copy: the screen as
+The server passes SAP GUI's traffic on and decodes a copy: the screen as
 SAP sent it, with SAP's field names, every row of tables, grids and lists,
-and tree nodes. Nothing is loaded into SAP GUI. It cannot read connections
-encrypted with SNC. The server must be running before you log on, since SAP
-GUI connects through it.
+and tree nodes. The bytes go on as they came, except the route request when
+another SAProuter follows, which is passed on one hop further. Nothing is
+loaded into SAP GUI. It cannot read connections encrypted with SNC. The
+server must be running before you log on, since SAP GUI connects through it.
 
 **What the view gives.** The same kind of view as the other surfaces: the
 status bar as an `sbar` line (an error or warning comes first in an
@@ -222,43 +223,92 @@ answer says so. When bytes were lost on the connection, or SAP sent
 something the reader cannot read yet, a `note` line at the end of the view
 says so; `doctor` counts both.
 
-**Ids.** A SAP field name (`VBAK-VBELN`), a function code in braces
-(`{HEAD}`), a table cell `FIELD[n]` with the table's own row number as the
-view prints it (a row not on show is scrolled to first), or `@row,col`.
-Grids and trees go by their container name. An id written nearly right
-(another case, a scripting id such as `wnd[0]/usr/ctxtVBAK-VBELN`, a
-column index) is taken when it means one thing; a name several controls
-share is refused with their places, and an unknown id with the closest ones.
-An action on something SAP greys out is refused before any input.
+**Ids.** A SAP field name (`VBAK-VBELN`), a push button or a tab by its
+function code in braces (`{HEAD}`), a toolbar button or function key by its
+text (`Back`), a table cell `FIELD[n]` with the table's own row number as
+the view prints it (a row not on show is scrolled to first; if it does not
+come on show, nothing is done), or `@row,col`. Grids and trees go by their
+container name. An id written nearly right (another case, a scripting id
+such as `wnd[0]/usr/ctxtVBAK-VBELN`, a column index) is taken when it means
+one thing; in a scripting cell id `FIELD[col,row]` the row counts from the
+first row on show, as scripting counts it. A name several controls share is
+refused with their places, and an unknown id with the closest ones. Toolbar
+buttons and function keys have no function code in the traffic, so
+`{BACK}` does not name one: the refusal lists the keys of the screen (a
+function code can still go through the command field with `okcode`).
 
-**Actions.** All the actions of the other surfaces work, by keyboard first:
-function keys and the command field for buttons, Ctrl+Home and the arrow
-keys to a grid cell or a tree node, Page Down and Page Up for table
-controls and lists. The mouse goes only where SAP GUI has no key (into a
-field, a dropdown, a row selector), at a point computed from the cell size
-SAP GUI reports in the traffic, so SAP GUI's window must be on the screen.
-A dropdown's entries are not in the traffic (SAP GUI keeps them): `combo`
-chooses by the text the dropdown shows, and says which key SAP got.
+**Actions that work.** `okcode`, `key`, `set` (a field, a table cell),
+`press`, `click`, `dblclick` and `select` (buttons, tabs, fields, list
+positions, table rows, grid rows, tree nodes), `check` (checkboxes and
+radio buttons), `focus` (a field, a grid row, a tree node), `f4` (a field),
+`combo` (by the text the dropdown shows: its entries are not in the
+traffic), `scroll` up and down (table controls, lists, grids), `tree`,
+`grid`, `toolbar` (the screen's toolbar by text or a known ALV function
+code such as `&SORT_ASC`; a grid's own toolbar by a button's whole name),
+and `sap_look` with `id`, `rows` and `cols`. Keyboard first: function keys
+and the command field for buttons, Ctrl+Home and the arrow keys to a grid
+cell or a tree node, Page Down and Page Up for table controls and lists.
+The mouse goes only where SAP GUI has no key (into a field, a dropdown, a
+row selector, a grid's column header to give it the focus), at a point
+computed from the cell size SAP GUI reports in the traffic, so SAP GUI's
+window must be on the screen.
 
-**Waits.** An action ends when SAP has answered every request it caused, as
-seen in the traffic, not after a fixed time. If SAP GUI sent nothing after
-a key or a click, or SAP has not answered within the action's `timeout`
-(60 s by default), the answer says so; `sap_look` during a step still
-running says the screen will change. Several sessions (`/o`) are matched
-to their windows by more than the title (the status bar, and the window
-each was first matched to).
+**Actions that are refused, and why.** Each refusal says what to do instead.
+- `focus`, `f4`, `set` and `check` where their first click would press,
+  tick or open something: on a push button, a toolbar button, a tab, a
+  dropdown, a list line, or an element the reader cannot classify (`check`
+  only on checkboxes and radio buttons, `set` only on fields).
+- `scroll`, and `sap_look` with `rows` that would scroll, while values typed
+  with `set` have not reached SAP: a page key would send them.
+- A table control is not paged when its first row on show has no plain
+  field to put the cursor in.
+- Sideways scrolling (the view already has every column SAP sent).
+- A grid toolbar button named by part of its name, and a button found for a
+  word rated safe whose own name says it writes.
+- Anything SAP greys out, and any action on the logon screen.
+- Any input when the session's window cannot be told apart without doubt
+  from another SAP GUI window with the same title (one that may not go
+  through the router), or when that window is minimized.
+- The guard rates an action by the input it sends: any click on a push
+  button or a box with a function code is judged as pressing it, and a
+  click on an element the reader cannot classify is treated as a write.
+
+**Waits.** An action ends when SAP has answered the request its last input
+made (and every request before it), as seen in the traffic, not after a
+fixed time. If SAP GUI sent nothing after a key or a click, or SAP has not
+answered within the action's `timeout` (60 s by default), the answer says
+so; `sap_look` during a step still running says the screen will change.
+If SAP's answer was lost or could not be read on the connection, the action
+says the session state is unknown; the next action is refused until a
+`sap_look`, which takes the last screen read whole as the state.
+
+**Windows.** Several sessions (`/o`) are matched to their windows by title,
+by the system and client in the status bar, by the status bar's message,
+and by the window each was first matched to without doubt.
 
 **Record and replay.** `sap_record` and `sap_replay` work with it: a test
 names controls the way the actions do and records the method, so it is
 replayed with the same method (and not exported to VBS). Information
-popups are passed with their Enter key, a recorded popup confirmation is
-skipped when SAP does not show the popup this time, and a screen damaged in
+popups are passed with their Enter key. A recorded Enter on a popup that
+only informed is not sent when SAP does not show that popup this time (its
+checks still run); the recorded answer to a question (Yes, Save, any button
+of a popup that asks) is never skipped: if SAP does not show the question,
+or shows another popup in its place, the step fails. A screen damaged in
 transit is never judged: the replay waits for a whole one, or fails the
 step with "screen damaged in transit".
 
 **Robustness.** Lost or garbled bytes do not blind the connection: the
 decoder finds its place again and marks the screens that may miss parts.
-The router keeps SAP GUI's connection even if the reader fails.
+A compressed block that says it holds more than 64 MB is not read. The
+router keeps SAP GUI's connection even if the reader fails, and writes what
+went wrong (a refused route, a reader or capture that failed) to the
+server's log (stderr) and to `doctor`.
+
+**Capture.** `SAP_DIAG_CAPTURE=<folder>` keeps a copy of the raw traffic to
+debug the decoder (off by default). The file holds everything SAP GUI sent
+and received, your logon included, and is made readable by its owner only
+where the system allows it. A capture that cannot be written is stopped and
+reported; reading and the logon go on.
 
 **Not verified live yet.** The actions, waits, cell sizes, window matching
 and record/replay of this method have run against synthetic traffic and
@@ -607,7 +657,7 @@ Every setting is an environment variable of the server process.
 | `SAP_DIAG_CELL` | from the traffic | `cw,ch[,x0,y0]`: the pixel size of SAP GUI's character cell (and the offset of the first one in the screen area), if the `diag` method's clicks miss on a theme or scaling |
 | `SAP_DIAG_REQUEST_MS` | `3000` | how long the `diag` method waits for SAP GUI to send a request after a key or a click, before it says the input may have missed |
 | `SAP_DIAG_QUIET_MS` | `60` | how long the traffic must be quiet after SAP's answer before a `diag` action ends |
-| `SAP_DIAG_CAPTURE` | off | a folder where the `diag` method keeps the raw traffic, to debug the decoder. It holds everything SAP GUI sent and received, your logon included: keep it local and delete it after use |
+| `SAP_DIAG_CAPTURE` | off | a folder where the `diag` method keeps the raw traffic, to debug the decoder. It holds everything SAP GUI sent and received, your logon included: keep it local and delete it after use (the file is created readable by its owner only) |
 | `SAP_CHROME_CDP` | the running Chrome, Chrome beta or Edge | a Chrome DevTools endpoint to attach to, e.g. `http://127.0.0.1:9333` |
 | `SAP_VIEW` | `diff` | `full`: every action answers with the whole screen |
 | `SAP_FIORI_WAIT` | full waits | `busy`: faster Fiori waits (busy indicators only, without UI5's RecordReplay) |
