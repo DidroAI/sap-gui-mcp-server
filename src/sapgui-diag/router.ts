@@ -9,9 +9,23 @@
  * its offset moved one hop and that router's answer is returned instead.
  *
  * NI framing: each message is a 4-byte big-endian length and the payload.
- * NI_ROUTE payload: "NI_ROUTE\0", version, NI version, number of hops, talk
- * mode, 2 bytes padding, hops left, route length (uint32 BE), offset of the
- * next hop (uint32 BE), then per hop "host\0service\0password\0".
+ *
+ * The route request, as SAP GUI 8.00 sent it for the router string
+ * /H/127.0.0.1/S/3298/H/<host>/S/3200, with a host name of 10 letters (the
+ * bytes are in test/sapgui-diag/router.test.ts):
+ *
+ *   "NI_ROUTE\0"
+ *   02 28 02 00 00 00 01      7 single bytes
+ *   00 00 00 21               the length of the hop list (33 bytes)
+ *   00 00 00 10               where the next hop starts in it (16)
+ *   "127.0.0.1\0" "3298\0" "\0" "<host>\0" "3200\0" "\0"
+ *
+ * The hop list holds host, service and password of each hop of the router
+ * string, NUL-ended. Byte 2 of the 7 is the number of hops (2) and byte 6
+ * how many are left after the one being contacted (1); the next-hop
+ * position, 16, is the size of the first hop's three strings. Bytes 0, 1
+ * and 3 are passed on as they came; 4 and 5, 0 in the request, are sent
+ * as 0.
  *
  * Nothing here decodes DIAG; `onConnection` gets the raw chunks.
  */
@@ -50,7 +64,7 @@ export function parseRoute(p: Buffer): RouteRequest {
   const niVersion = p[o++] ?? 0;
   o++; // number of hops, recomputed below
   const talkMode = p[o++] ?? 0;
-  o += 2; // padding
+  o += 2; // bytes 4 and 5
   o++; // hops left
   const length = p.readUInt32BE(o);
   const offset = p.readUInt32BE(o + 4);
