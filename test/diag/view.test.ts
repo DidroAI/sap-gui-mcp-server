@@ -93,8 +93,8 @@ describe("diagView", () => {
 
   test("one line per screen row: labels, fields by SAP name and column, their state", () => {
     expect(lines).toContain('r1  ZHDR-TXT@0="Order"  ZHDR-ID@17="4711"  Net value  ZHDR-NETWR@56="1.250,00"  ZHDR-WAERK@78="EUR"');
-    // An empty read-only field is left out; an empty input field is not.
-    expect(lines).toContain("r2  Customer  ZHDR-KUNNR@17=[]  <Create customer>{NEWC}@60");
+    // An empty field shows as empty, read-only ("") or open for input ([]).
+    expect(lines).toContain('r2  Customer  ZHDR-KUNNR@17=[]  ZHDR-NAME@29=""  <Create customer>{NEWC}@60');
     expect(lines).toContain("r3  -- Shipping --");
     expect(lines).toContain("r4  [x] Complete ZHDR-DONE@1  Block  ZHDR-LIFSK@30=dropdown [07]  ZHDR-TYPE@40=[] (required)");
   });

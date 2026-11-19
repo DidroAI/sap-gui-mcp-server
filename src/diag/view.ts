@@ -9,7 +9,7 @@
  * screen, `r<row>` first, the elements of the row from left to right.
  *
  *   label text                      a label
- *   NAME@17="value"                 a read-only field: SAP field name, column, value
+ *   NAME@17="value"                 a read-only field: SAP field name, column, value ("" when empty)
  *   NAME@17=[value]                 a field the user can type in ((required) when it must be filled)
  *   [x] text NAME@1                 a checkbox, (o) a radio button; (read-only) when it cannot be changed
  *   NAME@17=dropdown [key]          a dropdown: the selected key
@@ -25,12 +25,13 @@
  * Row and column are character cells from the top left of the window's
  * screen area: what an action needs to place the cursor. Tabs give their
  * function code, a table control its columns (title and SAP field name)
- * and one line per row with the cells that hold something, a list one line
+ * and one line per row with the cells that hold something (a column a row
+ * line does not name is empty there, or unchecked), a list one line
  * per list row, a grid its columns and rows, a tree its nodes on show, a
  * text editor its text. Long row sets are cut with a line that says how
  * many rows are left out.
  *
- * Left out, and in the model: read-only fields with no content, hidden
+ * Left out, and in the model: read-only fields with no content and no SAP name, hidden
  * elements, tooltips of fields, the entries below the menu bar (`menuView`
  * lists them), what a window behind a popup cannot do (its keys and
  * toolbar).
@@ -82,7 +83,8 @@ function elementText(e: DiagElement): string {
     case "dropdown":
       return `${e.name}${at}=dropdown ${e.input ? `[${e.key ?? ""}]` : quote(e.key ?? "")}`;
     case "field":
-      if (!e.input && !e.text) return "";
+      // An empty read-only field with a SAP name is kept (`NAME@17=""`): a check can say it is empty.
+      if (!e.input && !e.text) return e.name ? `${e.name}${at}=""` : "";
       return `${e.name}${at}=${e.input ? `[${one(e.text)}]` : quote(e.text)}${e.typed ? ` ${TYPED}` : e.required ? " (required)" : ""}`;
     default:
       return e.text ? `${e.name}${at} ${one(e.text)}` : "";
