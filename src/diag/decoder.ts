@@ -109,6 +109,13 @@ class Mode {
 export class DiagDecoder {
   /** Called after each server message that ends a dialog step, with the screen of the mode it was for. */
   onScreen?: (screen: DiagScreen, mode: number) => void;
+  /**
+   * Called when what the server sent for a mode (or for any mode: undefined)
+   * was lost or could not be read, so that a step's answer may never come as
+   * a screen: bytes dropped by the framer, a message that breaks off, does
+   * not decompress or throws, a message that ends a step without a window.
+   */
+  onTrouble?: (mode: number | undefined) => void;
   /** What was not understood, with how often: unknown items, element types, pieces that broke off, lost bytes. At most MAX_NOTES different ones. */
   readonly notes = new Map<string, number>();
   /** Bytes dropped from the stream because they were lost or garbled in transit. */
@@ -133,6 +140,7 @@ export class DiagDecoder {
     this.lostBytes += bytes;
     this.losses++;
     this.note(`${dir === 1 ? "from the server" : "from SAP GUI"}: ${why}`);
+    if (dir === 1) this.trouble(undefined);
     for (const m of this.modes.values()) {
       m.damage();
       if (m.fragments[dir].length) this.note("RFC pieces dropped after lost bytes", m);
@@ -159,6 +167,7 @@ export class DiagDecoder {
         this.message(dir, e.payload, e.suspect === true);
       } catch (err) {
         this.note(`message not read: ${err instanceof Error ? err.message : String(err)}`, this.current);
+        if (dir === 1) this.trouble(undefined);
       }
     }
   }
@@ -174,6 +183,14 @@ export class DiagDecoder {
     const out = new Map<number, DiagScreen>();
     for (const [n, m] of this.modes) if (m.screen) out.set(n, m.screen);
     return out;
+  }
+
+  private trouble(mode: number | undefined): void {
+    try {
+      this.onTrouble?.(mode);
+    } catch {
+      // the listener's failure is not the decoder's
+    }
   }
 
   private mode(n: number): Mode {
@@ -193,6 +210,7 @@ export class DiagDecoder {
     if (!msg) return;
     if (msg.header.length < 8) {
       if (msg.problem) this.note(msg.problem);
+      if (dir === 1) this.trouble(undefined);
       return;
     }
     const number = msg.header[0] ?? 0;
@@ -203,6 +221,7 @@ export class DiagDecoder {
       // Read what can be read, but the screen this message ends may be wrong: say so on it.
       if (suspect) this.note(`${dir === 1 ? "from the server" : "from SAP GUI"}: a frame the next one does not follow (damaged in transit?)`, mode);
       mode.damage();
+      if (dir === 1) this.trouble(number);
     }
     if (dir === 0) return this.fromClient(mode, msg.items);
     if (mode.userActed) {
@@ -219,7 +238,10 @@ export class DiagDecoder {
       } else plain.push(it);
     }
     mode.classic.apply(plain);
-    if (msg.header[5] === 1 && !waitsForAnswer && mode.classic.windows.length) this.emit(number, mode);
+    if (msg.header[5] === 1 && !waitsForAnswer) {
+      if (mode.classic.windows.length) this.emit(number, mode);
+      else this.trouble(number);
+    }
   }
 
   private fromClient(mode: Mode, items: DiagItem[]): void {

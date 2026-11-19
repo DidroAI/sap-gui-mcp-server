@@ -33,22 +33,22 @@ import { type DiagItem, hasId, ID, ITEM, itemKey, UNREAD_IDS } from "./wire.js";
  *   tab lists of tabstrips (sub-id 10, 74 times); box 127 holds a height, a
  *   width and a frame title;
  * - checkbox 128 and radio 129 start with the state ("X" or blank): the
- *   128 is a checkbox of the truth files, the 129 come as a pair of which
+ *   128 is a checkbox as SAP GUI scripting shows the same screen, the 129 come as a pair of which
  *   exactly one is "X"; dropdown 126 holds the 32-character id of its value
  *   list;
  * - cellCheckbox 124 is seen only in the cell descriptions of table
- *   controls, for the columns the truth files list as checkboxes.
+ *   controls, for the columns scripting lists as checkboxes.
  */
 const EL = { name: 114, button: 115, tab: 116, tooltip: 120, cellCheckbox: 124, dropdown: 126, box: 127, checkbox: 128, radio: 129, inputField: 130, outputField: 131, label: 132 } as const;
 
 /**
  * Attribute bits (byte 12 of an element, byte 6 of a table cell
- * description), checked against the truth files of the six screens.
+ * description), checked against what SAP GUI scripting reads of the six screens.
  * readOnly: set on every label and output field; of the input fields, on
- * 36 of the 38 the truth shows read-only and on none of the 12 it shows
+ * 36 of the 38 scripting shows read-only and on none of the 12 it shows
  * editable. hidden: the password field of the logon screen (its tooltip
- * says so), and every cell of the item table's second line, which the truth
- * file does not list. valueHelp: set only on fields with a value help (8 of
+ * says so), and every cell of the item table's second line, which scripting
+ * does not list. valueHelp: set only on fields with a value help (8 of
  * 8; not every field with a value help has it).
  */
 const BIT = { readOnly: 0x01, hidden: 0x02, valueHelp: 0x10 } as const;
@@ -309,7 +309,7 @@ export class ClassicState {
       case 0x15:
         // Empty, in a message of its own (header byte 5 = 2) where an internal mode ends: after /n, and when
         // a transaction is left for the menu. Its controls are gone in SAP GUI: those of the next transaction
-        // reuse their shell ids (cap-1: VA03's 115..122, then VA05's 115 and 116).
+        // reuse their shell ids (seen in a capture: VA03's 115..122, then VA05's 115 and 116).
         this.modeEnded?.(this.session.internalMode ?? 0);
         return;
       case 0x0b: {

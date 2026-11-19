@@ -140,8 +140,9 @@ export async function lookControl(src: RowSource, options: LookOptions): Promise
       if (position(n)?.first === before) break;
       continue;
     }
-    if (n.kind === "table") for (const r of n.table.rows) if (r.index >= from && r.index <= to && !r.empty) collected.set(r.index, r);
-    else pages.push(view(only(src.screen(), n.window, { list: n.window.list as DiagList }), `(the page from line ${p.first})`));
+    if (n.kind === "table") {
+      for (const r of n.table.rows) if (r.index >= from && r.index <= to && !r.empty) collected.set(r.index, r);
+    } else pages.push(view(only(src.screen(), n.window, { list: n.window.list as DiagList }), `(the page from line ${p.first})`));
     if (p.first + p.visible > to || (total !== undefined && p.first + p.visible >= total)) break;
     const before = p.first;
     await src.scrollTo(n.id, p.first + p.visible);

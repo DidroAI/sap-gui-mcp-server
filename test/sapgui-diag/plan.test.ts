@@ -86,8 +86,8 @@ function win(over: Partial<DiagWindow> = {}): DiagWindow {
     guiStatusProgram: "ZPROG",
     size: { rows: 30, cols: 156 },
     menus: [],
-    toolbar: [{ vkey: 28, key: "Ctrl+F4", text: "Sort ascending", tooltip: "", icon: "", enabled: true, fcode: "&OUP" }],
-    keys: [{ vkey: 3, key: "F3", text: "Back", tooltip: "", icon: "", enabled: true, fcode: "BACK" }],
+    toolbar: [{ vkey: 28, key: "Ctrl+F4", text: "Sort ascending", tooltip: "", icon: "", enabled: true }],
+    keys: [{ vkey: 3, key: "F3", text: "Back", tooltip: "", icon: "", enabled: true }],
     elements: [
       el({ kind: "dropdown", name: "ZHDR-TYPE", key: "OR", valueList: "LIST1", row: 1, col: 20, width: 12 }),
       el({ kind: "dropdown", name: "ZHDR-MODE", key: "A", valueList: "LIST2", fcode: "MODE", row: 2, col: 20, width: 12 }),
@@ -103,7 +103,7 @@ function win(over: Partial<DiagWindow> = {}): DiagWindow {
 
 const screen = (windows: DiagWindow[] = [win()]): DiagScreen => ({ mode: 0, step: 1, session: { system: "XYZ", client: "100", user: "U", language: "E" }, windows }) as DiagScreen;
 
-/** Quartz 100% as X-271 measured it: an area at (8,128), 8 x 27 px cells. Trees and grids sit where the cells say. */
+/** Quartz 100% as measured on screen: an area at (8,128), 8 x 27 px cells. Trees and grids sit where the cells say. */
 const AREA: [number, number, number, number] = [8, 128, 1264, 837];
 const CELLS = cellMetrics(AREA, { rows: 30, cols: 156 }, { cw: 8, ch: 27 });
 const geo: Geometry = {
@@ -131,7 +131,7 @@ const keysOf = (p: { steps: { do: string; vk?: number; key?: number; count?: num
   p.steps.map((x) => (x.do === "vk" ? `vk${x.ctrl ? "^" : ""}${x.shift ? "+" : ""}${x.vk}${x.count ? `x${x.count}` : ""}` : x.do === "key" ? `key${x.key}` : x.do));
 
 describe("cells", () => {
-  test("the cell size SAP GUI reports wins over the area's size, and gives the X-271 points at Quartz 100%", () => {
+  test("the cell size SAP GUI reports wins over the area's size, and gives the points measured at Quartz 100%", () => {
     const fromArea = cellMetrics([8, 128, 1264, 571], { rows: 20, cols: 156 });
     const fromTraffic = cellMetrics([8, 128, 1264, 571], { rows: 20, cols: 156 }, { cw: 8, ch: 27 });
     expect([fromArea.cw, fromArea.ch, fromArea.x0, fromArea.y0]).toEqual([8, 27, 3, 25]);
@@ -161,20 +161,18 @@ describe("windows of several sessions", () => {
     expect(w).toMatchObject({ hwnd: 11 });
     expect(bound.get(11)).toBe("0:0");
   });
-  test("two windows with the same title: the remembered one, not the one in front", () => {
+  test("two windows with the same title and two routed modes that show it: the remembered one, not the one in front", () => {
     const bound = new Map([[11, "0:0"]]);
-    expect(pickWindow(two, { key: "0:0", title: "SAP Easy Access" }, bound, () => true)).toMatchObject({ hwnd: 11 });
+    expect(pickWindow(two, { key: "0:0", title: "SAP Easy Access", routed: 2 }, bound, () => true)).toMatchObject({ hwnd: 11 });
     // the other mode gets the other window, without a guess
-    expect(pickWindow(two, { key: "0:1", title: "SAP Easy Access" }, bound, () => true)).toMatchObject({ hwnd: 22 });
+    expect(pickWindow(two, { key: "0:1", title: "SAP Easy Access", routed: 2 }, bound, () => true)).toMatchObject({ hwnd: 22 });
     expect(bound.get(22)).toBe("0:1");
   });
-  test("two unbound windows: the status bar tells them apart, else the window in front, else a refusal", () => {
+  test("two unbound windows: the status bar tells them apart, else a refusal (the window in front is no proof)", () => {
     expect(pickWindow(two, { key: "0:1", title: "SAP Easy Access", status: "Order 4711 saved" }, new Map(), () => true)).toMatchObject({ hwnd: 22 });
     const front = new Map<number, string>();
-    expect(pickWindow(two, { key: "0:1", title: "SAP Easy Access" }, front, () => true)).toMatchObject({ hwnd: 22 });
-    expect(front.size).toBe(0); // a guess is not remembered
-    const back = two.map((w) => ({ ...w, foreground: false }));
-    expect(pickWindow(back, { key: "0:1", title: "SAP Easy Access" }, new Map(), () => true)).toContain("bring the one to drive to the front");
+    expect(pickWindow(two, { key: "0:1", title: "SAP Easy Access" }, front, () => true)).toContain("nothing tells which one is this session");
+    expect(front.size).toBe(0);
   });
   test("a binding of a closed mode is dropped", () => {
     const bound = new Map([[11, "0:0"]]);
@@ -332,8 +330,9 @@ describe("dropdowns", () => {
 
 describe("toolbars", () => {
   test("a full-screen ALV list's button is a key of the screen", () => {
-    const p = planToolbar(screen(), { do: "toolbar", id: "GRID_CONT", button: "&OUP" }, geo);
-    expect(p).toMatchObject({ steps: [{ do: "key", key: 28 }], answer: "yes" });
+    // By its text, or by the words of a known ALV code: the traffic gives toolbar buttons no function code.
+    expect(planToolbar(screen(), { do: "toolbar", id: "GRID_CONT", button: "Sort ascending" }, geo)).toMatchObject({ steps: [{ do: "key", key: 28 }], answer: "yes" });
+    expect(planToolbar(screen(), { do: "toolbar", id: "GRID_CONT", button: "&SORT_ASC" }, geo)).toMatchObject({ steps: [{ do: "key", key: 28 }], answer: "yes" });
   });
   test("a grid's own toolbar: the host's buttons inside the grid's place, by function code words or text", () => {
     expect(planToolbar(screen(), { do: "toolbar", id: "GRID_CONT", button: "&MB_FILTER" }, geo)).toBe("need-buttons");
@@ -370,7 +369,7 @@ describe("the guard for the new actions", () => {
   });
   test("toolbar buttons by their words", () => {
     expect(risk({ do: "toolbar", id: "GRID_CONT", button: "&SORT_ASC" })).toBe("navigate");
-    expect(risk({ do: "toolbar", id: "GRID_CONT", button: "&OUP" })).toBe("navigate");
+    expect(risk({ do: "toolbar", id: "GRID_CONT", button: "Sort ascending" })).toBe("navigate");
     expect(risk({ do: "toolbar", id: "GRID_CONT", button: "&DATA_SAVE" })).toBe("commit");
     expect(risk({ do: "toolbar", id: "GRID_CONT", button: "ZFOO" })).toBe("commit");
   });

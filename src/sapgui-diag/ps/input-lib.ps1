@@ -369,11 +369,28 @@ function Op-Windows {
   $list = New-List
   foreach ($w in (Sap-Windows)) {
     $w.foreground = ($w.hwnd -eq $fg); $w.rect = [SapScreen]::Rect([IntPtr]$w.hwnd)
-    # The status bar's text tells apart two sessions with the same title (the DIAG method compares it with SAP's message).
-    if ($w.kind -eq 'session') { $w.status = (Status-Text ([IntPtr]$w.hwnd) $w.rect) }
+    # The status bar's text tells apart two sessions with the same title (the DIAG method compares it with SAP's message),
+    # and its system field ("ABA (1) 800") which system and client a window shows.
+    if ($w.kind -eq 'session') { $w.status = (Status-Text ([IntPtr]$w.hwnd) $w.rect); $w.info = (Status-Texts ([IntPtr]$w.hwnd) $w.rect) }
     [void]$list.Add($w)
   }
+  # Minimized session windows are listed, never acted on: a window of the same title is not taken for one of them.
+  foreach ($h in [SapScreen]::TopWindows()) {
+    if ([SapScreen]::Class($h) -eq 'SAP_FRONTEND_SESSION' -and [SapScreen]::IsIconic($h)) { [void]$list.Add(@{ hwnd = [long]$h; kind = 'session'; title = [SapScreen]::Title($h); minimized = $true }) }
+  }
   @{ windows = $list }
+}
+
+# Every text in a session window's status bar strip, joined: the message and the system field among them.
+function Status-Texts([IntPtr]$h, $rect) {
+  $texts = New-List
+  foreach ($c in [SapScreen]::Descendants($h)) {
+    $r = [SapScreen]::Rect($c)
+    if ($r[1] -le $rect[1] + $rect[3] - 90) { continue }
+    $t = [SapScreen]::Text($c)
+    if ($t) { [void]$texts.Add($t) }
+  }
+  ($texts -join ' | ')
 }
 
 # The text of a session window's status bar: the first Edit child with text in its bottom strip.

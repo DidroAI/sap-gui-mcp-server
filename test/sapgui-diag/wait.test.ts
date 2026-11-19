@@ -7,7 +7,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { connect, createServer, type Server, type Socket } from "node:net";
 import type { Transport } from "../../src/sapgui/facts.js";
-import { sapguiDiagSurface } from "../../src/sapgui-diag/index.js";
+import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Capture, sapguiDiagSurface } from "../../src/sapgui-diag/index.js";
 import { buildRoute, niFrame } from "../../src/sapgui-diag/router.js";
 import { Traffic } from "../../src/sapgui-diag/traffic.js";
 import { END, idItem, message, rfcCall, rfcItem, screenHead, windowStart } from "../diag/build.js";
@@ -36,7 +40,7 @@ interface Lab {
 }
 
 /** Router, fake SAP and fake SAP GUI, connected; the first screen shown. */
-async function lab(title = "Synthetic Order: Overview", env: Record<string, string> = {}): Promise<Lab> {
+async function lab(title = "Synthetic Order: Overview", env: Record<string, string> = {}, routerLog: (m: string) => void = () => {}): Promise<Lab> {
   let sapSock: Socket | undefined;
   const sapReady = new Promise<void>((r) => {
     const srv = createServer((c) => {
@@ -63,7 +67,7 @@ async function lab(title = "Synthetic Order: Overview", env: Record<string, stri
     close() {},
   };
   let currentTitle = title;
-  const surface = sapguiDiagSurface({ ...env }, { port: 0, transport: host });
+  const surface = sapguiDiagSurface({ ...env }, { port: 0, transport: host, log: routerLog });
   const router = await surface.router;
   open.push(router);
   const gui = await new Promise<Socket>((r) => {
@@ -194,5 +198,60 @@ describe("an action waits for SAP's answer in the traffic", () => {
     await expect(d.act({ do: "set", id: "NOPE", value: "x" })).rejects.toThrow('No control "NOPE" on this screen');
     expect(Date.now() - t0).toBeLessThan(200);
     expect(l.host.log.some((x) => x.op === "act")).toBe(false);
+  });
+});
+
+describe("the capture is opt-in and never stops reading or the logon", () => {
+  test("a capture folder that cannot be made: the logon goes on, the screens are read, doctor says why", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "diagcap-"));
+    const blocker = join(dir, "file");
+    await writeFile(blocker, "x");
+    const logged: string[] = [];
+    const l = await lab("Synthetic Order: Overview", { SAP_DIAG_CAPTURE: join(blocker, "sub") }, (m) => logged.push(m));
+    expect((await l.surface.discover()).length).toBe(1);
+    const checks = await l.surface.doctor?.();
+    expect(checks?.find((c) => c.check === "DIAG router messages")?.detail).toContain("the capture (SAP_DIAG_CAPTURE) failed and was stopped");
+    expect(logged.some((m) => m.includes("capture"))).toBe(true);
+  });
+  test("a write that fails stops the capture, not the decoding", () => {
+    const dir = mkdtempSync(join(tmpdir(), "diagcap-"));
+    const c = new Capture(dir, "x.bin");
+    expect(c.on).toBe(true);
+    rmSync(dir, { recursive: true, force: true });
+    expect(() => c.write(0, Buffer.from("abc"))).not.toThrow();
+    expect(c.on).toBe(false);
+    expect(c.failed).toContain("failed and was stopped");
+  });
+  test.skipIf(process.platform === "win32")("the capture file is readable by its owner only", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "diagcap-"));
+    const c = new Capture(dir, "x.bin");
+    c.write(1, Buffer.from("logon"));
+    expect(statSync(join(dir, "x.bin")).mode & 0o777).toBe(0o600);
+  });
+});
+
+describe("the router's messages reach the server's log", () => {
+  test("without a log given: stderr, and doctor lists them", async () => {
+    const written: string[] = [];
+    const orig = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((c: string | Uint8Array) => {
+      written.push(String(c));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      const surface = sapguiDiagSurface({}, { port: 0, transport: { request: async () => ({}) as never, close() {} } });
+      const router = await surface.router;
+      open.push(router);
+      const s = connect({ host: "127.0.0.1", port: (router.address() as { port: number }).port });
+      open.push(s);
+      await new Promise((r) => s.once("connect", r));
+      s.write(niFrame(Buffer.from("NI_PING\0", "latin1")));
+      await new Promise((r) => s.once("close", r));
+      expect(written.join("")).toContain("route refused");
+      const checks = await surface.doctor?.();
+      expect(checks?.find((c) => c.check === "DIAG router messages")?.detail).toContain("route refused");
+    } finally {
+      process.stderr.write = orig;
+    }
   });
 });

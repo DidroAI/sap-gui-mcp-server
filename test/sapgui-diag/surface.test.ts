@@ -18,10 +18,10 @@ function win(over: Partial<DiagWindow> = {}): DiagWindow {
     guiStatusProgram: "SAPMV45B",
     size: { rows: 20, cols: 156 },
     menus: [],
-    toolbar: [{ vkey: 8, key: "F8", text: "Create with Reference", tooltip: "", icon: "", enabled: true, fcode: "COPY" }],
+    toolbar: [{ vkey: 8, key: "F8", text: "Create with Reference", tooltip: "", icon: "", enabled: true }],
     keys: [
-      { vkey: 3, key: "F3", text: "Back", tooltip: "", icon: "", enabled: true, fcode: "BACK" },
-      { vkey: 11, key: "Ctrl+S", text: "Save", tooltip: "", icon: "", enabled: true, fcode: "SICH" },
+      { vkey: 3, key: "F3", text: "Back", tooltip: "", icon: "", enabled: true },
+      { vkey: 11, key: "Ctrl+S", text: "Save", tooltip: "", icon: "", enabled: true },
     ],
     elements: [
       el({ kind: "label", name: "RV45A-TXT_AUART", text: "Order Type", row: 2, col: 1, input: false, width: 20 }),
@@ -104,7 +104,7 @@ describe("assessDiag", () => {
 /** A screen with a table control, a field and its label, a field twice, and greyed-out things. */
 function richWin(): DiagWindow {
   const w = win();
-  w.toolbar.push({ vkey: 17, key: "Shift+F5", text: "Assign", tooltip: "Assign users", icon: "", enabled: false, fcode: "ASSG" });
+  w.toolbar.push({ vkey: 17, key: "Shift+F5", text: "Assign", tooltip: "Assign users", icon: "", enabled: false });
   w.elements.push(
     el({ kind: "label", name: "VBAK-VBELN", text: "Order", row: 3, col: 1, input: false, width: 10 }),
     el({ name: "VBAK-VBELN", text: "4711", row: 3, col: 22, input: false }),
@@ -185,11 +185,12 @@ describe("ids written nearly right resolve by the shared rule (core/ids.ts)", ()
 describe("what SAP greys out is refused at once", () => {
   const s = screen([richWin()]);
   const refusal = (a: Record<string, unknown>) => greyedRefusal(s, a as never, resolveTarget(s, a as never));
-  test("a greyed-out push button, toolbar button, key, function code and tree node", () => {
+  test("a greyed-out push button, toolbar button, key and tree node", () => {
     expect(refusal({ do: "press", id: "{POLO}" })).toStartWith('button "Delete item" is greyed out: SAP does not offer it on this screen now');
-    expect(refusal({ do: "press", id: "{ASSG}" })).toStartWith('button "Assign" is greyed out');
+    expect(refusal({ do: "press", id: "Assign" })).toStartWith('button "Assign" is greyed out');
     expect(refusal({ do: "key", key: "Shift+F5" })).toStartWith('key Shift+F5 "Assign" is greyed out');
-    expect(refusal({ do: "okcode", value: "assg" })).toStartWith('function ASSG ("Assign") is greyed out');
+    // Toolbar buttons carry no function code in the traffic: an okcode cannot be matched to one.
+    expect(refusal({ do: "okcode", value: "assg" })).toBeUndefined();
     expect(refusal({ do: "dblclick", id: "{N1}" })).toStartWith('tree node "Locked" is greyed out');
   });
   test("a read-only checkbox stays as it is", () => {
