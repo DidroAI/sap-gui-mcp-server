@@ -24,17 +24,17 @@ const cat = (...parts: (Buffer | string | number[])[]): Buffer => Buffer.concat(
 
 // ---- items ----
 
-/** An APPL item; APPL4 (4-byte length) when `long` or when the value needs it. */
-export function appl(id: number, sid: number, value: Buffer | string | number[] = [], long = false): Buffer {
+/** An item with an id and a sub-id: 2-byte length (type 10), or 4-byte (type 12) when `long` or when the value needs it. */
+export function idItem(id: number, sid: number, value: Buffer | string | number[] = [], long = false): Buffer {
   const v = bytes(value);
   return long || v.length > 0xffff ? cat([0x12, id, sid], u32(v.length), v) : cat([0x10, id, sid], u16(v.length), v);
 }
 
-/** An item without a length field (SES 0x01, CHL 0x09, SFE 0x0a, SBA 0x0b, EOM 0x0c, SLC 0x13). */
-export const fixed = (type: number, value: Buffer | number[] = []): Buffer => cat([type], value);
-export const EOM = fixed(0x0c);
+/** An item without a length field (window start 0x01, list start 0x09, list format 0x0a, list position 0x0b, end 0x0c, list width 0x13). */
+export const sizedItem = (type: number, value: Buffer | number[] = []): Buffer => cat([type], value);
+export const END = sizedItem(0x0c);
 
-export function ses(o: { index?: number; row?: number; col?: number; rows?: number; cols?: number } = {}): Buffer {
+export function windowStart(o: { index?: number; row?: number; col?: number; rows?: number; cols?: number } = {}): Buffer {
   const b = Buffer.alloc(16);
   const index = o.index ?? 0;
   b[6] = index > 0 ? 0x11 : 0x01;
@@ -43,7 +43,7 @@ export function ses(o: { index?: number; row?: number; col?: number; rows?: numb
   b[9] = o.row ?? 0;
   b[14] = o.rows ?? 20;
   b[15] = o.cols ?? 100;
-  return fixed(0x01, b);
+  return sizedItem(0x01, b);
 }
 
 /** One NI frame with a DIAG message. `info` 1: the server is done; 2: more follows. */
@@ -62,16 +62,16 @@ export function message(items: Buffer[], o: { mode?: number; info?: number; comp
 
 // ---- session and window items ----
 
-export const r3info = (sid: number, text: string): Buffer => appl(0x06, sid, text);
-export const title = (text: string): Buffer => appl(0x0c, 0x09, text);
-export const areaSize = (rows: number, cols: number): Buffer => appl(0x0c, 0x07, cat(u32(rows), u32(cols), u32(rows), u32(cols)));
-/** SCROLL_INFOS2: size of the content, first row and column, visible rows and columns. */
-export const scroll2 = (rows: number, cols: number, firstRow: number, firstCol: number, visibleRows: number, visibleCols: number): Buffer =>
-  appl(0x0c, 0x06, cat(u32(rows), u32(cols), u32(rows), u32(cols), u32(firstRow), u32(firstCol), u32(visibleRows), u32(visibleCols), [1]));
+export const sessionInfo = (sid: number, text: string): Buffer => idItem(0x06, sid, text);
+export const title = (text: string): Buffer => idItem(0x0c, 0x09, text);
+export const areaSize = (rows: number, cols: number): Buffer => idItem(0x0c, 0x07, cat(u32(rows), u32(cols), u32(rows), u32(cols)));
+/** Scrolling of a window or area: size of the content, first row and column, visible rows and columns. */
+export const scrollState = (rows: number, cols: number, firstRow: number, firstCol: number, visibleRows: number, visibleCols: number): Buffer =>
+  idItem(0x0c, 0x06, cat(u32(rows), u32(cols), u32(rows), u32(cols), u32(firstRow), u32(firstCol), u32(visibleRows), u32(visibleCols), [1]));
 
 /** The items every screen starts with: system, client, transaction, window, program and screen number. */
 export function screenHead(o: { tcode?: string; program?: string; dynpro?: string; title?: string; rows?: number; cols?: number } = {}): Buffer[] {
-  return [r3info(0x02, "XYZ"), r3info(0x03, "synthhost"), r3info(0x0c, "100"), r3info(0x07, (o.tcode ?? "ZT01").padEnd(20)), ses({ rows: o.rows ?? 20, cols: o.cols ?? 100 }), areaSize(o.rows ?? 20, o.cols ?? 100), appl(0x04, 0x1c, "TESTER      "), r3info(0x0d, (o.program ?? "ZPROG").padEnd(40)), r3info(0x0e, o.dynpro ?? "0100"), title(o.title ?? "Synthetic Order: Overview")];
+  return [sessionInfo(0x02, "XYZ"), sessionInfo(0x03, "synthhost"), sessionInfo(0x0c, "100"), sessionInfo(0x07, (o.tcode ?? "ZT01").padEnd(20)), windowStart({ rows: o.rows ?? 20, cols: o.cols ?? 100 }), areaSize(o.rows ?? 20, o.cols ?? 100), idItem(0x04, 0x1c, "TESTER      "), sessionInfo(0x0d, (o.program ?? "ZPROG").padEnd(40)), sessionInfo(0x0e, o.dynpro ?? "0100"), title(o.title ?? "Synthetic Order: Overview")];
 }
 
 // ---- menus and keys ----
@@ -84,67 +84,67 @@ function menuEntry(path: number[], flags: number, vkey: number, text: string, ac
   const rest = cat(pos, [flags, vkey], Buffer.alloc(12), text, [0], accel, [0], info, [0]);
   return cat(u16(rest.length + 2), rest);
 }
-/** MENU_ACT (sid 1) or MENU_MNU (sid 2): entries as [path, text, flags]. */
-export const menus = (sid: 1 | 2, entries: [number[], string, number?][]): Buffer => appl(0x0b, sid, Buffer.concat(entries.map(([path, text, flags]) => menuEntry(path, flags ?? 0x02, 0, text, text.slice(0, 1)))), true);
-/** MENU_PFK (sid 3, toolbar) or MENU_KYB (sid 4, function keys): entries as [vkey, text, tooltip]. */
-export const keys = (sid: 3 | 4, entries: [number, string, string?][]): Buffer => appl(0x0b, sid, Buffer.concat(entries.map(([vkey, text, info], i) => menuEntry([i], 0x02, vkey, text, "", info ?? ""))), true);
+/** The menu bar (sid 1) or the entries of its menus (sid 2): entries as [path, text, flags]. */
+export const menus = (sid: 1 | 2, entries: [number[], string, number?][]): Buffer => idItem(0x0b, sid, Buffer.concat(entries.map(([path, text, flags]) => menuEntry(path, flags ?? 0x02, 0, text, text.slice(0, 1)))), true);
+/** The toolbar (sid 3) or the function keys (sid 4): entries as [vkey, text, tooltip]. */
+export const keys = (sid: 3 | 4, entries: [number, string, string?][]): Buffer => idItem(0x0b, sid, Buffer.concat(entries.map(([vkey, text, info], i) => menuEntry([i], 0x02, vkey, text, "", info ?? ""))), true);
 
-// ---- containers ----
+// ---- areas ----
 
-export const RESET = appl(0x0a, 0x01, Buffer.alloc(9));
-/** A container level: 3 subscreen, 5 table, 8 tabstrip, 9 tab page, 10 control. */
-export const container = (sid: number, row: number, col: number, width: number, height: number): Buffer => appl(0x0a, sid, cat([1], u16(row), u16(col), u16(width), u16(height)));
-export const containerName = (name: string, program = "", dynpro = ""): Buffer => appl(0x0a, 0x06, cat(name, [0], program, [0], dynpro, [0]));
+export const RESET = idItem(0x0a, 0x01, Buffer.alloc(9));
+/** An area in the chain: 3 subscreen, 5 table, 8 tabstrip, 9 tab page, 10 control. */
+export const areaLevel = (sid: number, row: number, col: number, width: number, height: number): Buffer => idItem(0x0a, sid, cat([1], u16(row), u16(col), u16(width), u16(height)));
+export const areaName = (name: string, program = "", dynpro = ""): Buffer => idItem(0x0a, 0x06, cat(name, [0], program, [0], dynpro, [0]));
 
-// ---- atoms ----
+// ---- elements ----
 
 const PROTECTED = 0x01;
 const INVISIBLE = 0x02;
 const MATCHCODE = 0x10;
 
-function atom(etype: number, row: number, col: number, attr: number, body: Buffer | string | number[], flag1 = 0): Buffer {
+function element(etype: number, row: number, col: number, attr: number, body: Buffer | string | number[], flag1 = 0): Buffer {
   const b = bytes(body);
   return cat(u16(13 + b.length), [flag1, 0, etype, 0, 1, 0], u16(row), u16(col), [attr], b);
 }
 const fieldBody = (text: string, width: number): Buffer => cat([0, 0, Buffer.byteLength(text), width, 0, width], text);
 
-export const atom_ = {
+export const elem = {
   /** An input field (or an output field when `output`), padded to `width`. */
   field: (row: number, col: number, text: string, o: { width?: number; readOnly?: boolean; output?: boolean; hidden?: boolean; valueHelp?: boolean } = {}): Buffer => {
     const width = o.width ?? Math.max(text.length, 1);
     const attr = (o.readOnly || o.output ? PROTECTED : 0) | (o.hidden ? INVISIBLE : 0) | (o.valueHelp ? MATCHCODE : 0);
-    return atom(o.output ? 131 : 130, row, col, attr, fieldBody(text.padEnd(width), width));
+    return element(o.output ? 131 : 130, row, col, attr, fieldBody(text.padEnd(width), width));
   },
-  label: (row: number, col: number, text: string): Buffer => atom(132, row, col, PROTECTED, fieldBody(text.padEnd(text.length + 3), text.length + 3)),
+  label: (row: number, col: number, text: string): Buffer => element(132, row, col, PROTECTED, fieldBody(text.padEnd(text.length + 3), text.length + 3)),
   /** The SAP field name of the element just before. */
-  name: (row: number, col: number, name: string): Buffer => atom(114, row, col, 0, name),
-  tooltip: (row: number, col: number, text: string): Buffer => atom(120, row, col, 0, `<Propertybag><DefaultTooltip>${text}</DefaultTooltip></Propertybag>\0`),
+  name: (row: number, col: number, name: string): Buffer => element(114, row, col, 0, name),
+  tooltip: (row: number, col: number, text: string): Buffer => element(120, row, col, 0, `<Propertybag><DefaultTooltip>${text}</DefaultTooltip></Propertybag>\0`),
   button: (row: number, col: number, text: string, fcode: string): Buffer => {
     const padded = text.padEnd(text.length + 4);
-    return atom(115, row, col, 0, cat([padded.length, 1], u16(19 + padded.length + 1), u16(19), padded, [0], `=${fcode}`, [0, 0]));
+    return element(115, row, col, 0, cat([padded.length, 1], u16(19 + padded.length + 1), u16(19), padded, [0], `=${fcode}`, [0, 0]));
   },
-  check: (row: number, col: number, text: string, checked: boolean, readOnly = false): Buffer => atom(128, row, col, readOnly ? PROTECTED : 0, cat([checked ? 0x58 : 0x20], u16(text.length), [0, 0, 0, 0, 0], u16(text.length), text)),
-  frame: (row: number, col: number, rows: number, cols: number, text: string): Buffer => atom(127, row, col, PROTECTED, cat(u16(rows), u16(cols), text)),
-  dropdown: (row: number, col: number, key: string, list = "0123456789ABCDEF0123456789ABCDEF"): Buffer => atom(126, row, col, 0, cat([1, 0, 0, 0, 0x20, 0, 0x20, 0, 0, 0x20, 0, 2, 0, 2, 0x15, 0, 2], list, key)),
+  check: (row: number, col: number, text: string, checked: boolean, readOnly = false): Buffer => element(128, row, col, readOnly ? PROTECTED : 0, cat([checked ? 0x58 : 0x20], u16(text.length), [0, 0, 0, 0, 0], u16(text.length), text)),
+  frame: (row: number, col: number, rows: number, cols: number, text: string): Buffer => element(127, row, col, PROTECTED, cat(u16(rows), u16(cols), text)),
+  dropdown: (row: number, col: number, key: string, list = "0123456789ABCDEF0123456789ABCDEF"): Buffer => element(126, row, col, 0, cat([1, 0, 0, 0, 0x20, 0, 0x20, 0, 0, 0x20, 0, 2, 0, 2, 0x15, 0, 2], list, key)),
   tab: (index: number, text: string, id: string, active = false): Buffer => {
     const padded = text.padEnd(20);
     const fcodeAt = 22 + padded.length + 1;
-    return atom(116, 0, index, 0x20, cat([padded.length, 1, 3], u16(fcodeAt), u16(22), u16(fcodeAt + id.length + 2), padded, [0], `=${id}`, [0], id, [0, 0]), active ? 0x40 : 0);
+    return element(116, 0, index, 0x20, cat([padded.length, 1, 3], u16(fcodeAt), u16(22), u16(fcodeAt + id.length + 2), padded, [0], `=${id}`, [0], id, [0, 0]), active ? 0x40 : 0);
   },
   /** An element type the decoder does not know. */
-  unknown: (row: number, col: number, text: string): Buffer => atom(99, row, col, 0, text),
+  unknown: (row: number, col: number, text: string): Buffer => element(99, row, col, 0, text),
 };
-export const atoms = (...list: Buffer[]): Buffer => appl(0x09, 0x02, Buffer.concat(list), true);
-export const tabButtons = (...list: Buffer[]): Buffer => appl(0x09, 0x10, Buffer.concat(list), true);
+export const elementList = (...list: Buffer[]): Buffer => idItem(0x09, 0x02, Buffer.concat(list), true);
+export const tabList = (...list: Buffer[]): Buffer => idItem(0x09, 0x10, Buffer.concat(list), true);
 
-/** DYNT_TABSTRIP_HEADER: numbers, then the strip's name and the ids of the first and the open tab. */
+/** A tabstrip's description: numbers, then the strip's name and the ids of the first and the open tab. */
 export function tabstripHeader(name: string, active: string, count: number): Buffer {
   const head = Buffer.alloc(32);
   head.writeUInt16BE(count, 16);
   head.writeUInt16BE(0x20, 26);
   head.writeUInt16BE(0x3f, 28);
   head.writeUInt16BE(0x40, 30);
-  return appl(0x09, 0x0f, cat(head, name.padEnd(30), [0], [0], active, [0]), true);
+  return idItem(0x09, 0x0f, cat(head, name.padEnd(30), [0], [0], active, [0]), true);
 }
 
 // ---- table control ----
@@ -157,7 +157,7 @@ export interface TableColumn {
   etype?: number;
 }
 
-/** TABLE_HEADER, field names and one row of cell descriptions, line numbers and values per row. `order`: column numbers (1-based) by display position. */
+/** A table control: its description, field names and, per row, cell descriptions, line numbers and values. `order`: column numbers (1-based) by display position. */
 export function tableControl(o: { program: string; name: string; title: string; columns: TableColumn[]; rows: { values: string[]; hidden?: boolean; readOnly?: boolean }[]; order?: number[]; total?: number }): Buffer[] {
   const n = o.columns.length;
   const head = Buffer.alloc(60);
@@ -180,28 +180,28 @@ export function tableControl(o: { program: string; name: string; title: string; 
   const order = o.order ?? o.columns.map((_, i) => i + 1);
   const body = cat(head, o.program.padEnd(40), o.name.padEnd(30), [0], Buffer.concat(order.map(u16)), Buffer.alloc(2 * (n + 2), 0x51), Buffer.concat(o.columns.map((c) => u16(c.width))), [o.title.length], o.title.padEnd(60), [0], Buffer.concat(o.columns.map((c) => cat(c.title, [0]))));
   body.writeUInt16BE(body.length, 0);
-  const out = [appl(0x09, 0x0e, body, true), appl(0x0c, 0x02, cat(u32(1), u32(n), u32(o.rows.length), u32(0), u32(0), u32(0)), true), appl(0x09, 0x0d, Buffer.concat(o.columns.map((c) => cat(c.name, [0]))), true)];
+  const out = [idItem(0x09, 0x0e, body, true), idItem(0x0c, 0x02, cat(u32(1), u32(n), u32(o.rows.length), u32(0), u32(0), u32(0)), true), idItem(0x09, 0x0d, Buffer.concat(o.columns.map((c) => cat(c.name, [0]))), true)];
   o.rows.forEach((row, r) => {
     const attr = (row.readOnly ? PROTECTED : 0) | (row.hidden ? INVISIBLE : 0);
-    out.push(appl(0x09, 0x11, Buffer.concat(o.columns.map((c) => cat(u16(r + 1), [c.etype ?? 130, 1, 1, 0, attr | (c.etype === 131 ? PROTECTED : 0), 0x20, 0x10]))), true));
-    out.push(appl(0x09, 0x05, cat(u16(r + 1), u16(r + 1)), true));
+    out.push(idItem(0x09, 0x11, Buffer.concat(o.columns.map((c) => cat(u16(r + 1), [c.etype ?? 130, 1, 1, 0, attr | (c.etype === 131 ? PROTECTED : 0), 0x20, 0x10]))), true));
+    out.push(idItem(0x09, 0x05, cat(u16(r + 1), u16(r + 1)), true));
     const cells = o.columns.map((c, i) => {
       const v = row.values[i] ?? "";
       if (c.etype === 124) return cat(v, [0, 0]);
       if (c.etype === 126) return cat([1, 0], "FEDCBA9876543210FEDCBA9876543210", [0, 0], v, [0], String(v.length), [0]);
       return cat(v.padEnd(c.width), [0], String(c.width), [0], "0", [0]);
     });
-    out.push(appl(0x09, 0x08, Buffer.concat(cells), true));
+    out.push(idItem(0x09, 0x08, Buffer.concat(cells), true));
   });
   return out;
 }
 
 // ---- lists ----
 
-/** The start of a classic list: its header item and SCROLL_INFOS with the number of lines. */
-export const listHead = (totalRows: number): Buffer[] => [fixed(0x09, Buffer.alloc(22)), appl(0x0c, 0x02, cat(u32(totalRows), u32(40), u32(40), u32(40), u32(0), u32(0)))];
+/** The start of a classic list: the list-start item and the scrolling item with the number of lines. */
+export const listHead = (totalRows: number): Buffer[] => [sizedItem(0x09, Buffer.alloc(22)), idItem(0x0c, 0x02, cat(u32(totalRows), u32(40), u32(40), u32(40), u32(0), u32(0)))];
 /** One list cell: position, format, length, text. `frame` makes it a cell of line-drawing codes. */
-export const listCell = (row: number, col: number, text: string, frame = false): Buffer[] => [fixed(0x0b, [row, col]), fixed(0x0a, frame ? [8, 0, 8] : [0x0a, 2, 0]), fixed(0x13, u16(text.length)), appl(0x0c, 0x0b, text)];
+export const listCell = (row: number, col: number, text: string, frame = false): Buffer[] => [sizedItem(0x0b, [row, col]), sizedItem(0x0a, frame ? [8, 0, 8] : [0x0a, 2, 0]), sizedItem(0x13, u16(text.length)), idItem(0x0c, 0x0b, text)];
 
 // ---- RFC ----
 
@@ -237,8 +237,8 @@ export function rfcCall(fn: string, params: Record<string, Buffer | string> = {}
   return cat(...parts, [0xff, 0xff]);
 }
 
-/** An RFC_TR item: sid 0 a call that wants an answer, 1 an answer, 4 a fragment with more to come, 6 a call without answer. */
-export const rfcItem = (sid: number, payload: Buffer): Buffer => appl(0x08, sid, payload);
+/** An RFC item: sid 0 a call that waits for an answer, 1 an answer, 4 a part with more to come, 6 a call without answer or the last part. */
+export const rfcItem = (sid: number, payload: Buffer): Buffer => idItem(0x08, sid, payload);
 
 const fixedRow = (text: string, length: number): Buffer => Buffer.from(text.padEnd(length).slice(0, length), "latin1");
 
@@ -313,7 +313,7 @@ export class Queue {
       this.queue.push(cat("0AA400021ABCDEF012340000", "SAPGUI".padEnd(32), String(this.messages).padStart(8, "0"), u32(part), chunk));
     }
   }
-  /** The call as the payload of an RFC_TR item. */
+  /** The call as the payload of an RFC item. */
   build(): Buffer {
     return rfcCall("OLE_FLUSH_CALL", { IMPORT_XML: "\0" }, [
       { name: "PARAMS", rowLength: 44, rows: this.params },

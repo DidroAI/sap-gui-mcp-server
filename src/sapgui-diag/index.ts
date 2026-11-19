@@ -469,6 +469,24 @@ function describe(c: Connection, mode: number, s: DiagScreen): SessionInfo {
   return info;
 }
 
+/** What the decoders of the open connections could not read: lost traffic, encrypted messages, unknown items. Undefined when there is no connection. */
+export function decodingCheck(conns: { decoder: DiagDecoder }[]): DoctorCheck | undefined {
+  if (!conns.length) return undefined;
+  let lost = 0;
+  let losses = 0;
+  const notes = new Map<string, number>();
+  for (const c of conns) {
+    lost += c.decoder.lostBytes;
+    losses += c.decoder.losses;
+    for (const [k, n] of c.decoder.notes) notes.set(k, (notes.get(k) ?? 0) + n);
+  }
+  const top = [...notes].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, n]) => `${k} (${n})`);
+  const parts = [losses ? `${lost} bytes lost or garbled in transit, ${losses} time(s): the decoder found its place again` : "no traffic lost", notes.size ? `${[...notes.values()].reduce((a, b) => a + b, 0)} note(s) on what was not read: ${top.join("; ")}${notes.size > 5 ? "; …" : ""}` : "everything read"];
+  const snc = [...notes.keys()].some((k) => k.startsWith("encrypted message"));
+  if (snc) return { ok: false, check: "DIAG decoding", detail: parts.join("; "), fix: "The connection is encrypted with SNC, which the DIAG method cannot read. Use a connection entry without SNC, or another method." };
+  return { ok: true, check: "DIAG decoding", detail: parts.join("; ") };
+}
+
 export interface DiagSurfaceOptions {
   port?: number;
   transport?: Transport;
@@ -506,6 +524,9 @@ export function sapguiDiagSurface(env: Record<string, string | undefined>, optio
         close: () => {
           c.open = false;
           for (const w of c.waiters.splice(0)) w();
+          // A closed connection is never listed again: let its screens go, so that memory does not grow with every logon.
+          const at = conns.indexOf(c);
+          if (at >= 0) conns.splice(at, 1);
         },
       };
     },
@@ -545,6 +566,8 @@ export function sapguiDiagSurface(env: Record<string, string | undefined>, optio
           ? { ok: true, check: "SAP GUI connections", detail: `${live} through the router` }
           : { ok: false, check: "SAP GUI connections", detail: "none through the router yet", fix: `In SAP Logon, edit the connection entry: put /H/127.0.0.1/S/${port} at the start of its SAProuter string, then log on again. Connections encrypted with SNC cannot be read.` },
       );
+      const reading = decodingCheck(conns.filter((c) => c.open));
+      if (reading) checks.push(reading);
       return checks;
     },
   };

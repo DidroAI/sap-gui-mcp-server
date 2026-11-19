@@ -10,28 +10,64 @@
  * mode as a DiagScreen.
  *
  * It only reads. It never throws on what it does not know: unknown items
- * and broken pieces are counted in `notes`.
+ * and broken pieces are counted in `notes`, and the screen they were met on
+ * lists them in `unread`, so that the agent knows part of it was not read.
  *
- * How a dialog step looks on the wire (byte 5 of the DIAG header: 1 = the
+ * Damaged traffic: when bytes are lost or garbled, the NI framer drops them
+ * and starts again at the next frame (see NiFramer). The RFC pieces being
+ * joined are then dropped too, since a piece may be missing, and the next
+ * screen of every mode says that traffic was lost before it (`damaged`). So
+ * does a message that breaks off or does not decompress, and a frame the
+ * next one does not follow. Later screens are read as usual, and stay
+ * marked while they show what SAP does not send again because SAP GUI already
+ * holds it: a control on show at the loss and not touched since, a control
+ * area left empty, menus and keys not sent since. Memory stays bounded:
+ * frames, RFC pieces being joined and the list of notes all have a limit.
+ *
+ * How a dialog step looks on the wire (byte 5 of the message header: 1 = the
  * server is done and waits, 2 = more follows without an answer):
  *
  * - a small screen: one message with the items of the screen;
- * - calls to the control framework: a message with an RFC_TR item (REQ),
- *   answered by SAP GUI (RET), any number of times before the screen;
+ * - calls to the control framework: a message with an RFC item that waits
+ *   for an answer, answered by SAP GUI, any number of times before the
+ *   screen;
  * - a large screen: the items travel inside an RFC call,
- *   GUICORE_BLOB_DIAG_PARSER, cut into RFC_TR fragments (MOR, each
- *   acknowledged, then RNB), followed by an empty message that ends the
- *   step.
+ *   GUICORE_BLOB_DIAG_PARSER, cut into parts (each acknowledged by SAP GUI
+ *   with an empty part, the last one sent as a call without answer),
+ *   followed by an empty message that ends the step.
  */
 import { ClassicState } from "./classic.js";
 import { Controls } from "./controls.js";
 import { parseRfc } from "./rfc.js";
 import type { DiagControl, DiagElement, DiagScreen, DiagWindow } from "./screen.js";
 import { clean, decode } from "./text.js";
-import { A, type DiagItem, NiFramer, parseItems, parseMessage, T } from "./wire.js";
+import { type DiagItem, type FrameEvent, hasId, ID, NiFramer, parseItems, parseMessage } from "./wire.js";
 
-/** RFC_TR sub-ids: a call that wants an answer, its answer, a fragment with more to come, a call without answer. */
-const RFC = { REQ: 0x00, RET: 0x01, ERR: 0x02, MOR: 0x04, RNB: 0x06 } as const;
+/**
+ * Sub-ids of the RFC items, from the order of the exchanges in the captures:
+ * every server item with sub-id 00 names a function and is followed by SAP
+ * GUI's item 01, which names none; a server item 04 is answered by an empty
+ * 04 from SAP GUI and followed by more 04 or by a 06, and only the parts
+ * joined name the function; a 06 alone (a progress indicator) is never
+ * answered. Long answers from SAP GUI come in 04 parts the same way, the
+ * last one an 01.
+ */
+const RFC_PART = {
+  /** A call that waits for SAP GUI's answer. */
+  call: 0x00,
+  /** SAP GUI's answer to a call. */
+  answer: 0x01,
+  /** A part of a long call, more follows. */
+  part: 0x04,
+  /** A call without answer, or the last part of a long call. */
+  last: 0x06,
+} as const;
+
+/** The most RFC bytes joined from pieces, per mode and direction (the largest call in the captures is far below). */
+const MAX_PIECES = 32 << 20;
+/** Different notes kept; more are counted under one key. */
+const MAX_NOTES = 200;
+const OTHER_NOTES = "other notes";
 
 /** Everything kept for one mode. */
 class Mode {
@@ -40,45 +76,88 @@ class Mode {
   step = 0;
   /** Fragments of an RFC call still arriving, per direction. */
   fragments: [Buffer[], Buffer[]] = [[], []];
+  /** Bytes in `fragments`, per direction. */
+  fragmentBytes: [number, number] = [0, 0];
+  /** What was not read since this mode's last screen, with how often. */
+  unread = new Map<string, number>();
+  /** Traffic was lost or damaged since this mode's last screen. */
+  hit = false;
+  /** Screen revision at the last loss: a control on show then and not touched since, a control area left empty, menus and keys not sent since, may miss what the lost bytes carried. */
+  hitRevision: number | undefined;
+  /** Controls on show when traffic was lost (and so possibly changed by what was lost), until the server touches them again. */
+  readonly suspects = new Set<number>();
   lastCommand: string | undefined;
   /** The user acted since the last screen: the next server message opens a new step. */
   userActed = true;
   screen: DiagScreen | undefined;
 
-  constructor(note: (what: string) => void) {
-    this.classic = new ClassicState(note);
-    this.controls = new Controls(note);
+  /** Traffic for this mode may have been lost: say so on the next screen, and on later ones while what SAP GUI holds may be stale. */
+  damage(): void {
+    this.hit = true;
+    this.hitRevision = this.classic.revision;
+    for (const w of this.screen?.windows ?? []) for (const c of w.controls) if (this.suspects.size < 1000) this.suspects.add(c.id);
+  }
+
+  constructor(note: (what: string, mode?: Mode) => void) {
+    const mine = (what: string) => note(what, this);
+    this.classic = new ClassicState(mine);
+    this.controls = new Controls(mine);
   }
 }
 
 export class DiagDecoder {
   /** Called after each server message that ends a dialog step, with the screen of the mode it was for. */
   onScreen?: (screen: DiagScreen, mode: number) => void;
-  /** What was not understood, with how often: unknown items, element types, pieces that broke off. For debugging. */
+  /** What was not understood, with how often: unknown items, element types, pieces that broke off, lost bytes. At most MAX_NOTES different ones. */
   readonly notes = new Map<string, number>();
+  /** Bytes dropped from the stream because they were lost or garbled in transit. */
+  lostBytes = 0;
+  /** How many times the stream had to be resynchronised. */
+  losses = 0;
 
   private framers: [NiFramer, NiFramer] = [new NiFramer(), new NiFramer()];
+  /** The mode of the message being read, for the notes. */
+  private current: Mode | undefined;
   private modes = new Map<number, Mode>();
   private latest: number | undefined;
 
-  private note = (what: string): void => {
-    this.notes.set(what, (this.notes.get(what) ?? 0) + 1);
+  private note = (what: string, mode?: Mode): void => {
+    const key = this.notes.has(what) || this.notes.size < MAX_NOTES ? what : OTHER_NOTES;
+    this.notes.set(key, (this.notes.get(key) ?? 0) + 1);
+    if (mode && (mode.unread.has(what) || mode.unread.size < MAX_NOTES)) mode.unread.set(what, (mode.unread.get(what) ?? 0) + 1);
   };
+
+  /** Bytes of one direction dropped by the framer: no piece being joined in that direction can be trusted, and every mode's next screen says so. */
+  private lost(dir: 0 | 1, bytes: number, why: string): void {
+    this.lostBytes += bytes;
+    this.losses++;
+    this.note(`${dir === 1 ? "from the server" : "from SAP GUI"}: ${why}`);
+    for (const m of this.modes.values()) {
+      m.damage();
+      if (m.fragments[dir].length) this.note("RFC pieces dropped after lost bytes", m);
+      m.fragments[dir] = [];
+      m.fragmentBytes[dir] = 0;
+    }
+  }
 
   /** Raw bytes of the connection: direction 0 from SAP GUI to the server, 1 from the server to SAP GUI. */
   push(dir: 0 | 1, chunk: Uint8Array): void {
-    let payloads: Buffer[];
+    let events: FrameEvent[];
     try {
-      payloads = this.framers[dir].push(chunk);
+      events = this.framers[dir].read(chunk);
     } catch (e) {
       this.note(`framing: ${e instanceof Error ? e.message : String(e)}`);
       return;
     }
-    for (const payload of payloads) {
+    for (const e of events) {
+      if ("lost" in e) {
+        this.lost(dir, e.lost, e.why);
+        continue;
+      }
       try {
-        this.message(dir, payload);
-      } catch (e) {
-        this.note(`message not read: ${e instanceof Error ? e.message : String(e)}`);
+        this.message(dir, e.payload, e.suspect === true);
+      } catch (err) {
+        this.note(`message not read: ${err instanceof Error ? err.message : String(err)}`, this.current);
       }
     }
   }
@@ -100,18 +179,30 @@ export class DiagDecoder {
     let m = this.modes.get(n);
     if (!m) {
       m = new Mode(this.note);
+      // Joined in the middle of a connection: the first screen may lack what earlier steps sent.
+      if (this.losses && this.latest === undefined) m.damage();
       this.modes.set(n, m);
     }
     return m;
   }
 
-  private message(dir: 0 | 1, payload: Buffer): void {
+  private message(dir: 0 | 1, payload: Buffer, suspect: boolean): void {
+    this.current = undefined;
     const msg = parseMessage(payload);
     if (!msg) return;
-    if (msg.problem) this.note(msg.problem);
-    if (msg.header.length < 8) return;
+    if (msg.header.length < 8) {
+      if (msg.problem) this.note(msg.problem);
+      return;
+    }
     const number = msg.header[0] ?? 0;
     const mode = this.mode(number);
+    this.current = mode;
+    if (msg.problem) this.note(msg.problem, mode);
+    if (msg.broken || suspect) {
+      // Read what can be read, but the screen this message ends may be wrong: say so on it.
+      if (suspect) this.note(`${dir === 1 ? "from the server" : "from SAP GUI"}: a frame the next one does not follow (damaged in transit?)`, mode);
+      mode.damage();
+    }
     if (dir === 0) return this.fromClient(mode, msg.items);
     if (mode.userActed) {
       mode.classic.clearMessage();
@@ -120,7 +211,7 @@ export class DiagDecoder {
     let waitsForAnswer = false;
     const plain: DiagItem[] = [];
     for (const it of msg.items) {
-      if ((it.type === T.APPL || it.type === T.APPL4) && it.id === A.RFC_TR) {
+      if (hasId(it.type) && it.id === ID.rfc) {
         // Items before a call are applied before it, so that screen and controls keep their order.
         mode.classic.apply(plain.splice(0));
         waitsForAnswer = this.rfc(mode, 1, it) || waitsForAnswer;
@@ -133,32 +224,44 @@ export class DiagDecoder {
   private fromClient(mode: Mode, items: DiagItem[]): void {
     let answer = false;
     for (const it of items) {
-      if (it.type !== T.APPL && it.type !== T.APPL4) continue;
-      if (it.id === A.RFC_TR) {
+      if (!hasId(it.type)) continue;
+      if (it.id === ID.rfc) {
         answer = true;
         this.rfc(mode, 0, it);
-      } else if (it.id === A.VARINFO && it.sid === 0x04) mode.lastCommand = clean(decode(it.value, mode.classic.utf8)).trim();
+      } else if (it.id === ID.window && it.sid === 0x04) mode.lastCommand = clean(decode(it.value, mode.classic.utf8)).trim();
     }
     if (!answer && items.length) mode.userActed = true;
   }
 
-  /** One RFC_TR item. Returns true when it is a call SAP GUI still has to answer (the step goes on). */
+  /** One RFC item. Returns true when it is a call SAP GUI still has to answer (the step goes on). */
   private rfc(mode: Mode, dir: 0 | 1, it: DiagItem): boolean {
     const fragments = mode.fragments[dir];
-    if (it.sid === RFC.MOR) {
-      if (it.value.length) fragments.push(it.value);
+    if (it.sid === RFC_PART.part) {
+      if (mode.fragmentBytes[dir] + it.value.length > MAX_PIECES) {
+        this.note(`an RFC call longer than ${MAX_PIECES} bytes, not read`, mode);
+        fragments.length = 0;
+        mode.fragmentBytes[dir] = 0;
+      } else if (it.value.length) {
+        fragments.push(it.value);
+        mode.fragmentBytes[dir] += it.value.length;
+      }
       return true;
     }
     const payload = fragments.length ? Buffer.concat([...fragments, it.value]) : it.value;
     fragments.length = 0;
-    if (it.sid !== RFC.REQ && it.sid !== RFC.RET && it.sid !== RFC.RNB) {
-      this.note(`RFC_TR item ${it.sid}`);
+    mode.fragmentBytes[dir] = 0;
+    if (it.sid !== RFC_PART.call && it.sid !== RFC_PART.answer && it.sid !== RFC_PART.last) {
+      this.note(`RFC item ${it.sid}`, mode);
       return false;
     }
-    if (!payload.length) return it.sid === RFC.REQ;
+    if (!payload.length) return it.sid === RFC_PART.call;
     const call = parseRfc(payload);
-    if (call.problem) this.note(`${call.function || "RFC answer"}: ${call.problem}`);
-    for (const t of call.tables.values()) if (t.problem) this.note(`table ${t.name} of ${call.function || "RFC answer"}: ${t.problem}`);
+    if (call.problem) {
+      this.note(`${call.function || "RFC answer"}: ${call.problem}`, mode);
+      // A call that breaks off lost a piece on the way: what it carried for the screen is missing.
+      mode.damage();
+    }
+    for (const t of call.tables.values()) if (t.problem) this.note(`table ${t.name} of ${call.function || "RFC answer"}: ${t.problem}`, mode);
     if (dir === 0) {
       mode.controls.clientAnswer(call);
       return false;
@@ -167,12 +270,12 @@ export class DiagDecoder {
       const stream = call.params.get("STREAM");
       if (stream) {
         const inner = parseItems(stream);
-        if (inner.problem) this.note(`inner stream: ${inner.problem}`);
+        if (inner.problem) this.note(`inner stream: ${inner.problem}`, mode);
         mode.classic.apply(inner.items);
       }
     } else if (call.function === "OLE_FLUSH_CALL") mode.controls.serverCall(call, mode.classic.utf8, mode.classic.revision);
-    else if (call.function !== "SAPGUI_PROGRESS_INDICATOR") this.note(`RFC call ${call.function}`);
-    return it.sid === RFC.REQ;
+    else if (call.function !== "SAPGUI_PROGRESS_INDICATOR") this.note(`RFC call ${call.function}`, mode);
+    return it.sid === RFC_PART.call;
   }
 
   private emit(number: number, mode: Mode): void {
@@ -201,7 +304,32 @@ export class DiagDecoder {
     const placed = new Set(windows.flatMap((w) => w.controls.map((c) => c.id)));
     const top = windows[windows.length - 1];
     if (top) for (const c of controls) if (!placed.has(c.id) && !c.container && (c.grid || c.tree || c.text !== undefined) && (mode.controls.controls.get(c.id)?.touched ?? -1) >= mode.classic.revision) top.controls.push(c);
-    const screen: DiagScreen = { mode: number, step: mode.step, session: { ...mode.classic.session }, windows, ...(mode.classic.message ? { message: { ...mode.classic.message } } : {}), ...(mode.lastCommand ? { lastCommand: mode.lastCommand } : {}) };
+    // SAP describes the classic screen in full at every step, but not what SAP GUI already holds: the controls, and
+    // menus and keys while they do not change. After a loss, a control the server has not touched since, a control
+    // area with no control, or menus and keys not sent since, may be missing or old.
+    const since = mode.hitRevision;
+    for (const id of mode.suspects) {
+      const c = mode.controls.controls.get(id);
+      if (!c || c.touched > (since ?? -1)) mode.suspects.delete(id);
+    }
+    const stale =
+      since !== undefined &&
+      (mode.classic.windows.some((w) => (mode.classic.chromeSent.get(w) ?? -1) <= since) ||
+        windows.some((w) => w.controls.some((c) => mode.suspects.has(c.id) || (mode.controls.controls.get(c.id)?.touched ?? -1) === since) || w.containers.some((k) => !w.controls.some((c) => c.container === k.name))));
+    const damaged = mode.hit || stale;
+    mode.hit = false;
+    const unread = [...mode.unread].map(([what, n]) => (n > 1 ? `${what} (${n} times)` : what));
+    const screen: DiagScreen = {
+      mode: number,
+      step: mode.step,
+      session: { ...mode.classic.session },
+      windows,
+      ...(mode.classic.message ? { message: { ...mode.classic.message } } : {}),
+      ...(mode.lastCommand ? { lastCommand: mode.lastCommand } : {}),
+      ...(unread.length ? { unread } : {}),
+      ...(damaged ? { damaged: true } : {}),
+    };
+    mode.unread.clear();
     mode.screen = screen;
     this.latest = number;
     this.onScreen?.(screen, number);

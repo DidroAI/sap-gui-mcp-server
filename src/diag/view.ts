@@ -200,6 +200,14 @@ function windowLines(w: DiagWindow, top: boolean, o: Required<DiagViewOptions>):
 }
 
 /** The view of a screen: see the top of this file for the format. */
+/** One short line each when bytes were lost before the screen, or when the decoder met parts it could not read. */
+function decoderNotes(s: DiagScreen): string[] {
+  const out: string[] = [];
+  if (s.damaged) out.push("note  bytes were lost on the connection while SAP sent this screen or earlier: parts of it may be missing or old. A control SAP sends again is read afresh.");
+  if (s.unread?.length) out.push(`note  parts of this screen were not read: ${s.unread.slice(0, 3).join("; ")}${s.unread.length > 3 ? `; and ${s.unread.length - 3} more` : ""}`);
+  return out;
+}
+
 export function diagView(s: DiagScreen, options: DiagViewOptions = {}): string {
   const o: Required<DiagViewOptions> = { maxRows: options.maxRows ?? 50, chrome: options.chrome ?? true };
   const main = s.windows[0];
@@ -209,5 +217,6 @@ export function diagView(s: DiagScreen, options: DiagViewOptions = {}): string {
   s.windows.forEach((w, i) => {
     out.push(...windowLines(w, i === s.windows.length - 1, o));
   });
+  out.push(...decoderNotes(s));
   return out.join("\n");
 }
