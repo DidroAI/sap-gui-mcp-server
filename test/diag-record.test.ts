@@ -310,12 +310,48 @@ describe("replaying on the DIAG method", () => {
     const acts = sap.acts.length;
     const { result } = await s.json({ name: "diag popup" });
     expect(result.passed).toBe(true);
-    expect(result.steps[3]?.warnings).toEqual(['the recording confirmed a popup here ("Information") that SAP did not show this time: step skipped']);
+    expect(result.steps[3]?.warnings).toEqual(['the recording confirmed a popup here ("Information") that SAP did not show this time: its answer was not sent']);
+    // Its check ran on the screen SAP showed instead.
+    expect(result.steps[3]?.passed.length).toBeGreaterThan(0);
     // The Enter of step 4 did not run on the overview below.
     expect(sap.acts.slice(acts).filter((a) => a.do === "key")).toEqual([{ do: "key", key: 0 }]);
     // With the popup, the same test confirms it as recorded.
     sap.popupsFor.set("5000", [{ title: "Information", text: "Order is blocked for delivery" }]);
     expect((await s.json({ name: "diag popup" })).result.passed).toBe(true);
+  });
+
+  test("the answer to a question popup that SAP does not show this time fails the step; it is never skipped", async () => {
+    const sap = new FakeDiagSap();
+    sap.popupsFor.set("5000", [{ title: "Archived order", text: "Display it anyway", question: true }]);
+    const s = await setup(sap);
+    await s.rec("start", { name: "diag question" });
+    await s.act({ do: "okcode", value: "/nZA03" });
+    await s.act({ do: "set", id: "ZORD-VBELN", value: "5000" });
+    await s.act({ do: "key", key: 0 });
+    // The answer to the question: a press of one of its buttons.
+    expect((await s.act({ do: "press", id: "{SPOP1}" })).error).toBe(false);
+    await s.rec("stop");
+    const t = parseTest(await readFile(join(s.dir, "diag-question.saptest.json"), "utf8"));
+    expect(t.steps[3]?.on).toMatchObject({ title: "Archived order", popup: "wnd[1]" });
+    expect(t.steps[3]?.on?.message).toBeUndefined();
+    // Without the popup: the step fails, it does not pass with a warning.
+    sap.popupsFor.delete("5000");
+    const acts = sap.acts.length;
+    const { result } = await s.json({ name: "diag question" });
+    expect(result.passed).toBe(false);
+    expect(result.steps[3]?.failures[0]).toContain('the recording answered the popup "Archived order" here');
+    expect(result.steps[3]?.failures[0]).toContain("never skipped");
+    expect(sap.acts.slice(acts).some((a) => a.do === "press")).toBe(false);
+    // Another popup in its place: nothing is pressed on it.
+    sap.popupsFor.set("5000", [{ title: "Delete order", text: "Delete it", question: true }]);
+    const before = sap.acts.length;
+    const other = (await s.json({ name: "diag question" })).result;
+    expect(other.passed).toBe(false);
+    expect(other.steps.flatMap((x) => x.failures).join(" ")).toContain('"Delete order"');
+    expect(sap.acts.slice(before).some((a) => a.do === "press")).toBe(false);
+    // With the popup as recorded, it passes.
+    sap.popupsFor.set("5000", [{ title: "Archived order", text: "Display it anyway", question: true }]);
+    expect((await s.json({ name: "diag question" })).result.passed).toBe(true);
   });
 
   test("a screen marked damaged in transit is not judged: the next whole one is waited for, else the step fails for that reason", async () => {
