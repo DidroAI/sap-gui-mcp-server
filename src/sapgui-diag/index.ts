@@ -16,12 +16,16 @@
  * (`Typed`), and after that step a field that does not show it is reported.
  *
  * Ids in actions: a SAP field name ("VBAK-VBELN"), a function code in braces
- * ("{HEAD}", a button or tab), a table cell "FIELD[n]" (n = row of the table
- * on show, 0-based), or a position "@row,col" (the element there, a list
- * line, anything else). Ids written nearly right resolve by the rule of
+ * ("{HEAD}", a button or tab), a table cell "FIELD[n]" (n = the table's own
+ * row number, as the view prints it; a row not on show is scrolled to), or a
+ * position "@row,col" (the element there, a list line, anything else). Grids
+ * and trees by their container (or "shell N", "value-help"), table controls
+ * by name, "list". Ids written nearly right resolve by the rule of
  * core/ids.ts when they then mean one thing (`findTarget`); a name several
  * elements share is refused with their places. What SAP greys out is
  * refused before any input (`greyedRefusal`).
+ * The actions are planned in plan.ts and wait for SAP's answer in the
+ * traffic (traffic.ts); pixels and windows are in geometry.ts.
  */
 import { appendFileSync, mkdirSync } from "node:fs";
 import type { Server } from "node:net";
@@ -29,27 +33,32 @@ import { join } from "node:path";
 import { ONE_LINE_NOTE, oneLine } from "../core/action.js";
 import { ActionError, type Action, type Assessment, type DoctorCheck, type Driver, type LookOptions, type SessionInfo, type Surface } from "../core/types.js";
 import { CLOSES_SESSIONS, commitCode, commitWord, isLogonScreen, LOGON_REFUSAL, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
-import { DiagDecoder, type DiagElement, type DiagKey, type DiagScreen, type DiagWindow, diagView, menuView } from "../diag/index.js";
+import { type DiagControl, DiagDecoder, type DiagElement, type DiagKey, type DiagScreen, type DiagWindow, diagView, menuView } from "../diag/index.js";
 import { notationNote } from "../core/notation.js";
-import { HostError, powershellExe, PsHost, READ_TIMEOUT_MS } from "../sapgui/host.js";
+import { HostError, MAX_TIMEOUT_MS, powershellExe, PsHost, READ_TIMEOUT_MS } from "../sapgui/host.js";
 import type { Transport } from "../sapgui/facts.js";
 import { vkeyNumber } from "../sapgui/keys.js";
+import { type Cells, cellMetrics, cellsFromEnv, type HostWindow, pickWindow, type Rect } from "./geometry.js";
+import { type Geometry, type Named, namedControl, type Plan, planCombo, planGrid, planGridScroll, planPage, planPlain, planTableRow, planToolbar, planTree, position, scrollables, scrollTarget, type Step, type TreeChange } from "./plan.js";
 import { type Hop, startRouter } from "./router.js";
+import { lookControl } from "./rows.js";
+import { MAYBE_REQUEST_MS, Traffic, type WaitOptions, waitNote, waitOptions } from "./traffic.js";
 import { fileURLToPath } from "node:url";
+
+export { cellPoint } from "./geometry.js";
 
 const PREFIX = "sapgui:diag:";
 export const INPUT_SCRIPT = fileURLToPath(new URL("./ps/input-host.ps1", import.meta.url));
-/** How long to wait for SAP's answer after an action that goes to the server. */
-const STEP_MS = 60_000;
 
 interface Connection {
   n: number;
   target: Hop;
   decoder: DiagDecoder;
   open: boolean;
-  /** Bumped on every screen, per mode. */
+  /** Requests and answers of the connection, for the waits (traffic.ts). */
+  traffic: Traffic;
+  /** Bumped on every screen, per mode: typed values hold while it does not change. */
   steps: Map<number, number>;
-  waiters: (() => void)[];
   /** Per mode: values typed in SAP GUI that SAP has not received yet (see Typed). */
   typed: Map<number, Typed[]>;
 }
@@ -63,17 +72,6 @@ interface WindowFacts {
   foreground?: boolean;
 }
 
-/** Cell to screen pixel, on a window's screen area: SAP GUI lays its screens out on a grid of character cells. */
-export function cellPoint(area: [number, number, number, number], size: { rows: number; cols: number }, row: number, col: number, width = 1): [number, number] {
-  const [left, top, w, h] = area;
-  const cw = Math.max(1, Math.floor(w / Math.max(1, size.cols)));
-  const ch = Math.max(1, Math.floor(h / Math.max(1, size.rows + 1)));
-  // Measured on Quartz at 100% (VA01, VA03): x = 3 + cw * col, y = ch * (row + 1) is the middle of a row.
-  const x = left + 3 + cw * col + Math.min(Math.floor((cw * Math.max(1, width)) / 2), 3 * cw);
-  const y = top + ch * (row + 1) - Math.floor(ch / 10);
-  return [x, y];
-}
-
 const clean = (s: string | undefined) => (s ?? "").replace(/\s+/g, " ").trim();
 const commit = (reason: string): Assessment => ({ risk: "commit", reason });
 
@@ -81,8 +79,6 @@ const commit = (reason: string): Assessment => ({ risk: "commit", reason });
 function active(s: DiagScreen): DiagWindow {
   return s.windows[s.windows.length - 1] as DiagWindow;
 }
-
-const w0 = (s: DiagScreen): DiagWindow => active(s);
 
 /** The popup's question, when it asks whether to save, post, delete... */
 function commitQuestion(s: DiagScreen): string | undefined {
@@ -156,10 +152,34 @@ export function assessDiag(s: DiagScreen, action: Action, target?: Target): Asse
       if (n === undefined) return commit(`key ${String(action.key ?? action.value)} is not a key SAP GUI has`);
       return assessKey(n, `key ${n}`);
     }
+    case "combo":
+      // A dropdown asked for its entries: nothing is chosen.
+      if (action.key === undefined && action.value === undefined) return { risk: "read", reason: "lists a dropdown's entries" };
+      return { risk: "navigate", reason: "changes input, not saved" };
+    case "scroll":
+      return { risk: "read", reason: "scroll" };
+    case "tree":
+      return action.how === "expand" || action.how === "collapse" ? { risk: "read", reason: `${action.how} a tree node` } : { risk: "navigate", reason: "tree node" };
+    case "grid":
+      return { risk: "navigate", reason: "grid cell" };
+    case "toolbar": {
+      const b = clean(String(action.button ?? ""));
+      const k = [...w.toolbar, ...w.keys].find((x) => x.enabled && (clean(x.fcode).toLowerCase() === b.toLowerCase() || clean(x.text).toLowerCase() === b.toLowerCase() || clean(x.tooltip).toLowerCase() === b.toLowerCase()));
+      if (k) return assessKey(k.vkey, `toolbar button "${clean(k.text || k.tooltip) || k.fcode}"`);
+      if (safeCode(b)) return { risk: "navigate", reason: `toolbar button ${b}` };
+      if (commitWord(b) || commitCode(b)) return commit(`toolbar button "${b}"`);
+      if (safeWord(lang, b)) return { risk: "navigate", reason: `toolbar button "${b}"` };
+      return commit(`toolbar button "${b}" is not known to be safe, so it is treated as a write`);
+    }
     case "press":
     case "click":
     case "dblclick":
     case "select": {
+      // A row of a table control or a grid, a tree node by "node": selecting or opening it navigates.
+      if ((action.row !== undefined || action.node !== undefined) && namedControl(s, action.id)) {
+        if (action.do === "dblclick" && commitQuestion(s)) return commit("a double-click on a popup that asks to save");
+        return { risk: "navigate", reason: `${action.do} on a ${action.node !== undefined ? "tree node" : "row"}` };
+      }
       if (target?.kind === "key") return assessKey(target.key.vkey, `button "${clean(target.key.text)}"`);
       if (target?.kind === "tab") return { risk: "navigate", reason: `tab "${target.text}"` };
       if (target?.kind === "element" && target.element.kind === "button") return assessButton(target.element, "button ");
@@ -259,7 +279,8 @@ function lookup(w: DiagWindow, raw: string, action: Action, ci: boolean): Found 
     }
     for (const t of w.tables) {
       const c = t.columns.find((x) => same(x.name, name, ci));
-      const r = t.rows[index];
+      // n is the table's own row number, as the view prints it ("row n"), not the n-th row on show.
+      const r = t.rows.find((x) => x.index === index);
       if (c && r) return { target: { kind: "cell", window: w, row: r.row, col: c.col, width: c.width, input: !!r.cells[c.index]?.input, table: t.name, index, column: c.index, what: `${c.name} in row ${index}` } };
     }
     return { none: true };
@@ -420,7 +441,7 @@ export interface Typed {
   name: string;
   row: number;
   col: number;
-  /** A cell of a table control: the table, the row of the table on show and the column index. */
+  /** A cell of a table control: the table, the table's own row number (as the view prints it) and the column index. */
   table?: { name: string; index: number; column: number };
   value: string;
 }
@@ -433,7 +454,7 @@ export function withTyped(s: DiagScreen, typed: Typed[]): DiagScreen {
     const w = copy.windows[t.window];
     if (!w || w.program !== t.program || w.dynpro !== t.dynpro) continue;
     if (t.table) {
-      const cell = w.tables.find((x) => x.name === t.table?.name)?.rows[t.table.index]?.cells[t.table.column];
+      const cell = w.tables.find((x) => x.name === t.table?.name)?.rows.find((r) => r.index === t.table?.index)?.cells[t.table.column];
       if (cell) Object.assign(cell, { text: t.value, typed: true });
       continue;
     }
@@ -459,29 +480,88 @@ export function typedMisses(typed: Typed[], after: DiagScreen): string[] {
   for (const t of typed) {
     const w = after.windows[t.window];
     if (!w || w.program !== t.program || w.dynpro !== t.dynpro) continue;
-    const now = t.table ? w.tables.find((x) => x.name === t.table?.name)?.rows[t.table.index]?.cells[t.table.column]?.text : w.elements.find((x) => x.name === t.name && x.row === t.row && x.col === t.col)?.text;
+    const now = t.table ? w.tables.find((x) => x.name === t.table?.name)?.rows.find((r) => r.index === t.table?.index)?.cells[t.table.column]?.text : w.elements.find((x) => x.name === t.name && x.row === t.row && x.col === t.col)?.text;
     if (now === undefined || sameValue(now, t.value)) continue;
     out.push(`${t.name}${t.table ? `[${t.table.index}]` : ""} shows "${clean(now)}" after this step, not the typed "${t.value}": SAP changed it or did not take it.`);
   }
   return out;
 }
 
-class DiagDriver implements Driver {
+/** What a surface shares between its drivers: window bindings, the cell calibration, and the environment. */
+export interface DriverShared {
+  /** Session window handle to the "connection:mode" it was matched to (geometry.ts `pickWindow`). */
+  bound: Map<number, string>;
+  /** Is a "connection:mode" still open? */
+  live(key: string): boolean;
+  env: Record<string, string | undefined>;
+}
+
+/** Where the time of the last action went. */
+interface ActTiming {
+  total: number;
+  input: number;
+  start: number;
+  sap: number;
+  settle: number;
+  decode: number;
+  requests: number;
+}
+
+/** The longest a driver waits, before an action, for SAP's answer to a step still running. */
+const BUSY_MS = 2000;
+
+export class DiagDriver implements Driver {
   info: SessionInfo;
+  /** Tree folders opened or closed by the keyboard without SAP knowing: shell id to node key to open. */
+  private local = new Map<number, { count: number; nodes: Map<string, boolean> }>();
+  /** Checks for the next screen: changes SAP gets only with the next step (a dropdown without a function code). */
+  private later: ((s: DiagScreen) => string | undefined)[] = [];
+  private last: ActTiming | undefined;
+  private shared: DriverShared;
+
   constructor(
     info: SessionInfo,
     private conn: Connection,
     private mode: number,
     private host: Transport,
+    shared?: DriverShared,
   ) {
     this.info = info;
+    this.shared = shared ?? { bound: new Map(), live: () => true, env: {} };
   }
 
+  private get key(): string {
+    return `${this.conn.n}:${this.mode}`;
+  }
+
+  /** The keyboard's tree changes of one tree, while SAP's nodes of it stay the same. */
+  private localOf(c: DiagControl): Map<string, boolean> | undefined {
+    const l = this.local.get(c.id);
+    if (!l) return undefined;
+    if (!c.tree || c.tree.nodes.length !== l.count) {
+      this.local.delete(c.id);
+      return undefined;
+    }
+    return l.nodes;
+  }
+
+  /** The screen of this mode, with the keyboard's tree changes. */
   private screen(): DiagScreen {
     const s = this.conn.decoder.screen(this.mode);
     if (!this.conn.open) throw new ActionError("This SAP GUI connection is closed. Call sap_sessions to see what is open.");
     if (!s) throw new ActionError("No screen has come through the router for this session yet: press Enter in SAP GUI once.");
-    return s;
+    if (!this.local.size) return s;
+    return {
+      ...s,
+      windows: s.windows.map((w) => ({
+        ...w,
+        controls: w.controls.map((c) => {
+          const nodes = this.localOf(c);
+          if (!nodes || !c.tree) return c;
+          return { ...c, tree: { ...c.tree, nodes: c.tree.nodes.map((x) => (nodes.has(x.key) ? { ...x, expanded: nodes.get(x.key) as boolean } : x)) } };
+        }),
+      })),
+    };
   }
 
   async refresh(): Promise<SessionInfo> {
@@ -493,18 +573,19 @@ class DiagDriver implements Driver {
     return this.conn.open && !!this.conn.decoder.screen(this.mode);
   }
 
+  async look(options: LookOptions): Promise<string> {
+    if (options.id?.trim().toLowerCase() === "mbar") return menuView(this.screen());
+    if (options.id) return lookControl({ screen: () => this.screen(), scrollTo: (id, row) => this.scrollTo(id, row).then(() => undefined) }, options);
+    const view = diagView(withTyped(this.screen(), this.typed()), options.compact ? {} : { maxRows: 100_000 });
+    return this.conn.traffic.pending(this.mode) ? `${view}\nNOTE SAP is still working on a step: this screen is from before it and will change. Look again in a moment, and act when the step has ended.` : view;
+  }
+
   /** The values typed on the screen on show that SAP has not received yet; those of an earlier screen are dropped. */
   private typed(): Typed[] {
     const step = this.conn.steps.get(this.mode) ?? 0;
     const kept = (this.conn.typed.get(this.mode) ?? []).filter((t) => t.step === step);
     this.conn.typed.set(this.mode, kept);
     return kept;
-  }
-
-  async look(options: LookOptions): Promise<string> {
-    const s = this.screen();
-    if (options.id?.trim().toLowerCase() === "mbar") return menuView(s);
-    return diagView(withTyped(s, this.typed()), options.compact ? {} : { maxRows: 100_000 });
   }
 
   async assess(action: Action): Promise<Assessment> {
@@ -516,184 +597,259 @@ class DiagDriver implements Driver {
     return assessDiag(s, action, target);
   }
 
-  /** The SAP GUI window of this session (and its popups), by title. */
+  timing(): string | undefined {
+    const t = this.last;
+    if (!t) return undefined;
+    const other = Math.max(0, t.total - t.input - t.start - t.sap - t.settle);
+    return `${t.total} ms: input ${t.input}, start ${t.start}, sap ${t.sap}, settle ${t.settle}, other ${other}; decoding ${t.decode} (${t.requests} request${t.requests === 1 ? "" : "s"})`;
+  }
+
+  /** The SAP GUI windows of this session (the session window, then its popups), with their screen areas. */
   private async windows(s: DiagScreen): Promise<WindowFacts[]> {
-    const main = s.windows[0]?.title ?? "";
-    const all = await this.host.request<{ windows: WindowFacts[] }>("windows", {}, READ_TIMEOUT_MS);
-    const mine = all.windows.filter((w) => w.kind === "session" && clean(w.title) === clean(main));
-    if (!mine.length) throw new ActionError(`No SAP GUI window titled "${main}" is open on this desktop.`);
-    const pick = mine.find((w) => w.foreground) ?? mine[0];
-    if (mine.length > 1 && !pick?.foreground) throw new ActionError(`Several SAP GUI windows are titled "${main}": bring the one to drive to the front, then ask again.`);
-    const res = await this.host.request<{ windows: WindowFacts[] }>("area", { session: (pick as WindowFacts).hwnd }, READ_TIMEOUT_MS);
+    const all = await this.host.request<{ windows: HostWindow[] }>("windows", {}, READ_TIMEOUT_MS);
+    const mine = pickWindow(all.windows, { key: this.key, title: s.windows[0]?.title ?? "", ...(s.message?.text ? { status: s.message.text } : {}) }, this.shared.bound, this.shared.live);
+    if (typeof mine === "string") throw new ActionError(mine);
+    const res = await this.host.request<{ windows: WindowFacts[] }>("area", { session: mine.hwnd }, READ_TIMEOUT_MS);
     return res.windows;
   }
 
-  private async waitStep(before: number): Promise<boolean> {
-    const end = Date.now() + STEP_MS;
-    while ((this.conn.steps.get(this.mode) ?? 0) === before && this.conn.open) {
-      const left = end - Date.now();
-      if (left <= 0) return false;
-      await new Promise<void>((r) => {
-        const t = setTimeout(r, Math.min(left, 500));
-        this.conn.waiters.push(() => {
-          clearTimeout(t);
-          r();
-        });
-      });
+  /** The pixels of the windows: cells from the traffic (or a calibration, or the area's size), the Windows controls of the window acted on. */
+  private geometry(s: DiagScreen, wins: WindowFacts[]): Geometry {
+    const main = !active(s).modal;
+    const top = wins[wins.length - 1] as WindowFacts;
+    const env = cellsFromEnv(this.shared.env.SAP_DIAG_CELL);
+    const hostOf = (w: DiagWindow): WindowFacts => (main ? wins[0] : wins[w.index]) ?? top;
+    const cellsOf = (w: DiagWindow): Cells => {
+      const area = hostOf(w).area;
+      if (!area) throw new ActionError("The screen area of this SAP GUI window was not found.");
+      return cellMetrics(area as Rect, w.size, this.conn.traffic.font, env);
+    };
+    const acting = (main ? wins[0] : top) ?? top;
+    return {
+      at: (w, row, col, width = 1) => {
+        const c = cellsOf(w);
+        const [left, topPx] = hostOf(w).area as Rect;
+        return [left + c.x0 + c.cw * col + Math.min(Math.floor((c.cw * Math.max(1, width)) / 2), 3 * c.cw), topPx + c.ch * row + c.y0];
+      },
+      get cells() {
+        return cellsOf(active(s));
+      },
+      controls: (acting.controls ?? []) as { cls: string; rect: Rect }[],
+    };
+  }
+
+  /** Sends one input to the host. */
+  private async send(session: number | undefined, main: boolean, step: Step): Promise<void> {
+    await this.host.request("act", { session, main, action: step }, READ_TIMEOUT_MS).catch((e) => {
+      throw e instanceof HostError ? new ActionError(e.message) : e;
+    });
+  }
+
+  /** Runs a plan: the inputs, then the wait for SAP's answer in the traffic, then the checks on the screen it brought. */
+  private async run(s: DiagScreen, plan: Plan, wins: WindowFacts[], o: WaitOptions, t0: number): Promise<string> {
+    const traffic = this.conn.traffic;
+    const session = wins[0]?.hwnd;
+    const main = !active(s).modal;
+    const decode0 = traffic.decodeMs;
+    const mark = traffic.mark();
+    const tIn = Date.now();
+    for (const step of plan.steps) await this.send(session, main, step);
+    const inputEnd = Date.now();
+    if (plan.tree) this.remember(plan.tree);
+    let note = plan.note;
+    let answered = false;
+    const timing: ActTiming = { total: 0, input: inputEnd - tIn, start: 0, sap: 0, settle: 0, decode: 0, requests: 0 };
+    if (plan.answer !== "no" && plan.steps.length) {
+      const r = await traffic.wait(this.mode, mark, inputEnd, { ...o, requestMs: plan.answer === "yes" ? o.requestMs : MAYBE_REQUEST_MS });
+      Object.assign(timing, { start: r.start, sap: r.sap, settle: r.settle, requests: r.requests });
+      answered = r.answered;
+      const miss = waitNote(r, { ...o, requestMs: plan.answer === "yes" ? o.requestMs : MAYBE_REQUEST_MS }, plan.answer === "yes");
+      if (miss) note += `; ${miss}`;
     }
-    // a step can come in several messages: let the last one land
-    await new Promise((r) => setTimeout(r, 300));
-    return true;
+    const after = this.conn.decoder.screen(this.mode);
+    if (answered && after) {
+      for (const check of this.later.splice(0)) {
+        const said = check(after);
+        if (said) note += `; ${said}`;
+      }
+    }
+    const confirm = plan.confirm?.(after ? this.screen() : undefined, answered);
+    if (confirm) note += `; ${confirm}`;
+    if (plan.later) this.later.push(plan.later);
+    timing.decode = Math.round(traffic.decodeMs - decode0);
+    timing.total = Date.now() - t0;
+    this.last = timing;
+    return note;
+  }
+
+  private remember(t: TreeChange): void {
+    const c = this.conn.decoder
+      .screen(this.mode)
+      ?.windows.flatMap((w) => w.controls)
+      .find((x) => x.id === t.shell);
+    if (!c?.tree) return;
+    const l = this.local.get(t.shell);
+    const nodes = l && l.count === c.tree.nodes.length ? l.nodes : new Map<string, boolean>();
+    nodes.set(t.node, t.expanded);
+    this.local.set(t.shell, { count: c.tree.nodes.length, nodes });
+  }
+
+  /** Before an action: SAP must be done with the last step. */
+  private async idle(): Promise<void> {
+    const traffic = this.conn.traffic;
+    if (!traffic.pending(this.mode)) return;
+    await traffic.wait(this.mode, -1, Date.now(), { requestMs: 0, answerMs: BUSY_MS, quietMs: 0, maxSettleMs: 0 });
+    if (traffic.pending(this.mode)) throw new ActionError('SAP is still working on the last step. Look again in a moment (sap_look); a long step can be given more time with "timeout" (seconds).');
+  }
+
+  /**
+   * Scrolls a control so that `row` (from 0) is on show, or by a word
+   * (next, prev, first, last). Table controls and lists page with SAP's page
+   * keys until the row is on show, each page confirmed by the next screen.
+   */
+  private async scrollTo(id: string, to: number | string, o: WaitOptions = waitOptions({}, this.shared.env, MAX_TIMEOUT_MS)): Promise<string> {
+    const t0 = Date.now();
+    let s = this.screen();
+    let n = namedControl(s, id);
+    if (!n) throw new ActionError(`No control "${id}" on this screen. It has: ${scrollables(s).map((x) => x.id).join(", ") || "nothing that scrolls"}.`);
+    if (n.kind === "dropdown") throw new ActionError(`${n.id} is a dropdown: it does not scroll.`);
+    if (n.kind === "tree") return `every node SAP sent of ${n.id} is in the view (sap_look with "id":"${n.id}" and "rows" reads any of them): nothing to scroll`;
+    if (typeof to === "string" && ["right", "left", "rightmost", "leftmost"].includes(to)) throw new ActionError(`Scrolling sideways is not supported by the DIAG method: the view already has every column SAP sent.`);
+    const wins = await this.windows(s);
+    if (n.kind === "grid") return this.run(s, planGridScroll(n, to, this.geometry(s, wins)), wins, o, t0);
+    const start = position(n);
+    if (!start) throw new ActionError(`${n.id} does not scroll.`);
+    const target = scrollTarget(to, start);
+    let notes = "";
+    for (let page = 0; page < 60; page++) {
+      const plan = planPage(n, target, this.geometry(s, wins));
+      if (!plan) break;
+      const before = position(n)?.first;
+      const said = await this.run(s, plan, wins, o, t0);
+      s = this.screen();
+      n = namedControl(s, id) as Named | undefined;
+      if (!n) return `${said}; ${id} is gone from the screen`;
+      if (position(n)?.first === before) {
+        notes = `; ${n.id} did not move with SAP's page key (${said})`;
+        break;
+      }
+    }
+    const p = position(n);
+    if (!p) return `scrolled ${id}`;
+    const last = p.first + p.visible - 1;
+    const where = `rows ${p.first} to ${p.total !== undefined ? Math.min(last, p.total - 1) : last}${p.total !== undefined ? ` of ${p.total}` : ""}`;
+    return p.first === start.first ? `${n.id} is already there: ${where}${notes}` : `scrolled ${n.id}: ${where}${notes}`;
   }
 
   async act(action: Action): Promise<string> {
-    const s = this.screen();
+    const t0 = Date.now();
+    let s = this.screen();
     if (isLogonScreen(s.windows[0]?.program, s.windows[0]?.dynpro)) throw new ActionError(LOGON_REFUSAL);
-    const wins = await this.windows(s);
-    const session = wins[0]?.hwnd;
-    const top = wins[wins.length - 1] as WindowFacts;
-    const before = this.conn.steps.get(this.mode) ?? 0;
-    const main = !active(s).modal;
-    const send = (a: Record<string, unknown>) => this.host.request("act", { session, main, action: a }, READ_TIMEOUT_MS).catch((e) => {
-      throw e instanceof HostError ? new ActionError(e.message) : e;
-    });
-    const at = (t: { row: number; col: number; window: DiagWindow }, width = 1): [number, number] => {
-      const w = (main ? wins[0] : wins[t.window.index]) ?? top;
-      if (!w.area) throw new ActionError("The screen area of this SAP GUI window was not found.");
-      return cellPoint(w.area, t.window.size, t.row, t.col, width);
-    };
-    let goes = true;
-    let note: string;
-    const target = resolveTarget(s, action);
-    const grey = greyedRefusal(s, action, target);
-    if (grey) throw new ActionError(grey);
-    const need = () => {
-      if (!target) throw new ActionError(noTargetText(s, String(action.id ?? action.name ?? "")));
-      return target;
-    };
-    switch (action.do) {
-      case "okcode":
-        await send({ do: "okcode", value: String(action.value ?? "") });
-        note = `okcode ${String(action.value ?? "")}`;
-        break;
-      case "key": {
-        const n = vkeyNumber(action.key ?? action.value);
-        if (n === undefined) throw new ActionError(`Unknown key ${String(action.key ?? action.value)}`);
-        await send({ do: "key", key: n });
-        note = `key ${n}`;
-        break;
-      }
-      case "set": {
-        const t = need();
-        if (t.kind !== "element" && t.kind !== "cell") throw new ActionError(`${t.what} does not take text.`);
-        if (t.kind === "element" && !t.element.input) throw new ActionError(`${t.what} is read-only.`);
-        const [x, y] = at(t, t.kind === "cell" ? t.width : t.element.width);
-        // Typed with the keyboard: a line break would be the Enter key, so it is typed as a space.
-        const single = oneLine(String(action.value ?? ""));
-        await send({ do: "set", x, y, value: single.text, settle: 150 });
-        // SAP, and so this reader, sees the value with the next Enter: until then the view shows it as typed.
-        const name = t.kind === "element" ? t.element.name : t.what.split(" ")[0] ?? "";
-        const typed = this.typed().filter((x) => !(x.window === t.window.index && x.row === t.row && x.col === t.col && x.name === name));
-        typed.push({ step: before, window: t.window.index, program: t.window.program, dynpro: t.window.dynpro, name, row: t.row, col: t.col, ...(t.kind === "cell" ? { table: { name: t.table, index: t.index, column: t.column } } : {}), value: single.text });
-        this.conn.typed.set(this.mode, typed);
-        const notation = notationNote(single.text, diagView(s));
-        note = `set ${t.kind === "cell" ? `${name}[${t.index}]` : name || t.what} = "${single.text}" (typed; SAP gets it with the next Enter or function key)${single.had ? ` (${ONE_LINE_NOTE})` : ""}${notation ? ` (${notation})` : ""}`;
-        goes = false;
-        break;
-      }
-      case "focus":
-      case "check":
-      case "click":
-      case "dblclick":
-      case "press":
-      case "select":
-      case "f4": {
-        const t = need();
-        if (t.kind === "key") {
-          await send({ do: "key", key: t.key.vkey });
-          note = `pressed ${t.what}`;
-          break;
-        }
-        if (t.kind === "node") {
-          // Trees are SAP GUI controls: lines of a fixed height from the top of the tree's window, indented by depth.
-          const host = (main ? wins[0] : wins[t.window.index]) ?? top;
-          const [cx, cy] = at({ row: t.row, col: t.col, window: t.window });
-          const g = host.controls?.find((c) => c.cls === "SAPTreeList" && cx >= c.rect[0] - 8 && cx <= c.rect[0] + c.rect[2] && cy >= c.rect[1] - 30 && cy <= c.rect[1] + c.rect[3]);
-          if (!g) throw new ActionError("The tree's window was not found on the screen.");
-          const pitch = Math.max(16, Math.floor((host.area?.[3] ?? 571) / ((t.window.size.rows || 20) + 1)) - 3);
-          // a column tree draws its header in a window of its own: the tree window starts at the first line
-          const y = g.rect[1] + pitch * t.line + Math.floor(pitch / 2);
-          if (y > g.rect[1] + g.rect[3] - 4) throw new ActionError(`${t.what} is below the visible part of the tree.`);
-          await send({ do: action.do === "dblclick" ? "dblclick" : "click", x: g.rect[0] + 44 + 18 * t.depth, y, settle: 150 });
-          note = `${action.do} on ${t.what}`;
-          goes = action.do === "dblclick";
-          break;
-        }
-        if (t.kind === "gridrow" && t.row < 0) {
-          if (t.index > 0) await send({ do: "down", count: t.index, settle: 150 });
-          if (action.do === "dblclick" || action.do === "press") {
-            await send({ do: "key", key: 0 });
-            note = `chose ${t.what}`;
-          } else {
-            note = `selected ${t.what}`;
-            goes = false;
-          }
-          break;
-        }
-        if (t.kind === "gridrow") {
-          // Grids are SAP GUI controls drawn on their own: click the first row, move down with the arrow key
-          // (it scrolls), and choose with F2, as a double-click does in an ALV list.
-          const host = (main ? wins[0] : wins[t.window.index]) ?? top;
-          const [gx, gy] = at({ row: t.row, col: t.col, window: t.window });
-          const g = host.controls?.find((c) => c.cls === "SAPALVGrid" && gx >= c.rect[0] - 8 && gx <= c.rect[0] + c.rect[2] && gy >= c.rect[1] - 30 && gy <= c.rect[1] + c.rect[3]);
-          if (!g) throw new ActionError("The grid's window was not found on the screen.");
-          const pitch = Math.max(16, Math.floor((host.area?.[3] ?? 571) / ((t.window.size.rows || 20) + 1)) - 1);
-          await send({ do: "click", x: g.rect[0] + 60, y: g.rect[1] + pitch + Math.floor(pitch / 2), settle: 150 });
-          await send({ do: "top", settle: 100 });
-          if (t.index > 0) await send({ do: "down", count: t.index, settle: 150 });
-          if (action.do === "dblclick" || action.do === "press") {
-            await send({ do: "key", key: 2 });
-            note = `chose ${t.what}`;
-          } else {
-            note = `selected ${t.what}`;
-            goes = false;
-          }
-          break;
-        }
-        if (t.kind === "tab" && action.do !== "focus") {
-          // Tab captions are drawn in a proportional font, so a cell is not where they are: send the tab's
-          // function code through the command field, as a click on it does.
-          const fcode = w0(s).tabstrips.flatMap((x) => x.tabs).find((x) => x.row === t.row && x.col === t.col)?.fcode;
-          if (fcode && !w0(s).modal) {
-            await send({ do: "okcode", value: fcode });
-            note = `selected ${t.what}`;
-            break;
-          }
-        }
-        const width = t.kind === "element" ? t.element.width : t.kind === "cell" ? t.width : t.kind === "tab" ? Math.max(1, t.text.length) : 1;
-        const [x, y] = at(t, width);
-        const twice = action.do === "dblclick";
-        const f4 = action.do === "f4";
-        await send({ do: f4 ? "f4" : twice ? "dblclick" : "click", x, y, settle: 150 });
-        note = `${action.do} on ${t.what}`;
-        // A click on a field only moves the cursor; buttons, tabs, double-clicks and F4 go to SAP.
-        goes = f4 || twice || t.kind === "tab" || (t.kind === "element" && (t.element.kind === "button" || !!t.element.fcode));
-        if (action.do === "check" || action.do === "focus") goes = false;
-        break;
-      }
-      default:
-        throw new ActionError(`"${action.do}" is not supported by the DIAG method (okcode, key, set, press, click, dblclick, check, select, f4, focus).`);
+    await this.idle();
+    s = this.screen();
+    // Something SAP greys out is refused before any input.
+    if (/^(press|click|dblclick|select|f4|check|key|okcode)$/.test(action.do)) {
+      const grey = greyedRefusal(s, action, resolveTarget(s, action));
+      if (grey) throw new ActionError(grey);
     }
-    const sent = goes ? (this.conn.typed.get(this.mode) ?? []).filter((x) => x.step === before) : [];
-    if (goes && !(await this.waitStep(before))) return `${note}; SAP has not answered yet`;
+    const o = waitOptions(action, this.shared.env, MAX_TIMEOUT_MS);
+    const has = (v: unknown) => v !== undefined && v !== null && v !== "";
+    // Without a choice, a dropdown only says what it can: no window is needed.
+    if (action.do === "combo" && !has(action.key) && !has(action.value)) return planCombo(s, action, NO_GEOMETRY).note;
+    if (action.do === "scroll") {
+      let id = action.id;
+      if (typeof id !== "string" || !id.trim()) {
+        const all = scrollables(s);
+        if (all.length !== 1) throw new ActionError(all.length ? `scroll needs "id": one of ${all.map((x) => x.id).join(", ")}.` : "Nothing on this screen scrolls: no grid, table, tree or list.");
+        id = (all[0] as Named).id;
+      }
+      return this.scrollTo(id, (action.to ?? "next") as number | string, o);
+    }
+    // A table cell by the table's own row number: a row that is not on show is scrolled to first.
+    const cell = /^(.+)\[(\d+)\]$/.exec(String(action.id ?? ""));
+    if (cell && !resolveTarget(s, action)) {
+      const table = active(s).tables.find((t) => t.columns.some((c) => c.name === cell[1]));
+      if (table && !table.rows.some((r) => r.index === Number(cell[2])) && (table.totalRows === undefined || Number(cell[2]) < table.totalRows)) {
+        await this.scrollTo(table.name, Number(cell[2]), o);
+        s = this.screen();
+      }
+    }
+    const wins = await this.windows(s);
+    const g = this.geometry(s, wins);
+    const named = namedControl(s, action.id);
+    const local = (n: Named | undefined) => (n?.kind === "tree" ? this.localOf(n.control) : undefined);
+    let plan: Plan;
+    switch (action.do) {
+      case "combo":
+        plan = planCombo(s, action, g);
+        break;
+      case "tree":
+        plan = planTree(s, action, g, local(named));
+        break;
+      case "grid":
+        plan = planGrid(s, action, g);
+        break;
+      case "toolbar": {
+        let p = planToolbar(s, action, g);
+        if (p === "need-buttons") {
+          const r = await this.host.request<{ buttons: { name: string; tip: string; enabled: boolean; x: number; y: number }[] }>("buttons", { session: wins[0]?.hwnd }, READ_TIMEOUT_MS);
+          p = planToolbar(s, action, g, r.buttons ?? []) as Plan;
+        }
+        plan = p;
+        break;
+      }
+      default: {
+        // A row of a table control or a grid, a tree node by "node" (the other surfaces' shape).
+        if (named && (action.do === "select" || action.do === "dblclick" || action.do === "click") && (action.row !== undefined || action.node !== undefined)) {
+          if (named.kind === "tree" && action.node !== undefined) plan = planTree(s, { ...action, do: "tree", how: action.do === "dblclick" ? "double" : "select" }, g, local(named));
+          else if (named.kind === "grid") plan = planGrid(s, { ...action, do: "grid", how: action.do === "dblclick" ? "double" : action.do === "select" ? "select" : "cell" }, g);
+          else if (named.kind === "table" && typeof action.row === "number") {
+            if (!named.table.rows.some((r) => r.index === action.row)) {
+              await this.scrollTo(named.table.name, action.row, o);
+              s = this.screen();
+            }
+            const again = namedControl(s, named.id);
+            if (again?.kind !== "table") throw new ActionError(`The table ${named.id} is gone from the screen.`);
+            plan = planTableRow(again, action.row, g);
+          } else throw new ActionError(`${named.id} is a ${named.kind}: "row" and "node" go with a table, a grid or a tree.`);
+          break;
+        }
+        if (named?.kind === "dropdown" && action.do === "set") {
+          plan = planCombo(s, { ...action, do: "combo", key: action.value }, g);
+          break;
+        }
+        const target = resolveTarget(s, action);
+        if (!target && /^(set|focus|check|click|dblclick|press|select|f4)$/.test(action.do)) throw new ActionError(noTargetText(s, String(action.id ?? action.name ?? "")));
+        plan = planPlain(s, action, target, g, local(named));
+        if (action.do === "set" && (target?.kind === "element" || target?.kind === "cell")) plan = { ...plan, note: this.keepTyped(target, String(action.value ?? ""), s) };
+      }
+    }
+    const before = this.conn.steps.get(this.mode) ?? 0;
+    // The typed values this step sends to SAP: checked on the screen it brings.
+    const sent = plan.answer !== "no" && plan.steps.length ? (this.conn.typed.get(this.mode) ?? []).filter((x) => x.step === before) : [];
+    const note = await this.run(s, plan, wins, o, t0);
     const after = this.conn.decoder.screen(this.mode);
+    const moved = (this.conn.steps.get(this.mode) ?? 0) !== before;
     // The status bar is the view's (sbar line): the server puts an error, a warning or a termination first.
     const lines = [note];
-    if (after && sent.length) lines.push(...typedMisses(sent, after));
+    if (after && moved && sent.length) lines.push(...typedMisses(sent, after));
     // A termination message that was confirmed: SAP has ended the transaction, and the answer says so.
-    if (goes && after && s.message?.type === "A" && after.message?.type !== "A")
+    if (after && moved && s.message?.type === "A" && after.message?.type !== "A")
       lines.push(`SAP ended transaction ${s.session.tcode ?? ""} after the termination message "${clean(s.message.text)}": input that was not saved there is lost. The screen below is where SAP went; start the transaction again to retry.`);
     return lines.join("\n");
+  }
+
+  /** Keeps a value typed into a field or a table cell until SAP gets it with the next step; the note of the set. */
+  private keepTyped(t: Extract<Target, { kind: "element" | "cell" }>, value: string, s: DiagScreen): string {
+    // SAP, and so this reader, sees the value with the next Enter: until then the view shows it as typed.
+    const single = oneLine(value);
+    const step = this.conn.steps.get(this.mode) ?? 0;
+    const name = t.kind === "element" ? t.element.name : (t.what.split(" ")[0] ?? "");
+    const typed = this.typed().filter((x) => !(x.window === t.window.index && x.row === t.row && x.col === t.col && x.name === name));
+    typed.push({ step, window: t.window.index, program: t.window.program, dynpro: t.window.dynpro, name, row: t.row, col: t.col, ...(t.kind === "cell" ? { table: { name: t.table, index: t.index, column: t.column } } : {}), value: single.text });
+    this.conn.typed.set(this.mode, typed);
+    const notation = notationNote(single.text, diagView(s));
+    return `set ${t.kind === "cell" ? `${name}[${t.index}]` : name || t.what} = "${single.text}" (typed; SAP gets it with the next Enter or function key)${single.had ? ` (${ONE_LINE_NOTE})` : ""}${notation ? ` (${notation})` : ""}`;
   }
 
   async screenshot(): Promise<Buffer> {
@@ -704,6 +860,17 @@ class DiagDriver implements Driver {
 
   async close(): Promise<void> {}
 }
+
+/** Planning without a window: for a plan that sends nothing. */
+const NO_GEOMETRY: Geometry = {
+  at: () => {
+    throw new ActionError("This action needs SAP GUI's window.");
+  },
+  get cells(): Cells {
+    throw new ActionError("This action needs SAP GUI's window.");
+  },
+  controls: [],
+};
 
 function describe(c: Connection, mode: number, s: DiagScreen): SessionInfo {
   const info: SessionInfo = { id: `${PREFIX}${c.n}:${mode}`, surface: "sapgui", where: `SAP GUI connection to ${c.target.host}:${c.target.service} through the DIAG router, mode ${mode}` };
@@ -747,10 +914,10 @@ export function sapguiDiagSurface(env: Record<string, string | undefined>, optio
     port,
     ...(options.log ? { log: options.log } : {}),
     onConnection(target) {
-      const c: Connection = { n: n++, target, decoder: new DiagDecoder(), open: true, steps: new Map(), waiters: [], typed: new Map() };
+      const c: Connection = { n: n++, target, decoder: new DiagDecoder(), open: true, traffic: new Traffic(), steps: new Map(), typed: new Map() };
       c.decoder.onScreen = (_s, mode) => {
         c.steps.set(mode, (c.steps.get(mode) ?? 0) + 1);
-        for (const w of c.waiters.splice(0)) w();
+        c.traffic.screen(mode);
       };
       conns.push(c);
       // SAP_DIAG_CAPTURE=<folder>: keep the raw traffic, to debug the decoder (it holds SAP data: keep it local).
@@ -765,11 +932,16 @@ export function sapguiDiagSurface(env: Record<string, string | undefined>, optio
             head.writeUInt32LE(chunk.length, 9);
             appendFileSync(capture, Buffer.concat([head, chunk]));
           }
+          // The tracker sees SAP GUI's requests before the decoder, and SAP's bytes before the screen they make.
+          if (dir === 0) c.traffic.client(chunk);
+          else c.traffic.server();
+          const t = performance.now();
           c.decoder.push(dir, chunk);
+          c.traffic.decodeMs += performance.now() - t;
         },
         close: () => {
           c.open = false;
-          for (const w of c.waiters.splice(0)) w();
+          c.traffic.closed();
           // A closed connection is never listed again: let its screens go, so that memory does not grow with every logon.
           const at = conns.indexOf(c);
           if (at >= 0) conns.splice(at, 1);
@@ -779,6 +951,15 @@ export function sapguiDiagSurface(env: Record<string, string | undefined>, optio
   });
   router.catch(() => {});
   let host: Transport | undefined = options.transport;
+  const shared: DriverShared = {
+    bound: new Map(),
+    live: (key) => {
+      const [cn, mode] = key.split(":").map(Number);
+      const c = conns.find((x) => x.n === cn);
+      return !!c?.open && c.decoder.screens().has(mode as number);
+    },
+    env,
+  };
   const input = () => (host ??= new PsHost(env, { command: powershellExe(env), args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", INPUT_SCRIPT] }));
   return {
     name: "sapgui",
@@ -796,7 +977,7 @@ export function sapguiDiagSurface(env: Record<string, string | undefined>, optio
       const m = /^sapgui:diag:(\d+):(\d+)$/.exec(info.id);
       const c = conns.find((x) => x.n === Number(m?.[1]));
       if (!m || !c) throw new ActionError("This SAP GUI session is gone. Call sap_sessions to see what is open.");
-      return new DiagDriver(info, c, Number(m[2]), input());
+      return new DiagDriver(info, c, Number(m[2]), input(), shared);
     },
     async doctor(): Promise<DoctorCheck[]> {
       const checks: DoctorCheck[] = [];

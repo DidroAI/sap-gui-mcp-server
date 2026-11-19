@@ -3,7 +3,7 @@ import { connect, createServer, type Server, type Socket } from "node:net";
 import type { Transport } from "../../src/sapgui/facts.js";
 import { buildRoute, niFrame } from "../../src/sapgui-diag/router.js";
 import { sapguiDiagSurface } from "../../src/sapgui-diag/index.js";
-import { elem, elementList, END, keys, message, RESET, screenHead, sessionInfo } from "../diag/build.js";
+import { elem, elementList, END, idItem, keys, message, RESET, screenHead, sessionInfo, windowStart } from "../diag/build.js";
 
 /**
  * A value typed with `set` reaches SAP, and so the reader, with the next
@@ -52,8 +52,8 @@ describe("a typed value before and after the step that sends it", () => {
         if (op === "area") return { windows: [{ hwnd: 1, kind: "session", title, area: [0, 0, 800, 630] }] } as T;
         const a = params.action as Record<string, unknown>;
         sent.push(a);
-        // Enter: SAP GUI sends the step, the server answers with the next screen.
-        if (a.do === "key") sock?.write(niFrame(Buffer.alloc(8)));
+        // Enter: SAP GUI sends the step (a request the waits see), the server answers with the next screen.
+        if (a.do === "key") sock?.write(message([windowStart(), idItem(0x04, 0x09, "100")], { info: 0 }));
         return {} as T;
       },
       close() {},
