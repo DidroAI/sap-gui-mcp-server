@@ -12,26 +12,43 @@
  * It only reads. It never throws on what it does not know: unknown items
  * and broken pieces are counted in `notes`.
  *
- * How a dialog step looks on the wire (byte 5 of the DIAG header: 1 = the
+ * How a dialog step looks on the wire (byte 5 of the message header: 1 = the
  * server is done and waits, 2 = more follows without an answer):
  *
  * - a small screen: one message with the items of the screen;
- * - calls to the control framework: a message with an RFC_TR item (REQ),
- *   answered by SAP GUI (RET), any number of times before the screen;
+ * - calls to the control framework: a message with an RFC item that waits
+ *   for an answer, answered by SAP GUI, any number of times before the
+ *   screen;
  * - a large screen: the items travel inside an RFC call,
- *   GUICORE_BLOB_DIAG_PARSER, cut into RFC_TR fragments (MOR, each
- *   acknowledged, then RNB), followed by an empty message that ends the
- *   step.
+ *   GUICORE_BLOB_DIAG_PARSER, cut into parts (each acknowledged by SAP GUI
+ *   with an empty part, the last one sent as a call without answer),
+ *   followed by an empty message that ends the step.
  */
 import { ClassicState } from "./classic.js";
 import { Controls } from "./controls.js";
 import { parseRfc } from "./rfc.js";
 import type { DiagControl, DiagElement, DiagScreen, DiagWindow } from "./screen.js";
 import { clean, decode } from "./text.js";
-import { A, type DiagItem, NiFramer, parseItems, parseMessage, T } from "./wire.js";
+import { type DiagItem, hasId, ID, NiFramer, parseItems, parseMessage } from "./wire.js";
 
-/** RFC_TR sub-ids: a call that wants an answer, its answer, a fragment with more to come, a call without answer. */
-const RFC = { REQ: 0x00, RET: 0x01, ERR: 0x02, MOR: 0x04, RNB: 0x06 } as const;
+/**
+ * Sub-ids of the RFC items, from the order of the exchanges in the captures:
+ * every server item with sub-id 00 names a function and is followed by SAP
+ * GUI's item 01, which names none; a server item 04 is answered by an empty
+ * 04 from SAP GUI and followed by more 04 or by a 06, and only the parts
+ * joined name the function; a 06 alone (a progress indicator) is never
+ * answered.
+ */
+const RFC_PART = {
+  /** A call that waits for SAP GUI's answer. */
+  call: 0x00,
+  /** SAP GUI's answer to a call. */
+  answer: 0x01,
+  /** A part of a long call, more follows. */
+  part: 0x04,
+  /** A call without answer, or the last part of a long call. */
+  last: 0x06,
+} as const;
 
 /** Everything kept for one mode. */
 class Mode {
@@ -120,7 +137,7 @@ export class DiagDecoder {
     let waitsForAnswer = false;
     const plain: DiagItem[] = [];
     for (const it of msg.items) {
-      if ((it.type === T.APPL || it.type === T.APPL4) && it.id === A.RFC_TR) {
+      if (hasId(it.type) && it.id === ID.rfc) {
         // Items before a call are applied before it, so that screen and controls keep their order.
         mode.classic.apply(plain.splice(0));
         waitsForAnswer = this.rfc(mode, 1, it) || waitsForAnswer;
@@ -133,29 +150,29 @@ export class DiagDecoder {
   private fromClient(mode: Mode, items: DiagItem[]): void {
     let answer = false;
     for (const it of items) {
-      if (it.type !== T.APPL && it.type !== T.APPL4) continue;
-      if (it.id === A.RFC_TR) {
+      if (!hasId(it.type)) continue;
+      if (it.id === ID.rfc) {
         answer = true;
         this.rfc(mode, 0, it);
-      } else if (it.id === A.VARINFO && it.sid === 0x04) mode.lastCommand = clean(decode(it.value, mode.classic.utf8)).trim();
+      } else if (it.id === ID.window && it.sid === 0x04) mode.lastCommand = clean(decode(it.value, mode.classic.utf8)).trim();
     }
     if (!answer && items.length) mode.userActed = true;
   }
 
-  /** One RFC_TR item. Returns true when it is a call SAP GUI still has to answer (the step goes on). */
+  /** One RFC item. Returns true when it is a call SAP GUI still has to answer (the step goes on). */
   private rfc(mode: Mode, dir: 0 | 1, it: DiagItem): boolean {
     const fragments = mode.fragments[dir];
-    if (it.sid === RFC.MOR) {
+    if (it.sid === RFC_PART.part) {
       if (it.value.length) fragments.push(it.value);
       return true;
     }
     const payload = fragments.length ? Buffer.concat([...fragments, it.value]) : it.value;
     fragments.length = 0;
-    if (it.sid !== RFC.REQ && it.sid !== RFC.RET && it.sid !== RFC.RNB) {
-      this.note(`RFC_TR item ${it.sid}`);
+    if (it.sid !== RFC_PART.call && it.sid !== RFC_PART.answer && it.sid !== RFC_PART.last) {
+      this.note(`RFC item ${it.sid}`);
       return false;
     }
-    if (!payload.length) return it.sid === RFC.REQ;
+    if (!payload.length) return it.sid === RFC_PART.call;
     const call = parseRfc(payload);
     if (call.problem) this.note(`${call.function || "RFC answer"}: ${call.problem}`);
     for (const t of call.tables.values()) if (t.problem) this.note(`table ${t.name} of ${call.function || "RFC answer"}: ${t.problem}`);
@@ -172,7 +189,7 @@ export class DiagDecoder {
       }
     } else if (call.function === "OLE_FLUSH_CALL") mode.controls.serverCall(call, mode.classic.utf8, mode.classic.revision);
     else if (call.function !== "SAPGUI_PROGRESS_INDICATOR") this.note(`RFC call ${call.function}`);
-    return it.sid === RFC.REQ;
+    return it.sid === RFC_PART.call;
   }
 
   private emit(number: number, mode: Mode): void {

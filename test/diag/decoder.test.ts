@@ -150,7 +150,7 @@ describe("DiagDecoder: a classic screen", () => {
 
   test("the cursor, and what was not understood", () => {
     expect(w?.focus).toEqual({ row: 1, col: 19, name: "ZHDR-KUNNR" });
-    expect(decoder.notes.get("atom type 99")).toBe(1);
+    expect(decoder.notes.get("element type 99")).toBe(1);
     expect(w?.elements.find((e) => e.etype === 99)?.text).toBe("odd");
   });
 });
