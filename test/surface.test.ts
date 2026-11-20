@@ -46,3 +46,48 @@ describe("tools/list", () => {
     expect(of("sap_use").readOnlyHint).toBe(true);
   });
 });
+
+describe("sap_act's input: flat, with the older action object as an alias", () => {
+  const cases: Record<string, unknown>[] = [
+    { do: "set", id: "ctxtVBAK-AUART", value: "OR" },
+    { do: "key", key: 0 },
+    { do: "check", id: "chkX", value: false },
+    { do: "grid", id: "cntlGRID/shellcont/shell", row: 3, col: "VBELN", how: "double" },
+    { do: "scroll", id: "tblX", to: "next" },
+    { do: "okcode", value: "/nVA03" },
+  ];
+  test("the same action reaches the surface either way", async () => {
+    for (const a of cases) {
+      const flat = await setup();
+      flat.surface.add({ id: "chrome:1", system: "ABA" }, { assess });
+      const old = await setup();
+      old.surface.add({ id: "chrome:1", system: "ABA" }, { assess });
+      const r1 = await flat.call("sap_act", a);
+      const r2 = await old.call("sap_act", { action: a });
+      expect([a, r1.error]).toEqual([a, false]);
+      expect(r1.text).toBe(r2.text);
+      expect(flat.surface.log).toEqual(old.surface.log);
+      expect(flat.surface.acts().length).toBe(1);
+    }
+  });
+  test('"timing" and "timeout" go with a flat action as they did inside "action"', async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA" }, { timing: "5 ms" });
+    const r = await call("sap_act", { do: "key", key: 0, timeout: 300, timing: true });
+    expect(r.text).toContain("(timing:");
+    expect(surface.acts()).toEqual([{ do: "key", key: 0, timeout: 300 }]);
+  });
+  test("both shapes at once, or a flat action with actions, is refused and nothing runs", async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA" }, { assess });
+    expect((await call("sap_act", { do: "key", key: 0, action: { do: "key", key: 0 } })).error).toBe(true);
+    expect((await call("sap_act", { do: "key", key: 0, actions: [{ do: "key", key: 0 }] })).error).toBe(true);
+    expect(surface.log).toEqual([]);
+  });
+  test("an object as value is refused by the schema", async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA" }, { assess });
+    expect((await call("sap_act", { do: "set", id: "x", value: { a: 1 } })).error).toBe(true);
+    expect(surface.log).toEqual([]);
+  });
+});

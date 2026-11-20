@@ -148,28 +148,46 @@ const MAX_PENDING = 50;
 /** The time the user has to answer the client's confirmation dialog. */
 const ELICIT_TIMEOUT_MS = 5 * 60_000;
 
-const actionSchema = z
+/**
+ * The fields of one action, flat: sap_act takes them at the top level, and
+ * each entry of "actions" takes them too. Plain types and no union of
+ * objects, so the schema converts to OpenAI's strict mode; normalizeAction
+ * checks the rest (a whole "row", a known "key", "to" of a scroll).
+ */
+const scalar = z.union([z.string(), z.number(), z.boolean()]);
+const actionFields = {
+  do: z.enum(VERBS),
+  id: z.string().optional(),
+  value: scalar.optional(),
+  key: z.union([z.number(), z.string()]).optional(),
+  // Whole numbers, checked by normalizeAction: .int() would put the safe-integer bounds into tools/list.
+  row: z.number().optional(),
+  col: z.string().optional(),
+  how: z.string().optional(),
+  node: z.string().optional(),
+  button: z.string().optional(),
+  to: z.union([z.number(), z.string()]).optional(),
+  app: z.string().optional(),
+  timeout: z.number().optional(),
+};
+/**
+ * What a step of "actions" adds to an action (batch.ts reads them). Loose, so
+ * that batch.ts, not the schema, refuses a key it does not know, with the list
+ * of the ones it does ("expect" has no "screeen"), and nothing runs.
+ */
+const stepSchema = z
   .object({
-    do: z.string().describe(VERBS.join(", ")),
-    id: z.string().optional(),
-    value: z.any().optional(),
-    key: z.any().optional(),
-    node: z.string().optional(),
-    how: z.string().optional(),
-    // Whole numbers, checked by normalizeAction: .int() would put the safe-integer bounds into tools/list.
-    row: z.number().optional(),
-    col: z.string().optional(),
-    button: z.string().optional(),
-    app: z.string().optional(),
-    to: z.union([z.number(), z.string()]).optional(),
+    ...actionFields,
+    expect: z
+      .object({ screen: z.union([z.string(), z.number()]).optional(), transaction: z.string().optional(), title: z.string().optional(), status: z.string().optional(), popup: z.boolean().optional() })
+      .passthrough()
+      .optional(),
+    show: z.boolean().optional(),
+    unseen: z.boolean().optional(),
   })
   .passthrough();
-
-/**
- * An action of a batch: an action, with "expect" and "show" (batch.ts checks both).
- * Loose on purpose: the fields are the ones of `action`, and writing them twice into tools/list costs 250 tokens in every conversation.
- */
-const batchSchema = z.object({ do: z.string() }).passthrough();
+/** The keys of sap_act's input that are not part of the action. */
+const CALL_KEYS = new Set(["session", "full", "actions", "action"]);
 
 export interface ServerOptions {
   policy: Policy;
@@ -672,20 +690,29 @@ export function createServer({ policy, surfaces, view = "diff", record, code = !
 Short ids work; an id that names several controls is refused with the list, one from an earlier screen with the screen you are on.
 "actions":[...] in place of "action" runs up to ${MAX_BATCH} in order and answers once: what ran, then the screen. Use it for the screen you see: its fields, then the key that sends them. It ends before the next action when one fails, is refused or waits for confirmation, a popup opens, the status bar shows an error or a warning, or the screen changes. An action goes on through what its "expect" names: {"screen":"4001"}, {"popup":true}, {"status":"W"}. "show":true adds the screen after that action (one tab after another).
 ${writeRule(policy)}`,
-      inputSchema: {
-        action: actionSchema.optional(),
-        actions: z.array(batchSchema).optional().describe("in place of action: several, each as action"),
-        session,
-        full: z.boolean().optional().describe("answer with the whole screen, not the changes"),
-      },
+      // Loose: "action":{...}, the older shape of one action, still works (clients and recordings that send it), and so do "timing" and other keys an action passes on.
+      inputSchema: z
+        .object({
+          ...actionFields,
+          do: actionFields.do.optional(),
+          actions: z.array(stepSchema).optional(),
+          session,
+          full: z.boolean().optional().describe("answer with the whole screen, not the changes"),
+        })
+        .passthrough(),
       // A closed SAP system, not the open web: openWorldHint is false on every tool.
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     },
-    ({ action, actions, session: ref, full }) =>
+    (input) =>
       answer(async () => {
-        if (actions !== undefined && action !== undefined) return fail('Send "action" or "actions", not both.');
+        const { actions, action, session: ref, full } = input as { actions?: unknown; action?: unknown; session?: string; full?: boolean };
+        // The action's fields at the top level, as the schema lists them; anything but the call's own keys goes with them.
+        const flat = Object.fromEntries(Object.entries(input).filter(([k, v]) => !CALL_KEYS.has(k) && v !== undefined));
+        const one = Object.keys(flat).length > 0;
+        if (actions !== undefined && (one || action !== undefined)) return fail('Send one action ("do" and its fields) or "actions", not both.');
+        if (one && action !== undefined) return fail('Send the action\'s fields ("do", "id", ...) at the top level, not also inside "action".');
         if (actions !== undefined) return runBatch(ref, actions, full === true);
-        return run(ref, action, full === true);
+        return run(ref, one ? flat : action, full === true);
       }),
   );
 
