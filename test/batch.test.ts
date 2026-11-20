@@ -156,6 +156,22 @@ describe("sap_act with actions: several actions, one answer", () => {
   });
 });
 
+describe("a batch that opens a transaction", () => {
+  test("an okcode /n<tcode> first: the batch goes on into that transaction's first screen", async () => {
+    const { sap, batch } = await setup();
+    const r = await batch([{ do: "okcode", value: "/nZA03" }, { do: "set", id: "ctxtZORD-VBELN", value: "5000" }, ENTER]);
+    expect(r.text.split("\n")[0]).toBe("Ran 3 actions.");
+    expect(dos(sap)).toEqual(["okcode", "set", "key 0"]);
+    expect(r.text).toContain("Display Order 5000");
+  });
+  test("it still ends when the transaction is not the one named, or SAP answers with an error", async () => {
+    const { sap, batch } = await setup();
+    const r = await batch([{ do: "okcode", value: "/nZZ99" }, { do: "set", id: "ctxtZORD-VBELN", value: "5000" }]);
+    expect(r.text.split("\n")[0]).toStartWith("Ran 1 of 2 actions. Stopped: after action 1, the status bar shows E: Transaction ZZ99 does not exist.");
+    expect(dos(sap)).toEqual(["okcode"]);
+  });
+});
+
 describe("a batch and the guard: each action has its own decision", () => {
   test("a write on a screen the agent has not seen in the batch does not run; the answer is that screen", async () => {
     const { sap, batch } = await setup({ SAP_WRITE: "on" });
