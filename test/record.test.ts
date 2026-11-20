@@ -10,8 +10,8 @@ import { exportTest, toCalm } from "../src/record/export/index.js";
 import { tsString } from "../src/record/export/playwright.js";
 import { vbsString, vkeyNumber } from "../src/record/export/vbs.js";
 import { fill, FORMAT, inputsOf, parseTest, type SapTest, slug, withVariable } from "../src/record/format.js";
-import { hints, recorderOptionsFromEnv } from "../src/record/recorder.js";
-import { detour, junit, replay, replayAll, resultText } from "../src/record/replay.js";
+import { hints, recorderOptionsFromEnv, stepLine } from "../src/record/recorder.js";
+import { detour, junit, replay, replayAll, resultText, slowerNote, type StepResult } from "../src/record/replay.js";
 import { locate, parseScreen } from "../src/record/screen.js";
 import { connect } from "../src/sdk/index.js";
 import { createServer } from "../src/server.js";
@@ -577,6 +577,27 @@ describe("replay: windows the recording does not have", () => {
     t.steps[2]!.after!.status = { type: "E", text: "Enter an order number" };
     const other = await replay(sap.driver(), policy, { ...t, steps: t.steps.slice(0, 3) }, { variables: { order: "998" } });
     expect(other.steps[2]?.failures[0]).toBe("SAP reported an error in the status bar: Order 998 does not exist");
+  });
+
+  test("each step's time, and the recorded one; a step much slower than recorded is said, never failed", async () => {
+    const { test: t, sap, policy, rec } = await recordDisplay();
+    expect(t.steps.every((s) => typeof s.ms === "number")).toBe(true);
+    expect(stepLine({ action: { do: "key", key: 0 }, ms: 812 }, 2)).toBe('3. {"do":"key","key":0}  (812 ms)');
+    expect(stepLine({ action: { do: "key", key: 0 }, ms: 2400 }, 2)).toBe('3. {"do":"key","key":0}  (2.4 s)');
+    expect((await rec("status")).text).toContain("No recording");
+    const r = await replay(sap.driver(), policy, t);
+    expect(r.passed).toBe(true);
+    expect(r.steps.every((s) => s.recordedMs !== undefined && s.actMs !== undefined && !s.slower)).toBe(true);
+    expect(resultText(r)).toMatch(/^ok {3}1\. \{"do":"okcode","value":"\/nZA03"\} {2}\(\d+ ms; recorded \d+ ms\)$/m);
+    // Over twice and over a second more than recorded.
+    expect(slowerNote(3100, 800)).toBe("the action took 3.1 s, 3.9x the 800 ms recorded");
+    expect(slowerNote(1300, 400)).toBeUndefined();
+    expect(slowerNote(9000, 5000)).toBeUndefined();
+    expect(slowerNote(3100, undefined)).toBeUndefined();
+    const slow = { ...r, steps: [{ ...(r.steps[0] as StepResult), ms: 3300, actMs: 3100, recordedMs: 800, slower: slowerNote(3100, 800) as string }] };
+    expect(resultText(slow)).toContain('ok   1. {"do":"okcode","value":"/nZA03"}  (3.3 s; recorded 800 ms)\n       slower: the action took 3.1 s, 3.9x the 800 ms recorded');
+    expect(resultText(slow).split("\n")[0]).not.toContain("NOTES");
+    expect(junit([slow])).toContain('time="3.300"><system-out>recorded 0.800 s\nslower: the action took 3.1 s, 3.9x the 800 ms recorded</system-out></testcase>');
   });
 
   test("the report: values not captured in this run, unknown variables, an empty recording", async () => {
