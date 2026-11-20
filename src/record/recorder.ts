@@ -117,6 +117,8 @@ export class Recorder {
   private skipped = 0;
   /** The `sap.step` block that runs now (sdk/session.ts): written into each step recorded meanwhile. */
   group: string | undefined;
+  /** The screens read around the last action recorded: the SDK's verified mode (sdk/verify.ts) judges it on them instead of reading again. */
+  last: { before?: ParsedScreen | undefined; after?: ParsedScreen | undefined } | undefined;
 
   constructor(readonly options: RecorderOptions) {}
 
@@ -219,6 +221,7 @@ export class Recorder {
     const note = await run();
     const ms = Math.round(performance.now() - t0);
     const after = await screenOf(driver).catch(() => undefined);
+    this.last = { before, after };
     // "do" first: the file is read by people.
     const { do: verb, ...rest } = action;
     const step: Step = { action: { do: verb, ...rest } };

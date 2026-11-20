@@ -3,7 +3,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseTest, type SapTest } from "../src/record/format.js";
-import { connect, type Drift, runVerified } from "../src/sdk/index.js";
+import { connect, type ReplayDrift as Drift, runVerified } from "../src/sdk/index.js";
 import { FakeSap } from "./record-fakes.js";
 
 /** A verified recording of ZA03 on order 5000, made by a script with a trace. */

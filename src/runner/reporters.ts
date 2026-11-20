@@ -36,7 +36,22 @@ const secs = (ms: number) => (ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}
 const name = (r: TestResult) => [r.project && `[${r.project}]`, r.file, ...r.titlePath].filter(Boolean).join(" › ");
 
 export function listLine(r: TestResult): string {
-  return `  ${MARK[r.status]} ${name(r)}${r.status === "skipped" ? "" : ` (${secs(r.ms)})`}${r.status === "flaky" ? ` flaky, passed on retry ${r.attempts.length - 1}` : ""}`;
+  return `  ${MARK[r.status]} ${name(r)}${r.status === "skipped" ? "" : ` (${secs(r.ms)})`}${r.status === "flaky" ? ` flaky, passed on retry ${r.attempts.length - 1}` : ""}${lockNote(r)}`;
+}
+
+/** What the lock said, when it says something worth a look: a repair it applied, actions it had not seen. */
+function lockNote(r: TestResult): string {
+  const l = r.lock;
+  if (!l || r.status === "failed") return "";
+  const said = [l.repairs.length && `${l.repairs.length} repair${l.repairs.length > 1 ? "s" : ""} from the lock`, l.written && l.unverified && `${l.unverified} unverified action${l.unverified > 1 ? "s" : ""} added to the lock`].filter(Boolean);
+  return said.length ? ` [${said.join(", ")}]` : "";
+}
+
+/** The drift a test failed on, in two lines: where, and the lock. */
+export function driftLines(r: TestResult): string[] {
+  const d = r.drift;
+  if (!d) return [];
+  return [`drift: step ${d.step ? `"${d.step}"` : "(outside any sap.step)"}${d.ordinal > 1 ? ` (run ${d.ordinal})` : ""}, action ${d.actionIndex + 1} ${d.code} (${d.phase})`, `lock: ${d.lock}`];
 }
 
 /** The line of the stack that is in the test's file, if any: where it failed. */
@@ -56,6 +71,7 @@ export function listSummary(run: RunResult): string {
     out.push(...(t.error?.message ?? "failed").split("\n").map((l) => `     ${l}`));
     const at = where(t, run.config.rootDir);
     if (at) out.push(`     at ${at}`);
+    for (const l of driftLines(t)) out.push(`     ${l}`);
     if (t.trace) out.push(`     trace: ${relative(process.cwd(), t.trace) || t.trace}`);
   });
   const s = run.stats;
@@ -71,7 +87,8 @@ export function junitReport(run: RunResult): string {
     const tests = run.tests.filter((t) => t.file === file);
     const cases = tests.map((t) => {
       const head = `    <testcase name="${xml([t.project && `[${t.project}]`, ...t.titlePath].filter(Boolean).join(" › ") || t.title)}" classname="${xml(file)}" time="${(t.ms / 1000).toFixed(3)}"`;
-      const traceOut = t.trace ? `<system-out>${xml(`trace: ${t.trace}`)}</system-out>` : "";
+      const said = [t.trace && `trace: ${t.trace}`, ...driftLines(t)].filter(Boolean).join("\n");
+      const traceOut = said ? `<system-out>${xml(said)}</system-out>` : "";
       if (t.status === "skipped") return `${head}><skipped/></testcase>`;
       if (t.status === "failed") return `${head}><failure message="${xml(t.error?.message.split("\n")[0] ?? "failed")}">${xml(t.error?.stack ?? t.error?.message ?? "")}</failure>${traceOut}</testcase>`;
       if (t.status === "flaky") return `${head}><system-out>${xml(`flaky: passed on retry ${t.attempts.length - 1}; first error: ${t.attempts[0]?.error?.message ?? ""}${t.trace ? `\ntrace: ${t.trace}` : ""}`)}</system-out></testcase>`;
@@ -108,7 +125,7 @@ export function htmlReport(run: RunResult, at: string, links: Map<string, string
   const href = (p: string) => relative(dirname(at), p).split(sep).map(encodeURIComponent).join("/");
   const rows = run.tests.map((t) => {
     const link = t.trace ? (links.get(t.trace) ?? t.trace) : undefined;
-    const error = t.error ? `<pre>${html(t.error.message)}</pre>` : t.status === "flaky" ? `<pre class="flaky">${html(`passed on retry ${t.attempts.length - 1}; first: ${t.attempts[0]?.error?.message ?? ""}`)}</pre>` : "";
+    const error = t.error ? `<pre>${html([t.error.message, ...driftLines(t)].join("\n"))}</pre>` : t.status === "flaky" ? `<pre class="flaky">${html(`passed on retry ${t.attempts.length - 1}; first: ${t.attempts[0]?.error?.message ?? ""}`)}</pre>` : "";
     return `<tr class="${t.status}"><td class="st">${MARK[t.status]} ${t.status}</td><td><div class="t">${html(t.titlePath.join(" › ") || t.title)}</div><div class="f">${html([t.project && `[${t.project}]`, t.file].filter(Boolean).join(" "))}</div>${error}</td><td class="ms">${secs(t.ms)}</td><td>${link ? `<a href="${html(href(link))}">trace</a>` : ""}</td></tr>`;
   });
   const s = run.stats;
