@@ -461,3 +461,26 @@ describe("recheck: a box ticked and not sent is held back like a typed value", (
     expect(acts(f)).toEqual(["click"]);
   });
 });
+
+describe("live 2026-11-20: ids an agent wrote the scripting way", () => {
+  test("a table control by its scripting id (tbl<program><name>, with or without the path) is the table", () => {
+    const s = screen();
+    expect(namedControl(s, "tblZPROGTC_ITEMS")?.id).toBe("TC_ITEMS");
+    expect(namedControl(s, "wnd[0]/usr/tblZPROGTC_ITEMS")?.id).toBe("TC_ITEMS");
+    expect(assess(s, { do: "select", id: "wnd[0]/usr/tblZPROGTC_ITEMS", row: 11 }).risk).toBe("navigate");
+    expect(namedControl(s, "tblOTHERTC_ITEMS")).toBeUndefined();
+  });
+  test("a list label lbl[col,row] is the place @row,col", () => {
+    const s = screen([main({ list: { rows: [{ row: 5, cells: [{ col: 3, width: 3, text: "800" }, { col: 9, width: 4, text: "3000" }] }] } as never })]);
+    const f = findTarget(s, { do: "dblclick", id: "lbl[9,5]" });
+    expect("target" in f && f.target.kind).toBe("list");
+    expect("target" in f && f.target.what).toBe('"3000"');
+  });
+  test("an id that names nothing is said so with the closest ids, not refused as a write", async () => {
+    const f = fake(screen());
+    await expect(f.d.assess({ do: "select", id: "ZHDR-NOTX" })).rejects.toThrow('No control "ZHDR-NOTX" on this screen (closest: ZHDR-NOTE');
+    await expect(f.d.assess({ do: "dblclick", id: "lbl[9,40]" })).resolves.toMatchObject({ risk: "navigate" });
+    expect(acts(f)).toEqual([]);
+  });
+});
+
