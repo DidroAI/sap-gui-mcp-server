@@ -6,6 +6,7 @@
  *   sap-gui-mcp-server install --skills   copies the bundled agent skills into a project (or --global)
  *   sap-gui-mcp-server doctor     checks what the server can reach on this machine
  *   sap-gui-mcp-server sessions   lists the SAP sessions it finds, then exits
+ *   sap-gui-mcp-server test       runs *.sap.ts tests (src/runner)
  */
 import { disconnectChrome } from "./browser/chrome.js";
 import { doctorReport } from "./cli/doctor.js";
@@ -15,6 +16,7 @@ import { installSkills, SKILL_TARGETS, type SkillTarget } from "./cli/skills.js"
 import { policyFromEnv } from "./core/guard.js";
 import { Registry } from "./core/registry.js";
 import { exportCommand, RECORD_HELP, replayCommand } from "./record/cli.js";
+import { TEST_HELP, testCommand } from "./runner/cli.js";
 import { SERVER_VERSION, sessionLine } from "./server.js";
 import { serveStdio } from "./stdio.js";
 import { showTraceCommand, TRACE_HELP } from "./trace/cli.js";
@@ -36,6 +38,7 @@ Usage:
   sap-gui-mcp-server sessions   list the SAP sessions found now
 ${RECORD_HELP}
 ${TRACE_HELP}
+${TEST_HELP}
   sap-gui-mcp-server --version | --help
 
 Environment:
@@ -64,6 +67,7 @@ async function main(argv: string[]): Promise<number> {
   if (cmd === "show-trace") return showTraceCommand(argv.slice(1));
   if (cmd === "init") return await initCommand(argv.slice(1));
   if (cmd === "install") return installCommand(argv.slice(1));
+  if (cmd === "test") return testCommand(argv.slice(1));
   const surfaces = surfacesFromEnv();
   if (cmd === "doctor") {
     if (surfaces.some((s) => s.name !== "sapgui")) console.error("Checking… (if Chrome asks whether to allow remote debugging, click Allow)\n");
