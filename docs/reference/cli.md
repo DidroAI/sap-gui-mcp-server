@@ -1,1 +1,154 @@
-# TODO
+# CLI commands
+
+The package installs one command, `sap-gui-mcp-server`. Without arguments it
+is the MCP server on stdio; with a command it does one job and exits.
+
+```sh
+npx -y sap-gui-mcp-server <command> [options]
+# or, after npm i -g sap-gui-mcp-server:
+sap-gui-mcp-server <command> [options]
+```
+
+| Command | Does | Exit code |
+| --- | --- | --- |
+| (none) | starts the stdio MCP server: what MCP clients run | runs until the client closes it |
+| [`setup`](#setup) | adds the server to the MCP clients found on this machine | 0 |
+| [`doctor`](#doctor) | checks what the server can reach, and says what to change | 0 ready, 1 not ready |
+| [`sessions`](#sessions) | lists the SAP sessions found now | 0; 1 when every surface failed |
+| [`replay`](#replay) | runs recorded tests on an open session, with no model | 0 all passed, 1 otherwise |
+| [`export`](#export) | writes a recorded test in another format | 0 |
+| `--help`, `-h`, `help` | the usage and the main settings | 0 |
+| `--version`, `-v` | the version | 0 |
+
+An unknown command prints the usage and exits with 2. An error (a missing
+file, a bad flag) prints its message and exits with 1.
+
+Settings are environment variables, the same for the server and the
+commands: [Configuration](configuration.md). `doctor`, `sessions` and
+`replay` use `SAP_SURFACES`, `SAP_GUI_METHOD`, `SAP_CHROME_CDP`,
+`SAP_ALLOW_SYSTEMS` and the other settings as the server would.
+
+More commands (init, test, show-trace) are coming with the SDK; see the
+guides ([Writing tests with the SDK](../guides/sdk-tests.md),
+[CLI for coding agents](../guides/cli-for-agents.md),
+[Trace viewer](../guides/trace-viewer.md)).
+
+## The server
+
+```sh
+sap-gui-mcp-server
+```
+
+Starts the MCP server on stdin and stdout. MCP clients run this; you do not
+normally run it yourself. It reads its settings once, at start. It stops
+when the client closes stdin, or on SIGINT or SIGTERM, and then disconnects
+from Chrome without closing it.
+
+## setup
+
+```sh
+sap-gui-mcp-server setup [claude-code|codex|claude-desktop]... [--dry-run]
+```
+
+Adds the server, as `sap-gui`, to the MCP clients it finds:
+
+| Client | How | Found when |
+| --- | --- | --- |
+| Claude Code | `claude mcp add sap-gui --scope user -- <command>` | the `claude` command is on the PATH |
+| Codex | a `[mcp_servers.sap-gui]` table in `~/.codex/config.toml` (`$CODEX_HOME/config.toml`) | the `codex` command is on the PATH, or the folder exists |
+| Claude Desktop | an `mcpServers["sap-gui"]` entry in `claude_desktop_config.json` | its folder exists (macOS: `~/Library/Application Support/Claude`; Windows: `%APPDATA%\Claude`) |
+
+| Option | Effect |
+| --- | --- |
+| `claude-code`, `codex`, `claude-desktop` | only these clients; default all three |
+| `--dry-run` | say what would change, change nothing |
+
+- It never overwrites an existing `sap-gui` entry.
+- It keeps a `.bak` copy of a file before it changes it.
+- The command it writes depends on how it was started: `npx -y
+  sap-gui-mcp-server` when run through `npx`, `sap-gui-mcp-server` when
+  installed on the PATH, else Node with the path of the script. On Windows
+  it is wrapped in `cmd /c`.
+- When it finds no client, it prints the command to add by hand.
+- It adds no settings: the server starts with `SAP_WRITE=off`. Add
+  variables in the client's configuration.
+
+## doctor
+
+```sh
+sap-gui-mcp-server doctor
+```
+
+Checks what the server can reach on this machine, one block per area, a
+mark per check (`✓` or `✗`), and the one thing to do when a check fails.
+It ends with `Ready.` or `Not ready yet: fix the ✗ above, then run doctor
+again.`
+
+| Area | Checks |
+| --- | --- |
+| SAP GUI for Windows (scripting) | PowerShell may run the host; SAP GUI is running; scripting is on in SAP GUI; scripting is allowed on the SAP system; the two "notify" options are off |
+| SAP GUI for Windows (`SAP_GUI_METHOD=diag`) | the local router listens; connections go through it; decoding (bytes lost, what was not read, SNC); the router's messages |
+| Chrome: Web GUI and Fiori | Chrome reachable, its version, `SAP_ALLOW_ORIGINS`, open tabs; the Web GUI and Fiori tabs found |
+
+On a machine other than Windows, SAP GUI for Windows is listed as not
+checked. If Chrome asks whether to allow remote debugging, click Allow.
+
+Every failed check, its cause and its fix: [FAQ and troubleshooting](../faq.md).
+
+## sessions
+
+```sh
+sap-gui-mcp-server sessions
+```
+
+Lists the SAP sessions the server finds now, in the format of the
+`sap_sessions` tool ([MCP tools](tools.md#sap-sessions)), then exits.
+Problems of a surface (SAP GUI scripting off, no Chrome) go to stderr. It
+exits with 1 only when every surface failed: that is a setup problem, not
+"nothing open".
+
+## replay
+
+```sh
+sap-gui-mcp-server replay <file>... [--var name=value]... [--session <ref>] [--loose] [--continue] [--stay] [--json] [--junit <file>]
+```
+
+Runs recorded tests (`.saptest.json`) on a session you have open, with no
+model, under the same guard as `sap_act`. It never logs on.
+
+| Option | Effect |
+| --- | --- |
+| `<file>...` | one or more recordings. Several run in order on one session; each hands its variables, captured ones included, to the next. The run stops at the first test that fails |
+| `--var name=value` | a value for a test variable; repeat for several. A name no test has is an error |
+| `--session <ref>` | the session: number, id, system, transaction or surface, as in `sap_use`. Default: the first one found |
+| `--loose` | landing on another screen than recorded is a note, not a failure |
+| `--continue` | on a screen with a choice the recording does not have (availability control), press its neutral Continue and say so |
+| `--stay` | after a failure, stay on the failing screen. Default: leave the transaction with `/n` (unsaved input is dropped) |
+| `--json` | the results as JSON |
+| `--junit <file>` | also write JUnit XML: one suite per test, one case per step |
+
+A step that may write needs `SAP_WRITE=on`. Guide:
+[Recording and replay](../guides/record-replay.md).
+
+## export
+
+```sh
+sap-gui-mcp-server export <file> --to <target> [--out <file>]
+```
+
+Writes one recording in another format.
+
+| Target | File | For |
+| --- | --- | --- |
+| `calm` | `.calm.json` | SAP Cloud ALM manual test case, as the input of a Cloud ALM MCP server's `calm_create_test_case` tool |
+| `vbs` | `.vbs` | SAP GUI scripting (VBScript), for SAP GUI for Windows |
+| `playwright` | `.spec.ts` | Playwright test for Web GUI (`@playwright/test`) |
+| `playwright-sap` | `.psap.spec.ts` | Playwright test with playwright-sap's `locateSID` |
+| `gherkin` | `.feature` | Gherkin feature (Given / When / Then step list) |
+
+| Option | Effect |
+| --- | --- |
+| `--to <target>` | required: one of the targets above |
+| `--out <file>` | where to write. `-` prints to stdout. Default: next to the recording, with the target's suffix in place of `.saptest.json` |
+
+It prints the path written.
