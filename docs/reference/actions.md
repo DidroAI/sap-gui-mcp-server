@@ -67,8 +67,12 @@ Each entry is an action as above, with three more fields:
 | `show` | boolean | the answer also holds the screen after this step (to read one tab after another) |
 | `unseen` | boolean | this step may write on a screen the batch reached after you sent it |
 
+An `okcode` that opens a transaction (`/nVA03`) needs no `expect`: the
+batch goes on into that transaction's first screen, so one call can open
+the transaction and fill its first screen.
+
 The batch ends before the next action when an action fails, is refused or
-waits for the user's yes; when a popup opens, the status bar shows E, W or
+needs the user's yes (`SAP_WRITE=confirm`: it is asked about on its own); when a popup opens, the status bar shows E, W or
 A, or the screen changes, unless `expect` names it; when `expect` is not
 met; and when SAP is still working. An unknown key in `expect`, an entry
 that is not a valid action, or a `/o...` command refuses the whole batch
@@ -403,7 +407,6 @@ cannot classify is treated as a write.
 | Rows per `sap_look` with `rows` | 200 |
 | Rows with `cols` and no `rows` | 50 (rows 0 to 49) |
 | Compact view | rows of the longest controls cut beyond 20,000 characters |
-| Confirmation token | one use, ten minutes; at most 50 held |
 | Client confirmation dialog | five minutes to answer |
 | New session after `/o` | looked for during 5 s |
 | Repair actions per step | 4 |

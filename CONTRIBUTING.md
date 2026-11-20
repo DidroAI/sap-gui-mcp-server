@@ -39,7 +39,7 @@ dependencies to an exact version at least that old.
 MCP client (Claude Code, Codex, Cursor, ...)
    │  stdio, JSON-RPC
    ▼
-src/server.ts        the MCP tools: sap_sessions, sap_look, sap_act, sap_confirm, ...
+src/server.ts        the MCP tools: sap_sessions, sap_look, sap_act, sap_screenshot, ...
    │                 every action: normalise (core/action.ts) → assess → guard (core/guard.ts) → act
    ▼
 src/core/registry.ts sessions across surfaces, one driver per session, SAP_ALLOW_SYSTEMS

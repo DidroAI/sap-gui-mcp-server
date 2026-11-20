@@ -6,10 +6,11 @@ GUI for Windows, SAP GUI for HTML (Web GUI) and SAP Fiori. An
 VS Code and any other MCP client.
 
 - **Compact and complete.** One line per control, with SAP's own ids,
-  labels, values and whether they can be edited: about 1.5–3k tokens per
-  screen. After an action on the same screen, only what changed.
+  labels, values and whether they can be edited: about 0.5–4.5k tokens per
+  screen on real ECC and S/4 screens. After an action on the same screen,
+  only what changed.
 - **Writes off by default.** Actions that may save to SAP are refused
-  unless you allow them, or held until you confirm.
+  unless you allow them, or asked about in your client first.
 - **Your sessions, your authorisations.** It finds the sessions you have
   open and works in them as you. It never logs on and never stores a
   password.

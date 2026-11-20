@@ -42,7 +42,6 @@
     { "name": "sap_use", "description": "Makes another session the active one." },
     { "name": "sap_look", "description": "The current SAP screen as compact text: one line per control with its id, label, value and state." },
     { "name": "sap_act", "description": "One action on the active SAP screen, by an id from sap_look; answers with the new screen or what changed." },
-    { "name": "sap_confirm", "description": "Runs an action held for your confirmation (SAP_WRITE=confirm)." },
     { "name": "sap_screenshot", "description": "A PNG of the session's window or tab." },
     { "name": "sap_record", "description": "Records the run as a test: start, stop, checks, variables, export." },
     { "name": "sap_replay", "description": "Runs a recorded test again, with no model." }
@@ -57,7 +56,7 @@
     "SAP_WRITE": {
       "type": "string",
       "title": "Writes to SAP (SAP_WRITE)",
-      "description": "off: actions that may write to SAP are refused (default). confirm: each one waits for your approval. on: they run.",
+      "description": "off: actions that may write to SAP are refused (default). confirm: Claude asks you before each one (refused if it cannot ask). on: they run.",
       "default": "off",
       "required": false
     },
