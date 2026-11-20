@@ -1,0 +1,79 @@
+{
+  "format": "sap-gui-test/1",
+  "name": "VA03 display order",
+  "description": "Synthetic example: open a sales order in VA03 and check its header. Read-only. The system, order and customer numbers are made up.",
+  "recorded": {
+    "at": "2026-11-02T09:15:00.000Z",
+    "by": "sap-gui-mcp-server 0.1.0",
+    "surface": "webgui",
+    "system": "DEM",
+    "client": "100"
+  },
+  "start": {
+    "transaction": "SMEN",
+    "program": "SAPLSMTR_NAVIGATION",
+    "screen": "100",
+    "title": "SAP Easy Access"
+  },
+  "variables": {
+    "order": {
+      "value": "4711",
+      "description": "an existing standard order (made-up number; pass your own with --var order=...)"
+    },
+    "customer": {
+      "value": "100001",
+      "description": "the sold-to party of that order (made-up number)"
+    }
+  },
+  "steps": [
+    {
+      "action": { "do": "okcode", "value": "/nVA03" },
+      "risk": "navigate",
+      "note": "Open Display Sales Order",
+      "on": { "transaction": "SMEN", "program": "SAPLSMTR_NAVIGATION", "screen": "100", "title": "SAP Easy Access" },
+      "after": { "transaction": "VA03", "program": "SAPMV45A", "screen": "102", "title": "Display Sales Documents" },
+      "expect": [{ "check": "transaction", "op": "equals", "value": "VA03" }]
+    },
+    {
+      "action": { "do": "set", "id": "ctxtVBAK-VBELN", "value": "${order}" },
+      "target": { "id": "wnd[0]/usr/ctxtVBAK-VBELN", "type": "field", "label": "Order" },
+      "risk": "navigate",
+      "note": "Enter the order number",
+      "on": { "transaction": "VA03", "program": "SAPMV45A", "screen": "102", "title": "Display Sales Documents" },
+      "after": { "transaction": "VA03", "program": "SAPMV45A", "screen": "102", "title": "Display Sales Documents" }
+    },
+    {
+      "action": { "do": "key", "key": 0 },
+      "risk": "navigate",
+      "note": "Open the order",
+      "on": { "transaction": "VA03", "program": "SAPMV45A", "screen": "102", "title": "Display Sales Documents" },
+      "after": { "transaction": "VA03", "program": "SAPMV45A", "screen": "4001", "title": "Display Standard Order ${order}: Overview" },
+      "expect": [
+        { "check": "title", "op": "contains", "value": "${order}" },
+        {
+          "check": "field",
+          "id": "wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021/subPART-SUB:SAPMV45A:4701/ctxtKUAGV-KUNNR",
+          "label": "Sold-To Party",
+          "type": "field",
+          "op": "equals",
+          "value": "${customer}"
+        },
+        {
+          "check": "field",
+          "id": "wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021/txtVBAK-NETWR",
+          "label": "Net Value",
+          "type": "field",
+          "op": "matches",
+          "value": "^[0-9.,]+$"
+        }
+      ]
+    },
+    {
+      "action": { "do": "key", "key": 3 },
+      "risk": "navigate",
+      "note": "Back to the initial screen; nothing is saved",
+      "on": { "transaction": "VA03", "program": "SAPMV45A", "screen": "4001", "title": "Display Standard Order ${order}: Overview" },
+      "after": { "transaction": "VA03", "program": "SAPMV45A", "screen": "102", "title": "Display Sales Documents" }
+    }
+  ]
+}

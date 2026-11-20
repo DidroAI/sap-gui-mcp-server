@@ -1,0 +1,53 @@
+name: New surface or transaction
+description: A front end the server does not support yet, or a transaction or app it cannot work in
+labels: [surface]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A new surface is a large change: please agree on it here before you write code. [CONTRIBUTING.md](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/CONTRIBUTING.md#add-a-surface) says what a surface implements. Leave real SAP data out.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What is it
+      options:
+        - A new front end (surface)
+        - A transaction or app on a supported surface
+    validations:
+      required: true
+  - type: input
+    id: name
+    attributes:
+      label: Front end, transaction or app
+      description: For example "SAP Business Client", "ME21N", "Manage Purchase Orders (F0842A)".
+    validations:
+      required: true
+  - type: textarea
+    id: what-fails
+    attributes:
+      label: What the server reads or does today
+      description: Controls missing from the view, actions refused or misplaced, a screen not recognised. Paste the view with made-up data.
+      render: text
+  - type: textarea
+    id: how
+    attributes:
+      label: How the front end can be reached
+      description: For a new surface. A scripting API, an accessibility tree, a protocol, a browser. What it needs on the user's machine.
+  - type: textarea
+    id: writes
+    attributes:
+      label: How writes can be told apart
+      description: Which controls save or post, and how a surface could know before the action runs (function codes, texts, ids).
+  - type: textarea
+    id: test
+    attributes:
+      label: How it could be tested without SAP
+      description: A fake, a synthetic page, recorded traffic with made-up data.
+  - type: checkboxes
+    id: scrubbed
+    attributes:
+      label: Data
+      options:
+        - label: I removed business data, host names and personal data from what I pasted.
+          required: true
+        - label: I can help build or test it.
