@@ -502,3 +502,10 @@ describe("live 2026-11-20: a popup is found by its title among the session's win
     expect(click!.action.y).toBeGreaterThanOrEqual(POPUP[1]);
   });
 });
+
+describe("live 2026-11-20: SE16's list moves sideways", () => {
+  test("Ctrl+Shift+F11 on a toolbar button with only a tooltip, List Width Right: navigation, named by its tooltip", () => {
+    const w = main({ toolbar: [{ vkey: 47, key: "Ctrl+Shift+F11", text: "", tooltip: "List Width Right", icon: "", enabled: true }], keys: [] });
+    expect(assess(screen([w]), { do: "key", key: "Control+Shift+F11" })).toEqual({ risk: "navigate", reason: 'key 47 "List Width Right"' });
+  });
+});
