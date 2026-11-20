@@ -338,6 +338,7 @@ pure function from the recording to a text file.
 | `vbs` | `.vbs` | SAP GUI scripting, for SAP GUI for Windows |
 | `playwright` | `.spec.ts` | Playwright test for Web GUI |
 | `playwright-sap` | `.psap.spec.ts` | the same with playwright-sap's `locateSID` |
+| `sap-ts` | `.sap.ts` | a test for this package's runner, written with its scripting API |
 | `gherkin` | `.feature` | a step list in Given / When / Then |
 
 ### SAP Cloud ALM
@@ -444,6 +445,28 @@ because it works on both `lsdata` forms and needs no fork.
 A Fiori recording is written with UI5 id suffixes (`[id$="..."]`). That
 output is a starting point and has not been run.
 
+### sap-ts: the scripting API
+
+`sap-ts` writes the recording as a `*.sap.ts` test that imports
+`sap-gui-mcp-server/test` and drives the session through the scripting API:
+each step is the SDK line `sap_act` answers with (`await sap.set("VBAK-VBELN",
+vars.order);`), the variables are a `const vars = {...}` block with the
+recorded values, a capture is a `const` read with its pattern
+(`const order = /Order (\d+)/.exec(await sap.status().text())?.[1] ?? "";`)
+and used as `order` in the steps after it, and each check is a waiting
+`expect` (`toContainText`, `toHaveValue`, `toHaveTitle`, `toHaveTransaction`;
+`matches` becomes a regular expression). Notes are comments.
+
+A step that confirmed a popup that only informs is written as
+`if (await sap.control("wnd[1]/tbar[0]/btn[0]").exists()) await sap.press(...)`:
+a replay skips that step when SAP does not show the popup again, and so does
+the test. The checks a replay makes on its own after every step (no error in
+the status bar, the recorded screen) are not written; the test checks what
+the recording marked.
+
+`sap_record {"op":"code"}` gives the same file for the recording that is on,
+or, with none on, a draft of every action the server ran on the session.
+
 ### Gherkin, and Tosca-like tools
 
 `gherkin` writes a `Scenario Outline` with the variables as `Examples`. It
@@ -535,5 +558,5 @@ Not run:
 | `src/record/repair.ts` | a repair of one step: its rules, the capture, the proposed test |
 | `src/record/tools.ts` | `sap_record` and `sap_replay` |
 | `src/record/cli.ts` | `replay` and `export` on the command line |
-| `src/record/export/` | `calm.ts`, `vbs.ts`, `playwright.ts`, `gherkin.ts`, and `words.ts` (a step in a tester's words) |
+| `src/record/export/` | `calm.ts`, `vbs.ts`, `playwright.ts`, `sap-ts.ts`, `gherkin.ts`, and `words.ts` (a step in a tester's words) |
 | `src/server.ts`, `src/cli.ts`, `src/index.ts` | the hook in `perform`, the two commands, the exports of the package |

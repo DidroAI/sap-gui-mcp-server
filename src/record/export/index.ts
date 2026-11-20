@@ -3,6 +3,7 @@ import type { SapTest } from "../format.js";
 import { exportCalm } from "./calm.js";
 import { exportGherkin } from "./gherkin.js";
 import { exportPlaywright } from "./playwright.js";
+import { exportSapTs } from "./sap-ts.js";
 import { exportVbs } from "./vbs.js";
 
 export const TARGETS = {
@@ -10,6 +11,7 @@ export const TARGETS = {
   vbs: { suffix: ".vbs", what: "SAP GUI scripting (VBScript), for SAP GUI for Windows", run: exportVbs },
   playwright: { suffix: ".spec.ts", what: "Playwright test for Web GUI (@playwright/test)", run: (t: SapTest) => exportPlaywright(t) },
   "playwright-sap": { suffix: ".psap.spec.ts", what: "Playwright test with playwright-sap's locateSID", run: (t: SapTest) => exportPlaywright(t, { flavor: "playwright-sap" }) },
+  "sap-ts": { suffix: ".sap.ts", what: "test for this package's own runner (sap-gui-mcp-server/test), written with its scripting API", run: (t: SapTest) => exportSapTs(t) },
   gherkin: { suffix: ".feature", what: "Gherkin feature (Given / When / Then step list)", run: exportGherkin },
 } as const;
 
@@ -25,4 +27,5 @@ export function exportTest(test: SapTest, to: string): { text: string; suffix: s
 export { exportCalm, toCalm } from "./calm.js";
 export { exportGherkin } from "./gherkin.js";
 export { exportPlaywright } from "./playwright.js";
+export { exportSapTs } from "./sap-ts.js";
 export { exportVbs } from "./vbs.js";
