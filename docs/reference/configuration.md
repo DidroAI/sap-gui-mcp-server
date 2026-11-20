@@ -51,6 +51,7 @@ Lists are separated by commas or spaces and are not case-sensitive.
 | --- | --- | --- | --- |
 | `SAP_VIEW` | `diff` | `diff`, `full` | `full`: every action answers with the whole screen. `diff`: only what changed, when the screen is the same and the changes are shorter |
 | `SAP_FIORI_WAIT` | full waits | `busy` | faster Fiori waits: busy indicators only, without UI5's RecordReplay |
+| `SAP_CODE` | on | `off` | `off`: `sap_act` and `sap_confirm` answers end without the `code:` line (the SDK call that repeats the action) |
 | `SAP_TIMINGS` | off | `on`, `true`, `1` | every `sap_act` answer adds a line that says where the time went. One action can ask with `"timing": true` |
 
 ## Recording and files
@@ -63,6 +64,16 @@ Lists are separated by commas or spaces and are not case-sensitive.
 
 Recordings hold the values that were typed: treat them like the system's
 data.
+
+## Agent CLI
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `SAP_CLI_DIR` | `.sap-gui/screens` | where the agent CLI writes answers and screens |
+| `SAP_CLI_IDLE` | `30` | minutes without a command before the daemon exits |
+| `SAP_CLI_SESSION` | one daemon per directory | a name: one daemon for every directory that sets it |
+
+See [CLI for coding agents](../guides/cli-for-agents.md).
 
 ## Read by exported tests, not by the server
 
