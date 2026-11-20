@@ -39,6 +39,8 @@ describe("tools/list", () => {
       const { tools } = await client.listTools();
       expect(tools.length).toBeGreaterThan(6);
       expect(JSON.stringify(tools)).not.toContain('"$schema"');
+      // The spec's default, said for every tool by the SDK.
+      expect(JSON.stringify(tools)).not.toContain('"taskSupport":"forbidden"');
     }
   });
 
