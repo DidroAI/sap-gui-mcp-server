@@ -4,6 +4,7 @@
  *   sap-gui-mcp-server setup      adds the server to Claude Code, Codex and Claude Desktop
  *   sap-gui-mcp-server doctor     checks what the server can reach on this machine
  *   sap-gui-mcp-server sessions   lists the SAP sessions it finds, then exits
+ *   sap-gui-mcp-server test       runs *.sap.ts tests (src/runner)
  */
 import { disconnectChrome } from "./browser/chrome.js";
 import { doctorReport } from "./cli/doctor.js";
@@ -11,6 +12,7 @@ import { setup } from "./cli/setup.js";
 import { policyFromEnv } from "./core/guard.js";
 import { Registry } from "./core/registry.js";
 import { exportCommand, RECORD_HELP, replayCommand } from "./record/cli.js";
+import { TEST_HELP, testCommand } from "./runner/cli.js";
 import { SERVER_VERSION, sessionLine } from "./server.js";
 import { serveStdio } from "./stdio.js";
 import { surfacesFromEnv } from "./surfaces.js";
@@ -24,6 +26,7 @@ Usage:
   sap-gui-mcp-server doctor     check SAP GUI scripting and Chrome access on this machine
   sap-gui-mcp-server sessions   list the SAP sessions found now
 ${RECORD_HELP}
+${TEST_HELP}
   sap-gui-mcp-server --version | --help
 
 Environment:
@@ -49,6 +52,7 @@ async function main(argv: string[]): Promise<number> {
   if (cmd === "--help" || cmd === "-h" || cmd === "help") return console.log(HELP), 0;
   if (!cmd) return await serveStdio(), -1;
   if (cmd === "export") return exportCommand(argv.slice(1));
+  if (cmd === "test") return testCommand(argv.slice(1));
   const surfaces = surfacesFromEnv();
   if (cmd === "doctor") {
     if (surfaces.some((s) => s.name !== "sapgui")) console.error("Checking… (if Chrome asks whether to allow remote debugging, click Allow)\n");
