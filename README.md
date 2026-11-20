@@ -368,7 +368,7 @@ title. Closing the server never closes your browser.
 | `sap_sessions` | lists the SAP sessions open on this machine; `*` marks the active one |
 | `sap_use` | makes another session the active one: by number, id, system, transaction, or surface (`fiori`, `webgui`, `sapgui`) |
 | `sap_look` | the screen as compact text; `full: true` for every id and column; `diff: true` for what changed since the last view; `id` for one control whole; `id` and `rows` for a range of rows of a long list, and `cols` for only some of its columns |
-| `sap_act` | one action, then the new screen, or only what changed when the screen is the same one |
+| `sap_act` | one action, then the new screen, or only what changed when the screen is the same one; `actions` for several in one call (see [Several actions in one call](#several-actions-in-one-call)) |
 | `sap_confirm` | runs an action held for your confirmation, when your client cannot ask you itself (see [Confirm mode](#confirm-mode)) |
 | `sap_screenshot` | a PNG of the window or tab, for charts and visual checks |
 | `sap_record` | records the run as a test: start, stop, checks, variables, export |
@@ -439,6 +439,41 @@ surface then work from that same object.
 The command field (`okcd`) takes commands through `{"do": "okcode"}` only.
 `set`, `focus` or any other action on the field itself is refused, on
 every surface, so that a command cannot go round the guard.
+
+### Several actions in one call
+
+An agent that sees a screen knows its fields and the key that sends them.
+`actions` in place of `action` runs up to 20 actions in order and answers
+once, with what ran and the screen after the last one:
+
+```
+sap_act {"actions":[
+  {"do":"set","id":"ctxtVBAK-AUART","value":"OR"},
+  {"do":"set","id":"ctxtVBAK-VKORG","value":"1000"},
+  {"do":"set","id":"ctxtVBAK-VTWEG","value":"10"},
+  {"do":"set","id":"ctxtVBAK-SPART","value":"00"},
+  {"do":"key","key":0}]}
+```
+
+The server reads the screen after each action and ends the batch before
+the next one when:
+
+- an action fails, is refused by the guard, or waits for your confirmation
+  (each action has its own guard decision, as if it were sent alone; the
+  actions after a held one do not run);
+- a popup opened;
+- the status bar shows an error, a warning or a termination;
+- the screen is another one (transaction, program or screen number);
+- SAP is still working on the step.
+
+The answer then says how many actions ran, why it ended and which did not
+run, and shows the screen as it is. An action goes on through what its
+`expect` names: `{"screen":"4001"}` (also `transaction`, `title`),
+`{"popup":true}`, `{"status":"W"}`; when the screen is not what `expect`
+says, the batch ends there. `"show":true` on an action adds the screen
+after it to the answer (to read one tab after another). While a recording
+is on, each action of a batch is its own step. `"/o..."` (a new session) is
+sent on its own.
 
 ### What an answer holds
 

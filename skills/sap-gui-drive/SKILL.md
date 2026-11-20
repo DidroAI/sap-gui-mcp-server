@@ -14,7 +14,9 @@ do by hand, under their authorisations.
 
 1. `sap_look` (or `sap_sessions` first when several systems are open). Read
    the header: transaction, program, screen and system tell you where you are.
-2. One `sap_act` per step, on ids from the view. Each action answers with
+2. One `sap_act` per step, on ids from the view; the fields of one screen
+   and the key that sends them can go in one call with `actions` (it stops
+   at a popup, an error, a warning or another screen). Each action answers with
    the new screen: read it before the next step instead of calling
    `sap_look` again. When the screen is still the same one, the answer
    holds only what changed (`~` changed, `+` new, `-` gone, `=` context);
