@@ -123,3 +123,22 @@ describe("grids", () => {
     bunExpect(g.rows[1]?.cells).toEqual(["4701", "200.00"]);
   });
 });
+
+describe("table controls", () => {
+  test("parses the compact table control format into aligned cells", () => {
+    const text = [
+      "tblSAPMV45ATCTRL_U_ERF_AUFTRAG  table  rows 3 (visible 3)  (cell id: <id>[col,row], e.g. txtVBAP-POSNR[0,0])",
+      "  columns: 0 Item=txtVBAP-POSNR (read-only), 1 Material=ctxtRV45A-MABNR (read-only), 2 Order Quantity=txtRV45A-KWMENG (read-only), 3 Rej=chkVBAP-ABGRU",
+      "  row 0: Item=10; Material=M-01; Order Quantity=5; Rej [ ]",
+      "  row 1: Item=20; Material=M-02; Order Quantity=1; Rej [x]",
+      "  row 2: Rej [ ]",
+    ].join("\n");
+    const g = parseGrid(text, "tbl");
+    bunExpect(g.titles).toEqual(["Item", "Material", "Order Quantity", "Rej"]);
+    bunExpect(g.columns).toEqual(["VBAP-POSNR", "RV45A-MABNR", "RV45A-KWMENG", "VBAP-ABGRU"]);
+    bunExpect(g.total).toBe(3);
+    bunExpect(g.rows[0]?.cells).toEqual(["10", "M-01", "5", "false"]);
+    bunExpect(g.rows[1]?.cells).toEqual(["20", "M-02", "1", "true"]);
+    bunExpect(g.rows[2]?.cells).toEqual(["", "", "", "false"]);
+  });
+});
