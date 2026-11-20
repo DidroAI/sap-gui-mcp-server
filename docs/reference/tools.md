@@ -1,23 +1,56 @@
 # MCP tools
 
-The server registers eight tools under the server name `sap-gui`
-(`sap_confirm` only when `SAP_WRITE=confirm`). Six work on the open SAP
-sessions; two turn a session into a repeatable test.
+The server registers its tools under the server name `sap-gui`. Six work
+on the open SAP sessions, two turn a session into a repeatable test, and
+two more save and run test code when you turn them on:
 
-| Tool | Does | Read-only hint |
+- `sap_confirm` is listed only when `SAP_WRITE=confirm`. With writing off
+  or on it could never run anything.
+- `sap_code_save` and `sap_code_test` are listed only when
+  `SAP_CODE_TOOLS=on` ([Configuration](configuration.md#recording-and-files)).
+
+So a server with the default settings lists seven tools.
+
+| Tool | Does | Listed |
 | --- | --- | --- |
-| [`sap_sessions`](#sap-sessions) | lists the SAP sessions open on this machine | yes |
-| [`sap_use`](#sap-use) | makes a session the active one | yes |
-| [`sap_look`](#sap-look) | the screen as text | yes |
-| [`sap_act`](#sap-act) | one action, then the new screen | no (destructive hint) |
-| [`sap_confirm`](#sap-confirm) | runs an action held for the user's yes | no (destructive hint) |
-| [`sap_screenshot`](#sap-screenshot) | a PNG of the window or tab | yes |
-| [`sap_record`](#sap-record) | records the run as a test | no |
-| [`sap_replay`](#sap-replay) | runs a recorded test again, with no model | no (destructive hint) |
+| [`sap_sessions`](#sap-sessions) | lists the SAP sessions open on this machine | always |
+| [`sap_use`](#sap-use) | makes a session the active one | always |
+| [`sap_look`](#sap-look) | the screen as text | always |
+| [`sap_act`](#sap-act) | one action, or several (`actions`), then the new screen | always |
+| [`sap_confirm`](#sap-confirm) | runs an action held for the user's yes | `SAP_WRITE=confirm` |
+| [`sap_screenshot`](#sap-screenshot) | a PNG of the window or tab | always |
+| [`sap_record`](#sap-record) | records the run as a test | always |
+| [`sap_replay`](#sap-replay) | runs a recorded test again, with no model | always |
+| [`sap_code_save`](#sap-code-save) | checks and saves a `*.sap.ts` test | `SAP_CODE_TOOLS=on` |
+| [`sap_code_test`](#sap-code-test) | runs a saved `*.sap.ts` test | `SAP_CODE_TOOLS=on` |
 
-Source: [`src/server.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/server.ts)
-and [`src/record/tools.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/record/tools.ts).
+Source: [`src/server.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/server.ts),
+[`src/record/tools.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/record/tools.ts)
+and [`src/record/code-tools.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/record/code-tools.ts).
 The parameter tables below follow the tools' input schemas.
+
+## Annotations
+
+The MCP annotations each tool declares. Clients use them to decide what to
+ask the user before a call; the server's own guard does not read them.
+
+| Tool | `readOnlyHint` | `destructiveHint` | `idempotentHint` | `openWorldHint` |
+| --- | --- | --- | --- | --- |
+| `sap_sessions` | true | | true | false |
+| `sap_use` | true | | | false |
+| `sap_look` | true | | true | false |
+| `sap_act` | false | true | | false |
+| `sap_confirm` | false | true | | false |
+| `sap_screenshot` | true | | true | false |
+| `sap_record` | false | false | | false |
+| `sap_replay` | false | true | | false |
+| `sap_code_save` | false | false | | false |
+| `sap_code_test` | false | true | | true |
+
+An empty cell means the tool does not set that hint. `sap_use` is
+read-only for SAP: it changes only which session the other tools use by
+default. `openWorldHint` is false because the tools work in one closed SAP
+system, not the open web; `sap_code_test` sets it to true, as it runs code.
 
 ## Common rules
 
@@ -31,6 +64,8 @@ The parameter tables below follow the tools' input schemas.
   that says what was wrong and what to do instead.
 - **Every tool checks the session against `SAP_ALLOW_SYSTEMS`** each time it
   is called ([Configuration](configuration.md)).
+- **Structured output** is off by default. With `SAP_STRUCTURED=on`, see
+  [Structured content](#structured-content).
 
 ## sap_sessions
 
@@ -58,6 +93,7 @@ be searched (for example, SAP GUI scripting is off).
 ## sap_use
 
 Makes a session the active one for `sap_look`, `sap_act` and the others.
+Every other tool also takes `session` for a single call.
 
 | Parameter | Type | Required | Meaning |
 | --- | --- | --- | --- |
@@ -93,28 +129,51 @@ Returns: text.
 
 ## sap_act
 
-One action on the screen, by an id from `sap_look`. Answers with a line
-that says what was done, then the new screen, or only what changed when
-the screen is the same one.
+One action on the screen, by an id from `sap_look`, or several actions in
+one call. Answers with a line that says what was done, then the new screen,
+or only what changed when the screen is the same one.
 
-| Parameter | Type | Required | Meaning |
-| --- | --- | --- | --- |
-| `action` | object | yes | the action: `{"do": "...", ...}`. Every verb and field: [Actions reference](actions.md) |
-| `session` | string | no | the session; default the active one |
-| `full` | boolean | no | answer with the whole screen even when little changed |
+The action's fields go at the top level of the call:
 
-Fields of `action` in the schema: `do` (string, required), `id`, `value`,
-`key`, `node`, `how`, `row` (integer), `col`, `button`, `app`, `to`
-(integer or string). Other fields pass through: `timeout` (seconds) and
-`timing` (boolean) are read by the server.
+```json
+{"do": "set", "id": "ctxtVBAK-AUART", "value": "OR"}
+```
+
+| Parameter | Type | Meaning |
+| --- | --- | --- |
+| `do` | one of `set`, `press`, `click`, `key`, `select`, `check`, `combo`, `okcode`, `f4`, `focus`, `dblclick`, `tree`, `grid`, `toolbar`, `scroll`, `open` | the verb. Needed for one action; left out with `actions` |
+| `id` | string | the control, from the view |
+| `value` | string, number or boolean | `set`, `check`, `okcode`, `select` with `row` |
+| `key` | number or string | `key`, `combo` |
+| `row` | number | a row of a grid or table, counted from 0 |
+| `col` | string | a grid column, a tree item |
+| `how` | string | `grid`, `tree` |
+| `node` | string | `tree` |
+| `button` | string | `toolbar` |
+| `to` | number or string | `scroll` |
+| `app` | string | `open` (Fiori) |
+| `timeout` | number | seconds the step may take, up to 600 (SAP GUI and Web GUI; default 180) |
+| `actions` | list of actions, at most 20 | several actions in one call, in place of `do` and its fields ([below](#several-actions-in-one-call)) |
+| `session` | string | the session; default the active one |
+| `full` | boolean | answer with the whole screen, not the changes |
+
+Every verb and field: [Actions reference](actions.md). No field is required
+by the schema; the server checks the rest (a `do` it knows, a whole `row`,
+a known `key`) and says what is missing. Sending `do` and `actions` in the
+same call is refused.
+
+With `"timing": true` (or `SAP_TIMINGS=on`) the answer adds a line that
+says where the time went. `timing` is not in the schema: the input accepts
+other keys and passes them on.
 
 Returns: text, in this order:
 
-1. what was done (`set wnd[0]/usr/ctxtVBAK-VKORG`);
-2. with `"timing": true` or `SAP_TIMINGS=on`, where the time went;
-3. when the status bar holds an error, a warning or an abort: a line
+1. what was done (`set wnd[0]/usr/ctxtVBAK-VKORG`), and the timing line
+   when asked for;
+2. when the status bar holds an error, a warning or an abort: a line
    `STATUS E: ...` with what to do about it;
-4. the screen, whole or as changes.
+3. the `code:` line, while a recording is on (see the tip below);
+4. an empty line, then the screen, whole or as changes.
 
 The change marks:
 
@@ -132,23 +191,104 @@ with `SAP_VIEW=full`.
 Other answers:
 
 - **Refused:** `Refused: <reason>` (`isError`). The guard, the command-field
-  rule or the transaction lists said no.
+  rule or the transaction lists said no. With writing off, the reason ends
+  "Tell the user what you would have saved; do not look for another way."
 - **Held** (with `SAP_WRITE=confirm`): when the client supports MCP
   elicitation, the client asks the user and the answer is the result (or
-  `Not run: the user declined ...`). Otherwise the answer is
-  `Needs the user's confirmation: ...` with a token for `sap_confirm`.
-- **Failed:** the reason, and the screen the session is on when it is not
-  the one the agent saw last.
+  `Not run: the user declined ...`, which tells the agent to stop and not
+  retry). Otherwise the answer starts with `NOT RUN YET: needs the user's
+  confirmation: ...` and holds a token for `sap_confirm`. A held action is
+  not an error result.
+- **Failed:** the reason, a `Next: ...` line when a field is closed or a
+  control does not scroll, then where the session is: one line when the
+  screen is as the agent saw it last, otherwise the screen.
 - **`/o<transaction>` on SAP GUI:** the new session becomes the active one,
   and the answer says so.
 - **Landed in a refused transaction** (through a menu, a favourite or a
   tree): the server leaves it with `/n` and says so (`isError`).
 
 ::: tip The SDK line
-Every `sap_act` and `sap_confirm` answer ends with a line such as
-`code: await sap.set("VBAK-VBELN", "4711");`: the [SDK](../guides/sdk-tests.md)
-call that repeats the action. `SAP_CODE=off` drops it.
+While a recording is on, every `sap_act` and `sap_confirm` answer of an
+action that ran has a line such as `code: await sap.set("VBAK-VBELN", "4711");`:
+the [SDK](../guides/sdk-tests.md) call that repeats the action. Without a
+recording there is no such line. `SAP_CODE=on` adds it always,
+`SAP_CODE=off` never, also while recording. `sap_record {"op":"code"}`
+gives the whole script with or without the line.
 :::
+
+### Several actions in one call
+
+`actions` runs up to 20 actions in order and answers once:
+
+```json
+{"actions": [
+  {"do": "set", "id": "ctxtVBAK-AUART", "value": "OR"},
+  {"do": "set", "id": "ctxtVBAK-VKORG", "value": "1000"},
+  {"do": "key", "key": 0}]}
+```
+
+Each entry takes the fields of one action, plus:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `expect` | object | what this step knows will happen, so the batch goes on through it: `screen` (the screen number, string or number), `transaction`, `title` (text the title contains), `status` (`S`, `I`, `W`, `E`, `A`, or text of the message), `popup` (true or false) |
+| `show` | boolean | add the screen after this step to the answer |
+| `unseen` | boolean | let a write run on a screen the batch reached after you sent it |
+
+Before anything runs, the whole batch is read: an entry that is not a valid
+action, an unknown key in `expect`, a command the transaction lists refuse,
+or a `/o...` command (send it on its own) refuses the batch, and nothing
+runs.
+
+Then each action is judged by the guard when its turn comes, on the screen
+as it is then, as if it were sent alone. The batch holds the session: no
+other call runs in between. It ends before the next action when:
+
+- an action fails or is refused;
+- an action may write and waits for the user's yes;
+- a popup opened;
+- the status bar shows an error, a warning or a termination (a `set`,
+  `check` or `focus` does not end it on a message that was there before);
+- the screen is another one (transaction, program or screen number);
+- a step's `expect` is not met;
+- SAP is still working on the step.
+
+`expect` lets the batch go on through what it names: `{"screen":"4001"}`,
+`{"popup":true}`, `{"status":"W"}`. None of these end the batch after its
+last action.
+
+**A write never runs on a screen the agent has not seen in the batch.** An
+action that may write, after the first, does not run when the screen or
+the popups are not the ones the agent saw when it sent the batch (an
+`expect` let it go on through a new screen). SAP raises no message for
+wrong but valid data, such as another customer or a zero price, so the
+stop rules cannot catch it. The answer says so and shows the screen; send
+the write again from there, or mark the step `"unseen": true` when you know
+that screen. A refusal from the write setting still comes first.
+
+The answer:
+
+```
+Ran 2 of 3 actions. Stopped: after action 2, the status bar shows E: Fill in all required fields. Action 3 did not run.
+1. <what action 1 did>
+2. <what action 2 did>
+STATUS E: Fill in all required fields  (error: correct the input it names, then Enter)
+
+<the screen>
+```
+
+- The first line is `Ran N actions.` when all ran, or
+  `Ran K of N actions. Stopped: <why>.` with the actions that did not run.
+- `Action N: expected ...` when the last step's `expect` was not met.
+- One `n. <note>` line per action that ran, and with `show`, the screen
+  after that step between `---` lines.
+- While recording: `code:` and one SDK line per action.
+- Then the status line and the screen, once.
+
+A batch is an error result when an action failed or was refused. A held
+write puts the batch's lines first, then the held action's own answer
+(`NOT RUN YET: ...` with a token, or the result after the user's yes).
+While a recording is on, each action of a batch is its own step.
 
 ## sap_confirm
 
@@ -163,7 +303,8 @@ Listed only when `SAP_WRITE=confirm`.
 Returns: the same as `sap_act` when the action runs.
 
 - A token works once, whatever the outcome, and for ten minutes. At most
-  50 tokens are held; the oldest go first.
+  50 tokens are held; the oldest go first. An unknown or expired token
+  says that nothing ran and that the user must be asked again.
 - Before running, the server reads the screen again. If the session,
   surface, system, client, transaction, window title, action or the
   server's assessment of it changed, the answer is `Not run: the screen
@@ -190,8 +331,8 @@ must check. Off until `start`. Guide: [Recording and replay](../guides/record-re
 
 | Parameter | Type | Used by | Meaning |
 | --- | --- | --- | --- |
-| `op` | `start`, `stop`, `status`, `assert`, `capture`, `variable`, `note`, `undo`, `list`, `export`, `code` | all (required) | the operation; `code` answers the recording so far as a draft `*.sap.ts` test |
-| `name` | string | `start`, `export`, `variable`, `capture` | the recording's name (`start`, `export`), or the variable's name |
+| `op` | `start`, `stop`, `status`, `assert`, `capture`, `variable`, `note`, `undo`, `code`, `list`, `export`, `help` | all (required) | the operation |
+| `name` | string | `start`, `export`, `variable`, `capture`, `code` with `tidy` | the recording's name (`start`, `export`, `code`), or the variable's name |
 | `description` | string | `start`, `variable` | a description of the test or the variable |
 | `replace` | boolean | `start` | record over a recording of the same name |
 | `check` | `status`, `field`, `title`, `transaction`, `text` | `assert` | what to check |
@@ -202,22 +343,26 @@ must check. Off until `start`. Guide: [Recording and replay](../guides/record-re
 | `from` | `status`, `field`, `title` | `capture` | where the value is read |
 | `pattern` | string | `capture` | a regular expression whose first group is the value |
 | `text` | string | `note` | what the last step is for |
-| `to` | `calm`, `vbs`, `playwright`, `playwright-sap`, `gherkin`, `sap-ts` | `export` | the format |
-| `session` | string | `start`, `assert`, `capture` | the session; default the active one |
+| `to` | `calm`, `vbs`, `playwright`, `playwright-sap`, `sap-ts`, `gherkin` | `export` | the format |
+| `tidy` | boolean | `code` | the recording tidied: detours, corrections and error round trips dropped, checks from what SAP showed |
+| `session` | string | every op but `start`, `help` and `list` | the session; default the active one |
 
 What each operation answers:
 
 | Operation | Answer |
 | --- | --- |
-| `start` | that recording started; it needs `name` |
+| `start` | that recording started; it needs `name`, and says so with an example |
 | `assert` | the check as stored. Tried on the screen as it is now and refused if it does not hold. A field check without `equals`, `contains` or `matches` takes the field's value now |
 | `capture` | the value read; refused if `pattern` finds nothing. Needs `name` and `from` |
 | `variable` | the variable and how many recorded steps now use it. Needs `name` and `value` |
 | `note`, `undo` | the step it applied to. `undo` drops the last step from the file; SAP is not undone |
 | `status` | the steps so far |
+| `code` | the recording so far as a `*.sap.ts` test. With no recording on, a draft of the actions this server ran on the session (the last 200) |
+| `code` with `"tidy": true` | the recording that is on, or else the one `name` names (default: the one last stopped), tidied, then the removal log and a TODO list ([Tidy code from a recording](../guides/record-replay.md#tidy-code-from-a-recording)) |
 | `stop` | where the file was written, with hints (typed values still fixed, a document number reused without a capture, no check at all) |
 | `list` | the recordings in the recordings directory |
 | `export` | the path written, then the file's text (cut after 6,000 characters). Without `name`, the recording last stopped |
+| `help` | every op with an example of its fields |
 
 Recordings are named, never addressed by path: they are read and written in
 `SAP_RECORD_DIR` only. Recorded values are written to the file as typed.
@@ -234,7 +379,7 @@ lists as `sap_act`.
 | `variables` | object of strings | no | values for the test's variables, such as `{"order": "4711"}` |
 | `screens` | `strict`, `loose` | no | `loose`: landing on another screen than recorded is a note, not a failure |
 | `choices` | `stop`, `continue` | no | a screen with a choice the recording does not have (availability control). `stop` (default): the step fails and names the ways on. `continue`: press its neutral Continue and say so |
-| `from` | integer, 1 or more | no | resume at this step, on the screen as it is, with the variables the failed run ended with |
+| `from` | whole number, 1 or more | no | resume at this step, on the screen as it is, with the variables the failed run ended with |
 | `repair` | object | no | with `from`: a repair for that one step (below) |
 | `format` | `text`, `json` | no | `json`: the result as data |
 | `session` | string | no | the session; default the active one |
@@ -263,13 +408,106 @@ lists as `sap_act`.
   transaction, a typed value that is neither in the recording nor on the
   screen.
 
+The answer of a failed replay says this shape and how to go on; the tool's
+description does not.
+
 Returns: pass or fail per step. The first line says `PASS`, `PASS ... WITH
 NOTES` (the replay confirmed an informing popup the recording did not have,
 or used a fallback id) or `PASS ... REPAIRED at step N`. On a failure: the
 phase (`act`, `landing`, `check`, `refused`), the reason and the screen
-there; the session stays on it. A failed replay is returned with
-`isError: true`. With `format: "json"`: the steps, the phase of a failure,
-the full screen and the proposed test.
+there; the session stays on it. The answer ends with how to go on (`from`,
+`repair`) and a warning not to replay to retry a failed write. A failed
+replay is returned with `isError: true`. With `format: "json"`: the steps,
+the phase of a failure, the full screen and the proposed test.
 
 Refused while a recording is on: stop it first. A step that may write needs
 `SAP_WRITE=on`.
+
+## sap_code_save
+
+Listed only with `SAP_CODE_TOOLS=on`. Checks a test written with the
+[SDK](../guides/sdk-tests.md), then writes it to `<name>.sap.ts` in
+`SAP_RECORD_DIR`. For agents without a file system; the usual start is
+`sap_record {"op":"code","tidy":true}`.
+
+| Parameter | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `name` | string | yes | the test's name, as the recording's. A name, never a path |
+| `code` | string | yes | the whole `*.sap.ts` file |
+
+Returns: `Saved <path>` with what was checked, or `Not saved: N
+problem(s)` with each problem (`isError`). The checks: syntax, imports
+(only `expect` and `test`), forbidden words, computed member access, and
+commit parity (a call that may write only when the recording of the same
+name has a write). The code is not type-checked. Details and the risk:
+[Code tools](../guides/record-replay.md#code-tools-sap-code-save-and-sap-code-test).
+
+## sap_code_test
+
+Listed only with `SAP_CODE_TOOLS=on`. Runs a test saved with
+`sap_code_save` on the session through the test runner.
+
+| Parameter | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `name` | string | yes | the test's name, as saved |
+| `variables` | object of strings | no | values that override the test's `const vars` |
+| `session` | string | no | the session; default the active one |
+
+Returns: `PASS` or `FAILED` per test with its time; on a failure the error,
+the line of the saved file, the `sap.step` it was in, the trace file and
+the screen after the run (`isError`).
+
+- The checks of `sap_code_save` run again on the file as it is.
+- The test runs under the server's `SAP_WRITE`, `SAP_ALLOW_TCODES` and
+  `SAP_BLOCK_TCODES`, on the server's session. A test cannot widen them.
+- Refused while a recording is on.
+
+## Reading answers from code
+
+Answers are text. Code that reads them without `SAP_STRUCTURED=on` can rely
+on this order for `sap_act` and `sap_confirm`, top to bottom (each line only
+when it applies):
+
+1. `(This call waited N s for the call before it on this session ...)`:
+   another call on the same session ran first.
+2. The action's note: `did set`, `pressed btn[8]`, ... For a batch, the
+   header line instead: `Ran N actions.` or
+   `Ran K of N actions. Stopped: <why>. Actions J to N did not run.`, then `Action N: expected ...` when
+   the last step's `expect` was not met, then one `n. <note>` line per
+   action that ran.
+3. `NOT RUN YET: needs the user's confirmation: ...`, an `Action:` line and
+   the line with `token "<hex>"`: the write is held, and no screen follows.
+4. `STATUS E|W|A: <message>  (<what to do>)`: an error, warning or
+   termination in the status bar, said before the screen.
+5. `code: await sap....;` (one action), or `code:` followed by one line per
+   action (a batch): only while recording, or with `SAP_CODE=on`.
+6. An empty line, then the screen: the whole compact view (it starts with
+   `TRANSACTION ...` or the Fiori app's header), or on the same screen
+   `CHANGED n of m lines (same screen; sap_look shows all of it):` followed
+   by `~`, `+`, `-` and `=` lines, or `NO CHANGE on the screen (...)`. A
+   diff that left out an E, W or A status bar line ends with
+   `= sbar  status  <type>: <message>`.
+
+A refusal or a failure is an error result (`isError: true`) whose first
+line is `Refused: ...` or the failure; after it, `Next: ...` for a closed
+field, then where the session is (`The screen is as you last saw it: ...`)
+or the screen. A failed batch puts the header line first, then the screen.
+
+### Structured content
+
+With `SAP_STRUCTURED=on`, the answers code reads also carry
+`structuredContent`, and the tools declare output schemas. The text stays
+the same. Off by default: clients differ on an answer with both, and the
+default should not cost tokens.
+
+| Tool | `structuredContent` |
+| --- | --- |
+| `sap_sessions` | `{sessions: [{n, active, id, surface, system, client, user, transaction, title, where}]}` |
+| `sap_act`, `sap_confirm` | `{ran, total, stopped?: {why, text}, held?: {token}, screen: {transaction, program, number, title, popup}, status?: {type, text}}` |
+| `sap_replay` | `{passed, steps: [{n, outcome, ms, failures}], variables}` |
+| `sap_record` | `{recording, name?, steps?}`, after every op |
+
+`stopped.why` is one of `status`, `popup`, `screen`, `expect`, `busy`,
+`failed`, `refused`, `unseen`, `held`, `transaction`, `declined`. A single
+action that fails or is refused carries no structured content; a batch
+carries it on a failure too.
