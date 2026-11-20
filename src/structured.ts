@@ -30,12 +30,11 @@ const screenShape = z.object({
 });
 export type ScreenSummary = z.infer<typeof screenShape>;
 
-/** What sap_act and sap_confirm answer, as data. */
+/** What sap_act answers, as data. */
 export const actOutput = z.object({
   ran: z.number(),
   total: z.number(),
   stopped: z.object({ why: z.string(), text: z.string() }).optional(),
-  held: z.object({ token: z.string().optional() }).optional(),
   screen: screenShape,
   status: z.object({ type: z.string().optional(), text: z.string() }).optional(),
 });

@@ -172,21 +172,16 @@ describe("act", () => {
 });
 
 describe("confirm", () => {
-  test("a held write exits 3 with the command that runs it; confirm runs it", async () => {
+  test("the CLI cannot ask the user: under confirm a write is refused (exit 1), and the first look says so", async () => {
     const { surface, run } = setup({ SAP_WRITE: "confirm" });
     surface.add({ id: "chrome:1", system: "XYZ", transaction: "ZT01" }, { view: SCREEN, assess });
-    const held = await run(["act", "key", "11"]);
-    expect(held.code).toBe(3);
-    expect(held.lines[0]).toStartWith("NOT RUN YET: needs the user's confirmation: key 11: Save");
-    const token = /sap-gui confirm ([0-9a-f]+)$/.exec(held.out)?.[1] ?? "";
-    expect(token).not.toBe("");
+    const look = await run(["look"]);
+    expect(look.code).toBe(0);
+    expect(look.lines[0]).toStartWith("NOTE: writing is set to confirm, and this client cannot ask the user");
+    const r = await run(["act", "key", "11"]);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("cannot ask the user");
     expect(surface.acts()).toEqual([]);
-    const r = await run(["confirm", token]);
-    expect(r.code).toBe(0);
-    expect(r.lines[0]).toBe("did key");
-    expect(surface.acts()).toEqual([{ do: "key", key: 11 }]);
-    // A token works once.
-    expect((await run(["confirm", token])).err).toContain("Unknown or expired token");
   });
 });
 
