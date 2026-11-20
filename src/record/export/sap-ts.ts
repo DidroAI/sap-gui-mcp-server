@@ -22,20 +22,21 @@ import type { NormalizedAction } from "../../core/action.js";
 import { codeOf, draftTest } from "../../sdk/code.js";
 import type { Capture, Check, SapTest, Step } from "../format.js";
 import { inputsOf } from "../format.js";
+import { exportTidy } from "./sap-ts-tidy.js";
 
 const q = (v: unknown) => JSON.stringify(v);
-const VAR = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
-const HOME = new Set(["SESSION_MANAGER", "SMEN", "S000"]);
+export const VAR = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
+export const HOME = new Set(["SESSION_MANAGER", "SMEN", "S000"]);
 /** Names a capture cannot be a `const` under: the test's own names and the words of the language. */
-const TAKEN = new Set(
+export const TAKEN = new Set(
   "sap vars expect test await break case catch class const continue debugger default delete do else enum export extends false finally for function if implements import in instanceof interface let new null package private protected public return static super switch this throw true try typeof var void while with yield async undefined arguments eval".split(" "),
 );
 
 /** How the test refers to each variable: `vars.order`, or `order` for a value a step captures. */
-type Refs = Map<string, string>;
+export type Refs = Map<string, string>;
 
 /** A string as TypeScript: a plain literal, a variable alone, or a template literal for text with variables in it. */
-function str(text: string, refs: Refs): string {
+export function str(text: string, refs: Refs): string {
   const whole = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(text);
   if (whole && refs.has(whole[1] as string)) return refs.get(whole[1] as string) as string;
   let used = false;
@@ -52,7 +53,7 @@ function str(text: string, refs: Refs): string {
 }
 
 /** The string literals of a line with variables in them, rewritten: `"${order}"` -> `order`. */
-function withRefs(line: string, refs: Refs): string {
+export function withRefs(line: string, refs: Refs): string {
   return line.replace(/"(?:[^"\\]|\\.)*"/g, (lit) => {
     const s = JSON.parse(lit) as string;
     VAR.lastIndex = 0;
@@ -61,7 +62,7 @@ function withRefs(line: string, refs: Refs): string {
 }
 
 /** A regular expression as TypeScript: a literal, or `new RegExp(...)` when it holds variables or line breaks. */
-function regex(pattern: string, refs: Refs): string {
+export function regex(pattern: string, refs: Refs): string {
   VAR.lastIndex = 0;
   if (VAR.test(pattern) || /[\n\r\u2028\u2029]/.test(pattern) || !pattern) return `new RegExp(${str(pattern, refs)})`;
   let out = "";
@@ -81,7 +82,7 @@ function regex(pattern: string, refs: Refs): string {
 }
 
 /** How many groups a pattern has (0 when it is not a regular expression). */
-function groups(pattern: string): number {
+export function groups(pattern: string): number {
   try {
     return (new RegExp(`${pattern}|`).exec("")?.length ?? 1) - 1;
   } catch {
@@ -90,7 +91,7 @@ function groups(pattern: string): number {
 }
 
 /** The expression that reads what a check or capture is about, as a string. */
-function reading(c: { check?: string; from?: string; id?: string | undefined }): string {
+export function reading(c: { check?: string; from?: string; id?: string | undefined }): string {
   const what = c.check ?? c.from;
   if (what === "status") return "await sap.status().text()";
   if (what === "field") return `await sap.field(${q(c.id ?? "")}).value()`;
@@ -140,15 +141,18 @@ function actionLines(s: Step, refs: Refs): string[] {
   return [`// a popup that only informs${s.on.title ? ` ("${s.on.title}")` : ""}: SAP may not show it again`, `if (${there}) ${line}`];
 }
 
-const comment = (text: string) => text.split(/\r?\n/).map((l) => `// ${l}`.trimEnd());
+export const comment = (text: string) => text.split(/\r?\n/).map((l) => `// ${l}`.trimEnd());
 
 export interface SapTsOptions {
   /** Where the test imports from; default the package's test entry. */
   from?: string;
+  /** Tidy the recording first (record/tidy.ts) and write it as a person would: see `exportTidy`. */
+  tidy?: boolean;
 }
 
 /** The recording as a `*.sap.ts` test. */
 export function exportSapTs(test: SapTest, options: SapTsOptions = {}): string {
+  if (options.tidy) return exportTidy(test, options).text;
   const inputs = new Set(inputsOf(test));
   const times = new Map<string, number>();
   for (const s of test.steps) for (const c of s.capture ?? []) times.set(c.var, (times.get(c.var) ?? 0) + 1);
