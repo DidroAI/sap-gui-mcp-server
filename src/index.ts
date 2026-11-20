@@ -9,3 +9,4 @@ export { replay, replayAll, resultText, junit, type ReplayOptions, type ReplayRe
 export { FORMAT, parseTest, serializeTest, type SapTest, type Step, type Check, type Capture } from "./record/format.js";
 export { exportTest, TARGET_NAMES, type Target } from "./record/export/index.js";
 export * from "./sdk/index.js";
+export { renderTraceHtml, timings, traceSummary } from "./trace/index.js";
