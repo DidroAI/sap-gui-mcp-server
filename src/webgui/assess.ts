@@ -26,7 +26,7 @@
  */
 import { menuSid, resolveId } from "../core/ids.js";
 import type { Action, Assessment } from "../core/types.js";
-import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayTitle, endsLogon, isGotoMenu, languageCovered, listChoice, listTitle, MENU_PROGRAMS, okcodeKind, runSwitch, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
+import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayTitle, endsLogon, isGotoMenu, languageCovered, listChoice, listTitle, MENU_PROGRAMS, okcodeKind, runSwitch, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS, showsOnly } from "../core/words.js";
 import type { MenuEntry } from "./page.js";
 import { vkey } from "./keys.js";
 
@@ -420,6 +420,8 @@ function assessFunction(what: string, text: string, control: ViewControl | undef
   const win = control ? windowOf(scene, control) : undefined;
   // The Enter button of a message popup acknowledges the message (isMessagePopup), also when it says "Confirm".
   if (control && key === 0 && isMessagePopup(win)) return navigate(`${named} acknowledges the message`);
+  // "Display deletion log" on a screen that only displays: the commit word names what is shown (showsOnly).
+  if (control && commitWord(text) && showsOnly(ctx.language, text) && displayButton(control, text, scene, ctx)) return navigate(`${named} shows something on a screen that only displays`);
   if (commitWord(text)) return commit(named);
   if (control && control.window > 0 && control.kind === "button") {
     const asked = commitQuestion(scene.windows);
