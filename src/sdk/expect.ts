@@ -27,7 +27,7 @@ const fits = (actual: string, want: Text, whole: boolean) => (typeof want === "s
 const show = (v: unknown) => (typeof v === "string" ? JSON.stringify(v.length > 300 ? `${v.slice(0, 300)}...` : v) : String(v));
 
 /** Polls `read` until `test` holds (or, negated, stops holding), then passes; else throws with the last reading. */
-async function poll<T>(what: string, negate: boolean, timeout: number, read: () => Promise<T>, test: (v: T) => boolean, describe: (v: T) => string): Promise<void> {
+async function poll<T>(subject: string, name: string, negate: boolean, timeout: number, read: () => Promise<T>, test: (v: T) => boolean, describe: (v: T) => string): Promise<void> {
   const until = Date.now() + timeout;
   let last: T | undefined;
   let error: unknown;
@@ -43,7 +43,7 @@ async function poll<T>(what: string, negate: boolean, timeout: number, read: () 
     await new Promise((r) => setTimeout(r, 200));
   }
   const got = error ? `reading it failed: ${(error as Error).message}` : last !== undefined ? describe(last) : "nothing was read";
-  throw new ExpectError(`expect(${what})${negate ? ".not" : ""}: ${got} (waited ${timeout} ms)`);
+  throw new ExpectError(`expect(${subject})${negate ? ".not" : ""}.${name}: ${got} (waited ${timeout} ms)`);
 }
 
 class ControlAssertions {
@@ -56,7 +56,7 @@ class ControlAssertions {
     return new ControlAssertions(this.l, !this.negate, this.timeout);
   }
   private check(name: string, test: (s: ControlState) => boolean, describe: (s: ControlState) => string, o?: ExpectOptions) {
-    return poll(`${this.l}).${name}`, this.negate, o?.timeout ?? this.timeout, () => this.l.state(), test, (s) => (s.found ? describe(s) : "it is not on the screen"));
+    return poll(`${this.l}`, name, this.negate, o?.timeout ?? this.timeout, () => this.l.state(), test, (s) => (s.found ? describe(s) : "it is not on the screen"));
   }
   toHaveValue(v: Text, o?: ExpectOptions) {
     return this.check(`toHaveValue(${show(v)})`, (s) => s.found && fits(s.value ?? "", v, true), (s) => `the value is ${show(s.value)}`, o);
@@ -94,7 +94,7 @@ class StatusAssertions {
     return new StatusAssertions(this.l, !this.negate, this.timeout);
   }
   private check(name: string, test: (s: StatusState) => boolean, o?: ExpectOptions) {
-    return poll(`status bar).${name}`, this.negate, o?.timeout ?? this.timeout, () => this.l.state(), test, (s) => `the status bar is ${s.type ? `${s.type}: ` : ""}${show(s.text)}`);
+    return poll("status bar", name, this.negate, o?.timeout ?? this.timeout, () => this.l.state(), test, (s) => `the status bar is ${s.type ? `${s.type}: ` : ""}${show(s.text)}`);
   }
   toHaveText(v: Text, o?: ExpectOptions) {
     return this.check(`toHaveText(${show(v)})`, (s) => fits(s.text, v, true), o);
@@ -129,7 +129,7 @@ class GridAssertions {
     return new GridAssertions(this.l, !this.negate, this.timeout);
   }
   private check(name: string, test: (s: GridState) => boolean, describe: (s: GridState) => string, o?: ExpectOptions, range?: { from: number; to: number }) {
-    return poll(`${this.l}).${name}`, this.negate, o?.timeout ?? this.timeout, () => this.l.state(range), (s) => s.found && test(s), (s) => (s.found ? describe(s) : "it is not on the screen"));
+    return poll(`${this.l}`, name, this.negate, o?.timeout ?? this.timeout, () => this.l.state(range), (s) => s.found && test(s), (s) => (s.found ? describe(s) : "it is not on the screen"));
   }
   toHaveRowCount(n: number, o?: ExpectOptions) {
     return this.check(`toHaveRowCount(${n})`, (s) => (s.total ?? s.rows.length) === n, (s) => `it has ${s.total ?? s.rows.length} rows`, o);
@@ -153,7 +153,7 @@ class SessionAssertions {
     return new SessionAssertions(this.sap, !this.negate, this.timeout);
   }
   private check(name: string, test: (s: Awaited<ReturnType<Sap["screen"]>>) => boolean, describe: (s: Awaited<ReturnType<Sap["screen"]>>) => string, o?: ExpectOptions) {
-    return poll(`sap).${name}`, this.negate, o?.timeout ?? this.timeout, () => this.sap.screen(), test, describe);
+    return poll("sap", name, this.negate, o?.timeout ?? this.timeout, () => this.sap.screen(), test, describe);
   }
   toHaveTransaction(t: string, o?: ExpectOptions) {
     return this.check(`toHaveTransaction(${show(t)})`, (s) => (s.transaction ?? "").toUpperCase() === t.toUpperCase(), (s) => `the transaction is ${show(s.transaction)}`, o);

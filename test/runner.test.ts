@@ -210,8 +210,9 @@ test.skip("skipped", async () => {});`,
     const html = await readFile(join(dir, "sap-results/index.html"), "utf8");
     expect(html).toContain("1 passed · 1 failed · 0 flaky · 1 skipped");
     expect(html).toContain("fails &lt;here&gt;");
-    // No trace viewer in this tree: the link goes to the trace's JSON.
-    expect(html).toContain('<a href="orders-displays-order-5000/displays-order-5000.saptest.json">trace</a>');
+    // Each trace gets its page from the trace viewer, and the report links it.
+    expect(html).toContain('<a href="orders-displays-order-5000/displays-order-5000.saptest.html">trace</a>');
+    expect(await readFile(join(dir, "sap-results/orders-displays-order-5000/displays-order-5000.saptest.html"), "utf8")).toContain("<!doctype html>");
   });
 
   test("html links each trace's page made by the trace hook", async () => {
