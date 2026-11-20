@@ -26,7 +26,8 @@ const OVERVIEW = ["TRANSACTION ZT01  PROGRAM ZPROG  SCREEN 200  SYSTEM XYZ (100)
 
 async function setup(view?: ViewMode) {
   const surface = new FakeSurface("webgui");
-  const { server } = createServer({ policy: policyFromEnv({}), surfaces: [surface], ...(view ? { view } : {}) });
+  // The SDK line each action answers with is tested in server.test.ts; here, the views.
+  const { server } = createServer({ policy: policyFromEnv({}), surfaces: [surface], code: false, ...(view ? { view } : {}) });
   const client = new Client({ name: "test", version: "0" }, { capabilities: {} });
   const [a, b] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(a), client.connect(b)]);

@@ -383,7 +383,8 @@ describe("the answer to an action", () => {
     s.view = [...before.replace(/\(edit\)/g, "(read-only)").split("\n"), "sbar  status  W: The default date is not copied into existing schedule lines"].join("\n");
     const lines = (await call("sap_act", { action: { do: "key", key: 0 } })).text.split("\n");
     expect(lines[1]).toBe("STATUS W: The default date is not copied into existing schedule lines  (warning: Enter accepts it and goes on; another warning may follow, and each takes its own Enter. SAP may keep the fields closed until then, and fills nothing in before)");
-    expect(lines[2]).toBe("");
+    expect(lines[2]).toBe("code: await sap.key(0);");
+    expect(lines[3]).toBe("");
     // The fields the warning closed are one line, not twelve.
     expect(lines.length).toBeLessThan(8);
     expect(lines.join("\n")).toContain("~ 12 fields closed for input");
@@ -405,5 +406,54 @@ describe("the answer to an action", () => {
     expect(r.text).toMatch(/\(timing: \d+ ms in the server: judge \d+, act \d+, answer \d+; the action 812 ms: sap 600, start 40/);
     expect(surface.acts()).toEqual([{ do: "key", key: 0 }]);
     expect((await call("sap_act", { action: { do: "key", key: 0 } })).text).not.toContain("timing");
+  });
+});
+
+describe("the SDK line in the answer", () => {
+  /** The note block: the lines before the first empty one. */
+  const noteOf = (text: string) => text.split("\n\n")[0]?.split("\n") ?? [];
+
+  test("an action that ran ends its note with the line that repeats it; a refusal or a hold has none", async () => {
+    const { surface, call } = await setup({ SAP_WRITE: "confirm" });
+    surface.add({ id: "chrome:1", system: "ABA", client: "800", transaction: "VA02" }, { assess });
+    const set = await call("sap_act", { action: { do: "set", id: "VBAK-VBELN", value: "4711" } });
+    expect(noteOf(set.text).at(-1)).toBe('code: await sap.set("VBAK-VBELN", "4711");');
+    const held = await call("sap_act", { action: { do: "key", key: 11 } });
+    expect(held.text).not.toContain("code:");
+    const done = await call("sap_confirm", { token: tokenOf(held.text) });
+    expect(noteOf(done.text).at(-1)).toBe("code: await sap.key(11);");
+    const refused = await call("sap_act", { action: { do: "set", id: "okcd", value: "/nSE38" } });
+    expect(refused.error).toBe(true);
+    expect(refused.text).not.toContain("code:");
+    // Its cost: one short line, about a dozen tokens (some 4 characters a token).
+    for (const line of [noteOf(set.text).at(-1) as string, noteOf(done.text).at(-1) as string]) expect(line.length / 4).toBeLessThan(13);
+  });
+
+  test("SAP_CODE=off leaves it out", async () => {
+    const was = process.env.SAP_CODE;
+    process.env.SAP_CODE = "off";
+    try {
+      const { surface, call } = await setup();
+      surface.add({ id: "chrome:1", system: "ABA" }, {});
+      expect((await call("sap_act", { action: { do: "key", key: 0 } })).text).not.toContain("code:");
+    } finally {
+      if (was === undefined) delete process.env.SAP_CODE;
+      else process.env.SAP_CODE = was;
+    }
+  });
+
+  test('sap_record {"op":"code"} with no recording on: a draft of the actions that ran on the session, the last 200', async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA" }, { assess });
+    expect((await call("sap_record", { op: "code" })).text).toContain("no action ran");
+    await call("sap_act", { action: { do: "okcode", value: "/nVA03" } });
+    // Refused (writes off): not in the draft.
+    await call("sap_act", { action: { do: "key", key: 11 } });
+    for (let i = 0; i < 205; i++) await call("sap_act", { action: { do: "set", id: "F", value: String(i) } });
+    const draft = (await call("sap_record", { op: "code" })).text;
+    expect(draft).toStartWith('import { expect, test } from "sap-gui-mcp-server/test";\n\ntest("draft", async ({ sap }) => {\n  await sap.set("F", "5");');
+    expect(draft).not.toContain("sap.key(11)");
+    expect(draft.split("\n").filter((l) => l.includes("await sap.")).length).toBe(200);
+    expect(draft).toEndWith('  await sap.set("F", "204");\n});\n');
   });
 });
