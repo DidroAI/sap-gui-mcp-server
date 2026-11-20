@@ -186,17 +186,26 @@ describe("setup: Cursor, Windsurf, VS Code", () => {
     expect(read(join(home, ".cursor", "mcp.json"))).toBe("{oops");
   });
 
-  test("Windsurf: ~/.codeium/windsurf/mcp_config.json, dry run, init", async () => {
-    const dir = join(home, ".codeium", "windsurf");
-    const file = join(dir, "mcp_config.json");
-    expect(setup({ dryRun: false, cwd, onPath: none }, {}, "linux", home).lines).toContain("– Windsurf: not found (no ~/.codeium/windsurf).");
-    mkdirSync(dir, { recursive: true });
+  test("Windsurf (Devin Desktop): writes ~/.config/devin/mcp_config.json, found by the old folder too", async () => {
+    const file = join(home, ".config", "devin", "mcp_config.json");
+    expect(setup({ dryRun: false, cwd, onPath: none }, {}, "linux", home).lines).toContain("– Windsurf (Devin Desktop): not found.");
+    // An older Windsurf: its folder says it is installed; the server goes to the file it reads now.
+    mkdirSync(join(home, ".codeium", "windsurf"), { recursive: true });
     expect(detectClients({ cwd, onPath: none }, {}, "linux", home)).toEqual(["windsurf"]);
-    expect(setup({ dryRun: true, cwd, onPath: none }, {}, "linux", home).lines.some((l) => l.startsWith("• Windsurf: would add"))).toBe(true);
+    expect(setup({ dryRun: true, cwd, onPath: none }, {}, "linux", home).lines.some((l) => l.startsWith("• Windsurf (Devin Desktop): would add"))).toBe(true);
     expect(existsSync(file)).toBe(false);
     const r = await init({ ...base(), yes: true });
-    expect(r.lines.some((l) => l.startsWith('✓ Windsurf: added "sap-gui"'))).toBe(true);
+    expect(r.lines.some((l) => l.startsWith('✓ Windsurf (Devin Desktop): added "sap-gui"'))).toBe(true);
     expect(json(file).mcpServers["sap-gui"].args).toBeArray();
+    expect(existsSync(join(home, ".codeium", "windsurf", "mcp_config.json"))).toBe(false);
+  });
+
+  test("Windsurf (Devin Desktop): XDG_CONFIG_HOME and %APPDATA%", () => {
+    mkdirSync(join(home, "xdg", "devin"), { recursive: true });
+    setup({ dryRun: false, cwd, onPath: none, only: ["windsurf"] }, { XDG_CONFIG_HOME: join(home, "xdg") }, "linux", home);
+    expect(json(join(home, "xdg", "devin", "mcp_config.json")).mcpServers["sap-gui"]).toBeDefined();
+    setup({ dryRun: false, cwd, onPath: none, only: ["windsurf"] }, { APPDATA: join(home, "AppData") }, "win32", home);
+    expect(json(join(home, "AppData", "devin", "mcp_config.json")).mcpServers["sap-gui"]).toBeDefined();
   });
 
   test("VS Code: only a project that has .vscode/mcp.json, under `servers`", () => {
