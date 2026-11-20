@@ -2,7 +2,7 @@
  * The agent CLI: the MCP tools as shell commands, for coding agents that
  * have a shell (Claude Code, Codex, Cursor).
  *
- *   sap-gui look            → sap_look       sap-gui act '<json>'  → sap_act
+ *   sap-gui look            → sap_look       sap-gui act '<json>'  → sap_act ('[...]': "actions")
  *   sap-gui use <ref>       → sap_use        sap-gui confirm <tok> → sap_confirm
  *   sap-gui screenshot      → sap_screenshot sap-gui record <op>   → sap_record
  *   sap-gui sessions        → sap_sessions (through a running daemon; else the one-shot listing)
@@ -37,6 +37,7 @@ import {
 export const AGENT_HELP = `Agent CLI (one short answer per call; the whole screen goes to a file, read it when you need it):
   sap-gui look [--full] [--diff] [--id <id> [--rows 0-50] [--cols A,B]] [--print]
   sap-gui act '<json action>' [--full]     e.g. act '{"do":"set","id":"ctxtVBAK-VBELN","value":"4711"}'
+  sap-gui act '[<json action>, ...]'       one screen's actions in one call, e.g. act '[{"do":"set","id":"ctxtVBAK-VKORG","value":"1000"},{"do":"key","key":0}]'
   sap-gui act set <id> <value> | press <id> | key <n> | okcode <cmd> | select <id> | check <id> [true|false]
               | combo <id> [key] | f4 <id> | dblclick <id> | scroll <id> <to>       shorthand for one action
   sap-gui confirm <token>                  run an action held for the user's yes
@@ -128,6 +129,24 @@ const SHORTHAND: Record<string, string[]> = {
   open: ["app"],
 };
 
+/**
+ * `act '[...]'`: the actions of a batch (sap_act's "actions"), each a JSON
+ * object; sap_act checks them. Undefined when the words are not a JSON array.
+ */
+export function actionsOf(words: string[]): Record<string, unknown>[] | undefined {
+  const [first, ...rest] = words;
+  if (first === undefined || !first.trimStart().startsWith("[")) return undefined;
+  if (rest.length) throw new Usage("act takes one JSON list of actions; quote it as one argument.");
+  let v: unknown;
+  try {
+    v = JSON.parse(first);
+  } catch (e) {
+    throw new Usage(`The actions are not JSON (${(e as Error).message}). Quote them for the shell: '[{"do":"set","id":"...","value":"..."},{"do":"key","key":0}]'.`);
+  }
+  if (!Array.isArray(v) || !v.length || v.some((x) => !x || typeof x !== "object" || Array.isArray(x))) throw new Usage("act '[...]' takes a non-empty list of JSON actions (objects).");
+  return v as Record<string, unknown>[];
+}
+
 export function actionOf(words: string[]): Record<string, unknown> {
   const [first, ...rest] = words;
   if (first === undefined) throw new Usage(`act needs an action: '{"do":"key","key":0}' or a shorthand such as: act set <id> <value>.`);
@@ -183,7 +202,8 @@ function callOf(cmd: string, p: Parsed): Call {
     }
     case "act": {
       only(p, ["session", "full", "print"], cmd);
-      const args: Record<string, unknown> = { action: actionOf(p.positional) };
+      const actions = actionsOf(p.positional);
+      const args: Record<string, unknown> = actions ? { actions } : { action: actionOf(p.positional) };
       if (p.flags.get("full")) args.full = true;
       return { tool: "sap_act", args: withSession(args), kind: "screen", print, tag: cmd };
     }

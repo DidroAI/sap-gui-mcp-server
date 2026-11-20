@@ -121,6 +121,20 @@ describe("act", () => {
       { do: "key", key: 0 },
     ]);
   });
+  test("act '[...]' sends the actions as one batch; the summary keeps the Ran k of n line", async () => {
+    const { surface, run } = setup();
+    surface.add({ id: "chrome:1", system: "XYZ" }, { view: SCREEN });
+    await run(["look"]);
+    const r = await run(["act", '[{"do":"set","id":"ctxtZHDR-CUST","value":"4711"},{"do":"key","key":0}]']);
+    expect(r.code).toBe(0);
+    expect(r.lines[0]).toBe("Ran 2 actions.");
+    expect(r.lines.at(-1)).toMatch(/^screen: .*-act\.txt$/);
+    expect(surface.acts()).toEqual([
+      { do: "set", id: "ctxtZHDR-CUST", value: "4711" },
+      { do: "key", key: 0 },
+    ]);
+    for (const bad of ["[]", "[1]", '[{"do":"key","key":0}', '[{"do":"key","key":0}] extra']) expect((await run(["act", ...bad.split(" ")])).code).toBe(2);
+  });
   test("an error in the status bar comes first, as STATUS", async () => {
     const { surface, run } = setup();
     const error = SCREEN.replace("S: Ready", "E: Customer 4799 does not exist").replace("SCREEN 100", "SCREEN 200");

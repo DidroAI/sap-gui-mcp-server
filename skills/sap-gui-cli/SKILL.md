@@ -25,8 +25,14 @@ screen: .sap-gui/screens/7-act.txt
 1. `sap-gui look` (or `sap-gui sessions`, then `sap-gui use <n>`, when
    several are open). The printed header says where you are: transaction,
    program, screen, system. Read the screen file once for the ids.
-2. One `sap-gui act` per step, on ids from the screen. It prints the action's
-   note, then where the screen is now: the new screen's header, or
+2. One `sap-gui act` per **screen**, on ids from the screen file: the fields
+   and the key that sends them as one JSON list,
+   `act '[{"do":"set","id":"ctxtVBAK-VKORG","value":"1000"},{"do":"key","key":0}]'`.
+   It ends at the first surprise (a failure, a popup, an E/W/A status,
+   another screen, a held write) and prints `Ran k of n actions. Stopped: ...`.
+   A step's `"expect":{"screen":"4001"}` lets it go on through a screen you
+   know comes; a write on such a screen needs `"unseen":true` on its step.
+   It prints where the screen is now: the new screen's header, or
    `CHANGED n of m lines` when it is the same screen (the file then holds
    only the changes: `~` changed, `+` new, `-` gone, `=` context).
 3. Read the **STATUS** line when there is one: `STATUS E:` is an error (the
@@ -42,7 +48,7 @@ sap-gui sessions                       the open sessions; * marks the active one
 sap-gui use <n|id|system|tcode>        make one the active session
 sap-gui look [--full] [--diff]         the screen (file); --print prints it
 sap-gui look --id <id> [--rows 100-150] [--cols VBELN,NETWR]   one control whole, a range of rows
-sap-gui act '<json>' [--full]          one action (below)
+sap-gui act '<json>' [--full]          one action (below); '[...]' one screen's actions
 sap-gui confirm <token>                run a held write, only after the user said yes
 sap-gui screenshot                     a PNG (charts, HTML panels the text cannot show)
 sap-gui record start "<name>" | assert '<json>' | stop | list | status   a repeatable test
@@ -96,7 +102,8 @@ Quote JSON for the shell with single quotes. Shorthands for the common ones:
 ## Writing to SAP
 
 Saving, posting, releasing, deleting change the system. The user's
-`SAP_WRITE` decides: `off` (default) refuses; `confirm` holds the action and
+`SAP_WRITE` decides: `off` (default) refuses: tell the user what you would
+have saved, and stop; `confirm` holds the action (`NOT RUN YET`) and
 exits 3 with `sap-gui confirm <token>`: describe the action to the user in
 plain words and run it only after they say yes to that exact action; `on`
 runs it. Never work around the setting (no save codes in the command field).
