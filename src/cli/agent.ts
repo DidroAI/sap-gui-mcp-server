@@ -420,7 +420,8 @@ function present(call: Call, result: CallToolResult, ctx: AgentContext): number 
   const whole = printed.join("\n") === text;
   const out = error ? ctx.err : ctx.out;
   for (const l of printed) out(l);
-  if (!whole) out(`${call.kind === "screen" ? "screen" : "full answer"}: ${shown(writeAnswer(screensDir(ctx), call.tag, "txt", text), ctx.cwd)}`);
+  // A screen always has its file: the agent can count on the path.
+  if (!whole || call.kind === "screen") out(`${call.kind === "screen" ? "screen" : "full answer"}: ${shown(writeAnswer(screensDir(ctx), call.tag, "txt", text), ctx.cwd)}`);
   return error ? 1 : 0;
 }
 
