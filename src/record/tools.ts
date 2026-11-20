@@ -33,8 +33,34 @@ async function answer(f: () => Promise<CallToolResult>): Promise<CallToolResult>
   }
 }
 
-const OPS = ["start", "stop", "status", "assert", "capture", "variable", "note", "undo", "code", "list", "export"] as const;
+const OPS = ["start", "stop", "status", "assert", "capture", "variable", "note", "undo", "code", "list", "export", "help"] as const;
 const SHOWN_MAX = 6000;
+
+/** The answer to {"op":"help"}: every op with an example. The description keeps the order of a recording only. */
+export function recordHelp(): string {
+  return `sap_record ops, each with an example:
+  {"op":"start","name":"VA03 display order"}  from now on each sap_act that works is a step; begin with an okcode such as /nVA03. Also "description"; "replace":true records over a recording of the same name
+  {"op":"assert","check":"status","contains":"saved"}  checks the screen after the last step. check: status, field (with "id"), title, transaction, text (anywhere on the screen); with "equals", "contains" or "matches" (a regular expression), or none of them: the value it has now
+  {"op":"variable","name":"order","value":"19097"}  a value that changes between runs: written \${order} wherever it was typed or expected; "description" says what it is
+  {"op":"capture","name":"order","from":"status","pattern":"Order (\\\\d+)"}  a value SAP produced at the last step (a document number), for the steps after it. from: status, field (with "id"), title; the pattern's first group is the value
+  {"op":"note","text":"Open the order"}  what the last step is for
+  {"op":"undo"}  drops the last step (SAP itself is not undone)
+  {"op":"status"}  the recording so far
+  {"op":"code"}  the steps so far as a *.sap.ts test; with no recording on, a draft of what this server ran on the session
+  {"op":"stop"}  ends the recording and writes <name>${FILE_SUFFIX} in the recordings directory
+  {"op":"list"}  the recordings in that directory
+  {"op":"export","name":"VA03 display order","to":"calm"}  to: ${TARGET_NAMES.map((t) => `${t} (${TARGETS[t].what})`).join("; ")}
+Every op but start, help and list takes "session". A check or capture that does not hold on the screen now is refused. Typed values are written to the file as typed: do not record passwords or other secrets.`;
+}
+
+/**
+ * How to go on after a replay failed at step `n`: resume, or repair that one
+ * step. Said in the failure, not in the tool's description, where every
+ * conversation would pay for it.
+ */
+export function goOnText(n: number): string {
+  return `To go on from step ${n}: fix the screen yourself with sap_act, then sap_replay with "from":${n} (the run's variables are kept). Or let the replay fix that one step: "from":${n},"repair":{"why":"what changed","actions":[...],"place":"before|instead|after"} (at most 4 actions as sap_act takes them; after: the recorded action already ran), or "repair":{"why":"...","capture":{"var":"order","from":"status","pattern":"Order (\\\\d+)"}} for a number SAP makes anew. A repair may not write what the step does not, leave the transaction, or type a value neither recorded nor on the screen; the recorded checks still judge the step. The answer proposes a changed test; nothing is saved. Do not replay to retry a failed write: check in SAP first whether the document was created.`;
+}
 
 /** Runs a call in the session's turn (server.ts): one call at a time per session. */
 export type Serial = (ref: string | undefined, label: string, f: () => Promise<CallToolResult>) => Promise<CallToolResult>;
@@ -52,15 +78,12 @@ export function registerRecordTools(server: McpServer, registry: Registry, polic
     "sap_record",
     {
       title: "Record the SAP session as a test",
-      description: `Records what sap_act does as a repeatable test, with checks. Off until "start". "op":
-  {"op":"start","name":"VA03 display order"}  each sap_act that works is a step from now on; begin with an okcode such as /nVA03
-  {"op":"assert","check":"status","contains":"saved"}  after the last step; check: status, field (with id), title, transaction, text (anywhere); with equals, contains or matches, or none: the value now
-  {"op":"variable","name":"order","value":"19097"}  a value that changes between runs: written \${order} wherever it was typed or expected
-  {"op":"capture","name":"order","from":"status","pattern":"Order (\\\\d+)"}  a value SAP produced at the last step (a document number), for the steps after it; from: status, field (with id), title
-  {"op":"note","text":"Open the order"}  what the last step is for
-  {"op":"undo"}  drops the last step (SAP is not undone); also "status", "code" (the steps so far as a *.sap.ts test), "list", and "stop" (writes <name>${FILE_SUFFIX} in the recordings directory)
-  {"op":"export","name":"...","to":"calm"}  ${TARGET_NAMES.join(", ")}
-A check or capture that does not hold on the screen now is refused. Typed values are written to the file as typed.`,
+      description: `Turns what you do with sap_act into a test that sap_replay runs without a model. Use it only when the user asks to record, automate or regression-test a flow. In order: start (name), an okcode that opens the transaction, your sap_act steps, assert after the step it checks, stop (writes the file). {"op":"help"} answers with every op and its fields, with examples; a call that lacks a field says which.
+  start name | stop | status | list | undo (drops the last step) | note text
+  assert check (status, field, title, transaction, text), id for a field, equals, contains or matches
+  variable name, value: differs per run | capture name, from, pattern: a number SAP made
+  code: the steps so far as a script, also with no recording on | export name, to
+A check that does not hold on the screen now is refused. Typed values are written as typed: do not record secrets.`,
       inputSchema: {
         op: z.enum(OPS),
         name: z.string().optional().describe("the recording's (start, export) or the variable's (variable, capture)"),
@@ -98,6 +121,8 @@ A check or capture that does not hold on the screen now is refused. Typed values
           }
           case "status":
             return text(recorder.status());
+          case "help":
+            return text(recordHelp());
           case "code": {
             const t = recorder.current;
             if (t) return text(exportSapTs(t));
@@ -150,7 +175,7 @@ A check or capture that does not hold on the screen now is refused. Typed values
     {
       title: "Replay a recorded SAP test",
       description:
-        'Runs a recording again on the active session with no model: the same actions on the same ids, under the same write setting and transaction lists as sap_act (steps that may write need SAP_WRITE=on). Answers pass or fail per step and, on a failure, the screen there. A window the recording lacks is confirmed only when it just informs (PASS WITH NOTES); a question or a choice fails the step. "variables" runs it on other data, e.g. {"order":"4711"}.',
+        'Runs a recording (sap_record) again on the active session with no model: the same actions on the same ids, under the same write setting and transaction lists as sap_act (steps that may write need SAP_WRITE=on). Use it to re-run a recorded flow, also on other data with "variables", e.g. {"order":"4711"}. Answers PASS or FAIL per step; on a failure, the screen there and how to go on (from, repair). A window the recording lacks is confirmed only when it just informs (PASS WITH NOTES); a question or a choice fails the step. Stop a recording first.',
       inputSchema: {
         name: z.string().optional().describe("the recording (default: the one just stopped)"),
         variables: z.record(z.string(), z.string()).optional(),
@@ -161,11 +186,7 @@ A check or capture that does not hold on the screen now is refused. Typed values
           .describe("a choice screen the recording lacks (availability check). stop (default): the step fails and names the ways on; continue: press its neutral Continue"),
         // A whole number: .int() would put the safe-integer bounds into tools/list.
         from: z.number().min(1).refine(Number.isInteger, "a whole number").optional().describe("resume at this step on the screen as it is, after a failure there, with that run's variables"),
-        repair: repairSchema
-          .optional()
-          .describe(
-            'with "from": a fix for that one step, then the replay goes on as recorded. {"why":"what changed","actions":[...],"place":"before|instead|after"} (at most 4 actions; after: the recorded action already ran) or {"why":"...","capture":{"var":"order","from":"status","pattern":"Order (\\d+)"}} for a number SAP makes anew. Refused: a write the step does not have, leaving the transaction, a typed value neither recorded nor on screen. The recorded checks still judge the step. The answer proposes a test; nothing is saved',
-          ),
+        repair: repairSchema.optional().describe('with "from": a fix for that one step; a failure answer says its shape'),
         format: z.enum(["text", "json"]).optional().describe("json: the result as data (steps, the failure's phase and full screen, the proposed test)"),
         session,
       },
@@ -182,7 +203,8 @@ A check or capture that does not hold on the screen now is refused. Typed values
           const { driver } = await registry.session(a.session);
           const r = await replay(driver, policy, test, { ...(a.variables ? { variables: a.variables } : {}), ...(a.screens ? { screens: a.screens } : {}), ...(a.choices ? { choices: a.choices } : {}), ...(a.from !== undefined ? { from: a.from } : {}), ...(a.repair ? { repair: a.repair } : {}), leaveOnFailure: false });
           const needs = inputsOf(test);
-          const said = `${resultText(r)}${r.aborted && needs.length ? `\nThe test takes: ${needs.join(", ")}.` : ""}`;
+          const failed = r.steps.find((s) => s.outcome === "fail");
+          const said = `${resultText(r)}${r.aborted && needs.length ? `\nThe test takes: ${needs.join(", ")}.` : ""}${failed ? `\n\n${goOnText(failed.n)}` : ""}`;
           const out = a.format === "json" ? JSON.stringify({ ...r, text: said }) : said;
           return r.passed ? text(out) : fail(out);
         });

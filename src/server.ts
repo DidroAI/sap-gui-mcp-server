@@ -34,16 +34,22 @@ export const SERVER_VERSION = "0.1.0";
  * exists only in confirm mode, the one mode that hands out tokens.
  */
 export function writeRule(policy: Policy): string {
-  if (policy.write === "off") return "An action that may write (save, post, delete...) is refused: the user has set writing off.";
-  if (policy.write === "on") return "An action that may write (save, post, delete...) runs: the user has set writing on.";
+  if (policy.write === "off")
+    return "An action that may write (save, post, delete...) is refused: the user has set writing off. Then tell the user what you would have saved, and stop: do not look for another way.";
+  if (policy.write === "on") return "An action that may write (save, post, delete...) runs: the user has set writing on. Say what you saved, with the document number from the status bar.";
   return "An action that may write (save, post, delete...) waits for the user's yes: the client asks the user if it can; if not, the answer holds a token for sap_confirm, to call only after the user said yes to that exact action.";
 }
 
+/**
+ * The server instructions. Some clients read only the first 512 characters
+ * (Codex), so the first paragraph stands on its own: what this is, in the
+ * user's words, and where to start. Routing between the tools follows.
+ */
 function instructions(policy: Policy): string {
-  return `Sees and drives the SAP screens the user already has open (SAP GUI for Windows; Web GUI and Fiori in Chrome), as the user. It never logs on.
-Start with sap_look (sap_sessions when several are open). Act with sap_act on the ids the view shows: one action, or with "actions" the fields of the screen you see and the key that sends them, in one call. Each answer is the new screen, so look again only when you need to. Read the status bar after each call: SAP reports errors there.
+  return `Works in the SAP screens the user already has open, as that user: SAP GUI for Windows, SAP Web GUI and Fiori in Chrome (transactions such as VA01 or ME23N, ALV grids, popups). It never logs on.
+Start with sap_look, or directly with sap_act okcode /n<transaction> when the task names it. Each sap_act answer is the new screen: act again from it. Read the status bar after each call: SAP reports errors there.
 ${writeRule(policy)}
-sap_record turns a run into a test; sap_replay runs it again without a model.`;
+Which tool: read a screen, a long list or a grid: sap_look. Type, press, Enter, open a transaction, answer a popup: sap_act ("actions": a whole screen in one call). Several sessions or systems: sap_sessions, sap_use. Charts and HTML areas: sap_screenshot. Record a flow as a test or automate it: sap_record, then sap_replay.`;
 }
 
 function text(t: string): CallToolResult {
@@ -263,7 +269,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = !
     "sap_sessions",
     {
       title: "List open SAP sessions",
-      description: "The SAP sessions open on this machine (SAP GUI windows; Web GUI and Fiori tabs in Chrome): system, client, user, transaction. * marks the active one.",
+      description:
+        "Lists the SAP sessions the user has open (SAP GUI windows; Web GUI and Fiori tabs in Chrome): number, system, client, user, transaction, title. * marks the active one. Call it when another tool says no session matches or a session is gone, or when the task names a system you are not on; with one session open, go straight to sap_look. An empty list: ask the user to open SAP and log on; this server never logs on.",
       inputSchema: {},
       annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     },
@@ -282,7 +289,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = !
     "sap_use",
     {
       title: "Switch the active SAP session",
-      description: "Makes a session the active one for the other tools, and shows its screen.",
+      description:
+        'Makes another session the active one and answers with its screen. Use it only to switch between several open sessions (two systems, or a second window opened with /o); every other tool also takes "session" for a single call.',
       inputSchema: { session: z.string().describe("from sap_sessions: number, id, system, transaction, or sapgui, webgui, fiori") },
       // Read-only for SAP: it changes only which session this server's other tools use by default, then reads that session's screen.
       annotations: { readOnlyHint: true, openWorldHint: false },
@@ -301,8 +309,12 @@ export function createServer({ policy, surfaces, view = "diff", record, code = !
     "sap_look",
     {
       title: "Look at the SAP screen",
-      description:
-        'The current SAP screen as compact text: a header (transaction or app, screen, system), then one line per control (id, type, label, value, state); tables as rows, popups as their own windows. Long lists show the rows on screen and the total: read others with id and rows, or {"do":"scroll"}. id "mbar" lists every menu entry.',
+      description: `Reads the SAP screen as compact text (about 250 tokens): a header (transaction or Fiori app, program, screen, system), one line per control (id, type, label = "value", state), tables as rows, popups as their own WINDOW, the status bar last.
+Call it first, to get the ids sap_act needs. Do not call it after sap_act: that answer already is the new screen. Call it again only to read more than the view shows:
+- a long list or grid shows the rows on screen and the total: read others with id and rows (${MAX_ROWS} at most per call), and cols to keep the columns you need. Never conclude an entry is missing from the rows on screen.
+- every entry of a dropdown, a tree or a text: id. Menus: id "mbar". Toolbar buttons and ids the compact view leaves out: full.
+- after you lost track: sap_look (diff: only what changed since your last view).
+For charts or HTML areas the view marks opaque, use sap_screenshot.`,
       inputSchema: {
         session,
         full: z.boolean().optional().describe("every id, column, toolbar button and its key (larger)"),
@@ -672,23 +684,28 @@ export function createServer({ policy, surfaces, view = "diff", record, code = !
     "sap_act",
     {
       title: "Act on the SAP screen",
-      description: `One action on the SAP screen, on an id from the view. Answers with the new screen; on the same screen, only what changed: "~" changed line, "+" new, "-" gone, "=" unchanged, for context.
-  {"do":"set","id":"ctxtVBAK-AUART","value":"OR"}  type into a field; a grid cell: add "row" and "col"; in a text editor "\\n" is a line break
-  {"do":"press","id":"btn[8]"}  button ("click" too); btn[N] is function key N
-  {"do":"key","key":0}  0 Enter, 3 Back, 4 F4, 8 F8, 11 Save, 12 Cancel, or a name: "Enter", "F4", "Control+S"
-  {"do":"select","id":"tabpT\\08"}  tab, radio button, menu entry, list item; with "row": a table or grid row ("value":false deselects)
-  {"do":"check","id":"...","value":true}  checkbox
-  {"do":"combo","id":"...","key":"PROG"}  dropdown entry, by key or text; without "key": lists the entries
-  {"do":"okcode","value":"/nVA03"}  commands go here only: the command field cannot be typed into
-  {"do":"f4","id":"..."}  value help
-  {"do":"dblclick","id":"..."}  list entry or label
-  {"do":"tree","id":"...","node":"<key>","how":"double|select|expand|collapse"}
-  {"do":"grid","id":"...","row":0,"col":"VBELN","how":"double|select|cell"}  any row (scrolled to); "select" without "row" selects the column
-  {"do":"toolbar","id":"...","button":"<id>"}
-  {"do":"scroll","id":"...","to":120}  a row counted from 0, "next", "prev", "first", "last"; a table control's columns "right", "left" (Fiori: when the view ends with SCROLL)
-  {"do":"open","app":"#SalesOrder-manage"}  Fiori launchpad only: an app by its intent (parameters allowed), never a URL
-Short ids work; an id that names several controls is refused with the list, one from an earlier screen with the screen you are on.
-"actions":[...] in place of "action" runs up to ${MAX_BATCH} in order and answers once: what ran, then the screen. Use it for the screen you see: its fields, then the key that sends them. It ends before the next action when one fails, is refused or waits for confirmation, a popup opens, the status bar shows an error or a warning, or the screen changes. An action goes on through what its "expect" names: {"screen":"4001"}, {"popup":true}, {"status":"W"}. "show":true adds the screen after that action (one tab after another).
+      description: `Acts on the SAP screen: type into fields, press buttons and keys, open a transaction, answer a popup, open a grid row. Ids come from the latest view; the last part is enough ("ctxtVBAK-AUART"). Answers with the result, so act again from the answer instead of calling sap_look.
+Read the answer in this order: (1) a "STATUS E/W/A" line: E means the step did not go through, correct the field it names; W: Enter accepts it; an S status says it worked (document numbers are there). (2) a new "WINDOW wnd[1]": a popup; answer it before anything else. (3) the screen: whole when it is another one; on the same screen only what changed: "~" changed line, "+" new, "-" gone, "=" unchanged, for context.
+How SAP works: set only types. Fill every field of the screen, then send one Enter (key 0); SAP then checks the input and fills dependent fields. Do not guess codes: f4 on the field lists the valid ones.
+do, with its fields:
+  set  id, value. A field; a grid or table cell: add row, col; in a text editor "\\n" is a line break
+  key  key: 0 Enter, 3 Back, 4 F4, 8 Execute, 11 Save, 12 Cancel, or a name: "F4", "Shift+F3", "Control+S"
+  press  id. A button ("click" too); btn[N] is function key N
+  okcode  value: "/nVA03" starts a transaction (unsaved input is lost), "/oVA03" opens it in a new session. Commands go here only: the command field cannot be typed into
+  select  id. Tab, radio button, menu entry, list item; with row: a table or grid row (value false deselects)
+  check  id, value true or false
+  combo  id, key (the entry's key or text). Without key: lists the entries
+  f4  id. Value help; pick from the popup with grid or dblclick
+  focus  id. Puts the cursor on a control, as a click into it would
+  dblclick  id. A list entry or a label
+  grid  id, row, col, how double|select|cell. Any row of the total; select without row: the column
+  tree  id, node, how double|select|expand|collapse
+  toolbar  id, button
+  scroll  id, to: a row from 0, "next", "prev", "first", "last"; a table control's columns "left", "right"
+  open  app "#SalesOrder-manage". Fiori launchpad only, never a URL
+timeout: the seconds a step may take (SAP GUI; default 180).
+actions: [...] in place of one action, up to ${MAX_BATCH}: one screen's worth, its fields then the key that sends them, answered once ("Ran k of n", then the screen). It ends at the first surprise: a failure or refusal, a write waiting for a yes, a popup, an E, W or A status, another screen. Per step, expect lets it go on through what you know comes: {"screen":"4001"}, {"popup":true}, {"status":"W"}; show:true adds the screen after that step; a write on a screen the batch reached after you sent it does not run unless its step says unseen:true.
+Failures say what to do: an id from an earlier screen answers with the screen you are on, an ambiguous id with the candidates. Do not repeat a failed action unchanged.
 ${writeRule(policy)}`,
       // Loose: "action":{...}, the older shape of one action, still works (clients and recordings that send it), and so do "timing" and other keys an action passes on.
       inputSchema: z
@@ -722,7 +739,7 @@ ${writeRule(policy)}`,
     {
       title: "Run a confirmed SAP action",
       description:
-        "Runs an action sap_act held, with the token it gave. Call it only after the user said yes to that exact action. Refused when the session, the screen or the action changed. The server cannot see the user's yes: without a client that asks the user itself (MCP elicitation), this confirmation is advisory.",
+        "Runs the action a sap_act answer held (\"NOT RUN YET: needs the user's confirmation ... token\"). First tell the user in plain words what will be written (document, values, system) and wait for their yes to that exact action; then call this with the token. Never call it in the same turn as the sap_act that gave the token. Answers like sap_act. A token works once and for 10 minutes; it is refused when the screen or the session changed: look, then sap_act again. The server cannot see the user's yes: without a client that asks the user itself (MCP elicitation), this confirmation is advisory.",
       inputSchema: { token: z.string() },
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     },
@@ -740,7 +757,8 @@ ${writeRule(policy)}`,
     "sap_screenshot",
     {
       title: "Screenshot of the SAP session",
-      description: "A PNG of the session's window or tab, for what the text view cannot show (charts, HTML panels).",
+      description:
+        "A PNG of the session's window or tab. Use it only for what sap_look cannot give as text (charts, HTML panels, an area the view marks opaque) or when the user asks for a picture: an image costs several times a text view. Never use it to find ids.",
       inputSchema: { session },
       annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     },
