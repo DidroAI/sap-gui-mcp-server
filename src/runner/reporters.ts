@@ -8,6 +8,7 @@
  *
  * junit, json and html write a file (`outputFile`, default in outputDir).
  */
+import { renderTraceHtml } from "../trace/html.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { parseTest } from "../record/format.js";
@@ -90,17 +91,10 @@ export function jsonReport(run: RunResult): string {
 
 const html = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-/**
- * The trace page of the trace viewer (src/trace/html.ts), written next to the
- * trace as `<name>.saptest.html`. Without the viewer the report links to the
- * trace's JSON.
- */
+/** The trace page of the trace viewer (src/trace/html.ts), written next to the trace as `<name>.saptest.html`; undefined when it cannot be made (the report then links the JSON). */
 export const defaultTraceHtml: TraceHtml = async (tracePath) => {
   try {
-    const spec = "../trace/html.js";
-    const m = (await import(spec)) as { renderTraceHtml?: (test: unknown, opts: { tracePath: string }) => string | Promise<string> };
-    if (typeof m.renderTraceHtml !== "function") return undefined;
-    const page = await m.renderTraceHtml(parseTest(await readFile(tracePath, "utf8")), { tracePath });
+    const page = await renderTraceHtml(parseTest(await readFile(tracePath, "utf8")), { baseDir: dirname(tracePath) });
     const out = tracePath.replace(/\.json$/i, ".html");
     await writeFile(out, page);
     return out;
