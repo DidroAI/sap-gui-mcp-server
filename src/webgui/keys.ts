@@ -45,6 +45,9 @@ export function nothingSent(a: Action): string | undefined {
     if (LOCAL_KEY.test(k)) return "(A key that moves in the page: nothing was sent to SAP.)";
     return "Nothing was sent to SAP: this key does nothing on this screen (or the browser kept it). The screen is as it was.";
   }
+  // A box ticked or a radio button chosen: Web GUI keeps it in the page until the next step, which is how SAP works.
+  if (a.do === "check" || (a.do === "select" && a.row === undefined && /(^|\/)rad[^/]*$/.test(String(a.id ?? ""))))
+    return "(Set in the page: SAP gets it with the next Enter or key.)";
   return "Nothing was sent to SAP for this action: what changed (if anything) changed only in the page.";
 }
 
