@@ -828,20 +828,21 @@ ${writeRule(policy)}`,
   );
 
   registerRecordTools(server, registry, policy, recorder, serial, (id) => history.get(id) ?? [], structured);
-  withoutSchemaKeyword(server);
+  withoutSdkDefaults(server);
 
   return { server, registry, recorder };
 }
 
-type ListTools = (request: unknown, extra: unknown) => Promise<{ tools: { inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown> }[] }>;
+type ListTools = (request: unknown, extra: unknown) => Promise<{ tools: { inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; execution?: { taskSupport?: string } }[] }>;
 
 /**
- * tools/list without the "$schema" keyword the SDK's JSON Schema conversion
- * puts into every input (and output) schema: some 13 tokens per tool in every
- * conversation, and no client needs it. The SDK has no option for it, so the
- * handler it installed is wrapped (test/server.test.ts checks the result).
+ * tools/list without what the SDK adds to every tool and no client needs: the
+ * "$schema" keyword of its JSON Schema conversion, and
+ * "execution":{"taskSupport":"forbidden"}, which is the spec's default. Some
+ * 25 tokens per tool in every conversation. The SDK has no option for either,
+ * so the handler it installed is wrapped (test/surface.test.ts checks it).
  */
-function withoutSchemaKeyword(server: McpServer): void {
+function withoutSdkDefaults(server: McpServer): void {
   const handlers = (server.server as unknown as { _requestHandlers?: Map<string, ListTools> })._requestHandlers;
   const inner = handlers?.get("tools/list");
   if (!handlers || !inner) return;
@@ -850,6 +851,7 @@ function withoutSchemaKeyword(server: McpServer): void {
     for (const t of out.tools) {
       delete t.inputSchema.$schema;
       if (t.outputSchema) delete t.outputSchema.$schema;
+      if (t.execution && Object.keys(t.execution).length === 1 && t.execution.taskSupport === "forbidden") delete t.execution;
     }
     return out;
   });
