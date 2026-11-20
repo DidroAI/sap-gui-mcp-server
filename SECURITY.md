@@ -62,9 +62,11 @@ SAP's own authorisations.
   on the safe list can still write. **Execute (F8)** counts as navigate,
   and a report started with it can update the database. Put such programs
   in `SAP_BLOCK_TCODES`.
-- **Confirm mode without elicitation is advisory.** When the MCP client
-  cannot ask you itself, the agent asks you in the chat and passes a token
-  to `sap_confirm`. The server cannot tell whether you were asked.
+- **Confirm mode needs a client that asks you.** With `SAP_WRITE=confirm`
+  the server asks you through the MCP client (elicitation); a client that
+  cannot ask gets every write refused. With `SAP_WRITE=on`, the only check
+  left is your client's own approval of each `sap_act` call, which you
+  configure in the client.
 - **What the agent reads leaves the server.** Screen content goes to your
   MCP client and the model behind it. The guard does not stop the agent
   from passing what it read to other tools it has.

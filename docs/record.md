@@ -515,7 +515,7 @@ no "if", so the conditions above are checked only by running the code.
 To save and run such code from an agent without a file system, see
 [code-tools.md](code-tools.md).
 
-While a recording is on, every `sap_act` (and `sap_confirm`) answer of an
+While a recording is on, every `sap_act` answer of an
 action that ran ends its note with the same line, e.g.
 `code: await sap.set("VBAK-VBELN", "4711");` (about ten tokens).
 `SAP_CODE=on` adds it without a recording too; `SAP_CODE=off` leaves it out
