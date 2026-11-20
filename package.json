@@ -49,6 +49,9 @@
     "dist",
     "!dist/**/*.map",
     "skills",
+    "docs/**/*.md",
+    "!docs/node_modules/**",
+    "!docs/launch-checklist.md",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
@@ -63,7 +66,10 @@
     "test": "bun test ./test",
     "start": "node dist/cli.js",
     "prepublishOnly": "bun run typecheck && bun run test && bun run build",
-    "test:bench": "cd bench && bun install --frozen-lockfile && node --test test/*.test.ts"
+    "test:bench": "cd bench && bun install --frozen-lockfile && node --test test/*.test.ts",
+    "docs:dev": "cd docs && bun install --frozen-lockfile && bun run dev",
+    "docs:build": "cd docs && bun install --frozen-lockfile && bun run build",
+    "build:mcpb": "node scripts/build-mcpb.mjs"
   },
   "publishConfig": {
     "access": "public"
