@@ -39,6 +39,9 @@ Each command prints one short line and the path of the screen file.
 | `SAP_CLI_IDLE` | `30` | minutes without a command before the daemon exits |
 | `SAP_CLI_SESSION` | one daemon per directory | a name: one daemon for every directory that sets it |
 
+The daemon keeps the `SAP_*` settings it started with. A later command with
+different settings is refused: run `sap-gui daemon stop` first.
+
  The same settings apply as for the MCP server: writes stay refused
 unless `SAP_WRITE` allows them ([configuration](../reference/configuration.md)).
 
@@ -47,9 +50,10 @@ unless `SAP_WRITE` allows them ([configuration](../reference/configuration.md)).
 `sap-gui install --skills` copies the bundled skills, among them
 [`sap-gui-drive`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/skills/sap-gui-drive/SKILL.md)
 and a `sap-gui-cli` skill on driving SAP through these commands, into the
-agent's folder: `.claude/skills`, `.agents/skills` or `.cursor/rules`
-(`--target claude|codex|cursor|all`; `--global` for `~/.claude/skills` and
-`~/.codex/skills`). `sap-gui init` does this as part of setting a project
+agent's folder: `.claude/skills` (Claude), `.agents/skills` (Codex) or
+`.cursor/rules/<name>.mdc` (Cursor), chosen with
+`--target claude|codex|cursor|all`; `--global` uses `~/.claude/skills` and
+`$CODEX_HOME/skills` instead. `sap-gui init` does this as part of setting a project
 up. The skill tells the agent
 how SAP screens behave: fields take effect on Enter, popups come first,
 value help instead of guessed codes, and never work around the write
