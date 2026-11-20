@@ -23,6 +23,7 @@ import { type ViewMode, Views } from "./core/views.js";
 import { Recorder, type RecorderOptions, recorderOptionsFromEnv } from "./record/recorder.js";
 import { type ParsedScreen, parseScreen, stillWorking } from "./record/screen.js";
 import { registerRecordTools } from "./record/tools.js";
+import { registerCodeTools } from "./record/code-tools.js";
 import { codeOf } from "./sdk/code.js";
 
 export const SERVER_NAME = "sap-gui";
@@ -723,6 +724,7 @@ ${writeRule(policy)}`,
   );
 
   registerRecordTools(server, registry, policy, recorder, serial, (id) => history.get(id) ?? []);
+  registerCodeTools(server, registry, policy, recorder, serial);
 
   return { server, registry, recorder };
 }
