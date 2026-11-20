@@ -766,7 +766,7 @@ describe("exports", () => {
       const files: string[] = [];
       for (const [i, t] of [created, popup, kinds].entries()) {
         const f = `t${i}.sap.ts`;
-        await writeFile(join(gen, f), exportTest(t, "sap-ts").text.replace('"sap-gui-mcp-server/test"', '"../sap-ts-shim.js"'));
+        await writeFile(join(gen, f), exportTest(t, "sap-ts").text.replace('"sap-gui-mcp-server/test"', '"../../src/runner/index.js"'));
         files.push(f);
       }
       expect(await readFile(join(gen, "t1.sap.ts"), "utf8")).toContain('  if (await sap.control("wnd[1]/tbar[0]/btn[0]").exists()) await sap.press("wnd[1]/tbar[0]/btn[0]");');
@@ -782,15 +782,15 @@ describe("exports", () => {
       const tsc = Bun.spawnSync([join(import.meta.dir, "../node_modules/.bin/tsc"), "-p", join(gen, "tsconfig.json")], { stdout: "pipe", stderr: "pipe" });
       expect(`${tsc.stdout.toString()}${tsc.stderr.toString()}`).toBe("");
       expect(tsc.exitCode).toBe(0);
-      // Run, each on a fresh fake SAP: the popup does not come again, the order is created anew.
-      const shim = await import("./sap-ts-shim.js");
-      for (const f of files) await import(join(gen, f));
-      expect(shim.registered.map((r) => r.name)).toEqual(["Create and display", "with popup", 'kinds "of" `checks`']);
-      for (const r of shim.registered) {
-        const sap = await connect({ surfaces: [new FakeSap()], write: "on", timeout: 300 });
-        await r.fn({ sap });
-        await sap.close();
-      }
+      // Run by the test runner itself, on a fake SAP with writes on: the popup does not come again, the order is created anew.
+      const { resolveConfig, runTests } = await import("../src/runner/index.js");
+      const config = resolveConfig({ use: { write: "on" }, expectTimeout: 300, outputDir: "out" }, gen);
+      const run = await runTests({ config, files: files.map((f) => join(gen, f)), surfaces: [new FakeSap()], retries: 0 });
+      expect(run.tests.map((t) => [t.title, t.status, t.error?.message])).toEqual([
+        ["Create and display", "passed", undefined],
+        ["with popup", "passed", undefined],
+        ['kinds "of" `checks`', "passed", undefined],
+      ]);
     } finally {
       await rm(gen, { recursive: true, force: true });
     }
