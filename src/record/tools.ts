@@ -169,7 +169,7 @@ A check or capture that does not hold on the screen now is refused. Typed values
         format: z.enum(["text", "json"]).optional().describe("json: the result as data (steps, the failure's phase and full screen, the proposed test)"),
         session,
       },
-      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     },
     (a) =>
       answer(async () => {

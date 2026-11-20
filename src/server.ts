@@ -247,7 +247,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = !
       title: "List open SAP sessions",
       description: "The SAP sessions open on this machine (SAP GUI windows; Web GUI and Fiori tabs in Chrome): system, client, user, transaction. * marks the active one.",
       inputSchema: {},
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     },
     () =>
       answer(async () => {
@@ -266,6 +266,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = !
       title: "Switch the active SAP session",
       description: "Makes a session the active one for the other tools, and shows its screen.",
       inputSchema: { session: z.string().describe("from sap_sessions: number, id, system, transaction, or sapgui, webgui, fiori") },
+      // Read-only for SAP: it changes only which session this server's other tools use by default, then reads that session's screen.
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     ({ session: ref }) =>
@@ -292,7 +293,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = !
         rows: z.string().optional().describe('with id: rows counted from 0, e.g. "120-180" (scrolls there)'),
         cols: z.string().optional().describe(`with id, a grid or table control: only these columns, by id or title, e.g. "VBELN,NETWR"; without rows, the first ${COLS_ONLY_ROWS.to + 1} rows`),
       },
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     },
     ({ session: ref, full, diff, id, rows, cols }) =>
       answer(() => serial(ref, "sap_look", () => look(ref, full, diff, id, rows, cols))),
@@ -677,7 +678,8 @@ ${writeRule(policy)}`,
         session,
         full: z.boolean().optional().describe("answer with the whole screen, not the changes"),
       },
-      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+      // A closed SAP system, not the open web: openWorldHint is false on every tool.
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     },
     ({ action, actions, session: ref, full }) =>
       answer(async () => {
@@ -695,7 +697,7 @@ ${writeRule(policy)}`,
       description:
         "Runs an action sap_act held, with the token it gave. Call it only after the user said yes to that exact action. Refused when the session, the screen or the action changed. The server cannot see the user's yes: without a client that asks the user itself (MCP elicitation), this confirmation is advisory.",
       inputSchema: { token: z.string() },
-      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     },
     ({ token }) =>
       answer(async () => {
@@ -713,7 +715,7 @@ ${writeRule(policy)}`,
       title: "Screenshot of the SAP session",
       description: "A PNG of the session's window or tab, for what the text view cannot show (charts, HTML panels).",
       inputSchema: { session },
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     },
     ({ session: ref }) =>
       answer(async () => {
@@ -723,6 +725,29 @@ ${writeRule(policy)}`,
   );
 
   registerRecordTools(server, registry, policy, recorder, serial, (id) => history.get(id) ?? []);
+  withoutSchemaKeyword(server);
 
   return { server, registry, recorder };
+}
+
+type ListTools = (request: unknown, extra: unknown) => Promise<{ tools: { inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown> }[] }>;
+
+/**
+ * tools/list without the "$schema" keyword the SDK's JSON Schema conversion
+ * puts into every input (and output) schema: some 13 tokens per tool in every
+ * conversation, and no client needs it. The SDK has no option for it, so the
+ * handler it installed is wrapped (test/server.test.ts checks the result).
+ */
+function withoutSchemaKeyword(server: McpServer): void {
+  const handlers = (server.server as unknown as { _requestHandlers?: Map<string, ListTools> })._requestHandlers;
+  const inner = handlers?.get("tools/list");
+  if (!handlers || !inner) return;
+  handlers.set("tools/list", async (request, extra) => {
+    const out = await inner(request, extra);
+    for (const t of out.tools) {
+      delete t.inputSchema.$schema;
+      if (t.outputSchema) delete t.outputSchema.$schema;
+    }
+    return out;
+  });
 }
