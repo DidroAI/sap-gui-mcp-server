@@ -107,12 +107,17 @@ export function parseGrid(text: string, id: string): GridState {
   let columns: string[] = [];
   let titles: string[] = [];
   const legend = lines.find((l) => l.startsWith("  columns: "));
+  /** Table control: each column's number on screen (the legend skips hidden ones), for "Title [col N]" cells. */
+  const numbers: number[] = [];
   if (legend) {
     // Table control: "0 Item=txtVBAP-POSNR (read-only)": the title, then the cell id without its type prefix.
-    for (const c of legend.slice("  columns: ".length).split(/, (?=\d+ )/)) {
-      const m = /^\d+ (.*?)=(\S+)/.exec(c);
-      titles.push(m?.[1] ?? c);
-      columns.push((m?.[2] ?? c).replace(/^[a-z]+/, ""));
+    // The legend may end with "; 41 more to the right (scroll ...): ..." (columns scrolled out): not columns.
+    const drawn = legend.slice("  columns: ".length).replace(/; \d+ more to the (?:left|right) \(.*$/, "");
+    for (const c of drawn.split(/, (?=\d+ )/)) {
+      const m = /^(\d+) (.*?)=(\S+)/.exec(c);
+      numbers.push(Number(m?.[1] ?? Number.NaN));
+      titles.push(m?.[2] ?? c);
+      columns.push((m?.[3] ?? c).replace(/^[a-z]+/, ""));
     }
   } else {
     const cols = /columns: (.*)$/.exec(head)?.[1]?.split(" | ").map((c) => c.trim()) ?? [];
@@ -133,7 +138,8 @@ export function parseGrid(text: string, id: string): GridState {
         if (box) named.set(box[1] ?? "", box[2] === "x" ? "true" : "false");
         else if (eq) named.set(eq[1] ?? "", eq[2] ?? "");
       }
-      cells = titles.map((t) => named.get(t) ?? "");
+      // Two columns with one title are written "Description [col 4]=...": matched by number.
+      cells = titles.map((t, i) => named.get(`${t} [col ${numbers[i]}]`) ?? named.get(t) ?? "");
     } else cells = body.split(" | ").map((c) => c.trim());
     rows.push({ n: Number(m[1]), cells, text: body });
   }
@@ -163,8 +169,13 @@ export class GridLocator {
 
   /** One cell's text, by row (from 0) and column id or title. */
   async cell(row: number, col: string): Promise<string> {
-    const g = await this.state({ from: row, to: row });
-    const r = g.rows.find((x) => x.n === row);
+    // A row already on screen is read as it is: asking for a range scrolls, a round trip of seconds on Web GUI.
+    let g = await this.state();
+    let r = g.rows.find((x) => x.n === row);
+    if (!r) {
+      g = await this.state({ from: row, to: row });
+      r = g.rows.find((x) => x.n === row);
+    }
     if (!r) throw new Error(`${this} has no row ${row}.`);
     const want = col.toLowerCase();
     let i = g.columns.findIndex((c) => c.toLowerCase() === want || c.toLowerCase() === want.replace(/^[a-z]+/, ""));

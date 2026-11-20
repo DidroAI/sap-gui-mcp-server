@@ -141,4 +141,15 @@ describe("table controls", () => {
     bunExpect(g.rows[1]?.cells).toEqual(["20", "M-02", "1", "true"]);
     bunExpect(g.rows[2]?.cells).toEqual(["", "", "", "false"]);
   });
+
+  test("a legend with columns scrolled out, and two columns with one title (VA03 items on ECC Web GUI)", () => {
+    const text = [
+      'tblSAPMV45ATCTRL_U_ERF_AUFTRAG  table  rows 9 (visible 9) "All items"; rows can be selected  (cell id: <id>[col,row], e.g. txtVBAP-POSNR[0,0])',
+      '  columns: 0 Item=txtVBAP-POSNR (read-only), 1 Material=ctxtRV45A-MABNR (read-only), 4 Description=txtVBAP-ARKTX (read-only), 5 S=chkVBAPD-EPMEH (read-only), 67 Description=txtTPRIT-BEZEI; 41 more to the right (scroll "to":"right"): Ship./Receiving Pnt, Route, ...',
+      "  row 0: Item=10; Material=P-109; Description [col 4]=Pumpe Stahlguss; S [x]; Description [col 67]=Standard item",
+    ].join("\n");
+    const g = parseGrid(text, "tbl");
+    bunExpect(g.columns).toEqual(["VBAP-POSNR", "RV45A-MABNR", "VBAP-ARKTX", "VBAPD-EPMEH", "TPRIT-BEZEI"]);
+    bunExpect(g.rows[0]?.cells).toEqual(["10", "P-109", "Pumpe Stahlguss", "true", "Standard item"]);
+  });
 });
