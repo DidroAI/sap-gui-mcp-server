@@ -419,7 +419,7 @@ export function registerCodeTools(server: McpServer, registry: Registry, policy:
         variables: z.record(z.string(), z.string()).optional(),
         session: z.string().optional().describe("session from sap_sessions; default: the active one"),
       },
-      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     },
     (a) =>
       answer(async () => {
