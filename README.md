@@ -369,7 +369,6 @@ title. Closing the server never closes your browser.
 | `sap_use` | makes another session the active one: by number, id, system, transaction, or surface (`fiori`, `webgui`, `sapgui`) |
 | `sap_look` | the screen as compact text; `full: true` for every id and column; `diff: true` for what changed since the last view; `id` for one control whole; `id` and `rows` for a range of rows of a long list, and `cols` for only some of its columns |
 | `sap_act` | one action, then the new screen, or only what changed when the screen is the same one; `actions` for several in one call (see [Several actions in one call](#several-actions-in-one-call)) |
-| `sap_confirm` | runs an action held for your confirmation, when your client cannot ask you itself (see [Confirm mode](#confirm-mode)) |
 | `sap_screenshot` | a PNG of the window or tab, for charts and visual checks |
 | `sap_record` | records the run as a test: start, stop, checks, variables, export |
 | `sap_replay` | runs a recorded test again, with no model |
@@ -625,23 +624,21 @@ GUI). Without it an action waits 180 seconds for SAP.
 
 ### Confirm mode
 
-With `SAP_WRITE=confirm`, an action that may write is held until you say
-yes. How you are asked depends on your MCP client:
-
-- **The client supports MCP elicitation:** the server asks you in the
-  client itself, with the action, the system, the transaction and the
-  window title. The action runs only if you accept. The agent cannot
-  answer for you.
-- **It does not:** `sap_act` answers with a token, the agent asks you in
-  the chat, then calls `sap_confirm` with the token. This is **advisory**:
-  the server cannot check that you were asked. Treat it as a reminder to
-  the agent, not as a control. If you need a control, use `SAP_WRITE=off`
-  or a client with elicitation.
-
-In both cases the confirmation is bound to what was shown: the session,
+With `SAP_WRITE=confirm`, an action that may write runs only after you say
+yes in your MCP client: the server asks you through MCP elicitation, with
+the action, the system, the transaction and the window title. The agent
+cannot answer for you. The yes is bound to what was shown: the session,
 system, client, transaction, window title, the action and what the server
 said it would do. Before running, the server reads the screen again and
-refuses if any of these changed. A token works once and for ten minutes.
+refuses if any of these changed.
+
+A client that cannot ask (no elicitation support) gets every write
+refused, and the first answer says so. Then either use a client that
+supports elicitation, or set `SAP_WRITE=on` and let your client's own tool
+approval be the check: have it ask before each `sap_act` (in Claude Code,
+leave `mcp__sap-gui__sap_act` out of `allow`, or put it in `ask`; in Codex,
+`approval_mode = "prompt"` for that tool). That approval covers every
+`sap_act` call, not only the ones that write.
 
 This is a safety net, not a guarantee. A custom button whose name is on the
 safe list can still write, and so can a report started with F8. Use a test
@@ -705,7 +702,7 @@ Every setting is an environment variable of the server process.
 | `SAP_DOWNLOAD_DIR` | `downloads` in `SAP_RECORD_DIR` when that is set, else `./sap-downloads` | Web GUI: where a file SAP writes "to a local file" (List > Export > Local File) is copied. Web GUI keeps such a file inside the browser; the answer of the action names the copy |
 | `SAP_RECORD` | `off` | `on`: record every session from its first action |
 | `SAP_CODE` | while recording | `on`: every action's answer ends with the SDK line that repeats it (`code: await sap.set(...)`); `off`: never, also while recording |
-| `SAP_STRUCTURED` | `off` | `on`: answers that code reads (`sap_sessions`, `sap_act`, `sap_confirm`, `sap_replay`, `sap_record`) also carry `structuredContent`, with output schemas ([docs/tool-review.md](docs/tool-review.md#round-2-2026-11-20)) |
+| `SAP_STRUCTURED` | `off` | `on`: answers that code reads (`sap_sessions`, `sap_act`, `sap_replay`, `sap_record`) also carry `structuredContent`, with output schemas ([docs/tool-review.md](docs/tool-review.md#round-2-2026-11-20)) |
 
 `sap-gui-mcp-server --help` lists the commands and the main settings.
 

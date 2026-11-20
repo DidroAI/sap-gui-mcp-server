@@ -134,7 +134,7 @@ async function main() {
   rows.push({ group: "answers", name: "sap_act command field refused", text: await call("sap_act", { session: "act", action: { do: "set", id: "okcd", value: "/nVA03" } }) });
   rows.push({ group: "answers", name: `sap_sessions (${surface.sessions.length} sessions)`, text: await call("sap_sessions") });
 
-  // The same Save with SAP_WRITE=confirm and a client that cannot ask the user: the token answer.
+  // The same Save with SAP_WRITE=confirm and a client that cannot ask the user: the refusal.
   const held = new FakeSurface("webgui");
   held.add({ id: "act", system: "ABA", client: "800", transaction: "VA01", title: "Create Sales Order: Initial Screen" }, { view: va01, assess: save });
   const second = createServer({ policy: policyFromEnv({ SAP_WRITE: "confirm" }), surfaces: [held] });
@@ -142,7 +142,7 @@ async function main() {
   const [c, d] = InMemoryTransport.createLinkedPair();
   await Promise.all([second.server.connect(c), client2.connect(d)]);
   const r2 = (await client2.callTool({ name: "sap_act", arguments: { action: { do: "key", key: 11 } } })) as { content: { text?: string }[] };
-  rows.push({ group: "answers", name: "sap_act Save held for confirmation (token)", text: r2.content.map((x) => x.text ?? "").join("\n") });
+  rows.push({ group: "answers", name: "sap_act Save refused (confirm, client cannot ask)", text: r2.content.map((x) => x.text ?? "").join("\n") });
   await client2.close();
 
   const counted = await countTokens(rows.map((r) => r.text));
