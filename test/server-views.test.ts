@@ -142,10 +142,12 @@ describe("an action that cannot run", () => {
     expect(r.error).toBe(true);
     expect(r.text).toBe(`${missing.message}\nThe screen is as you last saw it: TRANSACTION ZT01  PROGRAM ZPROG  SCREEN 100  SYSTEM XYZ (100)  WINDOW wnd[0]  "Synthetic Order: Initial Screen"`);
   });
-  test("a failure that is not about the screen (the browser is gone) is passed on as it is", async () => {
+  test("any other failure comes with the screen too, when it can be read", async () => {
     const { surface, call } = await setup();
-    surface.add({ id: "chrome:1", system: "XYZ", transaction: "ZT01" }, { view: screen(), failAct: new Error("the tab was closed") });
+    const s = surface.add({ id: "chrome:1", system: "XYZ", transaction: "ZT01" }, { view: screen(), failAct: new Error("the step timed out") });
+    await call("sap_look");
     const r = await call("sap_act", { action: { do: "key", key: 0 } });
-    expect(r).toEqual({ error: true, text: "the tab was closed" });
+    expect(r).toEqual({ error: true, text: 'the step timed out\nThe screen is as you last saw it: TRANSACTION ZT01  PROGRAM ZPROG  SCREEN 100  SYSTEM XYZ (100)  WINDOW wnd[0]  "Synthetic Order: Initial Screen"' });
+    expect(s.info.id).toBe("chrome:1");
   });
 });
