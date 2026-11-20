@@ -597,7 +597,7 @@ export function resultText(r: ReplayResult): string {
   return lines.join("\n");
 }
 
-const xml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "");
+export const xml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "");
 
 /** JUnit XML, the format CI servers read: one suite per test, one case per step. */
 export function junit(results: ReplayResult[]): string {

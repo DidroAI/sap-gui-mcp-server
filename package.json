@@ -40,6 +40,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./test": {
+      "types": "./dist/runner/index.d.ts",
+      "default": "./dist/runner/index.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {
