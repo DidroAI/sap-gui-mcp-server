@@ -5,49 +5,133 @@
 Please do not open a public issue. Report it privately through GitHub:
 [Security → Report a vulnerability](https://github.com/DidroAI/sap-gui-mcp-server/security/advisories/new).
 
+<!-- TODO (Pierre): add a security contact email here, for reporters without a GitHub account. -->
+
 Say what you did, what happened, and which version, surface (SAP GUI for
 Windows, the `diag` method, Web GUI, Fiori) and MCP client you used. Leave
 real SAP data out: made-up values reproduce most problems.
 
 We aim to answer within a week, and to fix a confirmed issue in the latest
-version. Only the latest published version is supported.
+version. We will agree a disclosure date with you, and credit you in the
+advisory unless you ask us not to.
 
-Examples of what we want to hear about:
+## Supported versions
+
+| Version | Supported |
+| --- | --- |
+| latest 0.x release | yes |
+| older releases | no: please update first |
+
+Before 1.0, only the latest published version gets fixes.
+
+## What we want to hear about
 
 - an action that writes to SAP while `SAP_WRITE=off`, or without the yes
   that `SAP_WRITE=confirm` asks for;
-- a way round `SAP_ALLOW_SYSTEMS`, `SAP_ALLOW_TCODES`, `SAP_BLOCK_TCODES` or
-  `SAP_ALLOW_ORIGINS`;
+- a way round `SAP_ALLOW_SYSTEMS`, `SAP_ALLOW_TCODES`, `SAP_BLOCK_TCODES`,
+  `SAP_ALLOW_ORIGINS` or `SAP_ALLOW_LOGOFF`;
 - typing into a password field, acting on a logon screen, or a password
   reaching the agent, a log or a recording;
 - the server reading browser tabs that are not SAP tabs;
-- the local SAProuter of the `diag` method reachable from another machine.
+- the local SAProuter of the `diag` method reachable from another machine;
+- a recording or a tool argument that makes the server read or write a file
+  outside its directory;
+- any network connection the server makes that this page does not list.
 
-## What the server does
+## Data handling
 
-The server works in SAP sessions you already have open, as you. It never
-logs on, never stores a password, and talks only to your SAP front end
-(SAP GUI, or Chrome through its DevTools protocol), the MCP client that
-started it, and, with the `diag` method, the SAP system it relays SAP GUI's
-traffic to. It sends no telemetry.
+The server runs on your machine, as a process your MCP client starts. It
+has no server side, and no account.
 
-Its guard checks every action before it runs:
+- **No telemetry, no analytics, no update checks.** The server opens no
+  connection other than the ones listed next.
+- **Network connections.** The server connects only to:
+  - your SAP front end on this machine: SAP GUI for Windows through SAP GUI
+    scripting (a Windows PowerShell process it starts), or Chrome or Edge
+    through the DevTools protocol (the endpoint Chrome announces in its
+    `DevToolsActivePort` file, or the one you name in `SAP_CHROME_CDP`);
+  - with `SAP_GUI_METHOD=diag` only: it listens on `127.0.0.1` (port 3298,
+    or `SAP_DIAG_PORT`) and relays SAP GUI's traffic to the next hop of the
+    SAProuter string in your SAP Logon entry, which is your SAP system or
+    router.
+  It sends nothing to Didro or to any other third party.
+- **The only path off your machine is the one you chose.** The server
+  answers the MCP client that started it, over stdio. The client sends
+  what the server answers (screen content, screenshots) to the model
+  provider you configured in it. Choose that provider, and its data
+  retention, as you would for any tool that sees your SAP data.
+- **The server calls no model.** Replay and the repair of a replay step
+  run without one.
+- **No credentials.** The server never logs on, never stores a password,
+  never types into a password field, and acts on no logon screen. It works
+  in sessions you have already opened. The exported Playwright spec is the
+  one exception, and it is not the server: it is a file you run yourself,
+  and it reads `SAP_USER` and `SAP_PASSWORD` from your environment.
+- **On disk.** The server writes files only in these cases:
 
-- **Writes:** each surface classifies an action as read, navigate or
-  commit, and fails closed: anything not known to be safe is a commit.
-  Commits are refused (`SAP_WRITE=off`, the default), held for your yes
-  (`confirm`), or allowed (`on`).
-- **Where:** allow lists of systems and clients, of browser origins, and
-  allow and block lists of transactions, checked on every call.
+  | What | Where | When |
+  | --- | --- | --- |
+  | Recordings and exports | `SAP_RECORD_DIR` (default `./sap-tests`) | after `sap_record start`, or with `SAP_RECORD=on` |
+  | Files Web GUI exports "to a local file", and browser downloads | `SAP_DOWNLOAD_DIR` (default `downloads` in `SAP_RECORD_DIR` when set, else `./sap-downloads`) | when an action in Web GUI produces such a file |
+  | Raw DIAG traffic, logon included | `SAP_DIAG_CAPTURE` | only when set; for debugging |
+  | A picture of screen parts read by OCR | `SAP_SCREEN_DEBUG` | only when set; for debugging |
+  | Replay reports, exports from the command line | the paths you pass (`--junit`, `--out`) | when you run the command |
+  | MCP client configuration (with a `.bak` copy) | the client's own file | when you run `setup` |
+
+  `./` is the server's working directory, which your MCP client chooses.
+  DIAG captures are created readable by their owner only (mode 0600, where
+  the file system honours it). Recordings and downloads get your default
+  file permissions.
+- **Screenshots** from `sap_screenshot` go to the MCP client; the server
+  does not save them.
+
+## Threat model
+
+### What we protect
+
+- **SAP data on screen**: everything your SAP user can display.
+- **Your SAP session and authorisations**: the agent acts as you, in the
+  sessions you have open.
+- **Files on disk**: recordings, downloads and captures, which hold
+  business data and, for DIAG captures, the logon.
+
+### Who might misuse it
+
+- **The model or agent**, by mistake, or because text on an SAP screen (a
+  long text, a note on an order) holds instructions aimed at it: prompt
+  injection through screen content.
+- **Other programs on the same machine**, which can reach the browser's
+  DevTools endpoint and, with the `diag` method, the local SAProuter port.
+- **People who get a recording, a download or a capture.**
+
+### Mitigations
+
+- **Writes are off by default.** Each surface classifies an action as read,
+  navigate or commit before it runs, and fails closed: anything not known
+  to be safe is a commit. Commits are refused (`SAP_WRITE=off`), held for
+  your yes (`confirm`), or allowed (`on`).
+- **Where:** allow lists of systems and clients (`SAP_ALLOW_SYSTEMS`), of
+  browser origins (`SAP_ALLOW_ORIGINS`), and allow and block lists of
+  transactions (`SAP_ALLOW_TCODES`, `SAP_BLOCK_TCODES`), checked on every
+  call. A session that moves to another system is refused from then on.
 - **The command field** takes commands only through the `okcode` action, so
   a command cannot go round the transaction lists.
+- **Logging off** (`/nex`, `/nend`, `/i`, Log Off) is refused unless
+  `SAP_ALLOW_LOGOFF=on`, also with `SAP_WRITE=on`.
 - **Logons:** password fields cannot be typed into, and nothing runs on a
   logon screen.
 - **Confirmations** are bound to the session, system, client, transaction,
   window title and action, checked again before the action runs, used once,
   and expire after ten minutes.
+- **Chrome:** the server attaches only to a Chrome that announces remote
+  debugging in its own profile, or to the endpoint you name. It does not
+  try port 9222 on its own. It lists only http and https tabs it recognises
+  as SAP, and only `SAP_ALLOW_ORIGINS` when set.
+- **The `diag` router** listens on `127.0.0.1` only.
+- **Recordings** are read and written in one directory; tools take a name,
+  never a path.
 
-## What the guard does not protect against
+### Not protected against (non-goals)
 
 The guard is a safety net for an agent that makes mistakes. It is not a
 security boundary against a determined attacker, and it does not replace
@@ -67,24 +151,25 @@ SAP's own authorisations.
   to `sap_confirm`. The server cannot tell whether you were asked.
 - **What the agent reads leaves the server.** Screen content goes to your
   MCP client and the model behind it. The guard does not stop the agent
-  from passing what it read to other tools it has.
-- **Screen content is not trusted input.** Texts in SAP (a material's long
-  text, a note on an order) could hold instructions aimed at the agent. The
-  guard still applies to every action, but read-only access to data can be
-  misused by an agent that follows such text.
-- **Remote debugging opens the whole browser.** The server reads only tabs
-  it recognises as SAP (and only `SAP_ALLOW_ORIGINS`, when set), but any
-  program that can reach the browser's DevTools endpoint can read every
-  tab. Use a separate Chrome profile for SAP work.
-- **The `diag` method** runs a SAProuter on `127.0.0.1` (port 3298 by
-  default). Any program on the same machine can connect to it and pass
-  traffic to the next hop of a route. It reads SAP GUI traffic in the
-  clear, which is why it cannot work with SNC. `SAP_DIAG_CAPTURE` writes
-  that traffic to disk, logon included: use it only to debug, on your own
-  machine, and delete the files afterwards.
-- **Recordings hold what was typed.** `sap_record` files (in
-  `SAP_RECORD_DIR`) contain the values entered during the run. Treat them
-  like the system's data.
+  from passing what it read to other tools it has (a web search, a file
+  write, another MCP server).
+- **Screen content is not trusted input.** The guard still applies to every
+  action, but read-only access to data can be misused by an agent that
+  follows instructions found on a screen.
+- **Remote debugging opens the whole browser.** The server reads only SAP
+  tabs, but any program that can reach the browser's DevTools endpoint can
+  read every tab. Use a separate Chrome profile for SAP work.
+- **The `diag` method** reads SAP GUI traffic in the clear, which is why it
+  cannot work with SNC. Any program on the same machine can connect to its
+  router and pass traffic to the next hop of a route. `SAP_DIAG_CAPTURE`
+  writes that traffic to disk, logon included: use it only to debug, on
+  your own machine, and delete the files afterwards.
+- **Recordings hold what was typed.** Treat `SAP_RECORD_DIR` and
+  `SAP_DOWNLOAD_DIR` like the system's data.
 - **The server process runs as you.** On Windows it starts Windows
   PowerShell to reach SAP GUI; `setup` edits your MCP clients'
   configuration files (keeping a `.bak`).
+- **Installing it.** `npx -y sap-gui-mcp-server` fetches the package from
+  the npm registry when it is not cached. That is npm, not the server. Pin
+  a version in your client configuration if you want the same code every
+  time.

@@ -1,0 +1,114 @@
+{
+  "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/mcpb/main/dist/mcpb-manifest-v0.3.schema.json",
+  "manifest_version": "0.3",
+  "name": "sap-gui-mcp-server",
+  "display_name": "SAP GUI",
+  "version": "0.1.0",
+  "description": "See and drive the SAP screens you have open: SAP GUI for Windows, Web GUI and Fiori, as a compact text view.",
+  "long_description": "Lets Claude see and drive the SAP screens you already have open, under your own SAP authorisations: **SAP GUI for Windows** (through SAP GUI scripting), **SAP GUI for HTML (Web GUI)** and **SAP Fiori** in Chrome.\n\nIt finds your open sessions by itself, reads each screen as one line per control with SAP's own ids, and acts on those ids. It never logs on and never stores a password.\n\n**Writes are refused by default** (`SAP_WRITE` = off). Set it to `confirm` to approve each action that may write to SAP, or `on` to allow them. You can also limit the systems, transactions and browser origins it may touch.\n\nWeb GUI and Fiori need Chrome (or Edge) with remote debugging allowed: open chrome://inspect/#remote-debugging once. See the documentation for details.",
+  "author": {
+    "name": "Didro",
+    "url": "https://github.com/DidroAI"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DidroAI/sap-gui-mcp-server.git"
+  },
+  "homepage": "https://github.com/DidroAI/sap-gui-mcp-server#readme",
+  "documentation": "https://github.com/DidroAI/sap-gui-mcp-server/blob/main/docs/getting-started/installation.md",
+  "support": "https://github.com/DidroAI/sap-gui-mcp-server/issues",
+  "license": "MIT",
+  "keywords": ["sap", "sap-gui", "webgui", "fiori", "s4hana", "erp", "automation"],
+  "server": {
+    "type": "node",
+    "entry_point": "dist/cli.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/cli.js"],
+      "env": {
+        "SAP_WRITE": "${user_config.SAP_WRITE}",
+        "SAP_ALLOW_SYSTEMS": "${user_config.SAP_ALLOW_SYSTEMS}",
+        "SAP_ALLOW_TCODES": "${user_config.SAP_ALLOW_TCODES}",
+        "SAP_BLOCK_TCODES": "${user_config.SAP_BLOCK_TCODES}",
+        "SAP_ALLOW_ORIGINS": "${user_config.SAP_ALLOW_ORIGINS}",
+        "SAP_SURFACES": "${user_config.SAP_SURFACES}",
+        "SAP_CHROME_CDP": "${user_config.SAP_CHROME_CDP}",
+        "SAP_RECORD_DIR": "${user_config.SAP_RECORD_DIR}"
+      }
+    }
+  },
+  "tools": [
+    { "name": "sap_sessions", "description": "Lists the SAP sessions open on this machine (SAP GUI windows, Web GUI and Fiori tabs in Chrome)." },
+    { "name": "sap_use", "description": "Makes another session the active one." },
+    { "name": "sap_look", "description": "The current SAP screen as compact text: one line per control with its id, label, value and state." },
+    { "name": "sap_act", "description": "One action on the active SAP screen, by an id from sap_look; answers with the new screen or what changed." },
+    { "name": "sap_confirm", "description": "Runs an action held for your confirmation (SAP_WRITE=confirm)." },
+    { "name": "sap_screenshot", "description": "A PNG of the session's window or tab." },
+    { "name": "sap_record", "description": "Records the run as a test: start, stop, checks, variables, export." },
+    { "name": "sap_replay", "description": "Runs a recorded test again, with no model." }
+  ],
+  "compatibility": {
+    "platforms": ["win32", "darwin", "linux"],
+    "runtimes": {
+      "node": ">=22.0.0"
+    }
+  },
+  "user_config": {
+    "SAP_WRITE": {
+      "type": "string",
+      "title": "Writes to SAP (SAP_WRITE)",
+      "description": "off: actions that may write to SAP are refused (default). confirm: each one waits for your approval. on: they run.",
+      "default": "off",
+      "required": false
+    },
+    "SAP_ALLOW_SYSTEMS": {
+      "type": "string",
+      "title": "Allowed systems (SAP_ALLOW_SYSTEMS)",
+      "description": "Only these systems, optionally with client, comma separated, for example ABA/800, S4H. Empty: every system.",
+      "default": "",
+      "required": false
+    },
+    "SAP_ALLOW_TCODES": {
+      "type": "string",
+      "title": "Allowed transactions (SAP_ALLOW_TCODES)",
+      "description": "Only these transactions may be opened or worked in, comma separated, for example VA03, MM03. Empty: no allow list.",
+      "default": "",
+      "required": false
+    },
+    "SAP_BLOCK_TCODES": {
+      "type": "string",
+      "title": "Blocked transactions (SAP_BLOCK_TCODES)",
+      "description": "Transactions the agent may not open or work in, comma separated, for example SE38, SU01.",
+      "default": "",
+      "required": false
+    },
+    "SAP_ALLOW_ORIGINS": {
+      "type": "string",
+      "title": "Allowed browser origins (SAP_ALLOW_ORIGINS)",
+      "description": "Web GUI and Fiori: only browser tabs of these origins, comma separated, for example https://myhost:44300. Empty: any SAP tab.",
+      "default": "",
+      "required": false
+    },
+    "SAP_SURFACES": {
+      "type": "string",
+      "title": "Surfaces (SAP_SURFACES)",
+      "description": "Which kinds of session to look for, comma separated: sapgui, webgui, fiori. Empty: all that apply on this machine.",
+      "default": "",
+      "required": false
+    },
+    "SAP_CHROME_CDP": {
+      "type": "string",
+      "title": "Chrome DevTools endpoint (SAP_CHROME_CDP)",
+      "description": "A Chrome DevTools endpoint to attach to, for example http://127.0.0.1:9222. Empty: the running Chrome or Edge that allows remote debugging.",
+      "default": "",
+      "required": false
+    },
+    "SAP_RECORD_DIR": {
+      "type": "directory",
+      "title": "Recordings folder (SAP_RECORD_DIR)",
+      "description": "Where sap_record writes recordings and exports. Pick a folder you can write to, for example one in Documents. Empty: sap-tests in the folder Claude starts the server in.",
+      "default": "",
+      "required": false
+    }
+  }
+}

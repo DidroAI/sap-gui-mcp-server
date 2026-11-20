@@ -4,6 +4,39 @@ All notable changes to this project are listed here. The project follows
 [Semantic Versioning](https://semver.org); before 1.0, a minor version may
 change the tools or the view format.
 
+## Unreleased
+
+Preparing the first public release.
+
+### Documentation
+
+- A documentation site in `docs/` (VitePress): getting started, concepts,
+  guides per surface, reference, security and data handling. It loads
+  nothing from other sites. The same markdown ships in the npm package, so
+  agents can read it offline.
+- `CONTRIBUTING.md` describes the surface abstraction and how to add a
+  surface; `SECURITY.md` has a threat model and a data-handling statement.
+- `examples/`: MCP client configurations, prompts for common tasks, and a
+  synthetic recorded test to replay and export.
+
+### Install
+
+- A Claude Desktop extension (`.mcpb`), built with `bun run build:mcpb` and
+  attached to each release.
+- Install docs with copy-paste snippets and install links for Cursor,
+  VS Code, Windsurf and Codex.
+
+### Project
+
+- CI runs on Linux, Windows and macOS with Node 22 and 24, checks what the
+  npm package holds, runs the built command on plain Node, and builds the
+  docs site.
+- CodeQL and Dependabot.
+- Releases are published from a tag only, by a workflow, with npm
+  provenance.
+- Issue templates for bugs, features and new surfaces or transactions, each
+  asking that business data be removed first.
+
 ## 0.1.0 (unreleased)
 
 The first public version.
