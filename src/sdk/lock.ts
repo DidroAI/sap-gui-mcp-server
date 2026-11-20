@@ -85,7 +85,11 @@ const lockTest = z.object({
     system: z.string().optional(),
     client: z.string().optional(),
     surface: z.string(),
-    /** Passing runs that wrote or confirmed it. */
+    /**
+     * Passing runs counted when the entry was last written, and that run's time.
+     * A pass that confirms the entry as it is does not write the file (it would
+     * show in every diff of a repository): these say when it last changed.
+     */
     runs: z.number().int().nonnegative(),
     lastPass: z.string(),
   }),
@@ -138,6 +142,10 @@ export const serializeLock = (l: Lock): string => `${JSON.stringify(l, null, 2)}
  */
 export async function writeLockEntry(file: string, key: string, entry: LockTest): Promise<void> {
   const lock = (await readLock(file).catch(() => undefined)) ?? emptyLock();
+  // Only the count and the time of the pass differ: nothing a reviewer needs to see, so the file stays as it is.
+  const old = lock.tests[key];
+  const bare = (t: LockTest) => JSON.stringify({ ...t, verified: { ...t.verified, runs: 0, lastPass: "" } });
+  if (old && bare(old) === bare(entry)) return;
   lock.tests[key] = entry;
   await mkdir(dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
