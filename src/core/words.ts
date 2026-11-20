@@ -454,6 +454,26 @@ export function displayTitle(language: string | undefined | null, title: string 
 }
 
 /**
+ * Does a button's text name something it only shows, whatever noun follows:
+ * "Display deletion log", "Show reversal document", "Löschprotokoll
+ * anzeigen"? The display verb opens it (at the start; German at the end), and
+ * no "and" joins a second verb ("Display and release"). There a commit word
+ * is the name of what is shown. Trusted only in a covered language, and used
+ * only on a screen that only displays (the surfaces' isDisplayScreen).
+ */
+const SHOW_FIRST_RE = /^(display|show|view|afficher|visualiser|visualizar|mostrar|ver)\s+\p{L}/iu;
+const SHOW_LAST_RE = /\s(anzeigen|ansehen)$/iu;
+const JOINED_RE = /(?<![\p{L}\p{N}])(and|und|et|y|e|&|\+|\/)(?![\p{L}\p{N}])/iu;
+export function showsOnly(language: string | undefined | null, text: string | undefined): boolean {
+  if (!languageCovered(language)) return false;
+  const t = clean(text)
+    .replace(/\([^()]*\)\s*$/, "")
+    .replace(/\.\.\.|…/g, "")
+    .trim();
+  return (SHOW_FIRST_RE.test(t) || SHOW_LAST_RE.test(t)) && !JOINED_RE.test(t) && !actWord(t);
+}
+
+/**
  * Words for functions that do something beyond the screen without being a
  * commit word: printing and issuing output, running or scheduling a program,
  * starting a workflow, mass processing, closing a period. They are not

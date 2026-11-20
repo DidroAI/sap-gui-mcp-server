@@ -235,6 +235,24 @@ describe("confirm mode with a token", () => {
   });
 });
 
+describe("the tools and the instructions say the write setting the server runs with", () => {
+  for (const [write, says, confirm] of [
+    ["off", "is refused: the user has set writing off", false],
+    ["on", "runs: the user has set writing on", false],
+    ["confirm", "token for sap_confirm", true],
+  ] as const)
+    test(`SAP_WRITE=${write}`, async () => {
+      const { client } = await setup({ SAP_WRITE: write });
+      const tools = (await client.listTools()).tools;
+      expect(tools.some((t) => t.name === "sap_confirm")).toBe(confirm);
+      expect(tools.find((t) => t.name === "sap_act")?.description).toContain(says);
+      expect(client.getInstructions()).toContain(says);
+      // What the agent needs whatever the setting: the diff markers and the okcode-only command field.
+      expect(tools.find((t) => t.name === "sap_act")?.description).toContain('"~" changed line, "+" new, "-" gone, "=" unchanged');
+      expect(tools.find((t) => t.name === "sap_act")?.description).toContain("the command field cannot be typed into");
+    });
+});
+
 describe("confirm mode with elicitation", () => {
   const env = { SAP_WRITE: "confirm" };
   test("the user accepts in the client: the action runs, no token", async () => {

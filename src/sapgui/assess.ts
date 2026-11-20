@@ -15,12 +15,14 @@
  * save, post, delete... makes every answer but No and Cancel a commit.
  * The same popup rules as Web GUI's (webgui/assess.ts): the Enter button of a
  * message popup only acknowledges it ("Confirm"); a "data will be lost"
- * question is not a commit question; logging off is flagged `closes`.
+ * question is not a commit question; logging off is flagged `closes`; on a
+ * screen that only displays, the transaction's own buttons navigate, and so
+ * does a popup's button that repeats one of them (isDisplayScreen).
  *
  * The tables are in core/words.ts, shared with the other surfaces.
  */
 import { ActionError, type Action, type Assessment } from "../core/types.js";
-import { CLOSES_SESSIONS, commitCode, commitWord, discardsInput, endsLogon, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
+import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayTitle, endsLogon, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS, showsOnly } from "../core/words.js";
 import type { Control, Screen } from "./facts.js";
 import { vkeyNumber } from "./keys.js";
 import { allControls } from "./resolve.js";
@@ -120,6 +122,43 @@ function declines(screen: Screen, b: Control): boolean {
   return means === "no" || means === "cancel" || means === "back" || means === "exit" || means === "help" || means === "display";
 }
 
+/**
+ * A screen that only displays an object, as Web GUI's rule (webgui/assess.ts
+ * isDisplayScreen): the main window's title says so ("Display Material
+ * (Initial Screen)", "Material anzeigen") in a covered language, and Save is
+ * not on offer. SAP GUI keeps the Save icon in the system toolbar of every
+ * screen and greys it out where nothing can be saved: greyed out is
+ * `changeable: false`. A button of the transaction then moves to another
+ * view of the object or to another transaction, where the guard judges again.
+ */
+function isDisplayScreen(screen: Screen): boolean {
+  const main = screen.windows.find((w) => w.id === "wnd[0]");
+  if (!main || !displayTitle(screen.language, main.title)) return false;
+  const buttons = main.controls.filter((c) => c.type === "GuiButton");
+  // The system toolbar must have been read: without it, a missing Save proves nothing.
+  if (!buttons.some((c) => /^wnd\[0\]\/tbar\[0\]\/btn\[\d+\]$/.test(c.id))) return false;
+  return !buttons.some((c) => {
+    const key = buttonKey(c.id) ?? tooltipKey(c);
+    return key !== undefined && SAVE_VKEYS.has(key) && c.changeable !== false;
+  });
+}
+
+/** A button of the transaction on a display screen: its application toolbar or its body, not a shell's, and not named as a function that acts (print, output, execute...). */
+function displayButton(screen: Screen, b: Control): boolean {
+  return /^wnd\[0\]\/(tbar\[1\]|usr)\//.test(b.id) && !b.id.includes("/shell") && !actWord(b.text, b.tip) && isDisplayScreen(screen);
+}
+
+/**
+ * The main window's button that a popup's button repeats, by text and
+ * tooltip (MM03's Select View(s) popup repeats "Org. Levels (F6)" and
+ * "Data (F7)" of the initial screen): pressing it does what that one does.
+ */
+function mainTwin(screen: Screen, b: Control): Control | undefined {
+  if (b.id.startsWith("wnd[0]/")) return undefined;
+  const same = (c: Control) => clean(c.text) === clean(b.text) && clean(c.tip) === clean(b.tip);
+  return screen.windows.find((w) => w.id === "wnd[0]")?.controls.find((c) => c.type === "GuiButton" && !!(clean(c.text) || clean(c.tip)) && same(c));
+}
+
 function button(screen: Screen, windowId: string, n: number): Control | undefined {
   const w = screen.windows.find((x) => x.id === windowId);
   return w?.controls.find((c) => c.type === "GuiButton" && new RegExp(`^${windowId.replace(/[[\]]/g, "\\$&")}/tbar\\[[01]\\]/btn\\[${n}\\]$`).test(c.id));
@@ -132,6 +171,9 @@ function assessButton(screen: Screen, b: Control, how: string): Assessment {
   if (endsLogon(b.text, b.tip)) return closes(named);
   const win = /^(wnd\[\d+\])\//.exec(b.id)?.[1] ?? "";
   if (buttonKey(b.id) === 0 && isMessagePopup(screen, win)) return { risk: "navigate", reason: `${named} acknowledges the message` };
+  // "Display deletion log" on a screen that only displays: the commit word names what is shown (showsOnly).
+  const worded = [b.text, b.tip].filter((t) => commitWord(t));
+  if (worded.length && worded.every((t) => showsOnly(screen.language, t)) && displayButton(screen, b)) return { risk: "navigate", reason: `${named} shows something on a screen that only displays` };
   if (commitWord(b.text, b.tip)) return commit(named);
   const question = commitQuestion(screen);
   if (question && b.id.startsWith(`${screen.activeWindow}/`) && !declines(screen, b))
@@ -139,6 +181,9 @@ function assessButton(screen: Screen, b: Control, how: string): Assessment {
   if (key !== undefined && SAFE_VKEYS.has(key)) return { risk: "navigate", reason: named };
   if (safeWord(screen.language, b.text, b.tip)) return { risk: "navigate", reason: named };
   if (b.id.startsWith(`${screen.activeWindow}/`) && discardQuestion(screen)) return { risk: "navigate", reason: `${named} on a popup that asks whether to discard unsaved input` };
+  if (displayButton(screen, b)) return { risk: "navigate", reason: `${named} on a screen that only displays` };
+  const twin = mainTwin(screen, b);
+  if (twin && displayButton(screen, twin)) return { risk: "navigate", reason: `${named} repeats the button of a screen that only displays` };
   return notSafe(named);
 }
 

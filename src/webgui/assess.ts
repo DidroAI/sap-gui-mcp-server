@@ -26,7 +26,7 @@
  */
 import { menuSid, resolveId } from "../core/ids.js";
 import type { Action, Assessment } from "../core/types.js";
-import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayTitle, endsLogon, isGotoMenu, languageCovered, listChoice, listTitle, MENU_PROGRAMS, okcodeKind, runSwitch, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
+import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayTitle, endsLogon, isGotoMenu, languageCovered, listChoice, listTitle, MENU_PROGRAMS, okcodeKind, runSwitch, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS, showsOnly } from "../core/words.js";
 import type { MenuEntry } from "./page.js";
 import { vkey } from "./keys.js";
 
@@ -368,6 +368,11 @@ function isDisplayScreen(scene: Scene, ctx: AssessContext): boolean {
   });
 }
 
+/** A button of the transaction on a display screen: its own toolbar or its body, not a grid's or a tree's, and not named as a function that acts. */
+function displayButton(control: ViewControl, text: string, scene: Scene, ctx: AssessContext): boolean {
+  return control.window === 0 && control.kind === "button" && /^wnd\[0\]\/(tbar\[1\]|usr)\//.test(control.id) && !control.id.includes("/shell") && !actWord(text) && isDisplayScreen(scene, ctx);
+}
+
 /** Is this menu entry in one of the transaction's own menus? The last two of the menu bar are SAP's System and Help, the same on every screen. */
 function inOwnMenu(entry: MenuEntry, menus: MenuEntry[]): boolean {
   const n = Number(/^wnd\[0\]\/mbar\/menu\[(\d+)\]/.exec(entry.sid)?.[1] ?? Number.NaN);
@@ -415,6 +420,8 @@ function assessFunction(what: string, text: string, control: ViewControl | undef
   const win = control ? windowOf(scene, control) : undefined;
   // The Enter button of a message popup acknowledges the message (isMessagePopup), also when it says "Confirm".
   if (control && key === 0 && isMessagePopup(win)) return navigate(`${named} acknowledges the message`);
+  // "Display deletion log" on a screen that only displays: the commit word names what is shown (showsOnly).
+  if (control && commitWord(text) && showsOnly(ctx.language, text) && displayButton(control, text, scene, ctx)) return navigate(`${named} shows something on a screen that only displays`);
   if (commitWord(text)) return commit(named);
   if (control && control.window > 0 && control.kind === "button") {
     const asked = commitQuestion(scene.windows);
@@ -441,8 +448,12 @@ function assessFunction(what: string, text: string, control: ViewControl | undef
   // A button of the transaction on a screen that only displays (isDisplayScreen): its own toolbar or the
   // screen body, not the toolbar of a grid or a tree. A function named as one that acts (print, issue
   // output, start, execute...) is still held back.
-  if (control && control.window === 0 && control.kind === "button" && /^wnd\[0\]\/(tbar\[1\]|usr)\//.test(control.id) && !control.id.includes("/shell") && isDisplayScreen(scene, ctx) && !actWord(text))
-    return navigate(`${named} on a screen that only displays`);
+  if (control && displayButton(control, text, scene, ctx)) return navigate(`${named} on a screen that only displays`);
+  // A popup's button that repeats such a button of the main window (same text and key) is that button again.
+  if (control && control.window > 0 && control.kind === "button") {
+    const twin = scene.windows.find((w) => w.number === 0)?.controls.find((c) => c.kind === "button" && c.text === text);
+    if (twin && displayButton(twin, twin.text, scene, ctx)) return navigate(`${named} repeats the button of a screen that only displays`);
+  }
   return notSafe(named);
 }
 
