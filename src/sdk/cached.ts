@@ -20,13 +20,17 @@
  * is model-free again.
  */
 import { readFile, rename, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { parseTest, type SapTest, serializeTest, type Step } from "../record/format.js";
 import type { Phase, Repair } from "../record/repair.js";
 import { replay, type ReplayResult, type StepResult } from "../record/replay.js";
+import { lockPathFor } from "./lock.js";
 import type { Sap } from "./session.js";
+import { Drift, type VerifySummary } from "./verify.js";
 
-/** What the fallback is told when a step drifts. */
-export interface Drift {
+/** What the fallback is told when a step of a recording drifts (for code, see verify.ts `Drift`). */
+export interface ReplayDrift {
   /** The recording as it stands now (with earlier repairs of this run written in). */
   test: SapTest;
   /** The step that drifted, from 1, in `test`. */
@@ -49,7 +53,7 @@ export interface Drift {
 export interface RunVerifiedOptions {
   variables?: Record<string, string>;
   /** Called only on drift; returns a repair for that step, or undefined to give up. */
-  fallback?: (drift: Drift) => Promise<Repair | undefined> | Repair | undefined;
+  fallback?: (drift: ReplayDrift) => Promise<Repair | undefined> | Repair | undefined;
   /** At most this many repairs in one run (default 5), and 2 tries per step. */
   maxRepairs?: number;
   /** Write the repaired recording back: true for the file it was read from, or a path. Never with no repair. */
@@ -74,8 +78,106 @@ export interface RunVerifiedResult {
 
 const failedStep = (r: ReplayResult): StepResult | undefined => r.steps.find((s) => s.outcome === "fail");
 
-/** Runs a verified recording; the fallback is called only where the screen drifted from it. */
-export async function runVerified(sap: Sap, recording: SapTest | string, options: RunVerifiedOptions = {}): Promise<RunVerifiedResult> {
+/** Code to run verified: a function, or a module's export (default "default"). Called as `fn(sap, params)`. */
+export type VerifiedCode<P> = ((sap: Sap, params: P) => unknown) | { file: string; export?: string };
+
+export interface RunVerifiedCodeOptions {
+  /** The lock file. Default: next to `file` (`x.sap.ts` -> `x.sap.lock.json`); needed for a function. */
+  lock?: string;
+  /** The entry in the lock. Default: the export's name, else the function's, else "default". */
+  key?: string;
+  /** Called on drift that no repair saved in the lock fixes: a repair (record/repair.ts), or undefined to fail. */
+  fallback?: (drift: Drift) => Promise<Repair | undefined> | Repair | undefined;
+  /** At most this many fallback calls (default 5), 2 per action. */
+  maxRepairs?: number;
+  /** Write the lock when the run passes: what it saw, the repairs that worked. Default true. */
+  save?: boolean;
+  /** "write": compare nothing, only record (as `--update-locks`). Default "verify". */
+  mode?: "verify" | "write";
+}
+
+export interface RunVerifiedCodeResult extends VerifySummary {
+  passed: boolean;
+  /** What the code returned. */
+  value?: unknown;
+  /** Why it failed. */
+  error?: Error;
+  /** The drift it failed on, if that is why. */
+  drift?: Drift;
+  ms: number;
+}
+
+const isCode = (x: unknown): x is VerifiedCode<unknown> => typeof x === "function" || (typeof x === "object" && x !== null && "file" in x && !("format" in x));
+
+/**
+ * Runs a recording verified: the fallback is called only where the screen drifted from it.
+ *
+ * Or, with code (`fn` or `{ file, export }`), runs the code in verified mode
+ * against its lock (sdk/verify.ts): the fallback is called inside the action
+ * that drifted, its repair runs under the repair rules and, when the screen
+ * is then what the lock holds, the code goes on. A repair that worked is
+ * saved in the lock (applied with no model next time) and proposed as a
+ * patch of the source; the source is never changed.
+ */
+export function runVerified(sap: Sap, recording: SapTest | string, options?: RunVerifiedOptions): Promise<RunVerifiedResult>;
+export function runVerified<P>(sap: Sap, code: VerifiedCode<P>, params: P, options?: RunVerifiedCodeOptions): Promise<RunVerifiedCodeResult>;
+export function runVerified(sap: Sap, what: unknown, a?: unknown, b?: unknown): Promise<RunVerifiedResult | RunVerifiedCodeResult> {
+  if (isCode(what)) return runVerifiedCode(sap, what, a, (b ?? {}) as RunVerifiedCodeOptions);
+  return runVerifiedRecording(sap, what as SapTest | string, (a ?? {}) as RunVerifiedOptions);
+}
+
+async function runVerifiedCode<P>(sap: Sap, code: VerifiedCode<P>, params: P, options: RunVerifiedCodeOptions): Promise<RunVerifiedCodeResult> {
+  const t0 = Date.now();
+  let fn: (sap: Sap, params: P) => unknown;
+  let key = options.key;
+  let lock = options.lock;
+  if (typeof code === "function") {
+    fn = code;
+    key ??= code.name || "default";
+    if (!lock) throw new Error("runVerified: a function needs options.lock, the lock file to verify it against.");
+  } else {
+    const file = resolve(code.file);
+    const name = code.export ?? "default";
+    const m = (await import(pathToFileURL(file).href)) as Record<string, unknown>;
+    const f = m[name];
+    if (typeof f !== "function") throw new Error(`runVerified: ${file} has no function export "${name}".`);
+    fn = f as typeof fn;
+    key ??= name;
+    lock ??= lockPathFor(file);
+  }
+  const variables = params && typeof params === "object" ? Object.fromEntries(Object.entries(params as Record<string, unknown>).filter(([, v]) => ["string", "number"].includes(typeof v)).map(([k, v]) => [k, String(v)])) : {};
+  const previous = sap.lock;
+  const verifier = await sap.useLock({
+    lock,
+    key,
+    mode: options.mode ?? "verify",
+    ...(options.fallback ? { fallback: options.fallback } : {}),
+    ...(options.maxRepairs !== undefined ? { maxRepairs: options.maxRepairs } : {}),
+    variables,
+  });
+  let value: unknown;
+  let error: Error | undefined;
+  try {
+    value = await fn(sap, params);
+  } catch (e) {
+    error = e instanceof Error ? e : new Error(String(e));
+  }
+  const passed = !error;
+  const summary = verifier ? await verifier.finish(passed && options.save !== false) : undefined;
+  // The session goes back to how it was.
+  await sap.useLock(previous);
+  return {
+    ...(summary as VerifySummary),
+    passed,
+    ...(value !== undefined ? { value } : {}),
+    ...(error ? { error } : {}),
+    ...(error instanceof Drift ? { drift: error } : {}),
+    ms: Date.now() - t0,
+  };
+}
+
+async function runVerifiedRecording(sap: Sap, recording: SapTest | string, options: RunVerifiedOptions = {}): Promise<RunVerifiedResult> {
+
   const t0 = Date.now();
   const path = typeof recording === "string" ? recording : undefined;
   let test: SapTest = typeof recording === "string" ? parseTest(await readFile(recording, "utf8")) : structuredClone(recording);
