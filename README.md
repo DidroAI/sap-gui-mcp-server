@@ -653,7 +653,7 @@ An agent's run can be kept as a test and run again with no model:
 
 ```
 sap_record {"op":"start","name":"VA03 display order"}
-sap_act    {"action":{"do":"okcode","value":"/nVA03"}}       ... act as usual
+sap_act    {"do":"okcode","value":"/nVA03"}                  ... act as usual
 sap_record {"op":"assert","check":"field","id":"txtVBAK-NETWR","equals":"2.500,00"}
 sap_record {"op":"variable","name":"order","value":"19097"}
 sap_record {"op":"stop"}
@@ -704,6 +704,8 @@ Every setting is an environment variable of the server process.
 | `SAP_RECORD_DIR` | `./sap-tests` | where recordings and exports are written |
 | `SAP_DOWNLOAD_DIR` | `downloads` in `SAP_RECORD_DIR` when that is set, else `./sap-downloads` | Web GUI: where a file SAP writes "to a local file" (List > Export > Local File) is copied. Web GUI keeps such a file inside the browser; the answer of the action names the copy |
 | `SAP_RECORD` | `off` | `on`: record every session from its first action |
+| `SAP_CODE` | while recording | `on`: every action's answer ends with the SDK line that repeats it (`code: await sap.set(...)`); `off`: never, also while recording |
+| `SAP_STRUCTURED` | `off` | `on`: answers that code reads (`sap_sessions`, `sap_act`, `sap_confirm`, `sap_replay`, `sap_record`) also carry `structuredContent`, with output schemas ([docs/tool-review.md](docs/tool-review.md#round-2-2026-11-20)) |
 
 `sap-gui-mcp-server --help` lists the commands and the main settings.
 
