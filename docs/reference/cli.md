@@ -28,10 +28,18 @@ commands: [Configuration](configuration.md). `doctor`, `sessions` and
 `replay` use `SAP_SURFACES`, `SAP_GUI_METHOD`, `SAP_CHROME_CDP`,
 `SAP_ALLOW_SYSTEMS` and the other settings as the server would.
 
-More commands (init, test, show-trace) are coming with the SDK; see the
-guides ([Writing tests with the SDK](../guides/sdk-tests.md),
-[CLI for coding agents](../guides/cli-for-agents.md),
-[Trace viewer](../guides/trace-viewer.md)).
+The program is also installed as `sap-gui`. With the SDK and the test
+runner come these commands, described in their guides:
+
+| Command | Does | Guide |
+| --- | --- | --- |
+| `init [--yes] [--force] [--dry-run]` | sets a project up: `sap.config.ts`, `sap-tests/example.sap.ts`, agent skills, MCP clients, `.gitignore` | [Writing tests](../guides/sdk-tests.md) |
+| `install --skills [--target claude\|codex\|cursor\|all] [--global] [--dry-run]` | copies the bundled agent skills | [CLI for coding agents](../guides/cli-for-agents.md) |
+| `test [files] [--config f] [--project p] [--reporter list,junit,json,html] [--grep re] [--retries n] [--list]` | runs `*.sap.ts` tests | [Writing tests](../guides/sdk-tests.md) |
+| `show-trace <file> [--out <file.html>] [--open]` | writes a recording or trace as one HTML page | [Trace viewer](../guides/trace-viewer.md) |
+| `look`, `act`, `confirm`, `use`, `screenshot`, `record`, `daemon` | the agent CLI | [CLI for coding agents](../guides/cli-for-agents.md) |
+
+`setup` also takes `cursor`, `windsurf` and `vscode` there.
 
 ## The server
 

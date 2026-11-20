@@ -5,10 +5,9 @@ open, acts on it with the same actions as `sap_act`, and checks the screen
 with assertions that wait. It goes through the same guard as the MCP server:
 `SAP_WRITE`, `SAP_ALLOW_SYSTEMS` and the transaction lists apply.
 
-::: warning Status
-The SDK (`connect`, `expect`) is new in this version. The test runner
-(`sap-gui test`, `*.sap.ts` files, `sap.config.ts`) is being finished; names
-below may still change slightly before the release.
+::: info Version
+The SDK and the test runner are new; check `npx sap-gui --help` for the
+flags of the version you have.
 :::
 
 ## A script
@@ -138,7 +137,12 @@ Run them:
 npx sap-gui test                     # every *.sap.ts under testDir
 npx sap-gui test sap-tests/va03.sap.ts --reporter junit
 npx sap-gui test --grep "order" --project s4
+npx sap-gui test --list                # what would run
 ```
+
+Flags: `--config <file>`, `--project <p>`, `--reporter list,junit,json,html`,
+`--grep <re>`, `--retries <n>`, `--list`. Test files match
+`**/*.sap.{ts,js,mjs}` under `testDir` (default: the config's folder).
 
 Tests run one at a time (one SAP session is one user's screen). Each test's
 trace goes to `sap-results/<test>/`; open it with the
