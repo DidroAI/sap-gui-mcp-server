@@ -140,6 +140,12 @@ npx sap-gui test --grep "order" --project s4
 npx sap-gui test --list                # what would run
 ```
 
+The runner finds `sap.config.ts` (or `.js`, `.mjs`, `.json`) by walking up
+from the current folder. The `sap` fixture connects to SAP only for a test
+or hook that takes it as a parameter. A test that passes on a retry is
+reported as flaky; finding no tests exits with 1. The `html` reporter
+writes `sap-results/index.html`, which links each test's trace page.
+
 Flags: `--config <file>`, `--project <p>`, `--reporter list,junit,json,html`,
 `--grep <re>`, `--retries <n>`, `--list`. Test files match
 `**/*.sap.{ts,js,mjs}` under `testDir` (default: the config's folder).
