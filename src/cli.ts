@@ -13,6 +13,7 @@ import { Registry } from "./core/registry.js";
 import { exportCommand, RECORD_HELP, replayCommand } from "./record/cli.js";
 import { SERVER_VERSION, sessionLine } from "./server.js";
 import { serveStdio } from "./stdio.js";
+import { showTraceCommand, TRACE_HELP } from "./trace/cli.js";
 import { surfacesFromEnv } from "./surfaces.js";
 
 const HELP = `sap-gui-mcp-server ${SERVER_VERSION}: an MCP server that sees and drives SAP screens you have open.
@@ -24,6 +25,7 @@ Usage:
   sap-gui-mcp-server doctor     check SAP GUI scripting and Chrome access on this machine
   sap-gui-mcp-server sessions   list the SAP sessions found now
 ${RECORD_HELP}
+${TRACE_HELP}
   sap-gui-mcp-server --version | --help
 
 Environment:
@@ -49,6 +51,7 @@ async function main(argv: string[]): Promise<number> {
   if (cmd === "--help" || cmd === "-h" || cmd === "help") return console.log(HELP), 0;
   if (!cmd) return await serveStdio(), -1;
   if (cmd === "export") return exportCommand(argv.slice(1));
+  if (cmd === "show-trace") return showTraceCommand(argv.slice(1));
   const surfaces = surfacesFromEnv();
   if (cmd === "doctor") {
     if (surfaces.some((s) => s.name !== "sapgui")) console.error("Checking… (if Chrome asks whether to allow remote debugging, click Allow)\n");
