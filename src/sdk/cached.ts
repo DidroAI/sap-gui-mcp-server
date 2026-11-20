@@ -162,6 +162,8 @@ async function runVerifiedCode<P>(sap: Sap, code: VerifiedCode<P>, params: P, op
   } catch (e) {
     error = e instanceof Error ? e : new Error(String(e));
   }
+  // A drift the code did not branch on, left at its end, is settled here.
+  if (!error) await verifier?.settle().catch((e: unknown) => (error = e as Error));
   const passed = !error;
   const summary = verifier ? await verifier.finish(passed && options.save !== false) : undefined;
   // The session goes back to how it was.

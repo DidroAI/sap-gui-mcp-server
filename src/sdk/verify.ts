@@ -6,7 +6,11 @@
  * to is compared with what the lock holds, as a replay compares a recording
  * (record/replay.ts): program, dynpro and transaction strictly, a popup or
  * none, the title not at all, and no new error (E or A) in the status bar.
- * On a difference the action throws `Drift`, unless:
+ * A difference is settled at the code's next action or read, not at once:
+ * when the code first asks about the screen (`sap.at`, `sap.popup`,
+ * `exists()`, `dismissInfo`, the warning check of `save`), it branches on
+ * what SAP showed, and the rest of the step is "unverified" (a new path).
+ * Otherwise (the next action, an `expect`, the end of the test) it is drift:
  *   1. a repair saved in the lock for this action (an overlay) brings the
  *      screen back to what the lock holds: no model;
  *   2. else `fallback(drift)` answers with a repair, run under the rules of
@@ -229,11 +233,14 @@ export class Verifier {
   private counts = new Map<string, number>();
   private last: LockAction | undefined;
   private summary: VerifySummary;
+  /** An action whose screen differed from the lock, not judged yet (see `settle` and `branch`). */
+  private pending: { ctx: Ctx; phase: DriftPhase } | undefined;
 
   private constructor(
     readonly options: VerifyOptions,
     private info: SessionInfo,
     entry: LockTest | undefined,
+    private host: VerifyHost,
   ) {
     this.key = options.key ?? "default";
     this.mode = options.mode ?? "verify";
@@ -254,10 +261,43 @@ export class Verifier {
     }
   }
 
-  static async open(options: VerifyOptions, info: SessionInfo): Promise<Verifier> {
+  static async open(options: VerifyOptions, info: SessionInfo, host: VerifyHost): Promise<Verifier> {
     const mode = options.mode ?? "verify";
     const lock = mode === "off" ? undefined : await readLock(options.lock);
-    return new Verifier(options, info, lock?.tests[options.key ?? "default"]);
+    return new Verifier(options, info, lock?.tests[options.key ?? "default"], host);
+  }
+
+  /**
+   * The code goes on without asking about the screen (an action, a read, the
+   * end of the test): an action whose screen differed from the lock is drift.
+   * Saved repairs, then the fallback; throws `Drift` when neither brings the
+   * screen back to what the lock holds.
+   */
+  async settle(): Promise<void> {
+    // Once drift was thrown, the run is off the lock: every later action and read throws it again.
+    if (this.failed) throw this.failed;
+    const p = this.pending;
+    if (!p) return;
+    this.pending = undefined;
+    try {
+      const obs = await this.recover(p.ctx, p.phase, this.host);
+      this.done(p.ctx, obs, "");
+    } catch (e) {
+      if (e instanceof Drift) this.failed = e;
+      throw e;
+    }
+  }
+
+  /** The drift this run failed on, once one was thrown. */
+  private failed: Drift | undefined;
+
+  /** The code asks about the screen: it branches on what SAP showed. The action and the rest of its step are unverified, and recorded. */
+  branch(): void {
+    const p = this.pending;
+    if (!p) return;
+    this.pending = undefined;
+    p.ctx.cands = [];
+    this.done(p.ctx, p.ctx.last as Observation, "");
   }
 
   /** What this run did so far. */
@@ -296,7 +336,9 @@ export class Verifier {
   // ---- acting ---------------------------------------------------------------------
 
   /** Runs one action of the code, judged against the lock. */
-  async act(action: NormalizedAction, host: VerifyHost, site?: string): Promise<string> {
+  async act(action: NormalizedAction, site?: string): Promise<string> {
+    const host = this.host;
+    await this.settle();
     const occ = this.current();
     const index = occ.actions.length;
     const id = identity(action);
@@ -317,7 +359,12 @@ export class Verifier {
     } catch (e) {
       // The guard's no is policy, not drift; an action the lock does not know fails as it is.
       if (!cands.length || (e as Error).name === "Refused") throw e;
-      obs = await this.recover(ctx, "act", host, (e as Error).message.split("\n")[0]);
+      try {
+        obs = await this.recover(ctx, "act", host, (e as Error).message.split("\n")[0]);
+      } catch (d) {
+        if (d instanceof Drift) this.failed = d;
+        throw d;
+      }
       return this.done(ctx, obs, "(repaired)");
     }
     ctx.risk = done.risk;
@@ -326,7 +373,11 @@ export class Verifier {
     ctx.last = obs;
     if (cands.length) {
       const bad = this.judge(ctx, obs);
-      if (bad) obs = await this.recover(ctx, bad, host);
+      if (bad) {
+        // Judged at the code's next step: it may branch on this screen.
+        this.pending = { ctx, phase: bad };
+        return done.note;
+      }
     }
     return this.done(ctx, obs, done.note);
   }
@@ -510,6 +561,8 @@ export class Verifier {
 
   /** At the end of the run: when it passed, the lock gets what this run saw (and the repairs that worked). */
   async finish(passed: boolean): Promise<VerifySummary> {
+    // A drift not settled by a passing run (nothing ran or read after it) is settled now: it throws.
+    if (passed) await this.settle();
     if (!passed || this.mode === "off" || !this.writable || this.summary.written) return this.summary;
     const now = new Date().toISOString();
     const base: LockTest = this.entry && !this.replace ? structuredClone(this.entry) : { verified: { at: now, surface: this.info.surface, runs: 0, lastPass: now }, steps: [] };
