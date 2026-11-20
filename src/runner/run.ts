@@ -177,7 +177,32 @@ class TimeoutSignal extends Error {
 
 const errorOf = (e: unknown) => (e instanceof Error ? { message: e.message, ...(e.stack ? { stack: e.stack } : {}) } : { message: String(e) });
 
-/** One run of one test: connect, beforeEach, the test, afterEach, close. */
+/**
+ * Does this test or hook function ask for the `sap` fixture? Read from its
+ * parameter list, as Playwright does: `async ({ sap }) =>` does, `async ({ info }) =>`
+ * and `async () =>` do not. Anything else (a parameter used as a whole) counts as asking.
+ * A test that does not ask never connects, so it runs with no SAP session open.
+ */
+export function wantsSap(fn: unknown): boolean {
+  if (typeof fn !== "function") return false;
+  const src = Function.prototype.toString.call(fn);
+  const params = /^(?:async\s*)?(?:function\s*\*?\s*[\w$]*\s*)?\(([^)]*)\)|^(?:async\s+)?([\w$]+)\s*=>/.exec(src);
+  if (!params) return true;
+  const list = (params[1] ?? params[2] ?? "").trim();
+  if (!list) return false;
+  const destructured = /^\{([^}]*)\}/.exec(list);
+  return destructured ? /(^|[\s,])sap\b/.test(destructured[1] ?? "") || /\.\.\./.test(destructured[1] ?? "") : true;
+}
+
+/** Stands in for `sap` in a test that did not ask for it. */
+const NO_SAP = new Proxy({} as Sap, {
+  get(_, k) {
+    if (k === "then") return undefined;
+    throw new Error('This test does not take the "sap" fixture: name it in the test\'s parameters, e.g. test("...", async ({ sap }) => ...).');
+  },
+});
+
+/** One run of one test: connect (when the test asks for sap), beforeEach, the test, afterEach, close. */
 async function attempt(p: Planned, retry: number, slugDir: string, config: ResolvedConfig, surfaces: Surface[] | undefined): Promise<Attempt> {
   const suites = suitesOf(p.test);
   const use: UseOptions = Object.assign({}, config.use, p.project?.use, ...suites.map((s) => s.use), p.test.details.use);
@@ -189,12 +214,15 @@ async function attempt(p: Planned, retry: number, slugDir: string, config: Resol
   const deadline = new Deadline(timeout);
   const r = registry();
   r.running = { info, setTimeout: (ms) => deadline.reset(ms) };
-  const sapP: Promise<Sap> = connect({
-    ...connectUse,
-    timeout: config.expectTimeout,
-    trace: { dir: outputDir, name: p.title, screenshots: screenshots ?? false },
-    ...(surfaces ? { surfaces } : {}),
-  });
+  const needed = [p.test.fn, ...suites.flatMap((s) => [...s.beforeEach, ...s.afterEach])].some(wantsSap);
+  const sapP: Promise<Sap> = needed
+    ? connect({
+        ...connectUse,
+        timeout: config.expectTimeout,
+        trace: { dir: outputDir, name: p.title, screenshots: screenshots ?? false },
+        ...(surfaces ? { surfaces } : {}),
+      })
+    : Promise.resolve(NO_SAP);
   sapP.catch(() => {});
   let error: unknown;
   let skipped = false;
@@ -218,6 +246,10 @@ async function attempt(p: Planned, retry: number, slugDir: string, config: Resol
   const teardown = (async () => {
     const sap = await sapP.catch(() => undefined);
     if (!sap) return;
+    if (sap === NO_SAP) {
+      if (!timedOut) for (const s of [...suites].reverse()) for (const h of s.afterEach) await Promise.resolve(h({ sap, info })).catch((e: unknown) => { if (!isSkip(e)) error ??= e; });
+      return;
+    }
     try {
       if (!timedOut)
         for (const s of [...suites].reverse())
