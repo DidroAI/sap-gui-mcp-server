@@ -26,6 +26,7 @@ import { Recorder } from "../record/recorder.js";
 import { detour, popupOf } from "../record/replay.js";
 import { type ParsedScreen, parseScreen, readSettled } from "../record/screen.js";
 import { codeOf, draftTest } from "./code.js";
+import { callSite, type Performed, Verifier, type VerifyHost, type VerifyOptions } from "./verify.js";
 import { ButtonLocator, ControlLocator, GridLocator, type StatusState, StatusLocator } from "./locators.js";
 
 /** Where `sap.at` asks the session to be: "SAPLATP4/0500", "SAPLATP4", or the parts by name. */
@@ -85,6 +86,12 @@ export interface ConnectOptions {
    * the directory and the trace's name. The runner sets it for each test.
    */
   trace?: { dir: string; name: string; screenshots?: boolean };
+  /**
+   * Verified mode (sdk/verify.ts): each action is compared with the lock file
+   * and throws `Drift` where SAP answers otherwise; a passing run (`sap.lock.finish(true)`,
+   * which the runner calls) adds what the lock does not have yet.
+   */
+  verify?: VerifyOptions;
   /** Environment to read defaults from; default process.env. */
   env?: Record<string, string | undefined>;
   /** Surfaces to use instead of the real ones (tests). */
@@ -156,6 +163,7 @@ export class Sap {
   readonly timeout: number;
   private recorder: Recorder | undefined;
   private driverInfo: SessionInfo | undefined;
+  private verifier: Verifier | undefined;
 
   constructor(
     readonly registry: Registry,
@@ -177,6 +185,21 @@ export class Sap {
       this.recorder = new Recorder({ dir: t.dir, auto: false, by: `sap-gui-mcp-server sdk ${SDK_VERSION}`, trace: { screens: true, screenshots: t.screenshots ?? false } });
       await this.recorder.start(driver, info, t.name, undefined, true);
     }
+    if (this.options.verify) await this.useLock(this.options.verify);
+  }
+
+  /** Turns verified mode on (or off with undefined) from the next action on; a Verifier puts back one that was on. */
+  async useLock(options: VerifyOptions | Verifier | undefined): Promise<Verifier | undefined> {
+    if (options instanceof Verifier) return (this.verifier = options);
+    this.verifier = options && options.mode !== "off" ? await Verifier.open(options, this.info ?? (await this.registry.session(this.sessionId)).info) : undefined;
+    // Blocks already open count from here.
+    if (this.verifier && this.stepName) this.verifier.enter(this.stepName);
+    return this.verifier;
+  }
+
+  /** The verifier of verified mode, when it is on: what was verified, repaired, and `finish(passed)`. */
+  get lock(): Verifier | undefined {
+    return this.verifier;
   }
 
   /** The session as it was last refreshed: system, client, transaction, title. */
@@ -245,6 +268,22 @@ export class Sap {
    */
   async act(input: Action): Promise<string> {
     const action = normalizeAction(input);
+    if (!this.verifier) return (await this.perform(action)).note;
+    // Before any await: the stack still holds the test's line.
+    const site = callSite();
+    return this.verifier.act(action, this.host, site);
+  }
+
+  /** What the verifier runs actions and reads screens with. */
+  private readonly host: VerifyHost = {
+    perform: (a, rated) => this.perform(a, rated),
+    screen: () => this.screen(),
+    look: () => this.look(),
+    driver: () => this.driver(),
+  };
+
+  /** One action through the guard, the driver and the trace; no lock. `rated`: a repair's own rating of it. */
+  private async perform(action: NormalizedAction, rated?: Assessment): Promise<Performed> {
     const field = commandFieldRefusal(action);
     if (field) throw new Refused(field);
     const { driver, info } = await this.registry.session(this.sessionId);
@@ -252,11 +291,13 @@ export class Sap {
     const here = sessionRefusal(this.policy, info);
     if (here && !leavesTransaction(this.policy, action)) throw new Refused(`this session is in a transaction scripts may not work in: ${here}`);
     if (action.do === "open" && info.surface !== "fiori") throw new ActionError('open works in a Fiori launchpad tab only; elsewhere use okcode("/n<transaction>").');
-    const assessment = await driver.assess(action);
+    const assessment = rated ?? (await driver.assess(action));
     await this.allowed(action, assessment, info);
     const t0 = Date.now();
     const run = () => driver.act(action);
+    if (this.recorder) this.recorder.last = undefined;
     const note = this.recorder ? await this.recorder.act(driver, action, assessment.risk, run) : await run();
+    const seen = this.recorder?.last;
     const ms = Date.now() - t0;
     // A menu entry or a tree node can open a transaction no okcode named.
     const after = await driver.refresh().catch(() => undefined);
@@ -267,7 +308,7 @@ export class Sap {
       throw new Refused(`${note}: this led to a transaction scripts may not work in (${landed}); left it with /n.`);
     }
     this.history.push({ action, code: codeOf(action), note, ms, ...(this.stepName ? { step: this.stepName } : {}) });
-    return note;
+    return { note, risk: assessment.risk, before: seen?.before, after: seen?.after };
   }
 
   // ---- steps and screens SAP shows for some data only ----------------------------
@@ -294,6 +335,7 @@ export class Sap {
     const full = outer ? `${outer} › ${name}` : name;
     this.stepName = full;
     if (this.recorder) this.recorder.group = full;
+    this.verifier?.enter(full);
     try {
       return await fn();
     } catch (e) {
@@ -303,6 +345,7 @@ export class Sap {
       }
       throw e;
     } finally {
+      this.verifier?.exit();
       this.stepName = outer;
       if (this.recorder) this.recorder.group = outer;
     }
