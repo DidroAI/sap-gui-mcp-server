@@ -2,7 +2,7 @@
  * The daemon behind the agent CLI (`sap-gui look`, `sap-gui act` ...): one
  * long-lived process that keeps what a single MCP server keeps between
  * calls (the registry of sessions and their drivers, the Chrome connection,
- * the views an answer is diffed against, held confirmations, the recorder).
+ * the views an answer is diffed against, the recorder).
  *
  * It hosts the MCP server itself (`createServer`) and calls it through an
  * in-memory MCP client: the guard, the views, the recorder and every answer
@@ -219,7 +219,7 @@ export async function startDaemon(o: DaemonOptions): Promise<Daemon> {
     // something else must not run under it: with SAP_WRITE=off in the call
     // and "on" in the daemon, it would write where its user said no. The
     // daemon does not restart itself to take the new settings either: that
-    // would silently drop the active session, held confirmations and an
+    // would silently drop the active session and an
     // open recording, and two agents in one directory with different
     // settings would keep restarting each other. It refuses, says which
     // settings differ, and the caller stops it (`sap-gui daemon stop`) when
@@ -230,7 +230,7 @@ export async function startDaemon(o: DaemonOptions): Promise<Daemon> {
       return {
         ok: false,
         code: "settings",
-        error: `Not run: the sap-gui daemon for this directory runs with other settings than this call (${differ.join("; ")}). Run "sap-gui daemon stop", then repeat the call: a new daemon starts with this call's settings (the active session, held confirmations and an open recording are lost). Or call with the daemon's settings.`,
+        error: `Not run: the sap-gui daemon for this directory runs with other settings than this call (${differ.join("; ")}). Run "sap-gui daemon stop", then repeat the call: a new daemon starts with this call's settings (the active session and an open recording are lost). Or call with the daemon's settings.`,
       };
     calls++;
     lastCallAt = new Date();

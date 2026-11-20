@@ -34,8 +34,6 @@ async function setup(env: Record<string, string> = {}, elicit?: (ask: Ask) => "a
   return { surface, client, call, asked };
 }
 
-const tokenOf = (text: string) => /token "([0-9a-f]+)"/.exec(text)?.[1] ?? "";
-
 describe("one normalised action for assess and act", () => {
   test('{"do":"key","value":11} is Save to the guard, not "no key"', async () => {
     const { surface, call } = await setup();
@@ -158,93 +156,56 @@ describe("systems on every tool", () => {
   });
 });
 
-describe("confirm mode with a token", () => {
+describe("confirm mode with a client that cannot ask the user", () => {
   const env = { SAP_WRITE: "confirm" };
-  test("the token runs the action when nothing changed, once", async () => {
+  test("a write is refused: nothing runs, and the answer says what the user can do", async () => {
     const { surface, call } = await setup(env);
     surface.add({ id: "chrome:1", system: "ABA", client: "800", transaction: "VA02", title: "Change Order 4711" }, { assess });
-    const held = await call("sap_act", { action: { do: "key", value: 11 } });
-    expect(held.error).toBe(false);
-    expect(held.text).toContain("key 11: Save");
-    expect(held.text).toContain("ABA/800, VA02");
-    expect(held.text).toContain('{"do":"key","key":11}');
-    expect(surface.acts()).toEqual([]);
-    const token = tokenOf(held.text);
-    expect(token).toMatch(/^[0-9a-f]{12}$/);
-    const done = await call("sap_confirm", { token });
-    expect(done.error).toBe(false);
-    expect(surface.acts()).toEqual([{ do: "key", key: 11 }]);
-    expect((await call("sap_confirm", { token })).text).toContain("Unknown or expired token");
-    expect(surface.acts()).toHaveLength(1);
-  });
-  for (const [what, change, says] of [
-    ["transaction", { transaction: "VA01" }, 'transaction was "VA02", is now "VA01"'],
-    ["window title", { title: "Change Order 9999" }, 'window title was "Change Order 4711", is now "Change Order 9999"'],
-    ["system", { system: "ABB" }, 'system was "ABA", is now "ABB"'],
-    ["client", { client: "100" }, 'client was "800", is now "100"'],
-  ] as const)
-    test(`a changed ${what} refuses the token`, async () => {
-      const { surface, call } = await setup(env);
-      const s = surface.add({ id: "chrome:1", system: "ABA", client: "800", transaction: "VA02", title: "Change Order 4711" }, { assess });
-      const token = tokenOf((await call("sap_act", { action: { do: "key", key: 11 } })).text);
-      s.info = { ...s.info, ...change };
-      const r = await call("sap_confirm", { token });
-      expect(r.error).toBe(true);
-      expect(r.text).toContain(says);
-      expect(surface.acts()).toEqual([]);
-      // The token is spent: putting the screen back does not revive it.
-      s.info = { ...s.info, transaction: "VA02", title: "Change Order 4711", system: "ABA", client: "800" };
-      expect((await call("sap_confirm", { token })).error).toBe(true);
-      expect(surface.acts()).toEqual([]);
-    });
-  test("a changed assessment refuses the token", async () => {
-    const { surface, call } = await setup(env);
-    const s = surface.add({ id: "chrome:1", system: "ABA", transaction: "VA02", title: "T" }, { assess });
-    const token = tokenOf((await call("sap_act", { action: { do: "key", key: 11 } })).text);
-    // Same screen title, but a popup now makes the key mean something else.
-    s.assess = () => ({ risk: "commit", reason: 'key 11: button "Delete"' });
-    const r = await call("sap_confirm", { token });
+    const r = await call("sap_act", { action: { do: "key", value: 11 } });
     expect(r.error).toBe(true);
-    expect(r.text).toContain("what the action does");
+    expect(r.text).toStartWith("Refused: this action may write to SAP (key 11: Save) and writing is set to confirm");
+    expect(r.text).toContain("this client cannot ask the user");
+    expect(r.text).toContain("SAP_WRITE=on");
+    expect(r.text).not.toContain("token");
     expect(surface.acts()).toEqual([]);
   });
-  test("a token belongs to its session, whichever is active", async () => {
+  test("what does not write still runs", async () => {
     const { surface, call } = await setup(env);
-    surface.add({ id: "chrome:1", system: "ABA", transaction: "VA02", title: "One" }, { assess });
-    surface.add({ id: "chrome:2", system: "ABA", transaction: "VA02", title: "Two" }, { assess });
-    const token = tokenOf((await call("sap_act", { action: { do: "key", key: 11 }, session: "chrome:1" })).text);
-    await call("sap_use", { session: "chrome:2" });
-    surface.log.length = 0;
-    expect((await call("sap_confirm", { token })).error).toBe(false);
-    expect(surface.acts()).toEqual([{ do: "key", key: 11 }]);
-    // The act went to session 1: its screen is what came back.
+    surface.add({ id: "chrome:1", system: "ABA" }, { assess });
+    expect((await call("sap_act", { action: { do: "key", key: 0 } })).error).toBe(false);
+    expect(surface.acts()).toEqual([{ do: "key", key: 0 }]);
   });
-  test("a token whose session is gone runs nothing", async () => {
+  test("the first answer says it once; a client that asks gets no such note", async () => {
     const { surface, call } = await setup(env);
-    surface.add({ id: "chrome:1", system: "ABA", transaction: "VA02" }, { assess });
-    const other = surface.add({ id: "chrome:2", system: "ABA", transaction: "VA02" }, { assess });
-    const token = tokenOf((await call("sap_act", { action: { do: "key", key: 11 }, session: "chrome:1" })).text);
-    surface.sessions = [other];
-    expect((await call("sap_confirm", { token })).error).toBe(true);
-    expect(surface.acts()).toEqual([]);
+    surface.add({ id: "chrome:1", system: "ABA" }, { assess });
+    const first = await call("sap_look");
+    expect(first.text).toStartWith("NOTE: writing is set to confirm, and this client cannot ask the user");
+    expect((await call("sap_look")).text).not.toContain("NOTE:");
+    const asks = await setup(env, () => "accept");
+    asks.surface.add({ id: "chrome:1", system: "ABA" }, { assess });
+    expect((await asks.call("sap_look")).text).not.toContain("NOTE:");
+    // Writing off or on: nothing to say.
+    const off = await setup({ SAP_WRITE: "on" });
+    off.surface.add({ id: "chrome:1", system: "ABA" }, { assess });
+    expect((await off.call("sap_look")).text).not.toContain("NOTE:");
   });
-  test("the tool descriptions say the token flow is advisory", async () => {
-    const { client } = await setup(env);
-    const tools = (await client.listTools()).tools;
-    expect(tools.find((t) => t.name === "sap_confirm")?.description).toContain("advisory");
+  test("there is no sap_confirm tool in any mode", async () => {
+    for (const write of ["off", "confirm", "on"]) {
+      const { client } = await setup({ SAP_WRITE: write });
+      expect((await client.listTools()).tools.some((t) => t.name === "sap_confirm")).toBe(false);
+    }
   });
 });
 
 describe("the tools and the instructions say the write setting the server runs with", () => {
-  for (const [write, says, confirm] of [
-    ["off", "is refused: the user has set writing off", false],
-    ["on", "runs: the user has set writing on", false],
-    ["confirm", "token for sap_confirm", true],
+  for (const [write, says] of [
+    ["off", "is refused: the user has set writing off"],
+    ["on", "runs: the user has set writing on"],
+    ["confirm", "runs only after the user says yes in a dialog the client shows"],
   ] as const)
     test(`SAP_WRITE=${write}`, async () => {
       const { client } = await setup({ SAP_WRITE: write });
       const tools = (await client.listTools()).tools;
-      expect(tools.some((t) => t.name === "sap_confirm")).toBe(confirm);
       expect(tools.find((t) => t.name === "sap_act")?.description).toContain(says);
       expect(client.getInstructions()).toContain(says);
       // What the agent needs whatever the setting: the diff markers and the okcode-only command field.
@@ -255,7 +216,7 @@ describe("the tools and the instructions say the write setting the server runs w
 
 describe("confirm mode with elicitation", () => {
   const env = { SAP_WRITE: "confirm" };
-  test("the user accepts in the client: the action runs, no token", async () => {
+  test("the user accepts in the client: the action runs", async () => {
     const { surface, call, asked } = await setup(env, () => "accept");
     surface.add({ id: "chrome:1", system: "ABA", client: "800", transaction: "VA02", title: "Change Order 4711" }, { assess });
     const r = await call("sap_act", { action: { do: "key", key: 11 } });
@@ -287,6 +248,59 @@ describe("confirm mode with elicitation", () => {
     const r = await call("sap_act", { action: { do: "key", key: 11 } });
     expect(r.error).toBe(true);
     expect(r.text).toContain('transaction was "VA02", is now "VA01"');
+    expect(surface.acts()).toEqual([]);
+  });
+  for (const [what, change, says] of [
+    ["window title", { title: "Change Order 9999" }, 'window title was "Change Order 4711", is now "Change Order 9999"'],
+    ["system", { system: "ABB" }, 'system was "ABA", is now "ABB"'],
+    ["client", { client: "100" }, 'client was "800", is now "100"'],
+  ] as const)
+    test(`a ${what} changed while the user reads: nothing runs`, async () => {
+      const box: { s?: ReturnType<FakeSurface["add"]> } = {};
+      const { surface, call } = await setup(env, () => {
+        box.s!.info = { ...box.s!.info, ...change };
+        return "accept";
+      });
+      box.s = surface.add({ id: "chrome:1", system: "ABA", client: "800", transaction: "VA02", title: "Change Order 4711" }, { assess });
+      const r = await call("sap_act", { action: { do: "key", key: 11 } });
+      expect(r.error).toBe(true);
+      expect(r.text).toContain(says);
+      expect(surface.acts()).toEqual([]);
+    });
+  test("an assessment changed while the user reads: nothing runs", async () => {
+    const box: { s?: ReturnType<FakeSurface["add"]> } = {};
+    const { surface, call } = await setup(env, () => {
+      // Same screen title, but a popup now makes the key mean something else.
+      box.s!.assess = () => ({ risk: "commit", reason: 'key 11: button "Delete"' });
+      return "accept";
+    });
+    box.s = surface.add({ id: "chrome:1", system: "ABA", transaction: "VA02", title: "T" }, { assess });
+    const r = await call("sap_act", { action: { do: "key", key: 11 } });
+    expect(r.error).toBe(true);
+    expect(r.text).toContain("what the action does");
+    expect(surface.acts()).toEqual([]);
+  });
+  test("the confirmed action runs on its session, whichever became active meanwhile", async () => {
+    const box: { use?: () => Promise<unknown> } = {};
+    const { surface, call } = await setup(env, async () => {
+      await box.use!();
+      return "accept" as const;
+    });
+    surface.add({ id: "chrome:1", system: "ABA", transaction: "VA02", title: "One" }, { assess });
+    surface.add({ id: "chrome:2", system: "ABA", transaction: "VA02", title: "Two" }, { assess });
+    box.use = () => call("sap_use", { session: "chrome:2" });
+    expect((await call("sap_act", { action: { do: "key", key: 11 }, session: "chrome:1" })).error).toBe(false);
+    expect(surface.acts()).toEqual([{ do: "key", key: 11 }]);
+  });
+  test("a session gone while the user reads runs nothing", async () => {
+    const box: { other?: ReturnType<FakeSurface["add"]> } = {};
+    const { surface, call } = await setup(env, () => {
+      surface.sessions = [box.other!];
+      return "accept";
+    });
+    surface.add({ id: "chrome:1", system: "ABA", transaction: "VA02" }, { assess });
+    box.other = surface.add({ id: "chrome:2", system: "ABA", transaction: "VA02" }, { assess });
+    expect((await call("sap_act", { action: { do: "key", key: 11 }, session: "chrome:1" })).error).toBe(true);
     expect(surface.acts()).toEqual([]);
   });
   test("actions that need no confirmation do not ask", async () => {
@@ -433,17 +447,19 @@ describe("the SDK line in the answer", () => {
   test("with SAP_CODE=on, an action that ran ends its note with the line that repeats it; a refusal or a hold has none", async () => {
     const was = process.env.SAP_CODE;
     process.env.SAP_CODE = "on";
-    const { surface, call } = await setup({ SAP_WRITE: "confirm" }).finally(() => {
+    const { surface, call } = await setup({ SAP_WRITE: "confirm" }, () => "accept").finally(() => {
       if (was === undefined) delete process.env.SAP_CODE;
       else process.env.SAP_CODE = was;
     });
     surface.add({ id: "chrome:1", system: "ABA", client: "800", transaction: "VA02" }, { assess });
     const set = await call("sap_act", { action: { do: "set", id: "VBAK-VBELN", value: "4711" } });
     expect(noteOf(set.text).at(-1)).toBe('code: await sap.set("VBAK-VBELN", "4711");');
-    const held = await call("sap_act", { action: { do: "key", key: 11 } });
-    expect(held.text).not.toContain("code:");
-    const done = await call("sap_confirm", { token: tokenOf(held.text) });
+    const done = await call("sap_act", { action: { do: "key", key: 11 } });
     expect(noteOf(done.text).at(-1)).toBe("code: await sap.key(11);");
+    // Not confirmed (this client cannot ask): no line.
+    const no = await setup({ SAP_WRITE: "confirm" });
+    no.surface.add({ id: "chrome:1", system: "ABA", client: "800", transaction: "VA02" }, { assess });
+    expect((await no.call("sap_act", { action: { do: "key", key: 11 } })).text).not.toContain("code:");
     const refused = await call("sap_act", { action: { do: "set", id: "okcd", value: "/nSE38" } });
     expect(refused.error).toBe(true);
     expect(refused.text).not.toContain("code:");
