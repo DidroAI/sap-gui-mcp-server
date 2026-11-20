@@ -1,13 +1,17 @@
 #!/usr/bin/env node
 /**
  *   sap-gui-mcp-server            the stdio MCP server (default)
- *   sap-gui-mcp-server setup      adds the server to Claude Code, Codex and Claude Desktop
+ *   sap-gui-mcp-server setup      adds the server to Claude Code, Codex, Claude Desktop, Cursor, Windsurf and VS Code
+ *   sap-gui-mcp-server init       sets a project up: sap.config.ts, an example test, skills, MCP clients
+ *   sap-gui-mcp-server install --skills   copies the bundled agent skills into a project (or --global)
  *   sap-gui-mcp-server doctor     checks what the server can reach on this machine
  *   sap-gui-mcp-server sessions   lists the SAP sessions it finds, then exits
  */
 import { disconnectChrome } from "./browser/chrome.js";
 import { doctorReport } from "./cli/doctor.js";
+import { init } from "./cli/init.js";
 import { setup } from "./cli/setup.js";
+import { installSkills, SKILL_TARGETS, type SkillTarget } from "./cli/skills.js";
 import { policyFromEnv } from "./core/guard.js";
 import { Registry } from "./core/registry.js";
 import { exportCommand, RECORD_HELP, replayCommand } from "./record/cli.js";
@@ -20,8 +24,14 @@ const HELP = `sap-gui-mcp-server ${SERVER_VERSION}: an MCP server that sees and 
 
 Usage:
   sap-gui-mcp-server            start the stdio server (what MCP clients run)
-  sap-gui-mcp-server setup [claude-code|codex|claude-desktop] [--dry-run]
+  sap-gui-mcp-server setup [claude-code|codex|claude-desktop|cursor|windsurf|vscode] [--dry-run]
                                 add the server to the MCP clients found on this machine
+  sap-gui-mcp-server init [--yes] [--force] [--dry-run]
+                                set this project up: sap.config.ts, sap-tests/example.sap.ts, agent skills,
+                                MCP clients, .gitignore (asks a few questions; --yes takes the defaults)
+  sap-gui-mcp-server install --skills [--target claude|codex|cursor|all] [--global] [--dry-run]
+                                copy the bundled agent skills to .claude/skills, .agents/skills, .cursor/rules
+                                (--global: ~/.claude/skills, ~/.codex/skills)
   sap-gui-mcp-server doctor     check SAP GUI scripting and Chrome access on this machine
   sap-gui-mcp-server sessions   list the SAP sessions found now
 ${RECORD_HELP}
@@ -52,6 +62,8 @@ async function main(argv: string[]): Promise<number> {
   if (!cmd) return await serveStdio(), -1;
   if (cmd === "export") return exportCommand(argv.slice(1));
   if (cmd === "show-trace") return showTraceCommand(argv.slice(1));
+  if (cmd === "init") return await initCommand(argv.slice(1));
+  if (cmd === "install") return installCommand(argv.slice(1));
   const surfaces = surfacesFromEnv();
   if (cmd === "doctor") {
     if (surfaces.some((s) => s.name !== "sapgui")) console.error("Checking… (if Chrome asks whether to allow remote debugging, click Allow)\n");
@@ -86,6 +98,41 @@ async function main(argv: string[]): Promise<number> {
   }
   console.error(`Unknown command "${cmd}".\n\n${HELP}`);
   return 2;
+}
+
+async function initCommand(args: string[]): Promise<number> {
+  const yes = args.includes("--yes") || args.includes("-y") || !process.stdin.isTTY;
+  let ask: ((q: string) => Promise<string>) | undefined;
+  let rl: import("node:readline/promises").Interface | undefined;
+  if (!yes) {
+    const { createInterface } = await import("node:readline/promises");
+    rl = createInterface({ input: process.stdin, output: process.stdout });
+    ask = (q) => rl!.question(q);
+  }
+  try {
+    const r = await init({ yes, force: args.includes("--force"), dryRun: args.includes("--dry-run"), ask });
+    console.log(r.lines.join("\n"));
+    return 0;
+  } finally {
+    rl?.close();
+  }
+}
+
+function installCommand(args: string[]): number {
+  if (!args.includes("--skills")) {
+    console.error("Usage: sap-gui-mcp-server install --skills [--target claude|codex|cursor|all] [--global] [--dry-run]");
+    return 2;
+  }
+  const i = args.indexOf("--target");
+  const raw = (i >= 0 ? args[i + 1] : args.find((a) => a.startsWith("--target="))?.slice(9)) ?? "claude";
+  const targets = raw === "all" ? [...SKILL_TARGETS] : raw.split(",").filter((t): t is SkillTarget => (SKILL_TARGETS as readonly string[]).includes(t));
+  if (!targets.length) {
+    console.error(`Unknown --target "${raw}": use claude, codex, cursor or all.`);
+    return 2;
+  }
+  const r = installSkills({ targets, global: args.includes("--global"), dryRun: args.includes("--dry-run") });
+  console.log(r.lines.join("\n"));
+  return r.lines.some((l) => l.startsWith("✗")) ? 1 : 0;
 }
 
 main(process.argv.slice(2)).then(
