@@ -213,6 +213,30 @@ describe("sap_code_save and sap_code_test", () => {
     expect(r.text).toContain("Screen now:");
   });
 
+  test("verified against the lock next to the saved file: the first pass writes it, a drift is reported with the screen", async () => {
+    const fake = new FakeSap();
+    const { dir, call } = await tools(fake);
+    const code = wrap(['  await sap.step("Display", async () => {', '    await sap.okcode("/nZA03");', '    await sap.set("ctxtZORD-VBELN", "5000");', '    await sap.key("Enter");', "  });"].join("\n"));
+    expect((await call("sap_code_save", { name: "display", code })).error).toBe(false);
+    const lockFile = join(dir, "display.sap.lock.json");
+    const first = await call("sap_code_test", { name: "display" });
+    expect(first.error).toBe(false);
+    expect(first.text).toContain(`lock: 0 action(s) as the lock has them, 3 new; written to ${lockFile}`);
+    const second = await call("sap_code_test", { name: "display" });
+    expect(second.text).toContain(`lock: 3 action(s) as the lock has them, 0 new; written to ${lockFile}`);
+
+    fake.popupsFor.set("5000", [{ title: "Proceed", text: "Display the order anyway?", question: true }]);
+    const r = await call("sap_code_test", { name: "display" });
+    expect(r.error).toBe(true);
+    expect(r.text).toContain('error: Drift in step "Display", action 3 (await sap.key("Enter");');
+    expect(r.text).toContain(`at ${join(dir, "display.sap.ts")}:7`);
+    expect(r.text).toContain('drift: step "Display", action 3 await sap.key("Enter"); (landing)');
+    expect(r.text).toContain(`lock: ${lockFile}`);
+    expect(r.text).toContain("Screen now:");
+    expect(r.text).toContain("Display the order anyway?");
+    expect(r.text).not.toContain(".sap-code-runs");
+  });
+
   test("the server's write policy holds, whatever the test asks for", async () => {
     const fake = new FakeSap();
     const { dir, call } = await tools(fake, { SAP_WRITE: "off" });

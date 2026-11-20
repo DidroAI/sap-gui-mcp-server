@@ -33,7 +33,9 @@ import type { Policy } from "../core/guard.js";
 import type { Registry } from "../core/registry.js";
 import { commitWord } from "../core/words.js";
 import { resolveConfig } from "../runner/config.js";
+import { driftLines } from "../runner/reporters.js";
 import { runTests } from "../runner/run.js";
+import { lockPathFor } from "../sdk/lock.js";
 import { vkeyNumber } from "../sapgui/keys.js";
 import { exportTidy } from "./export/sap-ts-tidy.js";
 import { type SapTest, slug } from "./format.js";
@@ -413,7 +415,7 @@ export function registerCodeTools(server: McpServer, registry: Registry, policy:
     "sap_code_test",
     {
       title: "Run a saved *.sap.ts test",
-      description: `Runs a test saved with sap_code_save on the active session through the test runner, under the server's policy (SAP_WRITE, transaction lists; the test cannot widen them). Answers pass or fail; on a failure the line, the sap.step it was in, the screen there and the trace file. "variables" overrides values of the test's \`const vars\`. ${DESCRIPTION_RISK}`,
+      description: `Runs a test saved with sap_code_save on the active session through the test runner, under the server's policy (SAP_WRITE, transaction lists; the test cannot widen them). Answers pass or fail; on a failure the line, the sap.step it was in, the screen there and the trace file. Verified against <name>.sap.lock.json (what the screens looked like on a passing run, written by the first pass): where SAP answers otherwise it fails with "Drift" (the step, the action, the screen); fix the code with sap_code_save if SAP changed. "variables" overrides values of the test's \`const vars\`. ${DESCRIPTION_RISK}`,
       inputSchema: {
         name: z.string().min(1).describe("the test's name, as saved"),
         variables: z.record(z.string(), z.string()).optional(),
@@ -437,11 +439,14 @@ export function registerCodeTools(server: McpServer, registry: Registry, policy:
           await mkdir(runs, { recursive: true });
           const copy = join(runs, `${slug(a.name)}-${Date.now()}${ext}`);
           await writeFile(copy, code, "utf8");
+          // The lock is the saved file's, not the copy's.
+          const lockFile = lockPathFor(path);
           try {
             const config = resolveConfig({ outputDir: "sap-results", timeout: 120_000 }, recorder.options.dir);
             const result = await runTests({
               config,
               files: [copy],
+              lockFile: () => lockFile,
               surfaces: registry.surfaces,
               clamp: { session: info.id, write: policy.write, ...(policy.allowTcodes ? { allowTcodes: policy.allowTcodes } : {}), ...(policy.blockTcodes ? { blockTcodes: policy.blockTcodes } : {}) },
             });
@@ -458,7 +463,10 @@ export function registerCodeTools(server: McpServer, registry: Registry, policy:
                 if (at) lines.push(`  line ${at[1]}: ${(srcLines[Number(at[1]) - 1] ?? "").trim()}`);
                 const step = /\(in step "(.*)"\)/.exec(t.error.message)?.[1];
                 if (step) lines.push(`  step: ${step}`);
+                for (const l of driftLines(t)) lines.push(`  ${l.split(copy).join(path)}`);
               }
+              const l = t.lock;
+              if (l && !t.drift) lines.push(`  lock: ${l.verified} action(s) as the lock has them, ${l.unverified} new${l.written ? `; written to ${l.file}` : ""}${l.notes.length ? ` (${l.notes.join("; ")})` : ""}`);
               if (t.trace) lines.push(`  trace: ${t.trace}`);
             }
             if (!result.ok) {
