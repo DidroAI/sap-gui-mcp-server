@@ -71,6 +71,16 @@ const step = z.object({
   after: screenRef.extend({ status: statusMessage.optional() }).optional(),
   expect: z.array(check).optional(),
   capture: z.array(capture).optional(),
+  /** How long the action took, from sending it to SAP having answered (the driver's own wait included), in ms. */
+  ms: z.number().nonnegative().optional(),
+  /** When the step started (ISO time). */
+  at: z.string().optional(),
+  /** Trace only: the screen the action led to, as the compact view an agent reads. */
+  screen: z.string().optional(),
+  /** Trace only: a screenshot of the screen the action led to, a path relative to the test file. */
+  shot: z.string().optional(),
+  /** Trace only: the SDK line that repeats this action. */
+  code: z.string().optional(),
 });
 
 const variable = z.object({ value: z.string(), description: z.string().optional() });
