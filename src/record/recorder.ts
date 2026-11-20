@@ -11,7 +11,8 @@
  * The file is written after every change, so a recording survives a crash.
  */
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { codeOf } from "../sdk/code.js";
 import type { NormalizedAction } from "../core/action.js";
 import type { Driver, SessionInfo } from "../core/types.js";
 import { captureValue, evaluate } from "./checks.js";
@@ -27,6 +28,12 @@ export interface RecorderOptions {
   /** "sap-gui-mcp-server 0.1.0", written into the file. */
   by: string;
   now?: () => Date;
+  /**
+   * Keep a trace in each step: the compact screen it led to, and with
+   * `screenshots` a PNG next to the file (`<name>.trace/step-N.png`). Off for
+   * recordings made to be replayed: the screens make the file large.
+   */
+  trace?: { screens: boolean; screenshots?: boolean };
 }
 
 type Env = Record<string, string | undefined>;
@@ -198,11 +205,16 @@ export class Recorder {
     }
     // Recording must never break the action: a screen that cannot be read leaves gaps, not errors.
     const before = await screenOf(driver).catch(() => undefined);
+    const started = this.options.now?.() ?? new Date();
+    const t0 = performance.now();
     const note = await run();
+    const ms = Math.round(performance.now() - t0);
     const after = await screenOf(driver).catch(() => undefined);
     // "do" first: the file is read by people.
     const { do: verb, ...rest } = action;
     const step: Step = { action: { do: verb, ...rest } };
+    step.at = started.toISOString();
+    step.ms = ms;
     const found = before && action.id ? locate(before, action.id) : undefined;
     if (found) step.target = { id: found.control.id, type: found.control.type, ...(found.control.label ? { label: found.control.label } : {}) };
     if (risk) step.risk = risk;
@@ -219,8 +231,22 @@ export class Recorder {
     if (after) step.after = { ...refOf(after), ...(after.status ? { status: after.status } : {}) };
     for (const [name, v] of Object.entries(test.variables)) parametriseStep(step, name, v.value);
     test.steps.push(step);
+    if (this.options.trace?.screens) await this.traceStep(driver, step, test.steps.length).catch(() => {});
     await this.save().catch(() => {});
     return note;
+  }
+
+  /** Adds what a trace keeps to a step: the SDK line, the compact screen, a screenshot. */
+  private async traceStep(driver: Driver, step: Step, n: number): Promise<void> {
+    if (step.action) step.code = codeOf(step.action as NormalizedAction);
+    step.screen = await driver.look({ compact: true });
+    if (!this.options.trace?.screenshots || !this.path) return;
+    const png = await driver.screenshot().catch(() => undefined);
+    if (!png) return;
+    const dir = `${this.path.replace(/\.saptest\.json$/, "")}.trace`;
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, `step-${n}.png`), png);
+    step.shot = `${basename(dir)}/step-${n}.png`;
   }
 
   /** The last step, or a new step without an action when nothing was recorded yet. */

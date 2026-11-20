@@ -8,3 +8,4 @@ export { Recorder, type RecorderOptions, recorderOptionsFromEnv } from "./record
 export { replay, replayAll, resultText, junit, type ReplayOptions, type ReplayResult, type StepResult } from "./record/replay.js";
 export { FORMAT, parseTest, serializeTest, type SapTest, type Step, type Check, type Capture } from "./record/format.js";
 export { exportTest, TARGET_NAMES, type Target } from "./record/export/index.js";
+export * from "./sdk/index.js";
