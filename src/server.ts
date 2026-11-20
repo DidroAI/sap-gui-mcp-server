@@ -14,12 +14,14 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { actionText, normalizeAction, type NormalizedAction, VERBS } from "./core/action.js";
-import { commandFieldRefusal, decide, leavesTransaction, type Policy, sessionRefusal } from "./core/guard.js";
+import { MAX_BATCH, parseBatch, stopAfter } from "./batch.js";
+import { commandFieldRefusal, decide, leavesTransaction, type Policy, sessionRefusal, tcodeOf, tcodeRefusal } from "./core/guard.js";
 import { type Turn, SessionQueue, waitedLine } from "./core/queue.js";
 import { Registry } from "./core/registry.js";
 import { ActionError, type Assessment, type Driver, type LookOptions, type SessionInfo, type Surface } from "./core/types.js";
 import { type ViewMode, Views } from "./core/views.js";
 import { Recorder, type RecorderOptions, recorderOptionsFromEnv } from "./record/recorder.js";
+import { type ParsedScreen, parseScreen, stillWorking } from "./record/screen.js";
 import { registerRecordTools } from "./record/tools.js";
 import { codeOf } from "./sdk/code.js";
 
@@ -39,7 +41,7 @@ export function writeRule(policy: Policy): string {
 
 function instructions(policy: Policy): string {
   return `Sees and drives the SAP screens the user already has open (SAP GUI for Windows; Web GUI and Fiori in Chrome), as the user. It never logs on.
-Start with sap_look (sap_sessions when several are open). Act with sap_act, one action at a time, on the ids the view shows: each answer is the new screen, so look again only when you need to. Read the status bar after each action: SAP reports errors there.
+Start with sap_look (sap_sessions when several are open). Act with sap_act on the ids the view shows: one action, or with "actions" the fields of the screen you see and the key that sends them, in one call. Each answer is the new screen, so look again only when you need to. Read the status bar after each call: SAP reports errors there.
 ${writeRule(policy)}
 sap_record turns a run into a test; sap_replay runs it again without a model.`;
 }
@@ -162,6 +164,12 @@ const actionSchema = z
     to: z.union([z.number(), z.string()]).optional(),
   })
   .passthrough();
+
+/**
+ * An action of a batch: an action, with "expect" and "show" (batch.ts checks both).
+ * Loose on purpose: the fields are the ones of `action`, and writing them twice into tools/list costs 250 tokens in every conversation.
+ */
+const batchSchema = z.object({ do: z.string() }).passthrough();
 
 export interface ServerOptions {
   policy: Policy;
@@ -325,6 +333,16 @@ export function createServer({ policy, surfaces, view = "diff", record, code = !
     return `${note}\n(timing: ${total} ms in the server: ${phases.map(([k, v]) => `${k} ${v}`).join(", ")}${driver ? `; the action ${driver}` : ""})`;
   }
 
+  /** Leaves a transaction the agent may not work in, and says how that went. */
+  async function leave(d: Driver): Promise<string> {
+    try {
+      await d.act(normalizeAction({ do: "okcode", value: "/n" }));
+      return "The server left it with /n; input that was not saved there is gone.";
+    } catch (e) {
+      return `The server could not leave it with /n (${(e as Error).message.split("\n")[0]}): leave it before doing anything else.`;
+    }
+  }
+
   /** Runs an action that passed the guard, then checks where it led. */
   async function perform(d: Driver, action: NormalizedAction, whole = false, risk?: string, clock?: { t0: number; judged: number; wanted: boolean }): Promise<CallToolResult> {
     const session = d.info.id;
@@ -361,13 +379,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = !
     const after = await d.refresh().catch(() => undefined);
     const landed = after && sessionRefusal(policy, after);
     if (landed) {
-      let left: string;
-      try {
-        await d.act(normalizeAction({ do: "okcode", value: "/n" }));
-        left = "The server left it with /n; input that was not saved there is gone.";
-      } catch (e) {
-        left = `The server could not leave it with /n (${(e as Error).message.split("\n")[0]}): leave it before doing anything else.`;
-      }
+      const left = await leave(d);
       const screen = await d
         .look({ compact: true })
         .then((v) => views.present(session, v, true))
@@ -458,8 +470,13 @@ export function createServer({ policy, surfaces, view = "diff", record, code = !
       return undefined;
     });
     if (done || !box.held) return done ?? fail("Not run.");
-    const { info, assessment } = box.held;
-    const verdict = { confirm: box.held.confirm };
+    return confirmHeld(box.held, action, whole);
+  }
+
+  /** An action the guard holds for the user's yes: asks the user when the client can, else answers with a token for sap_confirm. */
+  async function confirmHeld(held: { info: SessionInfo; assessment: Assessment; confirm: string }, action: NormalizedAction, whole: boolean): Promise<CallToolResult> {
+    const { info, assessment } = held;
+    const verdict = { confirm: held.confirm };
     const shown = shownOf(info, action, assessment);
     const what = `${verdict.confirm}, on ${place(info)}`;
     if (canElicit()) {
@@ -489,6 +506,141 @@ export function createServer({ policy, surfaces, view = "diff", record, code = !
     );
   }
 
+  /** The screen once SAP is done with the step before it (at most 15 s), as the compact view. */
+  async function settled(d: Driver): Promise<string> {
+    const until = Date.now() + 15_000;
+    let view = await d.look({ compact: true });
+    while (stillWorking(view) && Date.now() < until) {
+      await new Promise((r) => setTimeout(r, 250));
+      view = await d.look({ compact: true });
+    }
+    return view;
+  }
+
+  /**
+   * Several actions in one call (batch.ts). Each is judged by the guard when
+   * its turn comes, on the screen as it is then, and recorded as its own
+   * step. The batch holds the session for all of them: no other call runs
+   * in between. It ends before the next action when one fails, is refused or
+   * waits for the user's yes, and when the screen is not what the agent could
+   * foresee (`stopAfter`). The answer says what ran and why it ended, then
+   * the screen once.
+   */
+  async function runBatch(ref: string | undefined, input: unknown, whole = false): Promise<CallToolResult> {
+    const steps = parseBatch(input);
+    const total = steps.length;
+    // What can be refused without a screen is refused before anything runs.
+    for (const [i, s] of steps.entries()) {
+      const no =
+        commandFieldRefusal(s.action) ??
+        tcodeRefusal(policy, tcodeOf(s.action)) ??
+        (s.action.do === "okcode" && /^\/o\S/i.test(String(s.action.value)) ? `"${String(s.action.value)}" opens a new session: send it on its own, not in "actions"` : undefined);
+      if (no) return fail(`Refused: action ${i + 1} of ${total}: ${no}\nNothing ran.`);
+    }
+    const rest = (from: number) => (from > total ? "" : from === total ? ` Action ${total} did not run.` : ` Actions ${from} to ${total} did not run.`);
+    type Held = { info: SessionInfo; assessment: Assessment; confirm: string; action: NormalizedAction };
+    const box: { held?: Held; head?: string } = {};
+    const done = await queue.run(await laneOf(ref), `${total} actions`, async (turn): Promise<CallToolResult | undefined> => {
+      const lines: string[] = [];
+      const codes: string[] = [];
+      let ran = 0;
+      /** Why the batch ended early; `error` when an action failed or was refused; `next` is the first action after the one it names. */
+      let end: { text: string; error: boolean; next: number } | undefined;
+      let note: string | undefined;
+      let driver: Driver | undefined;
+      let id: string | undefined;
+      let before: ParsedScreen | undefined;
+      let view: string | undefined;
+      for (const [i, s] of steps.entries()) {
+        const n = i + 1;
+        const what = `action ${n} (${actionText(s.action)})`;
+        let j: Awaited<ReturnType<typeof judge>>;
+        try {
+          // The session the first action ran on is the session of all of them.
+          j = await judge(id ?? ref, s.action);
+        } catch (e) {
+          // No session, or an id that names nothing here: with nothing run yet, the answer is the one of a single action.
+          if (i === 0) return withTurn(await failedOn(ref, e), turn);
+          end = { text: `${what} could not run: ${(e as Error).message}`, error: true, next: n + 1 };
+          view = undefined;
+          break;
+        }
+        driver = j.driver;
+        id = j.info.id;
+        if ("refused" in j) {
+          end = { text: `${what} was refused: ${j.refused}`, error: true, next: n + 1 };
+          break;
+        }
+        if (!j.verdict.run && "refused" in j.verdict) {
+          end = { text: `${what} was refused: ${j.verdict.refused}`, error: true, next: n + 1 };
+          break;
+        }
+        if (!j.verdict.run) {
+          box.held = { info: j.info, assessment: j.assessment, confirm: j.verdict.confirm, action: s.action };
+          end = { text: `${what} may write and waits for the user's yes`, error: false, next: n + 1 };
+          break;
+        }
+        before ??= parseScreen(await settled(driver));
+        let said: string;
+        try {
+          const d = driver;
+          said = await recorder.act(d, s.action, j.assessment.risk, () => d.act(s.action));
+        } catch (e) {
+          end = { text: `${what} failed: ${(e as Error).message}`, error: true, next: n + 1 };
+          view = undefined;
+          break;
+        }
+        ran = n;
+        remember(id, s.action);
+        lines.push(`${n}. ${said}`);
+        codes.push(codeOf(s.action));
+        // A menu entry, a favourite or a tree node can open a transaction no okcode named.
+        const info = await driver.refresh().catch(() => undefined);
+        const landed = info && sessionRefusal(policy, info);
+        if (landed) {
+          end = { text: `action ${n} led to a transaction the agent may not work in: ${landed}. ${await leave(driver)}`, error: true, next: n + 1 };
+          view = undefined;
+          break;
+        }
+        view = await settled(driver);
+        const after = parseScreen(view);
+        const stop = stopAfter(s.action, before, after, s.expect);
+        if (stop && n < total) {
+          end = { text: `after action ${n}, ${stop.text}`, error: false, next: n + 1 };
+          break;
+        }
+        // Nothing follows the last action: only what it said it expects is worth a line.
+        if (stop?.why === "expect") note = `Action ${n}: ${stop.text}.`;
+        if (s.show && n < total) lines.push(`--- the screen after action ${n}\n${views.present(id, view, whole)}\n---`);
+        before = after;
+      }
+      const head = end ? `Ran ${ran} of ${total} actions. Stopped: ${end.text.replace(/[.\s]+$/, "")}.${rest(end.next)}` : `Ran ${total} action${total === 1 ? "" : "s"}.`;
+      const body = [head, ...(note ? [note] : []), ...lines, ...(code && codes.length ? [`code:\n${codes.join("\n")}`] : [])].join("\n");
+      if (box.held) {
+        // The held action's own answer follows (the user's yes, or a token); the screen comes with it or with sap_confirm.
+        box.head = body;
+        return undefined;
+      }
+      let screen = "";
+      if (driver && id) {
+        try {
+          const v = view ?? (await settled(driver));
+          const shown = withStatus(views.present(id, v, whole), v);
+          const top = statusTop(shown, v);
+          screen = `${top ? `\n${top}` : ""}\n\n${shown}`;
+        } catch (e) {
+          screen = `\n\n(the screen could not be read: ${(e as Error).message.split("\n")[0]})`;
+        }
+      }
+      return withTurn(end?.error ? fail(`${body}${screen}`) : text(`${body}${screen}`), turn);
+    });
+    if (done || !box.held) return done ?? fail("Not run.");
+    const r = await confirmHeld(box.held, box.held.action, whole);
+    const first = r.content[0];
+    if (first?.type !== "text") return r;
+    return { ...r, content: [{ ...first, text: `${box.head}\n\n${first.text}` }, ...r.content.slice(1)] };
+  }
+
   server.registerTool(
     "sap_act",
     {
@@ -509,11 +661,22 @@ export function createServer({ policy, surfaces, view = "diff", record, code = !
   {"do":"scroll","id":"...","to":120}  a row counted from 0, "next", "prev", "first", "last"; a table control's columns "right", "left" (Fiori: when the view ends with SCROLL)
   {"do":"open","app":"#SalesOrder-manage"}  Fiori launchpad only: an app by its intent (parameters allowed), never a URL
 Short ids work; an id that names several controls is refused with the list, one from an earlier screen with the screen you are on.
+"actions":[...] in place of "action" runs up to ${MAX_BATCH} in order and answers once: what ran, then the screen. Use it for the screen you see: its fields, then the key that sends them. It ends before the next action when one fails, is refused or waits for confirmation, a popup opens, the status bar shows an error or a warning, or the screen changes. An action goes on through what its "expect" names: {"screen":"4001"}, {"popup":true}, {"status":"W"}. "show":true adds the screen after that action (one tab after another).
 ${writeRule(policy)}`,
-      inputSchema: { action: actionSchema, session, full: z.boolean().optional().describe("answer with the whole screen, not the changes") },
+      inputSchema: {
+        action: actionSchema.optional(),
+        actions: z.array(batchSchema).optional().describe("in place of action: several, each as action"),
+        session,
+        full: z.boolean().optional().describe("answer with the whole screen, not the changes"),
+      },
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
     },
-    ({ action, session: ref, full }) => answer(() => run(ref, action, full === true)),
+    ({ action, actions, session: ref, full }) =>
+      answer(async () => {
+        if (actions !== undefined && action !== undefined) return fail('Send "action" or "actions", not both.');
+        if (actions !== undefined) return runBatch(ref, actions, full === true);
+        return run(ref, action, full === true);
+      }),
   );
 
   // Only confirm mode holds actions for a token: with writing off or on, sap_confirm could never run anything.
