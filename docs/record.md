@@ -472,9 +472,11 @@ the recording marked.
 `sap_record {"op":"code"}` gives the same file for the recording that is on,
 or, with none on, a draft of every action the server ran on the session.
 
-Every `sap_act` (and `sap_confirm`) answer of an action that ran ends its
-note with the same line, e.g. `code: await sap.set("VBAK-VBELN", "4711");`
-(about ten tokens); `SAP_CODE=off` leaves it out.
+While a recording is on, every `sap_act` (and `sap_confirm`) answer of an
+action that ran ends its note with the same line, e.g.
+`code: await sap.set("VBAK-VBELN", "4711");` (about ten tokens).
+`SAP_CODE=on` adds it without a recording too; `SAP_CODE=off` leaves it out
+even while recording.
 
 ### Gherkin, and Tosca-like tools
 

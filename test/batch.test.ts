@@ -51,7 +51,8 @@ describe("sap_act with actions: several actions, one answer", () => {
     expect(dos(sap)).toEqual(["okcode", "set", "set", "key 0", "key 11"]);
     expect(r.text.split("\n")[0]).toBe("Ran 5 actions.");
     expect(r.text).toContain("2. set wnd[0]/usr/ctxtZORD-KUNNR");
-    expect(r.text).toContain('code:\nawait sap.okcode("/nZA01");\nawait sap.set("ctxtZORD-KUNNR", "2200");');
+    // No recording is on: no SDK lines (test/surface.test.ts has them while recording).
+    expect(r.text).not.toContain("code:");
     expect(r.text).toContain("S: Order 5001 has been saved");
     // One screen in the answer: the last one.
     expect(r.text.match(/^TRANSACTION /gm)?.length).toBe(1);

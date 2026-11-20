@@ -202,7 +202,11 @@ export interface ServerOptions {
   view?: ViewMode;
   /** Where recordings go and whether every session is recorded; default: from SAP_RECORD_DIR and SAP_RECORD. */
   record?: RecorderOptions;
-  /** Ends each answer of an action that ran with the SDK line that repeats it; default: on unless SAP_CODE=off. */
+  /**
+   * Ends each answer of an action that ran with the SDK line that repeats it.
+   * Default (undefined): only while a recording is on, where the agent is
+   * building a script; SAP_CODE=on or off forces it either way (codeFromEnv).
+   */
   code?: boolean;
 }
 
@@ -224,7 +228,14 @@ const MAX_ROWS = 200;
 /** The rows read when "cols" comes without "rows": from the first row on. */
 const COLS_ONLY_ROWS = { from: 0, to: 49 };
 
-export function createServer({ policy, surfaces, view = "diff", record, code = !/^(off|false|0)$/i.test(process.env.SAP_CODE ?? "") }: ServerOptions) {
+/** SAP_CODE: "on" or "off" forces the code line; anything else leaves it to the recording (undefined). */
+export function codeFromEnv(value: string | undefined): boolean | undefined {
+  if (/^(on|true|1)$/i.test(value ?? "")) return true;
+  if (/^(off|false|0)$/i.test(value ?? "")) return false;
+  return undefined;
+}
+
+export function createServer({ policy, surfaces, view = "diff", record, code = codeFromEnv(process.env.SAP_CODE) }: ServerOptions) {
   const registry = new Registry(surfaces, policy);
   const views = new Views(view);
   const recorder = new Recorder(record ?? recorderOptionsFromEnv(process.env, `${SERVER_NAME}-mcp-server ${SERVER_VERSION}`));
@@ -232,6 +243,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = !
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, { instructions: instructions(policy) });
   const session = z.string().optional().describe("from sap_sessions: number, id, system, transaction, or sapgui, webgui, fiori; default: the active one");
   const queue = new SessionQueue();
+  /** Does an answer end with the SDK line? Asked after the action: a recording is on or off by then. */
+  const codeLine = () => code ?? recorder.recording;
   /** The actions that ran, per session, oldest first. */
   const history = new Map<string, NormalizedAction[]>();
   function remember(session: string, action: NormalizedAction): void {
@@ -385,7 +398,7 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
     const done = await recorder.act(d, action, risk, () => d.act(action));
     const acted = Date.now();
     // The line that repeats this action in a script: last in the note block. Kept for a draft test when the action ran where it should.
-    const line = code ? `\ncode: ${codeOf(action)}` : "";
+    const line = codeLine() ? `\ncode: ${codeOf(action)}` : "";
     const ok = (t: string) => {
       remember(session, action);
       return text(t);
@@ -654,7 +667,7 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
         before = after;
       }
       const head = end ? `Ran ${ran} of ${total} actions. Stopped: ${end.text.replace(/[.\s]+$/, "")}.${rest(end.next)}` : `Ran ${total} action${total === 1 ? "" : "s"}.`;
-      const body = [head, ...(note ? [note] : []), ...lines, ...(code && codes.length ? [`code:\n${codes.join("\n")}`] : [])].join("\n");
+      const body = [head, ...(note ? [note] : []), ...lines, ...(codeLine() && codes.length ? [`code:\n${codes.join("\n")}`] : [])].join("\n");
       if (box.held) {
         // The held action's own answer follows (the user's yes, or a token); the screen comes with it or with sap_confirm.
         box.head = body;
