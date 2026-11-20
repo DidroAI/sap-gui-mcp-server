@@ -16,7 +16,7 @@ import { codeOf } from "../sdk/code.js";
 import type { NormalizedAction } from "../core/action.js";
 import type { Driver, SessionInfo } from "../core/types.js";
 import { captureValue, evaluate } from "./checks.js";
-import { type Capture, type Check, FILE_SUFFIX, FORMAT, type Op, parametriseStep, parseTest, type SapTest, serializeTest, slug, type Step, type Subject, withVariable } from "./format.js";
+import { type Capture, type Check, duration, FILE_SUFFIX, FORMAT, type Op, parametriseStep, parseTest, type SapTest, serializeTest, slug, type Step, type Subject, withVariable } from "./format.js";
 import { detour } from "./replay.js";
 import { locate, type ParsedScreen, readSettled, refOf } from "./screen.js";
 
@@ -78,7 +78,8 @@ export function stepLine(s: Step, i: number): string {
     ...(s.capture ?? []).map((c) => `     capture \${${c.var}} from ${c.from}${c.id ? ` ${c.id}` : ""}${c.pattern ? ` /${c.pattern}/` : ""}`),
     ...(s.note ? [`     note: ${s.note}`] : []),
   ];
-  return [`${i + 1}. ${a}${t}${sc}${st}${s.risk === "commit" ? "  [writes]" : ""}`, ...more].join("\n");
+  const ms = s.ms !== undefined ? `  (${duration(s.ms)})` : "";
+  return [`${i + 1}. ${a}${t}${sc}${st}${s.risk === "commit" ? "  [writes]" : ""}${ms}`, ...more].join("\n");
 }
 
 /** What a finished recording probably still needs: values to make variables, documents to capture. */

@@ -322,6 +322,11 @@ should create it in an earlier step or an earlier test.
 
 ### Output
 
+Each step says how long it took, and how long it took when recorded (the
+recording keeps `ms` per step). An action that took over twice as long as
+recorded, and over a second more, gets a `slower:` line (in JUnit, the
+case's `<system-out>`); it never fails the step.
+
 Text (above), `--json` (the result objects), `--junit <file>` (JUnit XML, one
 suite per test and one case per step, which CI servers read). Exit code 0
 when every test passed, 1 otherwise.

@@ -134,6 +134,9 @@ export function parseTest(json: string): SapTest {
   return r.data;
 }
 
+/** A duration, short: "812 ms", "2.4 s". */
+export const duration = (ms: number): string => (ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`);
+
 export const serializeTest = (t: SapTest): string => `${JSON.stringify(t, null, 2)}\n`;
 
 /** "VA03 display order" -> "va03-display-order": a file name with nothing a path could use. */
