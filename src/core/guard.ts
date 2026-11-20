@@ -175,6 +175,6 @@ export function decide(policy: Policy, action: Action, assessment: Assessment): 
   if (policy.write === "confirm") return { run: false, confirm: assessment.reason };
   return {
     run: false,
-    refused: `this action may write to SAP (${assessment.reason}) and writes are off. The user can allow them with SAP_WRITE=confirm or SAP_WRITE=on.`,
+    refused: `this action may write to SAP (${assessment.reason}) and writes are off. Tell the user what you would have saved; do not look for another way. Only the user can allow writes (SAP_WRITE=confirm or on).`,
   };
 }

@@ -401,8 +401,7 @@ describe("the answer to an action", () => {
     s.view = [...before.replace(/\(edit\)/g, "(read-only)").split("\n"), "sbar  status  W: The default date is not copied into existing schedule lines"].join("\n");
     const lines = (await call("sap_act", { action: { do: "key", key: 0 } })).text.split("\n");
     expect(lines[1]).toBe("STATUS W: The default date is not copied into existing schedule lines  (warning: Enter accepts it and goes on; another warning may follow, and each takes its own Enter. SAP may keep the fields closed until then, and fills nothing in before)");
-    expect(lines[2]).toBe("code: await sap.key(0);");
-    expect(lines[3]).toBe("");
+    expect(lines[2]).toBe("");
     // The fields the warning closed are one line, not twelve.
     expect(lines.length).toBeLessThan(8);
     expect(lines.join("\n")).toContain("~ 12 fields closed for input");
@@ -431,8 +430,13 @@ describe("the SDK line in the answer", () => {
   /** The note block: the lines before the first empty one. */
   const noteOf = (text: string) => text.split("\n\n")[0]?.split("\n") ?? [];
 
-  test("an action that ran ends its note with the line that repeats it; a refusal or a hold has none", async () => {
-    const { surface, call } = await setup({ SAP_WRITE: "confirm" });
+  test("with SAP_CODE=on, an action that ran ends its note with the line that repeats it; a refusal or a hold has none", async () => {
+    const was = process.env.SAP_CODE;
+    process.env.SAP_CODE = "on";
+    const { surface, call } = await setup({ SAP_WRITE: "confirm" }).finally(() => {
+      if (was === undefined) delete process.env.SAP_CODE;
+      else process.env.SAP_CODE = was;
+    });
     surface.add({ id: "chrome:1", system: "ABA", client: "800", transaction: "VA02" }, { assess });
     const set = await call("sap_act", { action: { do: "set", id: "VBAK-VBELN", value: "4711" } });
     expect(noteOf(set.text).at(-1)).toBe('code: await sap.set("VBAK-VBELN", "4711");');

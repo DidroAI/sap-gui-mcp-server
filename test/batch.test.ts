@@ -51,7 +51,8 @@ describe("sap_act with actions: several actions, one answer", () => {
     expect(dos(sap)).toEqual(["okcode", "set", "set", "key 0", "key 11"]);
     expect(r.text.split("\n")[0]).toBe("Ran 5 actions.");
     expect(r.text).toContain("2. set wnd[0]/usr/ctxtZORD-KUNNR");
-    expect(r.text).toContain('code:\nawait sap.okcode("/nZA01");\nawait sap.set("ctxtZORD-KUNNR", "2200");');
+    // No recording is on: no SDK lines (test/surface.test.ts has them while recording).
+    expect(r.text).not.toContain("code:");
     expect(r.text).toContain("S: Order 5001 has been saved");
     // One screen in the answer: the last one.
     expect(r.text.match(/^TRANSACTION /gm)?.length).toBe(1);
@@ -183,7 +184,7 @@ describe("a batch and the guard: each action has its own decision", () => {
     const r = await batch([OPEN, CUSTOMER, { ...ENTER, expect: { screen: "200" } }, { ...SAVE, unseen: true }, { do: "okcode", value: "/nZA03", expect: { transaction: "ZA03" } }]);
     expect(r.error).toBe(false);
     expect(r.text.split("\n")[0]).toBe('Ran 3 of 5 actions. Stopped: action 4 ({"do":"key","key":11}) may write and waits for the user\'s yes. Action 5 did not run.');
-    expect(r.text).toContain("Needs the user's confirmation: key 11: Save, on ABA/800, ZA01");
+    expect(r.text).toContain("NOT RUN YET: needs the user's confirmation: key 11: Save, on ABA/800, ZA01");
     expect(sap.orders.size).toBe(1);
     const token = /token "([0-9a-f]+)"/.exec(r.text)?.[1] ?? "";
     const c = await call("sap_confirm", { token });
@@ -212,7 +213,6 @@ describe("a batch and the guard: each action has its own decision", () => {
       [{ do: "set", id: "okcd", value: "/nZA03" }, "command field"],
       [{ do: "okcode", value: "/nZA03" }, "ZA03 is blocked"],
       [{ do: "okcode", value: "/oZA01" }, "opens a new session"],
-      [{ do: "eval", id: "x" }, "Unknown action"],
       [{ do: "key", key: 0, expect: { screeen: "1" } }, '"expect" has no "screeen"'],
     ] as const) {
       const r = await batch([OPEN, CUSTOMER, bad]);
@@ -221,10 +221,15 @@ describe("a batch and the guard: each action has its own decision", () => {
       expect(r.text.toLowerCase()).toContain("action 3 of 3");
       expect(r.text).toEndWith("Nothing ran.");
     }
+    // A "do" the schema does not list is refused by the input validation, before the server runs anything.
+    const unknown = await batch([OPEN, CUSTOMER, { do: "eval", id: "x" }]);
+    expect(unknown.error).toBe(true);
+    expect(unknown.text).toContain("actions[2].do");
     expect(sap.acts).toEqual([]);
     expect((await batch(Array.from({ length: MAX_BATCH + 1 }, () => ENTER))).text).toContain(`${MAX_BATCH} actions at most`);
     expect((await batch([])).error).toBe(true);
-    expect((await call("sap_act", { action: ENTER, actions: [ENTER] })).text).toBe('Send "action" or "actions", not both.');
+    expect((await call("sap_act", { action: ENTER, actions: [ENTER] })).text).toBe('Send one action ("do" and its fields) or "actions", not both.');
+    expect((await call("sap_act", { ...ENTER, actions: [ENTER] })).error).toBe(true);
     expect(sap.acts).toEqual([]);
   });
 
