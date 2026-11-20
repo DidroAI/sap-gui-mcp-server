@@ -38,6 +38,8 @@ const check = z.object({
   op: z.enum(OPS),
   /** What is expected; may hold `${variables}`. For `matches`, a regular expression. */
   value: z.string(),
+  /** For field: the shortest id unique on the screen when recorded (see `target.handle`). */
+  handle: z.string().optional(),
 });
 
 /** A value read from the screen a step leads to, kept as a variable for the steps after it. */
@@ -48,17 +50,25 @@ const capture = z.object({
   label: z.string().optional(),
   /** A regular expression; its first group is the value (the whole match without a group). Without it, the whole text. */
   pattern: z.string().optional(),
+  /** For field: the shortest id unique on the screen when recorded (see `target.handle`). */
+  handle: z.string().optional(),
 });
 
 const step = z.object({
   /** The action, as `sap_act` takes it; absent for a step that only checks. */
   action: z.record(z.string(), z.unknown()).optional(),
-  /** The control the action was done on: full SAP id, type and label when recorded. */
-  target: z.object({ id: z.string(), type: z.string().optional(), label: z.string().optional() }).optional(),
+  /**
+   * The control the action was done on: full SAP id, type and label when recorded. `handle`: the
+   * shortest id that named this control alone on that screen (core/ids.ts `shortIds`), when it is a
+   * tail of the full id; never for a numbered control (btn[0], whose number a popup's buttons share).
+   */
+  target: z.object({ id: z.string(), type: z.string().optional(), label: z.string().optional(), handle: z.string().optional() }).optional(),
   /** read, navigate or commit, as the surface classified the action when recorded. */
   risk: z.string().optional(),
   /** What this step is for, in the recorder's words. */
   note: z.string().optional(),
+  /** The `sap.step(name, ...)` block the action ran in, when it ran from code (nested blocks joined with " › "). */
+  group: z.string().optional(),
   /** The screen the action was done on. */
   /**
    * The screen the step was done on; `popup`: the popup window on top then

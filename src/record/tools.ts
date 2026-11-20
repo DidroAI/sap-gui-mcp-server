@@ -17,6 +17,7 @@ import type { Policy } from "../core/guard.js";
 import type { Registry } from "../core/registry.js";
 import type { NormalizedAction } from "../core/action.js";
 import { codeOf, draftTest } from "../sdk/code.js";
+import { tidyAnswer } from "./code-tools.js";
 import { exportSapTs, exportTest, TARGET_NAMES, TARGETS } from "./export/index.js";
 import { FILE_SUFFIX, inputsOf, slug } from "./format.js";
 import type { Recorder } from "./recorder.js";
@@ -48,6 +49,7 @@ export function recordHelp(): string {
   {"op":"undo"}  drops the last step (SAP itself is not undone)
   {"op":"status"}  the recording so far
   {"op":"code"}  the steps so far as a *.sap.ts test; with no recording on, a draft of what this server ran on the session
+  {"op":"code","tidy":true,"name":"..."}  the recording tidied: detours, corrections and error round trips dropped, checks from what SAP showed; with the removal log and a TODO list
   {"op":"stop"}  ends the recording and writes <name>${FILE_SUFFIX} in the recordings directory
   {"op":"list"}  the recordings in that directory
   {"op":"export","name":"VA03 display order","to":"calm"}  to: ${TARGET_NAMES.map((t) => `${t} (${TARGETS[t].what})`).join("; ")}
@@ -102,6 +104,7 @@ A check that does not hold on the screen now is refused. Typed values are writte
         pattern: z.string().optional().describe("regular expression; its first group is the value"),
         text: z.string().optional(),
         to: z.enum(TARGET_NAMES as [string, ...string[]]).optional(),
+        tidy: z.boolean().optional().describe("code: the recording tidied (detours, corrections and error round trips dropped; checks from what SAP showed), with the removal log and a TODO list"),
         session,
       },
       ...(structured ? { outputSchema: recordOutput } : {}),
@@ -130,6 +133,11 @@ A check that does not hold on the screen now is refused. Typed values are writte
               return text(recordHelp());
             case "code": {
               const t = recorder.current;
+              if (a.tidy) {
+                const name = a.name ?? last;
+                const tidied = t ?? (name ? await recorder.load(name) : undefined);
+                return tidied ? text(tidyAnswer(tidied)) : fail('code with tidy needs a recording: one that is on, or "name".');
+              }
               if (t) return text(exportSapTs(t));
               // No recording: what this server ran on the session, as a draft.
               const id = a.session ? registry.resolve(a.session)?.id : registry.active;

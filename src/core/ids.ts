@@ -202,3 +202,23 @@ export function menuSid(id: string): string | undefined {
   if (!m || (m[1] && !id.includes("/mbar/"))) return undefined;
   return `${m[1] ?? "wnd[0]"}/mbar/${m[2]}`;
 }
+
+/** A segment that is only a number in its container (btn[0], tbar[1], menu[3], lbl[1,13]): it names no field. */
+export const numberedSegment = (segment: string): boolean => /^[a-z]*\[[\d,]+\]$/.test(segment);
+
+/**
+ * The handle code may name `full` by, among the controls `ids` of one
+ * screen: its `shortIds` handle, when that is a tail of the id (so every
+ * lookup, the replay's `locate` too, finds it the same way). Undefined for a
+ * numbered control: `btn[0]` alone also names a popup's Continue, and the
+ * next screen's toolbar numbers its buttons anew. Such controls are pressed
+ * by their label in code instead.
+ */
+export function tailHandle(ids: Iterable<string>, full: string): string | undefined {
+  const last = full.slice(full.lastIndexOf("/") + 1);
+  if (!full.includes("/") || numberedSegment(last) || last === "shell") return undefined;
+  const h = shortIds(ids).get(full);
+  if (!h || h === full || !full.endsWith(`/${h}`)) return undefined;
+  if (h.split("/").some(numberedSegment)) return undefined;
+  return h;
+}

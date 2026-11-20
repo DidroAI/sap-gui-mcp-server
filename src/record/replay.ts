@@ -191,7 +191,7 @@ export interface Detour {
  * is then saved unconfirmed, a result the recording did not have. So this
  * is a choice, not a detail (see Detour).
  */
-const OPTIONAL_SCREENS: { what: string; is: (s: ParsedScreen) => boolean; button: RegExp }[] = [
+export const OPTIONAL_SCREENS: { what: string; is: (s: ParsedScreen) => boolean; button: RegExp }[] = [
   {
     what: "availability control",
     is: (s) => s.program === "SAPLATP4" || /availability control|verf(ü|ue)gbarkeitskontrolle/i.test(s.title ?? ""),
@@ -200,12 +200,12 @@ const OPTIONAL_SCREENS: { what: string; is: (s: ParsedScreen) => boolean; button
 ];
 
 const topWindowOf = (s: ParsedScreen) => s.windows.filter((w) => /^wnd\[\d+\]$/.test(w.id)).at(-1);
-const popupOf = (s: ParsedScreen) => {
+export const popupOf = (s: ParsedScreen) => {
   const w = topWindowOf(s);
   return w && w.id !== "wnd[0]" ? w : undefined;
 };
 /** The action that presses a button: by its id, or on the DIAG method a function key or toolbar button by its key. */
-const pressOf = (c: Control): NormalizedAction => (c.vkey !== undefined && !c.id.startsWith("wnd[") ? normalizeAction({ do: "key", key: c.vkey }) : normalizeAction({ do: "press", id: c.id }));
+export const pressOf = (c: Control): NormalizedAction => (c.vkey !== undefined && !c.id.startsWith("wnd[") ? normalizeAction({ do: "key", key: c.vkey }) : normalizeAction({ do: "press", id: c.id }));
 /** A popup's Continue: SAP GUI's green tick (wnd[1]/tbar[0]/btn[0]), on the DIAG method the popup's Enter key. */
 const continueOf = (mine: Control[], window: string) => mine.find((c) => c.id === `${window}/tbar[0]/btn[0]`) ?? mine.find((c) => c.zone === "bar" && c.vkey === 0);
 const editable = (c: Control) => (c.type === "field" || c.type === "dropdown" || c.type === "textedit") && !/\(read-only\)|\(display\)/.test(c.rest);

@@ -117,6 +117,26 @@ class StatusAssertions {
   toBeEmpty(o?: ExpectOptions) {
     return this.check("toBeEmpty()", (s) => !s.text.trim(), o);
   }
+  /**
+   * Waits until the status bar matches `re` and returns its first group (the
+   * whole match without a group): a number SAP made, for the steps after.
+   *   const order = await expect(sap.status()).capture(/Order (\d+)/);
+   */
+  async capture(re: RegExp, o?: ExpectOptions): Promise<string> {
+    if (this.negate) throw new ExpectError("expect(status bar).not.capture: a capture cannot be negated");
+    const once = new RegExp(re.source, re.flags.replace(/[gy]/g, ""));
+    let got = "";
+    await this.check(
+      `capture(${re})`,
+      (s) => {
+        const m = once.exec(s.text);
+        if (m) got = m[1] ?? m[0];
+        return !!m && got !== "";
+      },
+      o,
+    );
+    return got;
+  }
 }
 
 class GridAssertions {

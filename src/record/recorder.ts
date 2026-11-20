@@ -12,6 +12,7 @@
  */
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { tailHandle } from "../core/ids.js";
 import { codeOf } from "../sdk/code.js";
 import type { NormalizedAction } from "../core/action.js";
 import type { Driver, SessionInfo } from "../core/types.js";
@@ -114,6 +115,8 @@ export class Recorder {
   private path: string | undefined;
   /** Actions on other sessions that were not recorded. */
   private skipped = 0;
+  /** The `sap.step` block that runs now (sdk/session.ts): written into each step recorded meanwhile. */
+  group: string | undefined;
 
   constructor(readonly options: RecorderOptions) {}
 
@@ -222,7 +225,11 @@ export class Recorder {
     step.at = started.toISOString();
     step.ms = ms;
     const found = before && action.id ? locate(before, action.id) : undefined;
-    if (found) step.target = { id: found.control.id, type: found.control.type, ...(found.control.label ? { label: found.control.label } : {}) };
+    if (found && before) {
+      const handle = tailHandle(before.controls.map((c) => c.id), found.control.id);
+      step.target = { id: found.control.id, type: found.control.type, ...(found.control.label ? { label: found.control.label } : {}), ...(handle ? { handle } : {}) };
+    }
+    if (this.group) step.group = this.group;
     if (risk) step.risk = risk;
     if (before) {
       step.on = refOf(before);
@@ -276,6 +283,8 @@ export class Recorder {
       c.id = found.control.id;
       c.type = found.control.type;
       if (found.control.label) c.label = found.control.label;
+      const handle = tailHandle(screen.controls.map((x) => x.id), c.id);
+      if (handle) c.handle = handle;
       // "This field, as it is now."
       if (!given.length) c.value = found.control.value;
     } else if (!given.length) {
@@ -303,6 +312,8 @@ export class Recorder {
       if (!found) throw new Error(`No control ${input.id} on this screen.`);
       c.id = found.control.id;
       if (found.control.label) c.label = found.control.label;
+      const handle = tailHandle(screen.controls.map((x) => x.id), c.id);
+      if (handle) c.handle = handle;
     }
     const got = captureValue(screen, c);
     if ("error" in got) throw new Error(`Not recorded: ${got.error}.`);
