@@ -92,21 +92,50 @@ export interface GridState {
   text: string;
 }
 
-/** Reads the compact text of one control (as `look({ id })` gives it) into rows and cells. */
+/**
+ * Reads the compact text of one control (as `look({ id })` gives it) into rows and cells.
+ * Two row formats: an ALV grid writes "row 0: 4700 | 01.02.2005 | 100.00" under a head
+ * "columns: VBELN=Sales Doc. | ..."; a table control writes "row 0: Item=10; Material=M-01; Rej [x]"
+ * under "  columns: 0 Item=txtVBAP-POSNR (read-only), 1 Material=ctxtRV45A-MABNR, ...".
+ */
 export function parseGrid(text: string, id: string): GridState {
   const lines = text.split("\n");
   const head = lines.find((l) => / {2}(grid|table|tree|list)\b/.test(l) && !l.startsWith(" ")) ?? "";
   if (!head) return { found: false, id, columns: [], titles: [], rows: [], text };
-  const cols = /columns: (.*)$/.exec(head)?.[1]?.split(" | ").map((c) => c.trim()) ?? [];
-  const columns = cols.map((c) => c.split("=")[0] ?? c);
-  const titles = cols.map((c) => c.split("=").slice(1).join("=") || c);
-  const total = Number(/(\d+) (?:rows|lines)\b/.exec(head)?.[1] ?? Number.NaN);
+  const total = Number(/(\d+) (?:rows|lines)\b|\brows (\d+)/.exec(head)?.slice(1).find((x) => x !== undefined) ?? Number.NaN);
   const rows: GridState["rows"] = [];
+  let columns: string[] = [];
+  let titles: string[] = [];
+  const legend = lines.find((l) => l.startsWith("  columns: "));
+  if (legend) {
+    // Table control: "0 Item=txtVBAP-POSNR (read-only)": the title, then the cell id without its type prefix.
+    for (const c of legend.slice("  columns: ".length).split(/, (?=\d+ )/)) {
+      const m = /^\d+ (.*?)=(\S+)/.exec(c);
+      titles.push(m?.[1] ?? c);
+      columns.push((m?.[2] ?? c).replace(/^[a-z]+/, ""));
+    }
+  } else {
+    const cols = /columns: (.*)$/.exec(head)?.[1]?.split(" | ").map((c) => c.trim()) ?? [];
+    columns = cols.map((c) => c.split("=")[0] ?? c);
+    titles = cols.map((c) => c.split("=").slice(1).join("=") || c);
+  }
   for (const l of lines) {
     const m = /^ {2}row (\d+)(?: \([^)]*\))*: (.*)$/.exec(l);
     if (!m) continue;
-    const cells = (m[2] ?? "").split(" | ").map((c) => c.trim());
-    rows.push({ n: Number(m[1]), cells, text: m[2] ?? "" });
+    const body = m[2] ?? "";
+    let cells: string[];
+    if (legend) {
+      // "Title=value" or "Title [x]" per cell, in column order; an empty cell is left out of the row.
+      const named = new Map<string, string>();
+      for (const part of body.split("; ")) {
+        const eq = /^(.*?)=(.*)$/.exec(part);
+        const box = /^(.*) \[(x| )\]$/.exec(part);
+        if (box) named.set(box[1] ?? "", box[2] === "x" ? "true" : "false");
+        else if (eq) named.set(eq[1] ?? "", eq[2] ?? "");
+      }
+      cells = titles.map((t) => named.get(t) ?? "");
+    } else cells = body.split(" | ").map((c) => c.trim());
+    rows.push({ n: Number(m[1]), cells, text: body });
   }
   return { found: true, id, columns, titles, ...(Number.isNaN(total) ? {} : { total }), rows, text };
 }
@@ -138,15 +167,9 @@ export class GridLocator {
     const r = g.rows.find((x) => x.n === row);
     if (!r) throw new Error(`${this} has no row ${row}.`);
     const want = col.toLowerCase();
-    let i = g.columns.findIndex((c) => c.toLowerCase() === want);
+    let i = g.columns.findIndex((c) => c.toLowerCase() === want || c.toLowerCase() === want.replace(/^[a-z]+/, ""));
     if (i < 0) i = g.titles.findIndex((c) => c.toLowerCase() === want);
-    if (i >= 0) {
-      const cell = r.cells[i] ?? "";
-      // A table control writes "Title=value" in each cell.
-      return cell.includes("=") && !g.columns.length ? cell.split("=").slice(1).join("=") : cell;
-    }
-    const named = r.cells.find((c) => c.toLowerCase().startsWith(`${want}=`));
-    if (named !== undefined) return named.slice(want.length + 1);
+    if (i >= 0) return r.cells[i] ?? "";
     throw new Error(`${this} has no column "${col}" (columns: ${[...g.columns, ...g.titles].join(", ") || "none named"}).`);
   }
 
