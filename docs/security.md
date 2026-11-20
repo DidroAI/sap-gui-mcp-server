@@ -28,7 +28,7 @@ To report a vulnerability, see
   the user changes `SAP_WRITE`.
 - **Files are written only to local folders**, named by environment
   variables (with defaults in the working directory), and only when a
-  recording, a download or a debug capture is asked for.
+  recording, saved test code, a download or a debug capture is asked for.
 
 ## What runs where
 
@@ -67,6 +67,7 @@ The server itself calls no model. Replaying a recorded test needs none.
 | What | Folder | Written when | Holds |
 | --- | --- | --- | --- |
 | Recorded tests and their exports | `SAP_RECORD_DIR` (default `./sap-tests`) | after `sap_record start`, or with `SAP_RECORD=on` | the actions, the values typed, screen titles and status bar texts, checked field values |
+| Test code the agent saves, and its run traces | `SAP_RECORD_DIR` | only with `SAP_CODE_TOOLS=on`, on `sap_code_save` and `sap_code_test` | the `*.sap.ts` file; a copy while it runs, deleted after; traces under `sap-results` |
 | Files Web GUI exports "to a local file", browser downloads | `SAP_DOWNLOAD_DIR` (default `downloads` in `SAP_RECORD_DIR` when set, else `./sap-downloads`) | when an action in Web GUI produces such a file | whatever SAP exported |
 | Raw DIAG traffic | `SAP_DIAG_CAPTURE` | only when set | the whole SAP GUI session, **logon included**; file mode 0600 |
 | OCR input picture | `SAP_SCREEN_DEBUG` | only when set | parts of a screen |
@@ -105,6 +106,19 @@ With `SAP_WRITE=off` the agent can still **read** everything the SAP user
 can display, and can start reports with Execute (F8). Some reports update
 the database when executed: block them with `SAP_BLOCK_TCODES`.
 
+With `SAP_CODE_TOOLS=on` (off by default) the agent can also **save and
+run test code** on the user's machine: `sap_code_save` writes a `*.sap.ts`
+file to `SAP_RECORD_DIR`, and `sap_code_test` runs it with the user's
+rights. Every SAP action in it goes through the same guard, under the
+server's `SAP_WRITE` and transaction lists. The code is checked before it is
+saved and before it runs (imports, forbidden words such as `process` and
+`fetch`, no write the recording of the same name does not have), but these
+checks are defence in depth, not a sandbox: the code runs in the server's
+own process. Text on an SAP screen can try to steer what the agent writes.
+Turn it on only where you would let the agent's author run scripts on that
+machine. See
+[Code tools](guides/record-replay.md#code-tools-sap-code-save-and-sap-code-test).
+
 With `confirm`, MCP clients that support elicitation ask the user
 themselves. Other clients rely on the agent asking in the chat: the server
 cannot verify that the user was asked. See
@@ -139,6 +153,7 @@ Start with a test or sandbox system. For a production system:
   the same client session, if the data must not leave through them.
 - **Leave `SAP_DIAG_CAPTURE` and `SAP_SCREEN_DEBUG` unset**, and keep
   `SAP_RECORD` off unless a test is being recorded.
+- **Leave `SAP_CODE_TOOLS` off**: it lets the agent run code on the machine.
 - **Pin the package version** in the client configuration
   (`sap-gui-mcp-server@0.1.0`), so that the code that runs is the code you
   reviewed.

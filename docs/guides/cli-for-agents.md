@@ -22,6 +22,7 @@ The package installs two names for the same program: `sap-gui` and
 | `sap-gui use <ref>` | makes a session the active one | `sap_use` |
 | `sap-gui look [--full] [--diff] [--id <id> [--rows 0-50] [--cols A,B]] [--print]` | writes the screen to a file and prints one line with its path (`--print` prints the screen) | `sap_look` |
 | `sap-gui act '<json>' [--full]` | runs one action ([actions](../reference/actions.md)) | `sap_act` |
+| `sap-gui act '[<json>, ...]' [--full]` | runs one screen's actions in one call | `sap_act` with `actions` |
 | `sap-gui act set <id> <value>`, `press <id>`, `key <n>`, `okcode <cmd>`, `select <id>`, `check <id> [true\|false]`, `combo <id> [key]`, `f4 <id>`, `dblclick <id>`, `scroll <id> <to>` | shorthand for one action | `sap_act` |
 | `sap-gui confirm <token>` | runs an action held for confirmation | `sap_confirm` |
 | `sap-gui screenshot` | writes a PNG of the window or tab | `sap_screenshot` |
@@ -39,10 +40,26 @@ Each command prints one short line and the path of the screen file.
 | `SAP_CLI_IDLE` | `30` | minutes without a command before the daemon exits |
 | `SAP_CLI_SESSION` | one daemon per directory | a name: one daemon for every directory that sets it |
 
+### Several actions in one call
+
+A JSON list in place of one action sends the list as `actions`: up to 20
+actions, run in order, with one answer.
+
+```sh
+sap-gui act '[{"do":"set","id":"ctxtVBAK-VKORG","value":"1000"},{"do":"set","id":"ctxtVBAK-VTWEG","value":"10"},{"do":"key","key":0}]'
+```
+
+Quote the list as one argument. Each entry is an action, and may add
+`expect`, `show` and `unseen` ([Several actions in one call](../concepts/actions.md#several-actions-in-one-call)).
+The printed summary starts with the `Ran k of n actions.` line, which says
+why the batch stopped when it did. The exit codes are the same: a batch
+that stops at a popup or a status message exits 0, one where an action
+failed or was refused exits 1, and one that holds a write exits 3.
+
 The daemon keeps the `SAP_*` settings it started with. A later command with
 different settings is refused: run `sap-gui daemon stop` first.
 
- The same settings apply as for the MCP server: writes stay refused
+The same settings apply as for the MCP server: writes stay refused
 unless `SAP_WRITE` allows them ([configuration](../reference/configuration.md)).
 
 ## Teaching the agent
@@ -64,5 +81,5 @@ setting.
 Use MCP when the client supports it: the answers arrive as tool results and
 the client can ask you to confirm writes. Use the CLI when the agent has
 only a shell, or when you want the agent to write SDK scripts and tests
-from what it did (every action also prints its SDK line, see
-[Writing tests](sdk-tests.md)).
+from what it did (while a recording is on, every action also prints its
+SDK line, see [Writing tests](sdk-tests.md)).

@@ -10,13 +10,16 @@ Source: [`src/core/action.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blo
 
 ## The shape of an action
 
+An action is a flat JSON object. `sap_act` takes its fields at the top
+level of the call, beside `session` and `full`:
+
 ```json
 {"do": "set", "id": "ctxtVBAK-AUART", "value": "OR"}
 ```
 
 | Field | Type | Used by |
 | --- | --- | --- |
-| `do` | string, required | every action: one of the verbs below |
+| `do` | one of the 16 verbs below, required | every action |
 | `id` | string | the control, as the view shows it (a handle, a full id, or a field's SAP name). Required for `set`, `press`, `click`, `select`, `check`, `combo`, `f4`, `focus`, `dblclick`, `tree`, `grid`, `toolbar` |
 | `value` | string, number or boolean | `set`, `check`, `okcode`, `select` with `row` |
 | `key` | number or string | `key`, `combo` |
@@ -27,14 +30,16 @@ Source: [`src/core/action.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blo
 | `button` | string | `toolbar` |
 | `app` | string | `open` |
 | `to` | whole number or string | `scroll` |
-| `timeout` | number, seconds | any action on SAP GUI for Windows and Web GUI: how long to wait for SAP, up to 600 |
-| `timing` | boolean | any action: add a line that says where the time went (also `SAP_TIMINGS=on`). Not part of the action |
+| `timeout` | number, in seconds | any action on SAP GUI for Windows and Web GUI: how long to wait for SAP (default 180), up to 600 |
+| `timing` | boolean | any action: add a line that says where the time went (also `SAP_TIMINGS=on`). Not part of the action, and not in the schema |
 
 Before anything reads it, the server brings the action to one shape
 ([`normalizeAction`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/core/action.ts)):
 
 - `do` is trimmed and lower-cased. `fill` and `double`, older names, become
-  `set` and `dblclick`. Any other word is refused with the list of verbs.
+  `set` and `dblclick` in recordings and in the SDK's `act()`; `sap_act`'s
+  schema lists only the 16 verbs, so the client refuses them there. Any
+  other word is refused with the list of verbs.
 - Field values must be a string, a number or a boolean. Objects and arrays
   are refused.
 - Line breaks are removed from every string, except the `value` of a
@@ -42,6 +47,42 @@ Before anything reads it, the server brings the action to one shape
   line break, never the Enter key.
 - `row` must be a whole number, 0 or more.
 - A `key` action keeps `key` only: `value` is read as the key and dropped.
+
+## Several actions in one call
+
+`actions` in place of one action's fields runs up to 20 actions in order,
+and answers once: what ran, why the batch ended if it ended early, and the
+screen after the last action that ran.
+
+```json
+{"actions": [
+  {"do": "set", "id": "ctxtVBAK-AUART", "value": "OR"},
+  {"do": "set", "id": "ctxtVBAK-VKORG", "value": "1000"},
+  {"do": "key", "key": 0, "expect": {"screen": "4001"}}]}
+```
+
+Each entry is an action as above, with three more fields:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `expect` | object | what the step knows will happen, so the batch goes on through it. Any of `screen` (the screen number; leading zeros do not count), `transaction`, `title` (text the window title contains), `status` (a message type `S`, `I`, `W`, `E`, `A`, or text the message contains), `popup` (`true`: this step opens one; `false`: none is open after it). When the screen is not what `expect` says, the batch ends there |
+| `show` | boolean | the answer also holds the screen after this step (to read one tab after another) |
+| `unseen` | boolean | this step may write on a screen the batch reached after you sent it |
+
+The batch ends before the next action when an action fails, is refused or
+waits for the user's yes; when a popup opens, the status bar shows E, W or
+A, or the screen changes, unless `expect` names it; when `expect` is not
+met; and when SAP is still working. An unknown key in `expect`, an entry
+that is not a valid action, or a `/o...` command refuses the whole batch
+before anything runs.
+
+A write never runs on a screen you have not seen in the batch: an action
+that may write, after the first, does not run when the screen or the
+popups differ from the ones you saw when you sent the batch. Read the
+screen in the answer and send the write again, or mark the step
+`"unseen": true` when you know that screen.
+
+How the answer reads: [MCP tools](tools.md#several-actions-in-one-call).
 
 ## Verbs
 
@@ -359,7 +400,8 @@ cannot classify is treated as a write.
 | Wait for SAP, SAP GUI scripting and Web GUI | 180 s |
 | Wait for SAP, network reader | 60 s for SAP's answer; 3 s for SAP GUI to send a request (`SAP_DIAG_REQUEST_MS`); 60 ms of quiet after the answer (`SAP_DIAG_QUIET_MS`) |
 | Wait for the UI5 app to be idle, Fiori | 30 s |
-| `timeout` | up to 600 s |
+| `timeout` | in seconds, up to 600 |
+| Actions per `actions` batch | 20 |
 | Rows per `sap_look` with `rows` | 200 |
 | Rows with `cols` and no `rows` | 50 (rows 0 to 49) |
 | Compact view | rows of the longest controls cut beyond 20,000 characters |

@@ -32,9 +32,9 @@ that opens the transaction, so the test has a clean start:
 
 ```
 sap_record {"op":"start","name":"VA03 display order"}
-sap_act    {"action":{"do":"okcode","value":"/nVA03"}}
-sap_act    {"action":{"do":"set","id":"ctxtVBAK-VBELN","value":"19097"}}
-sap_act    {"action":{"do":"key","key":0}}
+sap_act    {"do":"okcode","value":"/nVA03"}
+sap_act    {"do":"set","id":"ctxtVBAK-VBELN","value":"19097"}
+sap_act    {"do":"key","key":0}
 sap_record {"op":"stop"}
 ```
 
@@ -43,7 +43,11 @@ sap_record {"op":"stop"}
   recorded.
 - `{"op":"undo"}` drops the last step from the recording. SAP is not
   undone.
-- `{"op":"status"}` shows the steps so far.
+- `{"op":"status"}` shows the steps so far, and `{"op":"help"}` every op
+  with an example.
+- While recording, each `sap_act` answer has a `code:` line: the
+  [SDK](sdk-tests.md) call that repeats the action. Each action of a batch
+  (`actions`) is its own step.
 - `stop` writes `va03-display-order.saptest.json` in the recordings
   directory and gives hints: typed values that are still fixed, a document
   number reused without a capture, a test with no check.
@@ -153,6 +157,95 @@ The Playwright spec logs on by itself from `SAP_WEBGUI_URL` (or
 `SAP_FIORI_URL`), `SAP_USER` and `SAP_PASSWORD`, and reads variables from
 `SAP_VAR_<NAME>`. It is a file you run; the server never logs on. Details
 of each target under [Export targets](#export-targets).
+
+### Tidy code from a recording
+
+The `sap-ts` export is the recording step for step, with the agent's
+detours, typos and error round trips. The tidied code is the test a person
+would have written:
+
+```
+sap_record {"op":"code","tidy":true,"name":"VA01 create order"}
+```
+
+It takes the recording that is on, or else the one `name` names (default:
+the one last stopped). Each rule logs a line with its reason:
+
+| Rule | What it does |
+| --- | --- |
+| abandoned | drops a `/n<tcode>` visit where nothing was saved, checked, captured or noted, when the next `/n` left it |
+| error | drops a key or button that only raised E (or A) and stayed on the screen, when steps follow |
+| repeat | keeps the last set, check or dropdown of a control, or tab of a tab strip, before any round trip |
+| capture | captures a 5+ digit number of a status bar that later steps type or expect |
+| variable | makes each typed value a variable |
+| status | checks the success message (S) a save led to |
+| title | checks the title a step landed on, when it changed the screen to one not reached before |
+| handle | uses the shortest unique id recorded for each control; numbered controls such as `btn[0]` keep their full id |
+
+The code has one `sap.step(...)` block per screen, key names
+(`sap.key("Enter")`), `sap.save()` for key 11, and conditions for what SAP
+shows for some data only: `sap.dismissInfo()` for an information popup,
+`if (await sap.at("SAPLATP4/0500")) await sap.button("Continue").press()`
+for the availability screen, `sap.save({ acceptWarnings: true })` for a save
+that answered with a warning, and
+`const order = await expect(sap.status()).capture(/Order (\d+)/)`. The
+helpers are in [Writing tests with the SDK](sdk-tests.md#steps-and-screens-sap-shows-for-some-data-only).
+
+The answer ends with the removal log and a TODO list (what tidy could not
+decide). The code is not run: run it before you rely on it. A removal that
+was needed shows up as a failure at the step after it. By default every
+typed value becomes a variable, and `acceptWarnings` accepts any warning:
+read the code before you keep it.
+
+### Code tools: `sap_code_save` and `sap_code_test`
+
+An agent with a file system writes the tidied code to a file and runs it
+with `sap-gui test`. For an agent without one, `SAP_CODE_TOOLS=on` adds two
+tools:
+
+| Tool | Input | Does |
+| --- | --- | --- |
+| `sap_code_save` | `{"name","code"}` | checks the code, then writes `<name>.sap.ts` in `SAP_RECORD_DIR` |
+| `sap_code_test` | `{"name","variables"?,"session"?}` | checks it again, runs it through the test runner on the session, answers pass or fail |
+
+::: danger The agent writes code that runs on your machine
+These tools let an agent write code that the server then runs on the
+user's machine, with the user's rights. The agent reads SAP screens, and
+text on a screen (a long text, a material description, a workflow note)
+can carry instructions meant for it. Such text can reach the code the agent
+writes. The checks below make the obvious ways out of a test fail, but they
+are defence in depth, not a sandbox: the code runs in the server's own
+process. Turn the tools on only where you would let the agent's author run
+scripts on that machine.
+:::
+
+What `sap_code_save` checks:
+
+- **Name, not path.** A `/`, `\`, `..`, a leading `.` or a drive letter is
+  refused; the file name is the slug of the name.
+- **Syntax.** The code must parse once its TypeScript types are stripped.
+  It is not type-checked against the SDK.
+- **Imports.** Static, named imports only: `expect`, `test` and
+  `ExpectError` from `"sap-gui-mcp-server/test"`, or `expect`,
+  `ExpectError` and `Refused` from `"sap-gui-mcp-server"`, plus `type`
+  imports. No `connect`, no `import()`, no re-exports.
+- **Words.** Outside strings and comments, no `process`, `require`, `eval`,
+  `Function`, `globalThis`, `fetch`, `Bun`, `Deno`, `child_process`,
+  `constructor`, `Reflect`, `Object` and the like, and none of a session's
+  insides (`registry`, `policy`, `driver`, `recorder`, `options`,
+  `surfaces`).
+- **Computed member access.** Only a number in brackets (`rows[0]`).
+- **Commit parity.** A call that may write (`sap.save()`, key 11, a Save
+  button, `btn[11]`, `okcode("/11")`) is refused unless the recording of
+  the same name has a write. This is read from the text; the guard at run
+  time is what holds.
+
+`sap_code_test` runs the same checks on the file as it is, then runs a copy
+of it under the server's session, `SAP_WRITE`, `SAP_ALLOW_TCODES` and
+`SAP_BLOCK_TCODES`: a test cannot widen them. Every action goes through the
+guard as in any script. The answer is `PASS` or `FAILED` per test; on a
+failure, the line, the `sap.step` it was in, the trace file and the screen.
+It is refused while a recording is on.
 
 ## In CI
 

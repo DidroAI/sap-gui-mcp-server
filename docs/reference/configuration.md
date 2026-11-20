@@ -51,16 +51,18 @@ Lists are separated by commas or spaces and are not case-sensitive.
 | --- | --- | --- | --- |
 | `SAP_VIEW` | `diff` | `diff`, `full` | `full`: every action answers with the whole screen. `diff`: only what changed, when the screen is the same and the changes are shorter |
 | `SAP_FIORI_WAIT` | full waits | `busy` | faster Fiori waits: busy indicators only, without UI5's RecordReplay |
-| `SAP_CODE` | on | `off` | `off`: `sap_act` and `sap_confirm` answers end without the `code:` line (the SDK call that repeats the action) |
+| `SAP_CODE` | while recording | `on`, `off` (also `true`, `1`, `false`, `0`) | the `code:` line in `sap_act` and `sap_confirm` answers: the SDK call that repeats the action. Unset, it is there only while a recording is on. `on`: always. `off`: never, also while recording |
+| `SAP_STRUCTURED` | `off` | `on` (also `true`, `1`) | answers that code reads (`sap_sessions`, `sap_act`, `sap_confirm`, `sap_replay`, `sap_record`) also carry `structuredContent`, and these tools declare output schemas. The text is the same. See [MCP tools](tools.md#structured-content) |
 | `SAP_TIMINGS` | off | `on`, `true`, `1` | every `sap_act` answer adds a line that says where the time went. One action can ask with `"timing": true` |
 
 ## Recording and files
 
 | Variable | Default | Values | Effect |
 | --- | --- | --- | --- |
-| `SAP_RECORD_DIR` | `./sap-tests` (in the server's working directory) | a folder | where `sap_record` writes recordings and exports |
+| `SAP_RECORD_DIR` | `./sap-tests` (in the server's working directory) | a folder | where `sap_record` writes recordings and exports, and `sap_code_save` writes tests |
 | `SAP_RECORD` | `off` | `off`, `on` | `on`: record every session from its first action, without `sap_record start` |
 | `SAP_DOWNLOAD_DIR` | `downloads` in `SAP_RECORD_DIR` when that is set, else `./sap-downloads` | a folder | Web GUI: where a file SAP writes "to a local file" (List > Export > Local File) is copied. Web GUI keeps such a file inside the browser; the action's answer names the copy |
+| `SAP_CODE_TOOLS` | `off` | `on` | adds the tools `sap_code_save` and `sap_code_test`: the agent can save a `*.sap.ts` test in `SAP_RECORD_DIR` and run it on this machine. Only `on` turns them on. Read [the risk](../guides/record-replay.md#code-tools-sap-code-save-and-sap-code-test) first |
 
 Recordings hold the values that were typed: treat them like the system's
 data.

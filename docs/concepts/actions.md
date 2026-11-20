@@ -1,9 +1,11 @@
 # Actions
 
-The agent changes the screen with `sap_act`, one action per call. An action
-is a small JSON object: what to do (`do`), on which control (`id`, from the
-view), and what with (`value`, `key`, `row`, `col`...). The same actions
-work on every surface; each surface says so when it does not support one.
+The agent changes the screen with `sap_act`: one action per call, or the
+actions of one screen together. An action is a small JSON object: what to
+do (`do`), on which control (`id`, from the view), and what with (`value`,
+`key`, `row`, `col`...). Its fields go at the top level of the call. The
+same actions work on every surface; each surface says so when it does not
+support one.
 
 ```json
 {"do": "set", "id": "ctxtVBAK-AUART", "value": "OR"}
@@ -71,6 +73,52 @@ screen it is on.
 
 Calls on one session run one at a time: a second call waits for the first
 to end, and its answer says how long it waited.
+
+## Several actions in one call
+
+An agent that sees a screen knows its fields and the key that sends them.
+`actions` in place of one action runs up to 20 actions in order and
+answers once, with what ran and the screen after the last one:
+
+```json
+{"actions": [
+  {"do": "set", "id": "ctxtVBAK-AUART", "value": "OR"},
+  {"do": "set", "id": "ctxtVBAK-VKORG", "value": "1000"},
+  {"do": "set", "id": "ctxtVBAK-VTWEG", "value": "10"},
+  {"do": "set", "id": "ctxtVBAK-SPART", "value": "00"},
+  {"do": "key", "key": 0}]}
+```
+
+The server reads the screen after each action and ends the batch before
+the next one when:
+
+- an action fails, is refused by the guard, or waits for your
+  confirmation (each action has its own guard decision, as if it were sent
+  alone; the actions after a held one do not run);
+- a popup opened;
+- the status bar shows an error, a warning or a termination;
+- the screen is another one (transaction, program or screen number);
+- SAP is still working on the step.
+
+The answer then says how many actions ran (`Ran 2 of 5 actions. Stopped:
+...`), why it ended and which did not run, and shows the screen as it is.
+
+An action goes on through what its `expect` names: `{"screen":"4001"}`
+(also `transaction`, `title`), `{"popup":true}`, `{"status":"W"}`; when the
+screen is not what `expect` says, the batch ends there. `"show": true` on
+an action adds the screen after it to the answer (to read one tab after
+another).
+
+A write never runs on a screen the agent has not seen in the batch. When
+`expect` let the batch go on to a new screen or a popup, an action that may
+write stops the batch there, and the agent reads the screen before it
+sends the write. SAP gives no message for wrong but valid data (another
+customer, a zero price), so the agent has to see the screen. A step marked
+`"unseen": true` writes anyway, for a screen the agent knows.
+
+While a recording is on, each action of a batch is its own step. `"/o..."`
+(a new session) is sent on its own. Fields and answer:
+[Actions reference](../reference/actions.md#several-actions-in-one-call).
 
 ## Waiting for SAP
 
