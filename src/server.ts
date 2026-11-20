@@ -14,7 +14,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { actionText, normalizeAction, type NormalizedAction, VERBS } from "./core/action.js";
-import { MAX_BATCH, parseBatch, stopAfter } from "./batch.js";
+import { MAX_BATCH, parseBatch, stopAfter, unseenWrite } from "./batch.js";
 import { commandFieldRefusal, decide, leavesTransaction, type Policy, sessionRefusal, tcodeOf, tcodeRefusal } from "./core/guard.js";
 import { type Turn, SessionQueue, waitedLine } from "./core/queue.js";
 import { Registry } from "./core/registry.js";
@@ -550,6 +550,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = !
       let driver: Driver | undefined;
       let id: string | undefined;
       let before: ParsedScreen | undefined;
+      /** The screen the agent saw when it sent the batch. */
+      let start: ParsedScreen | undefined;
       let view: string | undefined;
       for (const [i, s] of steps.entries()) {
         const n = i + 1;
@@ -575,12 +577,18 @@ export function createServer({ policy, surfaces, view = "diff", record, code = !
           end = { text: `${what} was refused: ${j.verdict.refused}`, error: true, next: n + 1 };
           break;
         }
+        before ??= parseScreen(await settled(driver));
+        start ??= before;
+        const blind = j.assessment.risk === "commit" && i > 0 ? unseenWrite(s, start, before) : undefined;
+        if (blind) {
+          end = { text: `${what} did not run: ${blind}`, error: false, next: n };
+          break;
+        }
         if (!j.verdict.run) {
           box.held = { info: j.info, assessment: j.assessment, confirm: j.verdict.confirm, action: s.action };
           end = { text: `${what} may write and waits for the user's yes`, error: false, next: n + 1 };
           break;
         }
-        before ??= parseScreen(await settled(driver));
         let said: string;
         try {
           const d = driver;

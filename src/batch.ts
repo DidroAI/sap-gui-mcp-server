@@ -46,6 +46,8 @@ export interface BatchStep {
   expect?: Expect;
   /** The answer shows the screen after this step too, not only the last one. */
   show: boolean;
+  /** This step may write on a screen the agent has not seen in this batch (see `unseenWrite`). */
+  unseen: boolean;
 }
 
 const EXPECT_KEYS = ["screen", "transaction", "title", "status", "popup"];
@@ -79,11 +81,12 @@ export function parseBatch(input: unknown): BatchStep[] {
   if (input.length > MAX_BATCH) throw new ActionError(`"actions" takes ${MAX_BATCH} actions at most (got ${input.length}): send the actions of one screen, then go on from the answer.`);
   return input.map((raw, i) => {
     try {
-      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { action: normalizeAction(raw), show: false };
-      const { expect, show, ...rest } = raw as Record<string, unknown>;
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { action: normalizeAction(raw), show: false, unseen: false };
+      const { expect, show, unseen, ...rest } = raw as Record<string, unknown>;
       if (show !== undefined && show !== null && typeof show !== "boolean") throw new ActionError('"show" is true or false.');
+      if (unseen !== undefined && unseen !== null && typeof unseen !== "boolean") throw new ActionError('"unseen" is true or false.');
       const e = parseExpect(expect);
-      return { action: normalizeAction(rest), ...(e ? { expect: e } : {}), show: show === true };
+      return { action: normalizeAction(rest), ...(e ? { expect: e } : {}), show: show === true, unseen: unseen === true };
     } catch (e) {
       if (e instanceof ActionError) throw new ActionError(`Action ${i + 1} of ${input.length}: ${e.message}\nNothing ran.`);
       throw e;
@@ -153,4 +156,19 @@ export function stopAfter(action: NormalizedAction, before: ParsedScreen, after:
   if (expect.popup === true && !opened) unmet.push("a popup (none opened)");
   if (expect.popup === false && top) unmet.push(`no popup ("${top.title}" is open)`);
   return unmet.length ? { why: "expect", text: `expected ${unmet.join(", ")}` } : undefined;
+}
+
+/**
+ * Why a write must not run here, in a batch: the screen it would write on is
+ * not the one the agent saw when it sent the batch (a step's `expect` let the
+ * batch go on through a new screen or a popup). SAP raises no message for
+ * wrong but valid data (another customer, a zero price), so the stop rules
+ * cannot catch it: the agent sees the screen first, then sends the write, or
+ * says it knows that screen with "unseen": true on the step. Undefined when
+ * the write may run.
+ */
+export function unseenWrite(step: BatchStep, start: ParsedScreen, now: ParsedScreen): string | undefined {
+  if (step.unseen) return undefined;
+  if (!moved(start, now) && popups(start).length === popups(now).length) return undefined;
+  return `it may write, on a screen you have not seen in this batch (${where(now)}). Read the screen below, then send it, or mark the step "unseen": true when you know that screen`;
 }
