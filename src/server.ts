@@ -6,7 +6,7 @@
  *   sap_use         make one the active session
  *   sap_look        the active screen as compact text (or full)
  *   sap_act         one action (guardrails first), then the new screen
- *   sap_confirm     run an action that waits for the user's yes
+ *   sap_confirm     run an action that waits for the user's yes (SAP_WRITE=confirm only)
  *   sap_screenshot  a PNG of the session's window or tab
  */
 import { randomBytes } from "node:crypto";
@@ -25,10 +25,23 @@ import { registerRecordTools } from "./record/tools.js";
 export const SERVER_NAME = "sap-gui";
 export const SERVER_VERSION = "0.1.0";
 
-const INSTRUCTIONS = `Sees and drives the SAP screens the user already has open (SAP GUI for Windows; Web GUI and Fiori in Chrome), as the user. It never logs on.
+/**
+ * What the agent is told about actions that may write, for the write setting
+ * the server runs with: one sentence, true for this server. sap_confirm
+ * exists only in confirm mode, the one mode that hands out tokens.
+ */
+export function writeRule(policy: Policy): string {
+  if (policy.write === "off") return "An action that may write (save, post, delete...) is refused: the user has set writing off.";
+  if (policy.write === "on") return "An action that may write (save, post, delete...) runs: the user has set writing on.";
+  return "An action that may write (save, post, delete...) waits for the user's yes: the client asks the user if it can; if not, the answer holds a token for sap_confirm, to call only after the user said yes to that exact action.";
+}
+
+function instructions(policy: Policy): string {
+  return `Sees and drives the SAP screens the user already has open (SAP GUI for Windows; Web GUI and Fiori in Chrome), as the user. It never logs on.
 Start with sap_look (sap_sessions when several are open). Act with sap_act, one action at a time, on the ids the view shows: each answer is the new screen, so look again only when you need to. Read the status bar after each action: SAP reports errors there.
-Actions that may write are refused, held for the user's yes, or run, as the user set it up. Call sap_confirm only after the user said yes to that exact action.
+${writeRule(policy)}
 sap_record turns a run into a test; sap_replay runs it again without a model.`;
+}
 
 function text(t: string): CallToolResult {
   return { content: [{ type: "text", text: t }] };
@@ -178,7 +191,7 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
   const views = new Views(view);
   const recorder = new Recorder(record ?? recorderOptionsFromEnv(process.env, `${SERVER_NAME}-mcp-server ${SERVER_VERSION}`));
   const pending = new Map<string, { shown: Shown; at: number }>();
-  const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, { instructions: INSTRUCTIONS });
+  const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, { instructions: instructions(policy) });
   const session = z.string().optional().describe("from sap_sessions: number, id, system, transaction, or sapgui, webgui, fiori; default: the active one");
   const queue = new SessionQueue();
 
@@ -476,14 +489,15 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
   {"do":"scroll","id":"...","to":120}  a row counted from 0, "next", "prev", "first", "last"; a table control's columns "right", "left" (Fiori: when the view ends with SCROLL)
   {"do":"open","app":"#SalesOrder-manage"}  Fiori launchpad only: an app by its intent (parameters allowed), never a URL
 Short ids work; an id that names several controls is refused with the list, one from an earlier screen with the screen you are on.
-An action that may write (save, post, delete...) is refused, run, or held for the user's yes, as the user set it up. When held, the client asks the user if it can; if not, the answer holds a token for sap_confirm.`,
+${writeRule(policy)}`,
       inputSchema: { action: actionSchema, session, full: z.boolean().optional().describe("answer with the whole screen, not the changes") },
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
     },
     ({ action, session: ref, full }) => answer(() => run(ref, action, full === true)),
   );
 
-  server.registerTool(
+  // Only confirm mode holds actions for a token: with writing off or on, sap_confirm could never run anything.
+  if (policy.write === "confirm") server.registerTool(
     "sap_confirm",
     {
       title: "Run a confirmed SAP action",
