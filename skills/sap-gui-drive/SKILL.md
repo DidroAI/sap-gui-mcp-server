@@ -12,19 +12,26 @@ do by hand, under their authorisations.
 
 ## The loop
 
-1. `sap_look` (or `sap_sessions` first when several systems are open). Read
-   the header: transaction, program, screen and system tell you where you are.
-2. One `sap_act` per step, on ids from the view; the fields of one screen
-   and the key that sends them can go in one call with `actions` (it stops
-   at a popup, an error, a warning or another screen). Each action answers with
-   the new screen: read it before the next step instead of calling
-   `sap_look` again. When the screen is still the same one, the answer
-   holds only what changed (`~` changed, `+` new, `-` gone, `=` context);
-   the rest is as you last saw it.
-3. After every action, read the **status bar** line (`sbar  status  E: ...`
-   in SAP GUI and Web GUI; message toasts and popovers in Fiori). SAP
-   reports errors (`E`), warnings (`W`) and successes (`S`) there; an error
-   means the step did not go through.
+1. `sap_look` (or `sap_sessions` first when several systems are open), or
+   straight to `sap_act` `{"do":"okcode","value":"/nVA01"}` when the task
+   names the transaction. Read the header: transaction, program, screen and
+   system tell you where you are.
+2. One `sap_act` call per **screen**: the fields you see and the key that
+   sends them, as `{"actions":[{"do":"set",...},{"do":"set",...},{"do":"key","key":0}]}`.
+   The batch ends at the first surprise (a failure, a popup, an E/W/A status,
+   another screen, a write waiting for a yes) and the answer says
+   `Ran k of n actions. Stopped: ...`. A step's `"expect"`
+   (`{"screen":"4001"}`, `{"popup":true}`, `{"status":"W"}`) lets it go on
+   through what you know comes. A write on a screen the batch reached after
+   you sent it does not run unless its step says `"unseen": true`: read that
+   screen first unless you are sure of it.
+3. Each answer is the new screen: read it before the next step instead of
+   calling `sap_look` again. On the same screen it holds only what changed
+   (`~` changed, `+` new, `-` gone, `=` context).
+4. Read the **status bar** first (`STATUS E: ...`, or `sbar  status` in the
+   view; toasts and popovers in Fiori). `E`: the step did not go through,
+   correct the field it names. `W`: Enter accepts it. `S`: done, document
+   numbers are there.
 
 ## How SAP screens behave
 
@@ -60,10 +67,12 @@ Saving, posting, releasing or deleting changes the system for real. The
 server's write setting decides what happens:
 
 - **off** (default): such actions are refused. Tell the user what you
-  would save and that writes are off.
-- **confirm**: the action is held. Describe it to the user in plain words
-  (what document, which values, which system) and call `sap_confirm` only
-  after they say yes to that exact action.
+  would have saved and that writes are off, then stop: do not look for
+  another way.
+- **confirm**: the action is held (`NOT RUN YET: ...`). Describe it to the
+  user in plain words (what document, which values, which system) and call
+  `sap_confirm` only after they say yes to that exact action. If they
+  decline, stop.
 - **on**: actions run. Still say what you saved, with the document number
   from the status bar.
 

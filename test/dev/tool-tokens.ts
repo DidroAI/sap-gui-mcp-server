@@ -112,6 +112,24 @@ async function main() {
   );
   await call("sap_look", { session: "act" });
   rows.push({ group: "answers", name: "sap_act set (diff)", text: await call("sap_act", { session: "act", action: { do: "set", id: "ctxtVBAK-VKORG", value: "1000" } }) });
+  // A batch on a second VA01 session: two fields typed, then Enter (the fake leaves the screen as it is).
+  surface.add(
+    { id: "batch", system: "ABA", client: "800", user: "DEMO", transaction: "VA01", title: "Create Sales Order: Initial Screen" },
+    {
+      view: va01,
+      assess: save,
+      onAct: (x, s) => {
+        const label = x.id === "ctxtVBAK-VKORG" ? "Sales Organization" : x.id === "ctxtVBAK-VTWEG" ? "Distribution Channel" : undefined;
+        if (x.do === "set" && label) s.view = (s.view ?? "").replace(`${label} = ""`, `${label} = "${String(x.value)}"`);
+      },
+    },
+  );
+  await call("sap_look", { session: "batch" });
+  rows.push({
+    group: "answers",
+    name: "sap_act batch (2 sets + Enter)",
+    text: await call("sap_act", { session: "batch", actions: [{ do: "set", id: "ctxtVBAK-VKORG", value: "1000" }, { do: "set", id: "ctxtVBAK-VTWEG", value: "10" }, { do: "key", key: 0 }] }),
+  });
   rows.push({ group: "answers", name: "sap_act Save refused (SAP_WRITE=off)", text: await call("sap_act", { session: "act", action: { do: "key", key: 11 } }) });
   rows.push({ group: "answers", name: "sap_act command field refused", text: await call("sap_act", { session: "act", action: { do: "set", id: "okcd", value: "/nVA03" } }) });
   rows.push({ group: "answers", name: `sap_sessions (${surface.sessions.length} sessions)`, text: await call("sap_sessions") });
