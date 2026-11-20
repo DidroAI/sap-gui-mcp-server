@@ -24,6 +24,7 @@ import { Recorder, type RecorderOptions, recorderOptionsFromEnv } from "./record
 import { type ParsedScreen, parseScreen, stillWorking } from "./record/screen.js";
 import { registerRecordTools } from "./record/tools.js";
 import { codeOf } from "./sdk/code.js";
+import { type ActOutput, actOutput, screenOf, screenOfInfo, sessionsData, sessionsOutput, structuredFromEnv, withData } from "./structured.js";
 
 export const SERVER_NAME = "sap-gui";
 export const SERVER_VERSION = "0.1.0";
@@ -220,6 +221,8 @@ export interface ServerOptions {
    * building a script; SAP_CODE=on or off forces it either way (codeFromEnv).
    */
   code?: boolean;
+  /** Adds structuredContent (structured.ts) to the answers code reads, and declares their output schemas; default: SAP_STRUCTURED=on. */
+  structured?: boolean;
 }
 
 /** The actions kept per session for a draft test (sap_record {"op":"code"} with no recording on). */
@@ -247,7 +250,7 @@ export function codeFromEnv(value: string | undefined): boolean | undefined {
   return undefined;
 }
 
-export function createServer({ policy, surfaces, view = "diff", record, code = codeFromEnv(process.env.SAP_CODE) }: ServerOptions) {
+export function createServer({ policy, surfaces, view = "diff", record, code = codeFromEnv(process.env.SAP_CODE), structured = structuredFromEnv(process.env.SAP_STRUCTURED) }: ServerOptions) {
   const registry = new Registry(surfaces, policy);
   const views = new Views(view);
   const recorder = new Recorder(record ?? recorderOptionsFromEnv(process.env, `${SERVER_NAME}-mcp-server ${SERVER_VERSION}`));
@@ -255,6 +258,10 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, { instructions: instructions(policy) });
   const session = z.string().optional().describe("from sap_sessions: number, id, system, transaction, or sapgui, webgui, fiori; default: the active one");
   const queue = new SessionQueue();
+  /** The data of an answer, when structured output is on; undefined (nothing added) when it is off. */
+  const data = <T extends Record<string, unknown>>(make: () => T): T | undefined => (structured ? make() : undefined);
+  /** What an action that ran answers as data: one of one, and where the session is now. */
+  const ranOn = (v: string): ActOutput => ({ ran: 1, total: 1, ...screenOf(v) });
   /** Does an answer end with the SDK line? Asked after the action: a recording is on or off by then. */
   const codeLine = () => code ?? recorder.recording;
   /** The actions that ran, per session, oldest first. */
@@ -297,6 +304,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       description:
         "Lists the SAP sessions the user has open (SAP GUI windows; Web GUI and Fiori tabs in Chrome): number, system, client, user, transaction, title. * marks the active one. Call it when another tool says no session matches or a session is gone, or when the task names a system you are not on; with one session open, go straight to sap_look. An empty list: ask the user to open SAP and log on; this server never logs on.",
       inputSchema: {},
+      ...(structured ? { outputSchema: sessionsOutput } : {}),
       annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     },
     () =>
@@ -306,7 +314,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
         if (!sessions.length) lines.push("No SAP session found.");
         if (hidden) lines.push(`${hidden} session(s) of systems outside SAP_ALLOW_SYSTEMS are hidden.`);
         for (const e of errors) lines.push(`(${e})`);
-        return text(lines.join("\n"));
+        return withData(text(lines.join("\n")), data(() => sessionsData(sessions, registry.active)));
       }),
   );
 
@@ -399,6 +407,16 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
     }
   }
 
+  /**
+   * With structured output on, an answer that is not an error must carry its
+   * data (the SDK checks it against the output schema): one that has none
+   * gets the counts alone.
+   */
+  function withAnyData(r: CallToolResult, actions?: unknown): CallToolResult {
+    if (!structured || r.isError || r.structuredContent) return r;
+    return withData(r, { ran: 0, total: Array.isArray(actions) ? actions.length : 1, screen: {} } satisfies ActOutput);
+  }
+
   /** Runs an action that passed the guard, then checks where it led. */
   async function perform(d: Driver, action: NormalizedAction, whole = false, risk?: string, clock?: { t0: number; judged: number; wanted: boolean }): Promise<CallToolResult> {
     const session = d.info.id;
@@ -411,9 +429,9 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
     const acted = Date.now();
     // The line that repeats this action in a script: last in the note block. Kept for a draft test when the action ran where it should.
     const line = codeLine() ? `\ncode: ${codeOf(action)}` : "";
-    const ok = (t: string) => {
+    const ok = (t: string, v: string) => {
       remember(session, action);
-      return text(t);
+      return withData(text(t), data(() => ranOn(v)));
     };
     const note = (screen: () => Promise<string>) =>
       screen().then((v) => ({ v, n: clock ? timed(done, d, clock.wanted, clock.t0, [["judge", clock.judged], ["act", acted - a0], ["answer", Date.now() - acted]]) : done }));
@@ -424,12 +442,12 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
           registry.active = fresh.id;
           const nd = await registry.driver(fresh.id);
           const { v, n } = await note(() => nd.look({ compact: true }));
-          return ok(`${n}\nA new session opened (${fresh.where}); it is now the active one. The previous session is still open (sap_sessions lists both).${line}\n\n${views.present(fresh.id, v, true)}`);
+          return ok(`${n}\nA new session opened (${fresh.where}); it is now the active one. The previous session is still open (sap_sessions lists both).${line}\n\n${views.present(fresh.id, v, true)}`, v);
         }
         await new Promise((r) => setTimeout(r, 500));
       }
       const { v, n } = await note(() => d.look({ compact: true }));
-      return ok(`${n}\nNo new session appeared within 5 s (SAP allows at most 6 per logon): this is still the previous session.${line}\n\n${views.present(session, v, whole)}`);
+      return ok(`${n}\nNo new session appeared within 5 s (SAP allows at most 6 per logon): this is still the previous session.${line}\n\n${views.present(session, v, whole)}`, v);
     }
     // A menu entry, a favourite or a tree node can open a transaction no okcode named.
     const after = await d.refresh().catch(() => undefined);
@@ -445,7 +463,7 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
     const { v, n } = await note(() => d.look({ compact: true }));
     const shown = withStatus(views.present(session, v, whole), v);
     const top = statusTop(shown, v);
-    return ok(`${n}${top ? `\n${top}` : ""}${line}\n\n${shown}`);
+    return ok(`${n}${top ? `\n${top}` : ""}${line}\n\n${shown}`, v);
   }
 
   /** The session as it is now, and what the guard says about this action on it. */
@@ -548,10 +566,10 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
       } catch (e) {
         return fail(`Not run: the user could not be asked to confirm (${(e as Error).message.split("\n")[0]}).`);
       }
-      if (answer.action !== "accept")
-        return text(
-          `Not run: the user ${answer.action === "decline" ? "declined" : "dismissed the confirmation of"} this action (${what}). Stop here: do not retry it or look for another way; tell the user it was not done and ask how to go on.`,
-        );
+      if (answer.action !== "accept") {
+        const said = `Not run: the user ${answer.action === "decline" ? "declined" : "dismissed the confirmation of"} this action (${what}). Stop here: do not retry it or look for another way; tell the user it was not done and ask how to go on.`;
+        return withData(text(said), data((): ActOutput => ({ ran: 0, total: 1, stopped: { why: "declined", text: said.split(". Stop here")[0] as string }, screen: screenOfInfo(info) })));
+      }
       return serial(shown.session, actionText(action), () => runConfirmed(shown, whole));
     }
     const now = Date.now();
@@ -559,9 +577,10 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
     while (pending.size >= MAX_PENDING) pending.delete(pending.keys().next().value as string);
     const token = randomBytes(6).toString("hex");
     pending.set(token, { shown, at: now });
-    return text(
+    const asData = data((): ActOutput => ({ ran: 0, total: 1, stopped: { why: "held", text: `${verdict.confirm} waits for the user's yes` }, held: { token }, screen: screenOfInfo(info) }));
+    return withData(text(
       `NOT RUN YET: needs the user's confirmation: ${what}.\nAction: ${actionText(action)}\nAsk the user; only after they say yes to this exact action, call sap_confirm with token "${token}". The token works once, for 10 minutes, on this screen and this action only: if the screen changes, it is refused.`,
-    );
+    ), asData);
   }
 
   /** The screen once SAP is done with the step before it (at most 15 s), as the compact view. */
@@ -597,13 +616,13 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
     }
     const rest = (from: number) => (from > total ? "" : from === total ? ` Action ${total} did not run.` : ` Actions ${from} to ${total} did not run.`);
     type Held = { info: SessionInfo; assessment: Assessment; confirm: string; action: NormalizedAction };
-    const box: { held?: Held; head?: string } = {};
+    const box: { held?: Held; head?: string; ran?: number; stopped?: { why: string; text: string } } = {};
     const done = await queue.run(await laneOf(ref), `${total} actions`, async (turn): Promise<CallToolResult | undefined> => {
       const lines: string[] = [];
       const codes: string[] = [];
       let ran = 0;
-      /** Why the batch ended early; `error` when an action failed or was refused; `next` is the first action after the one it names. */
-      let end: { text: string; error: boolean; next: number } | undefined;
+      /** Why the batch ended early (`why`: one word for code); `error` when an action failed or was refused; `next` is the first action after the one it names. */
+      let end: { why: string; text: string; error: boolean; next: number } | undefined;
       let note: string | undefined;
       let driver: Driver | undefined;
       let id: string | undefined;
@@ -621,30 +640,30 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
         } catch (e) {
           // No session, or an id that names nothing here: with nothing run yet, the answer is the one of a single action.
           if (i === 0) return withTurn(await failedOn(ref, e), turn);
-          end = { text: `${what} could not run: ${(e as Error).message}`, error: true, next: n + 1 };
+          end = { why: "failed", text: `${what} could not run: ${(e as Error).message}`, error: true, next: n + 1 };
           view = undefined;
           break;
         }
         driver = j.driver;
         id = j.info.id;
         if ("refused" in j) {
-          end = { text: `${what} was refused: ${j.refused}`, error: true, next: n + 1 };
+          end = { why: "refused", text: `${what} was refused: ${j.refused}`, error: true, next: n + 1 };
           break;
         }
         if (!j.verdict.run && "refused" in j.verdict) {
-          end = { text: `${what} was refused: ${j.verdict.refused}`, error: true, next: n + 1 };
+          end = { why: "refused", text: `${what} was refused: ${j.verdict.refused}`, error: true, next: n + 1 };
           break;
         }
         before ??= parseScreen(await settled(driver));
         start ??= before;
         const blind = j.assessment.risk === "commit" && i > 0 ? unseenWrite(s, start, before) : undefined;
         if (blind) {
-          end = { text: `${what} did not run: ${blind}`, error: false, next: n };
+          end = { why: "unseen", text: `${what} did not run: ${blind}`, error: false, next: n };
           break;
         }
         if (!j.verdict.run) {
           box.held = { info: j.info, assessment: j.assessment, confirm: j.verdict.confirm, action: s.action };
-          end = { text: `${what} may write and waits for the user's yes`, error: false, next: n + 1 };
+          end = { why: "held", text: `${what} may write and waits for the user's yes`, error: false, next: n + 1 };
           break;
         }
         let said: string;
@@ -652,7 +671,7 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
           const d = driver;
           said = await recorder.act(d, s.action, j.assessment.risk, () => d.act(s.action));
         } catch (e) {
-          end = { text: `${what} failed: ${(e as Error).message}`, error: true, next: n + 1 };
+          end = { why: "failed", text: `${what} failed: ${(e as Error).message}`, error: true, next: n + 1 };
           view = undefined;
           break;
         }
@@ -664,7 +683,7 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
         const info = await driver.refresh().catch(() => undefined);
         const landed = info && sessionRefusal(policy, info);
         if (landed) {
-          end = { text: `action ${n} led to a transaction the agent may not work in: ${landed}. ${await leave(driver)}`, error: true, next: n + 1 };
+          end = { why: "transaction", text: `action ${n} led to a transaction the agent may not work in: ${landed}. ${await leave(driver)}`, error: true, next: n + 1 };
           view = undefined;
           break;
         }
@@ -672,7 +691,7 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
         const after = parseScreen(view);
         const stop = stopAfter(s.action, before, after, s.expect);
         if (stop && n < total) {
-          end = { text: `after action ${n}, ${stop.text}`, error: false, next: n + 1 };
+          end = { why: stop.why, text: `after action ${n}, ${stop.text}`, error: false, next: n + 1 };
           break;
         }
         // Nothing follows the last action: only what it said it expects is worth a line.
@@ -682,15 +701,20 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
       }
       const head = end ? `Ran ${ran} of ${total} actions. Stopped: ${end.text.replace(/[.\s]+$/, "")}.${rest(end.next)}` : `Ran ${total} action${total === 1 ? "" : "s"}.`;
       const body = [head, ...(note ? [note] : []), ...lines, ...(codeLine() && codes.length ? [`code:\n${codes.join("\n")}`] : [])].join("\n");
+      const stopped = end ? { why: end.why, text: end.text } : undefined;
       if (box.held) {
         // The held action's own answer follows (the user's yes, or a token); the screen comes with it or with sap_confirm.
         box.head = body;
+        box.ran = ran;
+        if (stopped) box.stopped = stopped;
         return undefined;
       }
       let screen = "";
+      let seen: string | undefined;
       if (driver && id) {
         try {
           const v = view ?? (await settled(driver));
+          seen = v;
           const shown = withStatus(views.present(id, v, whole), v);
           const top = statusTop(shown, v);
           screen = `${top ? `\n${top}` : ""}\n\n${shown}`;
@@ -698,13 +722,17 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
           screen = `\n\n(the screen could not be read: ${(e as Error).message.split("\n")[0]})`;
         }
       }
-      return withTurn(end?.error ? fail(`${body}${screen}`) : text(`${body}${screen}`), turn);
+      const said = data((): ActOutput => ({ ran, total, ...(stopped ? { stopped } : {}), ...(seen !== undefined ? screenOf(seen) : { screen: {} }) }));
+      return withTurn(withData(end?.error ? fail(`${body}${screen}`) : text(`${body}${screen}`), said), turn);
     });
     if (done || !box.held) return done ?? fail("Not run.");
     const r = await confirmHeld(box.held, box.held.action, whole);
     const first = r.content[0];
     if (first?.type !== "text") return r;
-    return { ...r, content: [{ ...first, text: `${box.head}\n\n${first.text}` }, ...r.content.slice(1)] };
+    // As data: the actions before the held one, and what the held one did (ran after the user's yes, or holds a token).
+    const after = r.structuredContent as ActOutput | undefined;
+    const merged = after && data((): ActOutput => ({ ...after, ran: (box.ran ?? 0) + after.ran, total, stopped: after.stopped ?? box.stopped }));
+    return withData({ ...r, content: [{ ...first, text: `${box.head}\n\n${first.text}` }, ...r.content.slice(1)] }, merged);
   }
 
   server.registerTool(
@@ -744,6 +772,7 @@ ${writeRule(policy)}`,
           full: z.boolean().optional().describe("answer with the whole screen, not the changes"),
         })
         .passthrough(),
+      ...(structured ? { outputSchema: actOutput } : {}),
       // A closed SAP system, not the open web: openWorldHint is false on every tool.
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     },
@@ -755,8 +784,8 @@ ${writeRule(policy)}`,
         const one = Object.keys(flat).length > 0;
         if (actions !== undefined && (one || action !== undefined)) return fail('Send one action ("do" and its fields) or "actions", not both.');
         if (one && action !== undefined) return fail('Send the action\'s fields ("do", "id", ...) at the top level, not also inside "action".');
-        if (actions !== undefined) return runBatch(ref, actions, full === true);
-        return run(ref, one ? flat : action, full === true);
+        if (actions !== undefined) return withAnyData(await runBatch(ref, actions, full === true), actions);
+        return withAnyData(await run(ref, one ? flat : action, full === true));
       }),
   );
 
@@ -768,6 +797,7 @@ ${writeRule(policy)}`,
       description:
         "Runs the action a sap_act answer held (\"NOT RUN YET: needs the user's confirmation ... token\"). First tell the user in plain words what will be written (document, values, system) and wait for their yes to that exact action; then call this with the token. Never call it in the same turn as the sap_act that gave the token. Answers like sap_act. A token works once and for 10 minutes; it is refused when the screen or the session changed: look, then sap_act again. The server cannot see the user's yes: without a client that asks the user itself (MCP elicitation), this confirmation is advisory.",
       inputSchema: { token: z.string() },
+      ...(structured ? { outputSchema: actOutput } : {}),
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     },
     ({ token }) =>
@@ -777,7 +807,7 @@ ${writeRule(policy)}`,
         pending.delete(token.trim());
         if (!p || Date.now() - p.at > TOKEN_LIFE_MS)
           return fail("Unknown or expired token: a token works once, for 10 minutes. Nothing ran. Look at the screen, call sap_act again for a new token, and ask the user again.");
-        return serial(p.shown.session, actionText(p.shown.action), () => runConfirmed(p.shown));
+        return withAnyData(await serial(p.shown.session, actionText(p.shown.action), () => runConfirmed(p.shown)));
       }),
   );
 
@@ -797,7 +827,7 @@ ${writeRule(policy)}`,
       }),
   );
 
-  registerRecordTools(server, registry, policy, recorder, serial, (id) => history.get(id) ?? []);
+  registerRecordTools(server, registry, policy, recorder, serial, (id) => history.get(id) ?? [], structured);
   withoutSchemaKeyword(server);
 
   return { server, registry, recorder };

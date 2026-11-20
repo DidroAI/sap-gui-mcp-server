@@ -22,6 +22,7 @@ import { FILE_SUFFIX, inputsOf, slug } from "./format.js";
 import type { Recorder } from "./recorder.js";
 import { repairSchema } from "./repair.js";
 import { replay, resultText } from "./replay.js";
+import { recordOutput, replayData, replayOutput, withData } from "../structured.js";
 
 const text = (t: string): CallToolResult => ({ content: [{ type: "text", text: t }] });
 const fail = (t: string): CallToolResult => ({ isError: true, content: [{ type: "text", text: t }] });
@@ -69,7 +70,9 @@ const direct: Serial = (_ref, _label, f) => f();
 /** The actions the server ran on a session, oldest first (server.ts). */
 export type History = (sessionId: string) => readonly NormalizedAction[];
 
-export function registerRecordTools(server: McpServer, registry: Registry, policy: Policy, recorder: Recorder, serial: Serial = direct, history: History = () => []): void {
+export function registerRecordTools(server: McpServer, registry: Registry, policy: Policy, recorder: Recorder, serial: Serial = direct, history: History = () => [], structured = false): void {
+  /** What sap_record answers as data, after any op: whether a recording is on, its name and steps (structured.ts). */
+  const recordData = () => (structured ? { recording: recorder.recording, ...(recorder.current ? { name: recorder.current.name, steps: recorder.current.steps.length } : {}) } : undefined);
   /** The name of the last recording stopped in this server, for export and replay without a name. */
   let last: string | undefined;
   const session = z.string().optional().describe("session from sap_sessions; default: the active one");
@@ -101,73 +104,77 @@ A check that does not hold on the screen now is refused. Typed values are writte
         to: z.enum(TARGET_NAMES as [string, ...string[]]).optional(),
         session,
       },
+      ...(structured ? { outputSchema: recordOutput } : {}),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
-    (a) =>
-      answer(async () => {
-        switch (a.op) {
-          case "start": {
-            if (!a.name) return fail('start needs "name", e.g. {"op":"start","name":"VA03 display order"}.');
-            const name = a.name;
-            return serial(a.session, "sap_record start", async () => {
-              const { driver, info } = await registry.session(a.session);
-              return text(await recorder.start(driver, info, name, a.description, a.replace === true));
-            });
+    async (a) =>
+      withData(
+        await answer(async () => {
+          switch (a.op) {
+            case "start": {
+              if (!a.name) return fail('start needs "name", e.g. {"op":"start","name":"VA03 display order"}.');
+              const name = a.name;
+              return serial(a.session, "sap_record start", async () => {
+                const { driver, info } = await registry.session(a.session);
+                return text(await recorder.start(driver, info, name, a.description, a.replace === true));
+              });
+            }
+            case "stop": {
+              const r = await recorder.stop();
+              last = r.test.name;
+              return text(r.text);
+            }
+            case "status":
+              return text(recorder.status());
+            case "help":
+              return text(recordHelp());
+            case "code": {
+              const t = recorder.current;
+              if (t) return text(exportSapTs(t));
+              // No recording: what this server ran on the session, as a draft.
+              const id = a.session ? registry.resolve(a.session)?.id : registry.active;
+              const done = id ? history(id) : [];
+              if (!done.length) return text("No recording is on, and no action ran on this session yet.");
+              return text(draftTest({ name: "draft", lines: done.map((x) => codeOf(x)) }));
+            }
+            case "assert": {
+              if (!a.check) return fail('assert needs "check": status, field, title, transaction or text.');
+              const check = a.check;
+              return serial(a.session, "sap_record assert", async () => text(await recorder.assert(await registry.driver(a.session), { check, id: a.id, equals: a.equals, contains: a.contains, matches: a.matches })));
+            }
+            case "capture": {
+              if (!a.name || !a.from) return fail('capture needs "name" and "from": status, field or title.');
+              const [name, from] = [a.name, a.from];
+              return serial(a.session, "sap_record capture", async () => text(await recorder.capture(await registry.driver(a.session), { name, from, id: a.id, pattern: a.pattern })));
+            }
+            case "variable": {
+              if (!a.name || a.value === undefined) return fail('variable needs "name" and "value".');
+              return text(await recorder.variable(a.name, a.value, a.description));
+            }
+            case "note":
+              return a.text ? text(await recorder.note(a.text)) : fail('note needs "text".');
+            case "undo":
+              return text(await recorder.undo());
+            case "list": {
+              const files = (await readdir(recorder.options.dir).catch(() => [] as string[])).filter((f) => f.endsWith(FILE_SUFFIX)).sort();
+              return text(files.length ? `Recordings in ${recorder.options.dir}:\n${files.map((f) => `- ${f.slice(0, -FILE_SUFFIX.length)}`).join("\n")}` : `No recording in ${recorder.options.dir}.`);
+            }
+            case "export": {
+              const name = a.name ?? last;
+              if (!name) return fail('export needs "name", the recording to export (see {"op":"list"}).');
+              if (!a.to) return fail(`export needs "to": ${TARGET_NAMES.map((t) => `${t} (${TARGETS[t].what})`).join("; ")}.`);
+              const test = await recorder.load(name);
+              const out = exportTest(test, a.to);
+              const path = join(recorder.options.dir, `${slug(name.replace(/\.saptest\.json$/i, ""))}${out.suffix}`);
+              await mkdir(recorder.options.dir, { recursive: true });
+              await writeFile(path, out.text, "utf8");
+              const shown = out.text.length > SHOWN_MAX ? `${out.text.slice(0, SHOWN_MAX)}\n... (${out.text.length - SHOWN_MAX} more characters in the file)` : out.text;
+              return text(`Written to ${path}\n\n${shown}`);
+            }
           }
-          case "stop": {
-            const r = await recorder.stop();
-            last = r.test.name;
-            return text(r.text);
-          }
-          case "status":
-            return text(recorder.status());
-          case "help":
-            return text(recordHelp());
-          case "code": {
-            const t = recorder.current;
-            if (t) return text(exportSapTs(t));
-            // No recording: what this server ran on the session, as a draft.
-            const id = a.session ? registry.resolve(a.session)?.id : registry.active;
-            const done = id ? history(id) : [];
-            if (!done.length) return text("No recording is on, and no action ran on this session yet.");
-            return text(draftTest({ name: "draft", lines: done.map((x) => codeOf(x)) }));
-          }
-          case "assert": {
-            if (!a.check) return fail('assert needs "check": status, field, title, transaction or text.');
-            const check = a.check;
-            return serial(a.session, "sap_record assert", async () => text(await recorder.assert(await registry.driver(a.session), { check, id: a.id, equals: a.equals, contains: a.contains, matches: a.matches })));
-          }
-          case "capture": {
-            if (!a.name || !a.from) return fail('capture needs "name" and "from": status, field or title.');
-            const [name, from] = [a.name, a.from];
-            return serial(a.session, "sap_record capture", async () => text(await recorder.capture(await registry.driver(a.session), { name, from, id: a.id, pattern: a.pattern })));
-          }
-          case "variable": {
-            if (!a.name || a.value === undefined) return fail('variable needs "name" and "value".');
-            return text(await recorder.variable(a.name, a.value, a.description));
-          }
-          case "note":
-            return a.text ? text(await recorder.note(a.text)) : fail('note needs "text".');
-          case "undo":
-            return text(await recorder.undo());
-          case "list": {
-            const files = (await readdir(recorder.options.dir).catch(() => [] as string[])).filter((f) => f.endsWith(FILE_SUFFIX)).sort();
-            return text(files.length ? `Recordings in ${recorder.options.dir}:\n${files.map((f) => `- ${f.slice(0, -FILE_SUFFIX.length)}`).join("\n")}` : `No recording in ${recorder.options.dir}.`);
-          }
-          case "export": {
-            const name = a.name ?? last;
-            if (!name) return fail('export needs "name", the recording to export (see {"op":"list"}).');
-            if (!a.to) return fail(`export needs "to": ${TARGET_NAMES.map((t) => `${t} (${TARGETS[t].what})`).join("; ")}.`);
-            const test = await recorder.load(name);
-            const out = exportTest(test, a.to);
-            const path = join(recorder.options.dir, `${slug(name.replace(/\.saptest\.json$/i, ""))}${out.suffix}`);
-            await mkdir(recorder.options.dir, { recursive: true });
-            await writeFile(path, out.text, "utf8");
-            const shown = out.text.length > SHOWN_MAX ? `${out.text.slice(0, SHOWN_MAX)}\n... (${out.text.length - SHOWN_MAX} more characters in the file)` : out.text;
-            return text(`Written to ${path}\n\n${shown}`);
-          }
-        }
-      }),
+        }),
+        recordData(),
+      ),
   );
 
   server.registerTool(
@@ -190,6 +197,7 @@ A check that does not hold on the screen now is refused. Typed values are writte
         format: z.enum(["text", "json"]).optional().describe("json: the result as data (steps, the failure's phase and full screen, the proposed test)"),
         session,
       },
+      ...(structured ? { outputSchema: replayOutput } : {}),
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     },
     (a) =>
@@ -206,7 +214,7 @@ A check that does not hold on the screen now is refused. Typed values are writte
           const failed = r.steps.find((s) => s.outcome === "fail");
           const said = `${resultText(r)}${r.aborted && needs.length ? `\nThe test takes: ${needs.join(", ")}.` : ""}${failed ? `\n\n${goOnText(failed.n)}` : ""}`;
           const out = a.format === "json" ? JSON.stringify({ ...r, text: said }) : said;
-          return r.passed ? text(out) : fail(out);
+          return withData(r.passed ? text(out) : fail(out), structured ? replayData(r) : undefined);
         });
       }),
   );

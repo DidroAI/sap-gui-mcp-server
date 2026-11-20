@@ -214,3 +214,66 @@ describe("error answers say what to do next", () => {
     expect(JSON.stringify(replay)).not.toContain("before|instead|after");
   });
 });
+
+describe("structuredContent: SAP_STRUCTURED=on only", () => {
+  const VIEW = 'TRANSACTION VA02  PROGRAM SAPMV45A  SCREEN 4001  SYSTEM ABA (800)\nWINDOW wnd[0]  "Change Standard Order 4711"\nctxtVBAK-VBELN  field  Order = "4711"  (edit)\nsbar  status  S: Ready';
+  const make = async (on: boolean, env: Record<string, string> = {}) => {
+    const dir = mkdtempSync(join(tmpdir(), "sap-structured-"));
+    const s = await setup(env, { structured: on, record: recorderOptionsFromEnv({ SAP_RECORD_DIR: dir }, "test") });
+    s.surface.add({ id: "chrome:1", system: "ABA", client: "800", user: "DEMO", transaction: "VA02", title: "Change Standard Order 4711" }, { assess, view: VIEW });
+    return s;
+  };
+
+  test("off: no structuredContent, no outputSchema; on: an outputSchema on the tools code reads", async () => {
+    const off = await make(false, { SAP_WRITE: "confirm" });
+    expect(JSON.stringify((await off.client.listTools()).tools)).not.toContain("outputSchema");
+    expect((await off.call("sap_act", { do: "key", key: 0 })).structured).toBeUndefined();
+    expect((await off.call("sap_sessions")).structured).toBeUndefined();
+    const on = await make(true, { SAP_WRITE: "confirm" });
+    const tools = (await on.client.listTools()).tools;
+    expect(tools.filter((t) => t.outputSchema).map((t) => t.name).sort()).toEqual(["sap_act", "sap_confirm", "sap_record", "sap_replay", "sap_sessions"]);
+    // The same list every time for one setting.
+    expect(JSON.stringify((await on.client.listTools()).tools)).toBe(JSON.stringify(tools));
+  });
+
+  test("sap_act: ran, total, the screen and the status bar, no control list", async () => {
+    const { call } = await make(true);
+    const one = await call("sap_act", { do: "set", id: "ctxtVBAK-VBELN", value: "4711" });
+    expect(one.structured).toEqual({ ran: 1, total: 1, screen: { transaction: "VA02", program: "SAPMV45A", number: "4001", title: "Change Standard Order 4711" }, status: { type: "S", text: "Ready" } });
+    const batch = await call("sap_act", { actions: [{ do: "set", id: "ctxtVBAK-VBELN", value: "1" }, { do: "key", key: 0 }] });
+    expect(batch.structured).toMatchObject({ ran: 2, total: 2, screen: { number: "4001" } });
+    // Refused with writing off: an error, its text is the answer.
+    expect((await call("sap_act", { do: "key", key: 11 })).error).toBe(true);
+  });
+
+  test("a batch that stops, and a held write: why it stopped, and the token", async () => {
+    const { surface, call } = await make(true, { SAP_WRITE: "confirm" });
+    const s = surface.sessions[0]!;
+    s.onAct = (a, x) => {
+      if (a.do === "key" && a.key === 0) x.view = VIEW.replace("S: Ready", "E: Order 4799 does not exist");
+    };
+    const stopped = await call("sap_act", { actions: [{ do: "key", key: 0 }, { do: "set", id: "ctxtVBAK-VBELN", value: "1" }] });
+    expect(stopped.structured).toMatchObject({ ran: 1, total: 2, stopped: { why: "status" }, status: { type: "E" } });
+    s.view = VIEW;
+    delete s.onAct;
+    const held = await call("sap_act", { actions: [{ do: "set", id: "ctxtVBAK-VBELN", value: "1" }, { do: "key", key: 11 }] });
+    const data = held.structured as { ran: number; total: number; stopped: { why: string }; held: { token: string } };
+    expect([data.ran, data.total, data.stopped.why]).toEqual([1, 2, "held"]);
+    expect(held.text).toContain(`token "${data.held.token}"`);
+    const done = await call("sap_confirm", { token: data.held.token });
+    expect(done.structured).toMatchObject({ ran: 1, total: 1, screen: { transaction: "VA02" } });
+  });
+
+  test("sap_sessions and sap_record", async () => {
+    const { call } = await make(true);
+    expect((await call("sap_sessions")).structured).toEqual({ sessions: [{ n: 1, active: true, id: "chrome:1", surface: "webgui", system: "ABA", client: "800", user: "DEMO", transaction: "VA02", title: "Change Standard Order 4711", where: "fake chrome:1" }] });
+    expect((await call("sap_record", { op: "status" })).structured).toEqual({ recording: false });
+    await call("sap_record", { op: "start", name: "s" });
+    await call("sap_act", { do: "okcode", value: "/nVA02" });
+    expect((await call("sap_record", { op: "status" })).structured).toEqual({ recording: true, name: "s", steps: 1 });
+    expect((await call("sap_record", { op: "stop" })).structured).toEqual({ recording: false });
+    const replay = await call("sap_replay", { name: "s" });
+    expect(replay.structured).toMatchObject({ steps: [{ n: 1, outcome: expect.any(String), failures: expect.any(Array) }], variables: {} });
+    expect(typeof (replay.structured as { passed: boolean }).passed).toBe("boolean");
+  });
+});
