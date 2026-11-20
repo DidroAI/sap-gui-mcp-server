@@ -213,7 +213,10 @@ export function locate(screen: ParsedScreen, id: string): Located | undefined {
   if (same.length === 1 && same[0]) return { control: same[0], by: "segment" };
   const name = fieldName(seg);
   if (name && /[A-Z]/.test(name)) {
-    const named = cs.filter((c) => fieldName(lastSegment(c.id)) === name);
+    let named = cs.filter((c) => fieldName(lastSegment(c.id)) === name);
+    // SAP GUI for Windows shows a field's label as its own control (lblVBAK-NETWR next to txtVBAK-NETWR):
+    // a bare name ("VBAK-NETWR") means the field, unless it names the label.
+    if (named.length > 1 && !seg.startsWith("lbl")) named = named.filter((c) => c.type !== "label");
     if (named.length === 1 && named[0]) return { control: named[0], by: "name" };
   }
   return undefined;

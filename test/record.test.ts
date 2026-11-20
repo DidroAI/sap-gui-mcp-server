@@ -87,6 +87,18 @@ describe("finding a control again", () => {
   test("an unknown control is not found", () => {
     expect(locate(s, "wnd[0]/usr/ctxtVBAK-XXXXX")).toBeUndefined();
   });
+  test("a bare field name finds the field, not its label (SAP GUI for Windows lists both)", () => {
+    const g = parseScreen(
+      [
+        "TRANSACTION VA03  PROGRAM SAPMV45A  SCREEN 4001",
+        'WINDOW wnd[0]  "Display Standard Order 4969: Overview"',
+        "wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021/lblVBAK-NETWR  label  Net value",
+        'wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021/txtVBAK-NETWR  field  Net value = "5.500,00"  (read-only)',
+      ].join("\n"),
+    );
+    expect(locate(g, "VBAK-NETWR")?.control.value).toBe("5.500,00");
+    expect(locate(g, "lblVBAK-NETWR")?.control.type).toBe("label");
+  });
 });
 
 describe("variables", () => {
