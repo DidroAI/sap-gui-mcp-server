@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -13,6 +13,7 @@ import { fill, FORMAT, inputsOf, parseTest, type SapTest, slug, withVariable } f
 import { hints, recorderOptionsFromEnv } from "../src/record/recorder.js";
 import { detour, junit, replay, replayAll, resultText } from "../src/record/replay.js";
 import { locate, parseScreen } from "../src/record/screen.js";
+import { connect } from "../src/sdk/index.js";
 import { createServer } from "../src/server.js";
 import { FakeSap } from "./record-fakes.js";
 
@@ -665,6 +666,102 @@ describe("exports", () => {
     expect(g).toContain("| order | customer |");
     expect(() => exportTest(t, "tosca")).toThrow("Unknown export target");
   });
+
+  test("sap-ts: SDK lines, variables in vars, captures as consts, checks as expect", async () => {
+    const { test: t } = await recordCreateAndDisplay();
+    const s = exportTest(t, "sap-ts");
+    expect(s.suffix).toBe(".sap.ts");
+    expect(s.text).toContain('import { expect, test } from "sap-gui-mcp-server/test";');
+    expect(s.text).toContain('test("Create and display", async ({ sap }) => {');
+    expect(s.text).toContain('    // a customer of sales area 1000\n    customer: "2200",');
+    expect(s.text).toContain('  await sap.set("ctxtZORD-KUNNR", vars.customer);');
+    expect(s.text).toContain('  const order = /Order (\\d+)/.exec(await sap.status().text())?.[1] ?? "";\n  expect(order).toBeTruthy();');
+    expect(s.text).toContain('  await expect(sap.status()).toContainText("has been saved");');
+    expect(s.text).toContain('  await sap.set("ctxtZORD-VBELN", order);');
+    expect(s.text).toContain('  await expect(sap.field("wnd[0]/usr/subHEAD:SAPMZA03:0301/ctxtZORD-KUNNR")).toHaveValue(vars.customer);');
+    expect(s.text).not.toContain("order:");
+  });
+
+  test("sap-ts: the generated tests type-check against the SDK and pass on the fake SAP", async () => {
+    const { test: created } = await recordCreateAndDisplay();
+    // An Information popup confirmed while recording, that SAP does not show at the next run.
+    const p = await setup();
+    p.sap.popupsFor.set("5000", [{ title: "Information", text: "Consider the subsequent documents" }]);
+    await p.rec("start", { name: "with popup" });
+    await p.act({ do: "okcode", value: "/nZA03" });
+    await p.act({ do: "set", id: "ctxtZORD-VBELN", value: "5000" });
+    await p.act({ do: "key", key: 0 });
+    await p.act({ do: "press", id: "wnd[1]/tbar[0]/btn[0]" });
+    await p.rec("stop");
+    const popup = await p.file("with-popup.saptest.json");
+    // Every kind of check and capture, a capture under a reserved word, a note on two lines.
+    const kinds: SapTest = {
+      format: FORMAT,
+      name: 'kinds "of" `checks`',
+      description: "every check",
+      recorded: { at: "2026-01-02T03:04:05Z", surface: "webgui", system: "ABA", client: "800" },
+      start: { transaction: "SMEN" },
+      variables: { order: { value: "5000" }, class: { value: "5000" }, cust: { value: "2200" } },
+      steps: [
+        { action: { do: "okcode", value: "/nZA03" }, note: "open\nthe order" },
+        { action: { do: "set", id: "ctxtZORD-VBELN", value: "${order}" } },
+        {
+          action: { do: "key", key: 0 },
+          capture: [
+            { var: "class", from: "title", pattern: "Order (\\d+)" },
+            { var: "cust", from: "field", id: "ctxtZORD-KUNNR" },
+          ],
+          expect: [
+            { check: "title", op: "contains", value: "Order ${order}" },
+            { check: "title", op: "matches", value: "Order \\d+|a/b" },
+            { check: "title", op: "equals", value: "Display Order ${class}: Overview" },
+            { check: "transaction", op: "equals", value: "ZA03" },
+            { check: "transaction", op: "matches", value: "^ZA0\\d$" },
+            { check: "transaction", op: "contains", value: "A0" },
+            { check: "text", op: "contains", value: "${cust}" },
+            { check: "text", op: "matches", value: "Customer" },
+            { check: "field", id: "ctxtZORD-KUNNR", op: "contains", value: "22" },
+            { check: "field", id: "ctxtZORD-KUNNR", op: "matches", value: "^\\d{4}$" },
+            { check: "status", op: "equals", value: "" },
+          ],
+        },
+      ],
+    };
+    const gen = join(import.meta.dir, `.sap-ts-${process.pid}`);
+    await mkdir(gen, { recursive: true });
+    try {
+      const files: string[] = [];
+      for (const [i, t] of [created, popup, kinds].entries()) {
+        const f = `t${i}.sap.ts`;
+        await writeFile(join(gen, f), exportTest(t, "sap-ts").text.replace('"sap-gui-mcp-server/test"', '"../sap-ts-shim.js"'));
+        files.push(f);
+      }
+      expect(await readFile(join(gen, "t1.sap.ts"), "utf8")).toContain('  if (await sap.control("wnd[1]/tbar[0]/btn[0]").exists()) await sap.press("wnd[1]/tbar[0]/btn[0]");');
+      const k = await readFile(join(gen, "t2.sap.ts"), "utf8");
+      expect(k).toContain("  // open\n  // the order\n");
+      expect(k).toContain("vars.class = /Order (\\d+)/.exec");
+      expect(k).toContain("  const cust = await sap.field(\"ctxtZORD-KUNNR\").value();");
+      expect(k).toContain("toHaveTitle(/Order \\d+|a\\/b/)");
+      expect(k).toContain("toHaveTitle(new RegExp(`Order ${vars.order}`))");
+      expect(k).toContain("await expect(sap).toContainText(cust);");
+      // Type-checked as the repository is, against the SDK's own types.
+      await writeFile(join(gen, "tsconfig.json"), JSON.stringify({ extends: "../../tsconfig.json", include: [], files }));
+      const tsc = Bun.spawnSync([join(import.meta.dir, "../node_modules/.bin/tsc"), "-p", join(gen, "tsconfig.json")], { stdout: "pipe", stderr: "pipe" });
+      expect(`${tsc.stdout.toString()}${tsc.stderr.toString()}`).toBe("");
+      expect(tsc.exitCode).toBe(0);
+      // Run, each on a fresh fake SAP: the popup does not come again, the order is created anew.
+      const shim = await import("./sap-ts-shim.js");
+      for (const f of files) await import(join(gen, f));
+      expect(shim.registered.map((r) => r.name)).toEqual(["Create and display", "with popup", 'kinds "of" `checks`']);
+      for (const r of shim.registered) {
+        const sap = await connect({ surfaces: [new FakeSap()], write: "on", timeout: 300 });
+        await r.fn({ sap });
+        await sap.close();
+      }
+    } finally {
+      await rm(gen, { recursive: true, force: true });
+    }
+  });
 });
 
 // ---- command line ---------------------------------------------------------------
@@ -690,5 +787,8 @@ describe("command line", () => {
     expect(await exportCommand([join(dir, "create-and-display.saptest.json"), "--to", "gherkin"], (s) => out.push(s))).toBe(0);
     expect(out[0]).toBe(join(dir, "create-and-display.feature"));
     expect(await readFile(out[0] as string, "utf8")).toContain("Feature: Create and display");
+    expect(await exportCommand([join(dir, "create-and-display.saptest.json"), "--to", "sap-ts"], (s) => out.push(s))).toBe(0);
+    expect(out[1]).toBe(join(dir, "create-and-display.sap.ts"));
+    expect(await readFile(out[1] as string, "utf8")).toContain('await sap.okcode("/nZA01");');
   });
 });
