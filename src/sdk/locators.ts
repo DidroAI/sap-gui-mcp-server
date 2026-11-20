@@ -223,3 +223,71 @@ export class StatusLocator {
     return (await this.state()).type;
   }
 }
+
+/** "Continue (Enter)" -> "Continue": a button's label without the key SAP shows after it. */
+export const bareLabel = (label: string): string => label.replace(/\s*\([^()]*\)\s*$/, "").trim();
+
+/**
+ * The button a label names on a screen: in the window in front first (a
+ * popup covers what is behind it), then anywhere. Within a window, the exact
+ * label, then the label without its key ("Continue" for "Continue (Enter)"),
+ * then either one in any case. Several buttons at the first rule that finds
+ * any: `several`, never a guess.
+ */
+export function findButton(screen: ParsedScreen, label: string): { control?: Control; several?: Control[] } {
+  const want = label.trim();
+  const low = want.toLowerCase();
+  const buttons = screen.controls.filter((c) => c.type === "button");
+  const top = screen.windows.filter((w) => /^wnd\[\d+\]$/.test(w.id)).at(-1)?.id;
+  const rules: ((c: Control) => boolean)[] = [
+    (c) => c.label.trim() === want,
+    (c) => bareLabel(c.label) === want,
+    (c) => c.label.trim().toLowerCase() === low || bareLabel(c.label).toLowerCase() === low,
+  ];
+  for (const pool of [buttons.filter((c) => c.window === top), buttons])
+    for (const rule of rules) {
+      const hits = pool.filter(rule);
+      if (hits.length === 1) return { control: hits[0] as Control };
+      if (hits.length > 1) return { several: hits };
+    }
+  return {};
+}
+
+/**
+ * A button named by its label: what code presses when the id is only a
+ * number in a toolbar (`wnd[0]/tbar[1]/btn[0]`), which another screen or a
+ * popup gives to another button. Found fresh each time it is used.
+ */
+export class ButtonLocator {
+  readonly kind = "button";
+  constructor(
+    readonly sap: Sap,
+    readonly label: string,
+  ) {}
+
+  toString(): string {
+    return `button "${this.label}"`;
+  }
+
+  /** The button on this screen; throws when no button or several have this label. */
+  find(screen: ParsedScreen): Control {
+    const r = findButton(screen, this.label);
+    if (r.several) throw new Error(`${this} names ${r.several.length} buttons on this screen (${r.several.map((c) => `${c.id} "${c.label}"`).join(", ")}): use sap.press with one of these ids.`);
+    if (!r.control) {
+      const labels = screen.controls.filter((c) => c.type === "button" && c.label).map((c) => `"${c.label}"`);
+      throw new Error(`${this} is not on the screen${labels.length ? ` (buttons: ${labels.slice(0, 15).join(", ")})` : ""}.`);
+    }
+    return r.control;
+  }
+
+  async exists(): Promise<boolean> {
+    return !!findButton(await this.sap.screen(), this.label).control;
+  }
+
+  /** Presses it, through the guard like any action. */
+  async press(): Promise<string> {
+    const c = this.find(await this.sap.screen());
+    // On the DIAG method a toolbar button is its key (record/replay.ts pressOf).
+    return this.sap.act(c.vkey !== undefined && !c.id.startsWith("wnd[") ? { do: "key", key: c.vkey } : { do: "press", id: c.id });
+  }
+}

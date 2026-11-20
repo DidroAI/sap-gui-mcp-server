@@ -23,9 +23,29 @@ import { commandFieldRefusal, decide, leavesTransaction, type Policy, policyFrom
 import { Registry } from "../core/registry.js";
 import { type Action, ActionError, type Assessment, type Driver, type SessionInfo, type Surface, type SurfaceName } from "../core/types.js";
 import { Recorder } from "../record/recorder.js";
+import { detour, popupOf } from "../record/replay.js";
 import { type ParsedScreen, parseScreen, readSettled } from "../record/screen.js";
 import { codeOf, draftTest } from "./code.js";
-import { ControlLocator, GridLocator, StatusLocator } from "./locators.js";
+import { ButtonLocator, ControlLocator, GridLocator, type StatusState, StatusLocator } from "./locators.js";
+
+/** Where `sap.at` asks the session to be: "SAPLATP4/0500", "SAPLATP4", or the parts by name. */
+export type Place = string | { program?: string; screen?: string; transaction?: string };
+
+/** Dynpro numbers compare as numbers: "500" is "0500". */
+const sameNumber = (a: string, b: string) => a.replace(/^0+(?=\d)/, "") === b.replace(/^0+(?=\d)/, "");
+
+/** Does the screen stand where `place` says? Only the parts given are compared. */
+export function isAt(screen: ParsedScreen, place: Place): boolean {
+  const [program = "", dynpro = ""] = typeof place === "string" ? place.split("/") : [];
+  const p: { program?: string | undefined; screen?: string | undefined; transaction?: string | undefined } = typeof place === "string" ? { program, screen: dynpro } : place;
+  if (p.program && (screen.program ?? "").toUpperCase() !== p.program.toUpperCase()) return false;
+  if (p.screen && !sameNumber(screen.screen ?? "", p.screen)) return false;
+  if (p.transaction && (screen.transaction ?? "").toUpperCase() !== p.transaction.toUpperCase()) return false;
+  return !!(p.program || p.screen || p.transaction);
+}
+
+/** Errors already named with their step: an error that leaves nested steps is named once, by the innermost. */
+const named = new WeakSet<object>();
 
 export const SDK_VERSION = "0.1.0";
 
@@ -77,6 +97,8 @@ export interface Done {
   code: string;
   note: string;
   ms: number;
+  /** The `sap.step` block it ran in. */
+  step?: string;
 }
 
 const SURFACES: SurfaceName[] = ["sapgui", "webgui", "fiori"];
@@ -244,8 +266,104 @@ export class Sap {
       await driver.act(normalizeAction({ do: "okcode", value: "/n" })).catch(() => {});
       throw new Refused(`${note}: this led to a transaction scripts may not work in (${landed}); left it with /n.`);
     }
-    this.history.push({ action, code: codeOf(action), note, ms });
+    this.history.push({ action, code: codeOf(action), note, ms, ...(this.stepName ? { step: this.stepName } : {}) });
     return note;
+  }
+
+  // ---- steps and screens SAP shows for some data only ----------------------------
+
+  private stepName: string | undefined;
+
+  /** The `sap.step` block that runs now (nested ones joined with " › "). */
+  get currentStep(): string | undefined {
+    return this.stepName;
+  }
+
+  /**
+   * Runs `fn` as one named step: the actions it runs carry the name in the
+   * trace (`group` of each recorded step), and an error thrown inside it says
+   * `(in step "name")`. Returns what `fn` returns.
+   *
+   *   const order = await sap.step("Save the order", async () => {
+   *     await sap.save({ acceptWarnings: true });
+   *     return await expect(sap.status()).capture(/Order (\d+)/);
+   *   });
+   */
+  async step<T>(name: string, fn: () => T | Promise<T>): Promise<T> {
+    const outer = this.stepName;
+    const full = outer ? `${outer} › ${name}` : name;
+    this.stepName = full;
+    if (this.recorder) this.recorder.group = full;
+    try {
+      return await fn();
+    } catch (e) {
+      if (e instanceof Error && !named.has(e)) {
+        named.add(e);
+        e.message = `${e.message} (in step "${full}")`;
+      }
+      throw e;
+    } finally {
+      this.stepName = outer;
+      if (this.recorder) this.recorder.group = outer;
+    }
+  }
+
+  /** Is the session on this screen now? `sap.at("SAPLATP4/0500")`, `sap.at({ transaction: "VA01" })`. Reads once, never waits. */
+  async at(place: Place): Promise<boolean> {
+    return isAt(await this.screen(), place);
+  }
+
+  /** The popup in front, if one is open: its title and text. */
+  async popup(): Promise<{ title: string; text: string } | undefined> {
+    const s = await this.screen();
+    const p = popupOf(s);
+    if (!p) return undefined;
+    const text = s.controls
+      .filter((c) => c.window === p.id && (c.type === "label" || (c.type === "field" && /\(read-only\)/.test(c.rest))))
+      .map((c) => (c.type === "field" ? c.value : c.label || c.rest))
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return { title: p.title, text };
+  }
+
+  /** A button by its label ("Continue", "Save"): in the popup in front first. Refuses a label several buttons have. */
+  button(label: string): ButtonLocator {
+    return new ButtonLocator(this, label);
+  }
+
+  /**
+   * Saves (key 11, through the guard: refused unless writes are allowed).
+   * With `acceptWarnings`, while SAP answers with a warning (W) in the status
+   * bar, presses Enter, as a user acknowledges it, at most `max` times (3);
+   * a warning still there after that throws. Returns the status bar.
+   */
+  async save(options: { acceptWarnings?: boolean; max?: number } = {}): Promise<StatusState> {
+    await this.key(11);
+    let st = await this.status().state();
+    const max = options.max ?? 3;
+    for (let i = 0; options.acceptWarnings && st.type === "W" && i < max; i++) {
+      await this.key(0);
+      st = await this.status().state();
+    }
+    if (options.acceptWarnings && st.type === "W") throw new Error(`save: SAP still answers with a warning after ${max} Enter: ${st.text}`);
+    return st;
+  }
+
+  /**
+   * Confirms the popup in front when it only informs (text and a Continue,
+   * no question, no input: the rule a replay uses, record/replay.ts `detour`).
+   * True when it confirmed one; false, pressing nothing, when there is no
+   * popup or it asks something.
+   */
+  async dismissInfo(): Promise<boolean> {
+    const s = await this.screen();
+    if (!popupOf(s)) return false;
+    const d = detour(s);
+    if (d?.kind !== "pass" || !d.action) return false;
+    await this.act(d.action);
+    return true;
   }
 
   private async allowed(action: NormalizedAction, assessment: Assessment, session: SessionInfo): Promise<void> {
