@@ -3,7 +3,7 @@
  * have a shell (Claude Code, Codex, Cursor).
  *
  *   sap-gui look            → sap_look       sap-gui act '<json>'  → sap_act ('[...]': "actions")
- *   sap-gui use <ref>       → sap_use        sap-gui confirm <tok> → sap_confirm
+ *   sap-gui use <ref>       → sap_use
  *   sap-gui screenshot      → sap_screenshot sap-gui record <op>   → sap_record
  *   sap-gui sessions        → sap_sessions (through a running daemon; else the one-shot listing)
  *   sap-gui daemon status|stop
@@ -40,12 +40,12 @@ export const AGENT_HELP = `Agent CLI (one short answer per call; the whole scree
   sap-gui act '[<json action>, ...]'       one screen's actions in one call, e.g. act '[{"do":"set","id":"ctxtVBAK-VKORG","value":"1000"},{"do":"key","key":0}]'
   sap-gui act set <id> <value> | press <id> | key <n> | okcode <cmd> | select <id> | check <id> [true|false]
               | combo <id> [key] | f4 <id> | dblclick <id> | scroll <id> <to>       shorthand for one action
-  sap-gui confirm <token>                  run an action held for the user's yes
   sap-gui use <ref>                        make a session the active one (sessions lists them)
   sap-gui screenshot                       a PNG of the session's window or tab
   sap-gui record <op> ['<json>']           start <name>, assert '{"check":"status","contains":"saved"}', stop, list, ...
   sap-gui daemon status|stop               the background process that keeps the SAP connection
-  look, act, screenshot and record take --session <ref>. Exit code: 0 done, 1 error or refused, 2 usage, 3 held for confirmation.
+  look, act, screenshot and record take --session <ref>. Exit code: 0 done, 1 error or refused, 2 usage.
+  Writes need SAP_WRITE=on here: the CLI cannot ask the user, so confirm refuses them; your own command approval is the confirmation.
   SAP_CLI_DIR=dir       where answers go (default .sap-gui/screens); SAP_CLI_IDLE=30  minutes before the daemon exits
   SAP_CLI_SESSION=name  one daemon for every directory that sets this name (default: one per directory)`;
 
@@ -61,7 +61,7 @@ export interface AgentContext {
 }
 
 /** The commands this module answers. */
-export const AGENT_COMMANDS = new Set(["look", "act", "confirm", "use", "screenshot", "record", "daemon"]);
+export const AGENT_COMMANDS = new Set(["look", "act", "use", "screenshot", "record", "daemon"]);
 
 class Usage extends Error {}
 
@@ -207,12 +207,6 @@ function callOf(cmd: string, p: Parsed): Call {
       if (p.flags.get("full")) args.full = true;
       return { tool: "sap_act", args: withSession(args), kind: "screen", print, tag: cmd };
     }
-    case "confirm": {
-      only(p, ["print"], cmd);
-      const token = p.positional[0];
-      if (!token || p.positional.length > 1) throw new Usage("confirm takes the token an act answer gave.");
-      return { tool: "sap_confirm", args: { token }, kind: "screen", print, tag: cmd };
-    }
     case "screenshot":
       only(p, ["session"], cmd);
       return { tool: "sap_screenshot", args: withSession({}), kind: "image", print, tag: cmd };
@@ -340,8 +334,8 @@ const cut = (l: string) => (l.length > MAX_LINE ? `${l.slice(0, MAX_LINE - 1)}�
 const STATUS_BAR = /^(?:[~+=-] )?(?:wnd\[\d+\]\/)?sbar {2}status {2}\S/;
 
 /**
- * The lines worth printing of a screen answer (sap_act, sap_look, sap_use,
- * sap_confirm): the lines before the screen (the action's note, the STATUS
+ * The lines worth printing of a screen answer (sap_act, sap_look, sap_use):
+ * the lines before the screen (the action's note, the STATUS
  * line, the code line, a note about a new session), the screen's first
  * line (where it is, or how much changed), and the status bar when it says
  * something the STATUS line did not.
@@ -349,13 +343,14 @@ const STATUS_BAR = /^(?:[~+=-] )?(?:wnd\[\d+\]\/)?sbar {2}status {2}\S/;
 export function screenSummary(text: string): string[] {
   const lines = text.split("\n");
   const blank = lines.indexOf("");
-  // An action's answer: notes, a blank line, the screen. A look: the screen (after a "waited" note).
+  // An action's answer: notes, a blank line, the screen. A look: the screen (after a "waited" note or the server's NOTE).
   let head = blank > 0 ? lines.slice(0, blank) : [];
   let body = blank > 0 ? lines.slice(blank + 1) : lines;
-  if (blank <= 0 && body[0]?.startsWith("(This call waited")) {
-    head = [body[0]];
-    body = body.slice(1);
-  }
+  if (blank <= 0)
+    while (body[0]?.startsWith("(This call waited") || body[0]?.startsWith("NOTE: ")) {
+      head = [...head, body[0]];
+      body = body.slice(1);
+    }
   const out = head.slice(0, 6);
   const top = body.find((l) => l.trim() !== "");
   if (top !== undefined) out.push(top);
@@ -366,8 +361,6 @@ export function screenSummary(text: string): string[] {
   if (bar && bar !== top && !(hasStatus && /status {2}[EWA]: /.test(bar))) out.push(bar);
   return out.map(cut);
 }
-
-const TOKEN = /token "([0-9a-f]+)"/;
 
 /** Runs one agent CLI command; answers the exit code. */
 export async function agentCommand(argv: string[], ctx: AgentContext): Promise<number> {
@@ -421,13 +414,6 @@ function present(call: Call, result: CallToolResult, ctx: AgentContext): number 
   if (call.print || call.kind === "list") {
     ctx.out(text);
     return error ? 1 : 0;
-  }
-  // Held for the user's yes: what, where, and the command that runs it.
-  const token = !error && call.tool === "sap_act" ? TOKEN.exec(text)?.[1] : undefined;
-  if (token) {
-    for (const l of text.split("\n").filter((l) => !TOKEN.test(l))) ctx.out(cut(l));
-    ctx.out(`Ask the user; only after they say yes to this exact action: sap-gui confirm ${token}`);
-    return 3;
   }
   const lines = text.split("\n");
   let printed: string[];

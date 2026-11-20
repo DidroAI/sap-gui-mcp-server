@@ -8,7 +8,7 @@
  */
 import type { Action, Assessment, SessionInfo } from "./types.js";
 
-/** off: commits are refused (default). confirm: each commit waits for sap_confirm. on: commits run. */
+/** off: commits are refused (default). confirm: each commit runs after the user's yes, asked through the client (MCP elicitation) or a script's onConfirm. on: commits run. */
 export type WriteMode = "off" | "confirm" | "on";
 
 export interface Policy {

@@ -50,7 +50,7 @@ describe("tools/list", () => {
     const of = (name: string) => tools.find((t) => t.name === name)?.annotations ?? {};
     for (const t of tools) expect([t.name, t.annotations?.openWorldHint]).toEqual([t.name, false]);
     for (const name of ["sap_look", "sap_sessions", "sap_screenshot"]) expect([name, of(name).readOnlyHint, of(name).idempotentHint]).toEqual([name, true, true]);
-    for (const name of ["sap_act", "sap_confirm", "sap_replay"]) expect([name, of(name).destructiveHint]).toEqual([name, true]);
+    for (const name of ["sap_act", "sap_replay"]) expect([name, of(name).destructiveHint]).toEqual([name, true]);
     expect(of("sap_use").readOnlyHint).toBe(true);
   });
 });
@@ -162,20 +162,13 @@ describe("sap_act's input: flat, with the older action object as an alias", () =
 });
 
 describe("error answers say what to do next", () => {
-  test("a held write starts with NOT RUN YET and names the token's life", async () => {
+  test("a write under confirm, with a client that cannot ask: refused, nothing ran, what the user can do", async () => {
     const { surface, call } = await setup({ SAP_WRITE: "confirm" });
     surface.add({ id: "chrome:1", system: "ABA", client: "800", transaction: "VA02" }, { assess });
     const r = await call("sap_act", { do: "key", key: 11 });
-    expect(r.error).toBe(false);
-    expect(r.text).toStartWith("NOT RUN YET: needs the user's confirmation: key 11: Save");
-    expect(r.text).toContain("works once, for 10 minutes");
-    expect(surface.acts()).toEqual([]);
-  });
-  test("an unknown or expired token: once, 10 minutes, nothing ran, ask again", async () => {
-    const { call } = await setup({ SAP_WRITE: "confirm" });
-    const r = await call("sap_confirm", { token: "abc" });
     expect(r.error).toBe(true);
-    for (const w of ["works once, for 10 minutes", "Nothing ran", "sap_act again", "ask the user again"]) expect([w, r.text.includes(w)]).toEqual([w, true]);
+    for (const w of ["cannot ask the user", "Nothing ran", "do not look for another way", "SAP_WRITE=on", "MCP elicitation"]) expect([w, r.text.includes(w)]).toEqual([w, true]);
+    expect(surface.acts()).toEqual([]);
   });
   test("a write refused with writing off: tell the user, do not look for another way", async () => {
     const { surface, call } = await setup();
@@ -233,7 +226,7 @@ describe("structuredContent: SAP_STRUCTURED=on only", () => {
     expect((await off.call("sap_sessions")).structured).toBeUndefined();
     const on = await make(true, { SAP_WRITE: "confirm" });
     const tools = (await on.client.listTools()).tools;
-    expect(tools.filter((t) => t.outputSchema).map((t) => t.name).sort()).toEqual(["sap_act", "sap_confirm", "sap_record", "sap_replay", "sap_sessions"]);
+    expect(tools.filter((t) => t.outputSchema).map((t) => t.name).sort()).toEqual(["sap_act", "sap_record", "sap_replay", "sap_sessions"]);
     // The same list every time for one setting.
     expect(JSON.stringify((await on.client.listTools()).tools)).toBe(JSON.stringify(tools));
   });
@@ -248,7 +241,7 @@ describe("structuredContent: SAP_STRUCTURED=on only", () => {
     expect((await call("sap_act", { do: "key", key: 11 })).error).toBe(true);
   });
 
-  test("a batch that stops, and a held write: why it stopped, and the token", async () => {
+  test("a batch that stops, and a write refused under confirm: why it stopped", async () => {
     const { surface, call } = await make(true, { SAP_WRITE: "confirm" });
     const s = surface.sessions[0]!;
     s.onAct = (a, x) => {
@@ -258,12 +251,10 @@ describe("structuredContent: SAP_STRUCTURED=on only", () => {
     expect(stopped.structured).toMatchObject({ ran: 1, total: 2, stopped: { why: "status" }, status: { type: "E" } });
     s.view = VIEW;
     delete s.onAct;
-    const held = await call("sap_act", { actions: [{ do: "set", id: "ctxtVBAK-VBELN", value: "1" }, { do: "key", key: 11 }] });
-    const data = held.structured as { ran: number; total: number; stopped: { why: string }; held: { token: string } };
-    expect([data.ran, data.total, data.stopped.why]).toEqual([1, 2, "held"]);
-    expect(held.text).toContain(`token "${data.held.token}"`);
-    const done = await call("sap_confirm", { token: data.held.token });
-    expect(done.structured).toMatchObject({ ran: 1, total: 1, screen: { transaction: "VA02" } });
+    // A refusal is an error: its text is the answer, and it names the action that did not run.
+    const refused = await call("sap_act", { actions: [{ do: "set", id: "ctxtVBAK-VBELN", value: "1" }, { do: "key", key: 11 }] });
+    expect(refused.error).toBe(true);
+    expect(refused.text).toStartWith('Ran 1 of 2 actions. Stopped: action 2 ({"do":"key","key":11}) was refused');
   });
 
   test("sap_sessions and sap_record", async () => {
