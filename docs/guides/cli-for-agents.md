@@ -6,9 +6,9 @@ reads a short answer, and opens the screen file only when it needs it. This
 keeps screens out of the conversation until they matter, and works in
 agents that have no MCP support.
 
-::: warning Status
-The agent CLI is being finished for this release. Command names below are
-the planned ones; check `npx sap-gui --help` for the version you have.
+::: info Version
+The agent CLI ships with the SDK and the test runner. Check
+`npx sap-gui --help` for the commands of the version you have.
 :::
 
 ## Commands
@@ -20,24 +20,37 @@ The package installs two names for the same program: `sap-gui` and
 | --- | --- | --- |
 | `sap-gui sessions` | lists the SAP sessions open now | `sap_sessions` |
 | `sap-gui use <ref>` | makes a session the active one | `sap_use` |
-| `sap-gui look [--full]` | writes the screen to a file and prints one line with its path | `sap_look` |
-| `sap-gui act '<json>'` | runs one action ([actions](../reference/actions.md)) | `sap_act` |
+| `sap-gui look [--full] [--diff] [--id <id> [--rows 0-50] [--cols A,B]] [--print]` | writes the screen to a file and prints one line with its path (`--print` prints the screen) | `sap_look` |
+| `sap-gui act '<json>' [--full]` | runs one action ([actions](../reference/actions.md)) | `sap_act` |
+| `sap-gui act set <id> <value>`, `press <id>`, `key <n>`, `okcode <cmd>`, `select <id>`, `check <id> [true\|false]`, `combo <id> [key]`, `f4 <id>`, `dblclick <id>`, `scroll <id> <to>` | shorthand for one action | `sap_act` |
 | `sap-gui confirm <token>` | runs an action held for confirmation | `sap_confirm` |
 | `sap-gui screenshot` | writes a PNG of the window or tab | `sap_screenshot` |
-| `sap-gui record ...` | starts, stops and checks a recording | `sap_record` |
+| `sap-gui record <op> ['<json>']` | `start <name>`, `assert '{"check":"status","contains":"saved"}'`, `stop`, `list`, ... | `sap_record` |
 | `sap-gui daemon status\|stop` | the background process that keeps the session attached between commands | |
 
-Each command prints one short line and the path of the screen file. Screens
-are written to `.sap-gui/` in the working directory (`SAP_CLI_DIR` changes
-it). The same settings apply as for the MCP server: writes stay refused
+Each command prints one short line and the path of the screen file.
+`look`, `act`, `screenshot` and `record` take `--session <ref>`. Exit codes:
+0 done, 1 error or refused, 2 usage, 3 held for confirmation (run
+`sap-gui confirm <token>` after the user's yes).
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `SAP_CLI_DIR` | `.sap-gui/screens` | where answers and screens are written |
+| `SAP_CLI_IDLE` | `30` | minutes without a command before the daemon exits |
+| `SAP_CLI_SESSION` | one daemon per directory | a name: one daemon for every directory that sets it |
+
+ The same settings apply as for the MCP server: writes stay refused
 unless `SAP_WRITE` allows them ([configuration](../reference/configuration.md)).
 
 ## Teaching the agent
 
-`sap-gui install --skills` copies the [`sap-gui-drive`
-skill](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/skills/sap-gui-drive/SKILL.md)
-into the agent's skills folder (`--target claude|codex|cursor|all`,
-`--global` for your user rather than the project). The skill tells the agent
+`sap-gui install --skills` copies the bundled skills, among them
+[`sap-gui-drive`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/skills/sap-gui-drive/SKILL.md)
+and a `sap-gui-cli` skill on driving SAP through these commands, into the
+agent's folder: `.claude/skills`, `.agents/skills` or `.cursor/rules`
+(`--target claude|codex|cursor|all`; `--global` for `~/.claude/skills` and
+`~/.codex/skills`). `sap-gui init` does this as part of setting a project
+up. The skill tells the agent
 how SAP screens behave: fields take effect on Enter, popups come first,
 value help instead of guessed codes, and never work around the write
 setting.

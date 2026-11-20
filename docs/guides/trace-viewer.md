@@ -5,9 +5,9 @@ agent or the test did, step by step, and what SAP showed after each step.
 Use it to see why a test failed, or to review what an agent did before you
 trust it with more.
 
-::: warning Status
-The trace viewer is being finished for this release. The trace file format
-below is final; the command name may still change.
+::: info Version
+`show-trace` and the trace fields below are new with the SDK and the test
+runner.
 :::
 
 ## Making a trace
