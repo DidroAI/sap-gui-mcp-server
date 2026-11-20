@@ -115,7 +115,9 @@ export function namedControl(s: DiagScreen, raw: string | undefined): Named | un
     if (c.grid) return { kind: "grid", control: c, window: w, id: controlId(c) };
     return { kind: "tree", control: c, window: w, id: controlId(c) };
   }
-  const t = w.tables.find((x) => lower(x.name) === want);
+  // Also as SAP GUI scripting names a table control: [wnd[1]/usr/]tbl<program><name>, e.g. tblSAPLMGMMTC_VIEW.
+  const scripting = want.replace(/^.*\//, "").replace(/^tbl/, "");
+  const t = w.tables.find((x) => lower(x.name) === want || scripting === lower(`${x.program || w.program}${x.name}`));
   if (t) return { kind: "table", table: t, window: w, id: t.name };
   if (want === "list" && w.list?.rows.length) return { kind: "list", window: w, id: "list" };
   const cell = /^(.+)\[(\d+)\]$/.exec(id);

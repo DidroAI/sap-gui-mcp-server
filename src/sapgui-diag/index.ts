@@ -339,6 +339,9 @@ export function findTarget(s: DiagScreen, action: Action): Found {
   const last = raw.includes("/") ? raw.slice(raw.lastIndexOf("/") + 1) : raw;
   // A scripting type prefix (ctxt, txt, chk, btn...): lower case before SAP's upper-case name, or one of the known ones.
   const bare = /^[a-z]+[A-Z%<*]/.test(last) ? last.replace(/^[a-z]+/, "") : last.replace(/^(?:ctxt|txt|lbl|chk|rad|cmb|btn|tbl|pwd)(?=.)/i, "");
+  // A classic list's label as scripting names it, lbl[col,row]: that place of the screen, as @row,col.
+  const label = /^lbl\[(\d+),(\d+)\]$/i.exec(last);
+  if (label) return lookup(w, `@${label[2]},${label[1]}`, action, true);
   const forms = [...new Set([raw, last, bare])];
   const unique = (f: Found): { target: Target } | undefined => ("target" in f ? f : undefined);
   for (const f of forms) {
@@ -627,6 +630,9 @@ export class DiagDriver implements Driver {
   async assess(action: Action): Promise<Assessment> {
     const s = this.screen();
     const target = resolveTarget(s, action);
+    // An id that names nothing here is said as such, with the closest ids, not refused as a write the guard cannot see.
+    if (!target && /^(set|focus|check|click|dblclick|press|select|f4)$/.test(action.do) && !((action.row !== undefined || action.node !== undefined) && namedControl(s, action.id)))
+      throw new ActionError(noTargetText(s, String(action.id ?? action.name ?? "")));
     // Something SAP greys out is refused here, before the guard could ask the user to confirm it.
     const grey = greyedRefusal(s, action, target);
     if (grey) throw new ActionError(grey);
