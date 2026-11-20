@@ -64,11 +64,14 @@ describe("writing and verifying a lock", () => {
     bunExpect(enter?.after).toMatchObject({ transaction: "ZA03", program: "SAPMZA03", screen: "300" });
     bunExpect(entry?.steps[1]?.paths[0]?.[0]?.on).toMatchObject({ program: "SAPMZA03", screen: "100" });
 
+    const written = await readFile(lock, "utf8");
     const { sap: sap2 } = await session();
     const r2 = await runVerified(sap2, display, { order: "5000" }, { lock, fallback: never });
     bunExpect(r2.passed).toBe(true);
     bunExpect([r2.verified, r2.unverified, r2.fallbacks]).toEqual([4, 0, 0]);
-    bunExpect((await lockOf(lock)).tests.display?.verified.runs).toBe(2);
+    // A pass that confirms the lock as it is leaves the file alone: no diff in the repository.
+    bunExpect(await readFile(lock, "utf8")).toBe(written);
+    bunExpect((await lockOf(lock)).tests.display?.verified.runs).toBe(1);
   });
 
   test("connect({ verify }) checks each action; the availability screen appearing throws Drift at its action", async () => {
