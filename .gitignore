@@ -10,3 +10,6 @@ captures/
 *.png
 # Recordings made while developing hold what was typed: they stay out of this repository.
 sap-tests/
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+*.mcpb
