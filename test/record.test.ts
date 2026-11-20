@@ -228,6 +228,18 @@ describe("sap_record", () => {
     expect((await file("t.saptest.json")).steps.map((s) => s.action?.do)).toEqual(["okcode"]);
   });
 
+  test('{"op":"code"} is the recording so far as a *.sap.ts test', async () => {
+    const { act, rec } = await setup();
+    await rec("start", { name: "Draft so far" });
+    await act({ do: "okcode", value: "/nZA03" });
+    await act({ do: "set", id: "ctxtZORD-VBELN", value: "5000" });
+    await rec("variable", { name: "order", value: "5000" });
+    const r = await rec("code");
+    expect(r.error).toBe(false);
+    expect(r.text).toContain('test("Draft so far", async ({ sap }) => {');
+    expect(r.text).toContain('  await sap.set("ctxtZORD-VBELN", vars.order);');
+  });
+
   test("undo drops the last step and the variable it captured", async () => {
     const { act, rec, file } = await setup({ SAP_WRITE: "on" });
     await rec("start", { name: "t" });
