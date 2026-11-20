@@ -105,7 +105,9 @@ describe("act", () => {
     const r = await run(["act", '{"do":"set","id":"ctxtZHDR-CUST","value":"4712"}']);
     expect(r.code).toBe(0);
     expect(r.lines[0]).toBe("did set");
-    expect(r.lines[1]).toStartWith("CHANGED 1 of");
+    // The SDK line that repeats the action (server.ts), then where the screen is.
+    expect(r.lines[1]).toBe('code: await sap.set("ctxtZHDR-CUST", "4712");');
+    expect(r.lines[2]).toStartWith("CHANGED 1 of");
     expect(r.lines.at(-1)).toBe("screen: .sap-gui/screens/2-act.txt");
     expect(read(pathOf(r.out))).toContain('~ ctxtZHDR-CUST  field  Customer = "4712"  (edit)');
     expect(screens()).toEqual(["1-look.txt", "2-act.txt"]);
@@ -127,7 +129,7 @@ describe("act", () => {
     await run(["look"]);
     const r = await run(["act", "key", "0"]);
     expect(r.code).toBe(0);
-    expect(r.lines.slice(0, 3)).toEqual(["did key", "STATUS E: Customer 4799 does not exist  (error: correct the input it names, then Enter)", error.split("\n")[0]!]);
+    expect(r.lines.slice(0, 4)).toEqual(["did key", "STATUS E: Customer 4799 does not exist  (error: correct the input it names, then Enter)", "code: await sap.key(0);", error.split("\n")[0]!]);
     // The status bar is said once.
     expect(r.lines.filter((l) => l.includes("4799"))).toHaveLength(1);
   });
@@ -136,7 +138,7 @@ describe("act", () => {
     surface.add({ id: "chrome:1", system: "XYZ" }, { view: SCREEN, onAct: (_a, s) => (s.view = SCREEN.replace("S: Ready", "E: Customer 4799 does not exist")) });
     await run(["look"]);
     const r = await run(["act", "key", "0"]);
-    expect(r.lines.slice(0, 3)).toEqual(["did key", "CHANGED 1 of 21 lines (same screen; sap_look shows all of it):", "~ sbar  status  E: Customer 4799 does not exist"]);
+    expect(r.lines.slice(0, 4)).toEqual(["did key", "code: await sap.key(0);", "CHANGED 1 of 21 lines (same screen; sap_look shows all of it):", "~ sbar  status  E: Customer 4799 does not exist"]);
   });
   test("an action that cannot run prints the message on stderr and exits 1", async () => {
     const { surface, run } = setup();
