@@ -254,7 +254,7 @@ describe("config", () => {
   test("found by walking up; testDir and outputDir relative to it", async () => {
     const dir = await project({
       "sap.config.mjs": `export default { testDir: "tests", outputDir: "results", retries: 3, use: { system: "ABA" } };`,
-      "tests/deep/a.sap.ts": `${head}test("x", async () => {});`,
+      "tests/deep/a.sap.ts": `${head}test("x", async ({ sap }) => { void sap; });`,
     });
     const c = await configFor(join(dir, "tests/deep"));
     expect(c.file).toBe(join(dir, "sap.config.mjs"));
@@ -333,5 +333,17 @@ describe("projects", () => {
     const r = await run(dir);
     expect(r.tests.map((t) => t.status)).toEqual(["failed", "passed"]);
     expect(r.tests[0]?.error?.message).toMatch(/blocked/);
+  });
+});
+
+describe("the sap fixture", () => {
+  test("is asked for by name in the parameters", async () => {
+    const { wantsSap } = await import("../src/runner/run.js");
+    expect(wantsSap(async ({ sap }: { sap: unknown }) => sap)).toBe(true);
+    expect(wantsSap(async ({ info, sap: s }: { info: unknown; sap: unknown }) => [info, s])).toBe(true);
+    expect(wantsSap(async ({ info }: { info: unknown }) => info)).toBe(false);
+    expect(wantsSap(async () => 1)).toBe(false);
+    expect(wantsSap(async function (f: unknown) { return f; })).toBe(true);
+    expect(wantsSap(async (f: unknown) => f)).toBe(true);
   });
 });
