@@ -6,7 +6,9 @@
  * - Claude Desktop: an `mcpServers["sap-gui"]` entry in claude_desktop_config.json;
  * - Cursor: an `mcpServers["sap-gui"]` entry in the project's .cursor/mcp.json when
  *   that file exists, else in ~/.cursor/mcp.json;
- * - Windsurf: an `mcpServers["sap-gui"]` entry in ~/.codeium/windsurf/mcp_config.json;
+ * - Windsurf (now Devin Desktop): an `mcpServers["sap-gui"]` entry in ~/.config/devin/mcp_config.json
+ *   ($XDG_CONFIG_HOME/devin; %APPDATA%\\devin on Windows). The old ~/.codeium/windsurf file is only
+ *   read by its discovery now, so it is never written; that folder still counts as Windsurf being installed;
  * - VS Code (Copilot): a `servers["sap-gui"]` entry in the project's .vscode/mcp.json,
  *   only when that file exists or `vscode` is named.
  *
@@ -78,8 +80,13 @@ function cursorConfig(cwd: string, home: string): string | undefined {
   return undefined;
 }
 
-/** Windsurf's MCP config; it counts as installed when ~/.codeium/windsurf exists. */
-const windsurfConfig = (home: string) => join(home, ".codeium", "windsurf", "mcp_config.json");
+/** Windsurf's (Devin Desktop's) MCP config file. */
+function windsurfConfig(platform: NodeJS.Platform, env: Env, home: string): string {
+  const base = platform === "win32" ? (env.APPDATA ?? join(home, "AppData", "Roaming")) : (env.XDG_CONFIG_HOME || join(home, ".config"));
+  return join(base, "devin", "mcp_config.json");
+}
+/** Is Windsurf / Devin Desktop installed: its config folder, or the folder of the older Windsurf. */
+const windsurfFound = (platform: NodeJS.Platform, env: Env, home: string) => existsSync(dirname(windsurfConfig(platform, env, home))) || existsSync(join(home, ".codeium", "windsurf"));
 
 /** The clients this machine (and project) has, without changing anything. */
 export function detectClients(opts: { cwd?: string | undefined; onPath?: ((cmd: string) => boolean) | undefined } = {}, env: Env = process.env, platform: NodeJS.Platform = process.platform, home: string = homedir()): Client[] {
@@ -91,7 +98,7 @@ export function detectClients(opts: { cwd?: string | undefined; onPath?: ((cmd: 
   const desktop = claudeDesktopConfig(platform, env, home);
   if (desktop && existsSync(dirname(desktop))) found.push("claude-desktop");
   if (cursorConfig(cwd, home)) found.push("cursor");
-  if (existsSync(dirname(windsurfConfig(home)))) found.push("windsurf");
+  if (windsurfFound(platform, env, home)) found.push("windsurf");
   if (existsSync(join(cwd, ".vscode", "mcp.json"))) found.push("vscode");
   return found;
 }
@@ -188,13 +195,13 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
   }
 
   if (want("windsurf")) {
-    const file = windsurfConfig(home);
-    if (existsSync(dirname(file)) || opts.only?.includes("windsurf")) {
+    const file = windsurfConfig(platform, env, home);
+    if (windsurfFound(platform, env, home) || opts.only?.includes("windsurf")) {
       found++;
-      const r = addJsonServer(file, "mcpServers", { command: command[0], args: command.slice(1) }, "Windsurf", "Refresh Windsurf's MCP servers (Cascade → MCP) to load it.", opts.dryRun);
+      const r = addJsonServer(file, "mcpServers", { command: command[0], args: command.slice(1) }, "Windsurf (Devin Desktop)", "Refresh its MCP servers (Cascade → MCP) to load it.", opts.dryRun);
       if (r.changed) changed++;
       lines.push(r.line);
-    } else lines.push("– Windsurf: not found (no ~/.codeium/windsurf).");
+    } else lines.push("– Windsurf (Devin Desktop): not found.");
   }
 
   // VS Code keeps MCP servers per workspace: only touch a project that already has the file, or when asked.
