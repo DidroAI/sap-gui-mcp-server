@@ -5,13 +5,15 @@
 import { describe, expect, test } from "bun:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { policyFromEnv } from "../src/core/guard.js";
-import type { Action, Assessment } from "../src/core/types.js";
+import { type Action, ActionError, type Assessment } from "../src/core/types.js";
+import { goOnText } from "../src/record/tools.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { recorderOptionsFromEnv } from "../src/record/recorder.js";
-import { codeFromEnv, createServer, type ServerOptions } from "../src/server.js";
+import { codeFromEnv, createServer, type ServerOptions, withNextStep } from "../src/server.js";
 import { FakeSurface } from "./fakes.js";
 
 /** Save (key 11) commits; everything else navigates. */
@@ -154,5 +156,61 @@ describe("sap_act's input: flat, with the older action object as an alias", () =
     surface.add({ id: "chrome:1", system: "ABA" }, { assess });
     expect((await call("sap_act", { do: "set", id: "x", value: { a: 1 } })).error).toBe(true);
     expect(surface.log).toEqual([]);
+  });
+});
+
+describe("error answers say what to do next", () => {
+  test("a held write starts with NOT RUN YET and names the token's life", async () => {
+    const { surface, call } = await setup({ SAP_WRITE: "confirm" });
+    surface.add({ id: "chrome:1", system: "ABA", client: "800", transaction: "VA02" }, { assess });
+    const r = await call("sap_act", { do: "key", key: 11 });
+    expect(r.error).toBe(false);
+    expect(r.text).toStartWith("NOT RUN YET: needs the user's confirmation: key 11: Save");
+    expect(r.text).toContain("works once, for 10 minutes");
+    expect(surface.acts()).toEqual([]);
+  });
+  test("an unknown or expired token: once, 10 minutes, nothing ran, ask again", async () => {
+    const { call } = await setup({ SAP_WRITE: "confirm" });
+    const r = await call("sap_confirm", { token: "abc" });
+    expect(r.error).toBe(true);
+    for (const w of ["works once, for 10 minutes", "Nothing ran", "sap_act again", "ask the user again"]) expect([w, r.text.includes(w)]).toEqual([w, true]);
+  });
+  test("a write refused with writing off: tell the user, do not look for another way", async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA" }, { assess });
+    const r = await call("sap_act", { do: "key", key: 11 });
+    expect(r.error).toBe(true);
+    expect(r.text).toContain("Tell the user what you would have saved; do not look for another way.");
+  });
+  test("a declined confirmation says to stop", async () => {
+    const surface = new FakeSurface("webgui");
+    surface.add({ id: "chrome:1", system: "ABA", transaction: "VA02" }, { assess });
+    const { server } = createServer({ policy: policyFromEnv({ SAP_WRITE: "confirm" }), surfaces: [surface] });
+    const client = new Client({ name: "test", version: "0" }, { capabilities: { elicitation: {} } });
+    client.setRequestHandler(ElicitRequestSchema, async () => ({ action: "decline" }));
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(a), client.connect(b)]);
+    const r = (await client.callTool({ name: "sap_act", arguments: { do: "key", key: 11 } })) as { content: { text: string }[] };
+    expect(r.content[0]?.text).toContain("the user declined");
+    expect(r.content[0]?.text).toContain("Stop here: do not retry it");
+    expect(surface.acts()).toEqual([]);
+  });
+  test('"read-only" and "does not scroll" add the next step, with the screen', async () => {
+    for (const message of ["ctxtVBAK-VKORG is read-only.", "tblX does not scroll."]) {
+      const { surface, call } = await setup();
+      surface.add({ id: "chrome:1", system: "ABA" }, { view: "TRANSACTION VA01  PROGRAM SAPMV45A  SCREEN 101\nsbar  status  W: Check the date", failAct: new ActionError(message) });
+      const r = await call("sap_act", { do: "set", id: "ctxtVBAK-VKORG", value: "1000" });
+      expect(r.error).toBe(true);
+      expect(r.text).toStartWith(`${message}\nNext: read the status bar and any popup`);
+      expect(r.text).toContain("W: Check the date");
+    }
+    expect(withNextStep("No control ctxtX.")).toBe("No control ctxtX.");
+  });
+  test("a failed replay says how to go on (from, repair); the schema no longer does", async () => {
+    const text = goOnText(4);
+    for (const w of ['"from":4', '"repair":{"why"', "before|instead|after", '"capture":{"var"', "nothing is saved", "Do not replay to retry a failed write"]) expect([w, text.includes(w)]).toEqual([w, true]);
+    const { client } = await setup();
+    const replay = (await client.listTools()).tools.find((t) => t.name === "sap_replay");
+    expect(JSON.stringify(replay)).not.toContain("before|instead|after");
   });
 });

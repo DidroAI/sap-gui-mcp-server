@@ -163,7 +163,7 @@ describe("confirm", () => {
     surface.add({ id: "chrome:1", system: "XYZ", transaction: "ZT01" }, { view: SCREEN, assess });
     const held = await run(["act", "key", "11"]);
     expect(held.code).toBe(3);
-    expect(held.lines[0]).toStartWith("Needs the user's confirmation: key 11: Save");
+    expect(held.lines[0]).toStartWith("NOT RUN YET: needs the user's confirmation: key 11: Save");
     const token = /sap-gui confirm ([0-9a-f]+)$/.exec(held.out)?.[1] ?? "";
     expect(token).not.toBe("");
     expect(surface.acts()).toEqual([]);

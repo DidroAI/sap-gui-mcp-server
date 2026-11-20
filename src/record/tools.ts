@@ -107,7 +107,7 @@ A check that does not hold on the screen now is refused. Typed values are writte
       answer(async () => {
         switch (a.op) {
           case "start": {
-            if (!a.name) return fail('start needs "name".');
+            if (!a.name) return fail('start needs "name", e.g. {"op":"start","name":"VA03 display order"}.');
             const name = a.name;
             return serial(a.session, "sap_record start", async () => {
               const { driver, info } = await registry.session(a.session);

@@ -184,7 +184,7 @@ describe("a batch and the guard: each action has its own decision", () => {
     const r = await batch([OPEN, CUSTOMER, { ...ENTER, expect: { screen: "200" } }, { ...SAVE, unseen: true }, { do: "okcode", value: "/nZA03", expect: { transaction: "ZA03" } }]);
     expect(r.error).toBe(false);
     expect(r.text.split("\n")[0]).toBe('Ran 3 of 5 actions. Stopped: action 4 ({"do":"key","key":11}) may write and waits for the user\'s yes. Action 5 did not run.');
-    expect(r.text).toContain("Needs the user's confirmation: key 11: Save, on ABA/800, ZA01");
+    expect(r.text).toContain("NOT RUN YET: needs the user's confirmation: key 11: Save, on ABA/800, ZA01");
     expect(sap.orders.size).toBe(1);
     const token = /token "([0-9a-f]+)"/.exec(r.text)?.[1] ?? "";
     const c = await call("sap_confirm", { token });

@@ -115,6 +115,18 @@ export function statusTop(shown: string, view: string): string | undefined {
   return `STATUS ${m[1]}: ${m[2]}  (${STATUS_HINT[m[1] as string]})`;
 }
 
+/**
+ * A failure that leaves the agent at a loss, with the step to take next. A
+ * field SAP closed and a control that does not scroll are, most of the time,
+ * a status message or a popup the agent has not answered: SAP keeps the
+ * fields closed until then.
+ */
+export function withNextStep(message: string): string {
+  if (/\b(is read-only|greyed out|does not scroll)\b/.test(message) && !/status bar|popup/i.test(message))
+    return `${message}\nNext: read the status bar and any popup (WINDOW wnd[1]) in the screen below and answer them first: SAP keeps fields closed until a warning is accepted with Enter or a popup is answered. A field that stays closed cannot be changed on this screen.`;
+  return message;
+}
+
 /** What the user was shown when asked to confirm: the action runs only if all of it still holds. */
 interface Shown {
   session: string;
@@ -466,8 +478,7 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
    * here, and the agent gets the screen it is really on in the same answer.
    */
   async function failedOn(ref: string | undefined, e: unknown): Promise<CallToolResult> {
-    const message = (e as Error).message;
-    if (!(e instanceof ActionError)) return fail(message);
+    const message = withNextStep((e as Error).message);
     try {
       const { driver, info } = await registry.session(ref);
       const now = await driver.look({ compact: true });
@@ -537,7 +548,10 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
       } catch (e) {
         return fail(`Not run: the user could not be asked to confirm (${(e as Error).message.split("\n")[0]}).`);
       }
-      if (answer.action !== "accept") return text(`Not run: the user ${answer.action === "decline" ? "declined" : "dismissed the confirmation of"} this action (${what}).`);
+      if (answer.action !== "accept")
+        return text(
+          `Not run: the user ${answer.action === "decline" ? "declined" : "dismissed the confirmation of"} this action (${what}). Stop here: do not retry it or look for another way; tell the user it was not done and ask how to go on.`,
+        );
       return serial(shown.session, actionText(action), () => runConfirmed(shown, whole));
     }
     const now = Date.now();
@@ -546,7 +560,7 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
     const token = randomBytes(6).toString("hex");
     pending.set(token, { shown, at: now });
     return text(
-      `Needs the user's confirmation: ${what}.\nAction: ${actionText(action)}\nAsk the user; only after they say yes to this exact action, call sap_confirm with token "${token}". The token is for this screen and this action only: if the screen changes, it is refused.`,
+      `NOT RUN YET: needs the user's confirmation: ${what}.\nAction: ${actionText(action)}\nAsk the user; only after they say yes to this exact action, call sap_confirm with token "${token}". The token works once, for 10 minutes, on this screen and this action only: if the screen changes, it is refused.`,
     );
   }
 
@@ -761,7 +775,8 @@ ${writeRule(policy)}`,
         const p = pending.get(token.trim());
         // A token works once, whatever the outcome.
         pending.delete(token.trim());
-        if (!p || Date.now() - p.at > TOKEN_LIFE_MS) return fail("Unknown or expired token: call sap_act again.");
+        if (!p || Date.now() - p.at > TOKEN_LIFE_MS)
+          return fail("Unknown or expired token: a token works once, for 10 minutes. Nothing ran. Look at the screen, call sap_act again for a new token, and ask the user again.");
         return serial(p.shown.session, actionText(p.shown.action), () => runConfirmed(p.shown));
       }),
   );
