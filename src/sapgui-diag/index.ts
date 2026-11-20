@@ -101,7 +101,8 @@ export function assessDiag(s: DiagScreen, action: Action, target?: Target): Asse
   const assessKey = (n: number, how: string): Assessment => {
     if (SAVE_VKEYS.has(n)) return commit(`${how}: Save (Ctrl+S)`);
     const k = keyOf(w, n);
-    const named = k ? `${how} "${clean(k.text)}"` : how;
+    // A toolbar button may have only a tooltip ("List Width Right"): named by it, not as "".
+    const named = k ? `${how} "${clean(k.text || k.tooltip)}"` : how;
     if (k && commitWord(k.text, k.tooltip)) return commit(named);
     const q = n === 0 || (k && !/^(no|cancel|back|exit)$/.test(safeWord(lang, k.text) ?? "")) ? commitQuestion(s) : undefined;
     if (q && n !== 12 && n !== 3 && n !== 15) return commit(`${named} on the popup "${q.slice(0, 90)}"`);
