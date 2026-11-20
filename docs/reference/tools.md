@@ -45,12 +45,12 @@ ask the user before a call; the server's own guard does not read them.
 | `sap_record` | false | false | | false |
 | `sap_replay` | false | true | | false |
 | `sap_code_save` | false | false | | false |
-| `sap_code_test` | false | true | | true |
+| `sap_code_test` | false | true | | false |
 
 An empty cell means the tool does not set that hint. `sap_use` is
 read-only for SAP: it changes only which session the other tools use by
 default. `openWorldHint` is false because the tools work in one closed SAP
-system, not the open web; `sap_code_test` sets it to true, as it runs code.
+system, not the open web.
 
 ## Common rules
 

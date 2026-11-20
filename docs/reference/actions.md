@@ -36,10 +36,8 @@ level of the call, beside `session` and `full`:
 Before anything reads it, the server brings the action to one shape
 ([`normalizeAction`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/core/action.ts)):
 
-- `do` is trimmed and lower-cased. `fill` and `double`, older names, become
-  `set` and `dblclick` in recordings and in the SDK's `act()`; `sap_act`'s
-  schema lists only the 16 verbs, so the client refuses them there. Any
-  other word is refused with the list of verbs.
+- `do` is one of the 16 verbs below, trimmed and lower-cased. Any other
+  word is refused with the list of verbs.
 - Field values must be a string, a number or a boolean. Objects and arrays
   are refused.
 - Line breaks are removed from every string, except the `value` of a
