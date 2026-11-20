@@ -580,6 +580,23 @@ function Op-Act($req) {
     if ([string]$a['how'] -eq 'select') { S $o 'SelectedRows' ([string]$row) }
     else { M $o 'DoubleClickCurrentCell' $null }
   }
+  elseif ($do -eq 'selectrow') {
+    $row = [int]$a['row']
+    $on = [bool]$a['value']
+    if ([bool]$a['table']) {
+      # A table control counts its rows on screen: row 0 is the first one shown.
+      $pos = 0
+      $sb = T $o 'VerticalScrollbar'
+      if ($null -ne $sb) { $pos = [int](T $sb 'Position') }
+      $vis = [int](T $o 'VisibleRowCount')
+      if ($vis -gt 0 -and $row -ge $vis) { throw "NOT_FOUND: row $($row): a table control counts its rows on screen (0 to $($vis - 1) now); scroll it to bring the row into view" }
+      $r = G $o 'GetAbsoluteRow' @($pos + $row)
+      if (-not [bool](T $r 'Selectable')) { throw "NOT_FOUND: row $($row): this row of $id has no row selector" }
+      S $r 'Selected' $on
+    }
+    elseif ($on) { S $o 'SelectedRows' ([string]$row) }
+    else { S $o 'SelectedRows' '' }
+  }
   elseif ($do -eq 'toolbar') { M $o 'PressToolbarButton' @([string]$a['button']) }
   else { throw "UNKNOWN_ACTION: $do" }
   @{ done = $true }

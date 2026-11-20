@@ -268,7 +268,7 @@ interface Fake {
   show(s: DiagScreen): void;
 }
 
-function fake(s: DiagScreen, buttons: { name: string; tip: string; enabled: boolean; x: number; y: number }[] = []): Fake {
+function fake(s: DiagScreen, buttons: { name: string; tip: string; enabled: boolean; x: number; y: number }[] = [], areas?: Record<string, unknown>[]): Fake {
   let current = s;
   const traffic = new Traffic();
   const conn = { n: 0, target: { host: "h", service: "3200" }, decoder: { screen: () => current, screens: () => new Map([[0, current]]) }, open: true, traffic, steps: new Map(), typed: new Map() };
@@ -278,7 +278,7 @@ function fake(s: DiagScreen, buttons: { name: string; tip: string; enabled: bool
       log.push({ op, ...params });
       const title = current.windows[0]?.title ?? "";
       if (op === "windows") return { windows: [{ hwnd: 1, kind: "session", title, foreground: true }] } as T;
-      if (op === "area") return { windows: [{ hwnd: 1, kind: "session", title, area: AREA, controls: [{ cls: "SAPALVGrid", rect: GRID_RECT }] }] } as T;
+      if (op === "area") return { windows: areas ?? [{ hwnd: 1, kind: "session", title, area: AREA, controls: [{ cls: "SAPALVGrid", rect: GRID_RECT }] }] } as T;
       if (op === "buttons") return { buttons } as T;
       return {} as T;
     },
@@ -459,5 +459,53 @@ describe("recheck: a box ticked and not sent is held back like a typed value", (
     await expect(f.d.act({ do: "scroll", id: "TC_ITEMS", to: "next" })).rejects.toThrow("ZHDR-FLAG ticked) has not reached SAP yet");
     await expect(f.d.look({ compact: true, id: "TC_ITEMS", rows: { from: 20, to: 25 } })).rejects.toThrow("not reached SAP yet");
     expect(acts(f)).toEqual(["click"]);
+  });
+});
+
+describe("live 2026-11-20: ids an agent wrote the scripting way", () => {
+  test("a table control by its scripting id (tbl<program><name>, with or without the path) is the table", () => {
+    const s = screen();
+    expect(namedControl(s, "tblZPROGTC_ITEMS")?.id).toBe("TC_ITEMS");
+    expect(namedControl(s, "wnd[0]/usr/tblZPROGTC_ITEMS")?.id).toBe("TC_ITEMS");
+    expect(assess(s, { do: "select", id: "wnd[0]/usr/tblZPROGTC_ITEMS", row: 11 }).risk).toBe("navigate");
+    expect(namedControl(s, "tblOTHERTC_ITEMS")).toBeUndefined();
+  });
+  test("a list label lbl[col,row] is the place @row,col", () => {
+    const s = screen([main({ list: { rows: [{ row: 5, cells: [{ col: 3, width: 3, text: "800" }, { col: 9, width: 4, text: "3000" }] }] } as never })]);
+    const f = findTarget(s, { do: "dblclick", id: "lbl[9,5]" });
+    expect("target" in f && f.target.kind).toBe("list");
+    expect("target" in f && f.target.what).toBe('"3000"');
+  });
+  test("an id that names nothing is said so with the closest ids, not refused as a write", async () => {
+    const f = fake(screen());
+    await expect(f.d.assess({ do: "select", id: "ZHDR-NOTX" })).rejects.toThrow('No control "ZHDR-NOTX" on this screen (closest: ZHDR-NOTE');
+    await expect(f.d.assess({ do: "dblclick", id: "lbl[9,40]" })).resolves.toMatchObject({ risk: "navigate" });
+    expect(acts(f)).toEqual([]);
+  });
+});
+
+describe("live 2026-11-20: a popup is found by its title among the session's windows", () => {
+  test("an ownerless SAP GUI dialog listed before the popup does not hide the popup's screen area", async () => {
+    const popup = main({ index: 1, modal: true, title: "Select View(s)", program: "SAPLMGMM", dynpro: "0070", size: { rows: 20, cols: 46 }, elements: [], tabstrips: [], controls: [], tables: [{ ...TABLE, rows: TABLE.rows.map((r, i) => ({ ...r, index: i, row: 1 + i })) }] });
+    const s = screen([main(), popup]);
+    const POPUP: [number, number, number, number] = [389, 129, 360, 566];
+    const f = fake(s, [], [
+      { hwnd: 1, kind: "session", title: "Synthetic Order: Change", area: AREA, controls: [] },
+      { hwnd: 2, kind: "popup", title: "SAP GUI for Windows 800", area: null, controls: [] },
+      { hwnd: 3, kind: "popup", title: "Select View(s)", area: POPUP, controls: [] },
+    ]);
+    await f.d.act({ do: "select", id: "TC_ITEMS", row: 0 });
+    const click = f.log.find((x) => x.op === "act") as { action: { x: number; y: number } } | undefined;
+    expect(click).toBeDefined();
+    expect(click!.action.x).toBeGreaterThanOrEqual(POPUP[0]);
+    expect(click!.action.x).toBeLessThan(POPUP[0] + POPUP[2]);
+    expect(click!.action.y).toBeGreaterThanOrEqual(POPUP[1]);
+  });
+});
+
+describe("live 2026-11-20: SE16's list moves sideways", () => {
+  test("Ctrl+Shift+F11 on a toolbar button with only a tooltip, List Width Right: navigation, named by its tooltip", () => {
+    const w = main({ toolbar: [{ vkey: 47, key: "Ctrl+Shift+F11", text: "", tooltip: "List Width Right", icon: "", enabled: true }], keys: [] });
+    expect(assess(screen([w]), { do: "key", key: "Control+Shift+F11" })).toEqual({ risk: "navigate", reason: 'key 47 "List Width Right"' });
   });
 });
