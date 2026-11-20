@@ -20,7 +20,7 @@ Lists are separated by commas or spaces and are not case-sensitive.
 
 | Variable | Default | Values | Effect |
 | --- | --- | --- | --- |
-| `SAP_WRITE` | `off` | `off`, `confirm`, `on` | what happens to actions that may write to SAP: refused, held for your yes, or run. See [Safety model](../concepts/safety.md) and [Confirm mode](../concepts/confirm-mode.md) |
+| `SAP_WRITE` | `off` | `off`, `confirm`, `on` | what happens to actions that may write to SAP: refused, asked about in your MCP client (refused when it cannot ask), or run. See [Safety model](../concepts/safety.md) and [Confirm mode](../concepts/confirm-mode.md) |
 | `SAP_ALLOW_SYSTEMS` | all | `ABA/800,S4H` | only these systems, optionally with a client, are visible and usable. Checked on every tool call: a session that moves to another system is refused from then on |
 | `SAP_ALLOW_TCODES` | all | `VA03,MM03` | the only transactions the agent may open or work in. On Fiori, app intents (`SalesOrder-display`) |
 | `SAP_BLOCK_TCODES` | none | `SE38,SM30` | transactions the agent may not open or work in |
@@ -51,8 +51,8 @@ Lists are separated by commas or spaces and are not case-sensitive.
 | --- | --- | --- | --- |
 | `SAP_VIEW` | `diff` | `diff`, `full` | `full`: every action answers with the whole screen. `diff`: only what changed, when the screen is the same and the changes are shorter |
 | `SAP_FIORI_WAIT` | full waits | `busy` | faster Fiori waits: busy indicators only, without UI5's RecordReplay |
-| `SAP_CODE` | while recording | `on`, `off` (also `true`, `1`, `false`, `0`) | the `code:` line in `sap_act` and `sap_confirm` answers: the SDK call that repeats the action. Unset, it is there only while a recording is on. `on`: always. `off`: never, also while recording |
-| `SAP_STRUCTURED` | `off` | `on` (also `true`, `1`) | answers that code reads (`sap_sessions`, `sap_act`, `sap_confirm`, `sap_replay`, `sap_record`) also carry `structuredContent`, and these tools declare output schemas. The text is the same. See [MCP tools](tools.md#structured-content) |
+| `SAP_CODE` | while recording | `on`, `off` (also `true`, `1`, `false`, `0`) | the `code:` line in `sap_act` answers: the SDK call that repeats the action. Unset, it is there only while a recording is on. `on`: always. `off`: never, also while recording |
+| `SAP_STRUCTURED` | `off` | `on` (also `true`, `1`) | answers that code reads (`sap_sessions`, `sap_act`, `sap_replay`, `sap_record`) also carry `structuredContent`, and these tools declare output schemas. The text is the same. See [MCP tools](tools.md#structured-content) |
 | `SAP_TIMINGS` | off | `on`, `true`, `1` | every `sap_act` answer adds a line that says where the time went. One action can ask with `"timing": true` |
 
 ## Recording and files

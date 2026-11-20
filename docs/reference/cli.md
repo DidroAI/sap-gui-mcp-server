@@ -35,9 +35,9 @@ runner come these commands, described in their guides:
 | --- | --- | --- |
 | `init [--yes] [--force] [--dry-run]` | sets a project up: `sap.config.ts`, `sap-tests/example.sap.ts`, agent skills, MCP clients, `.gitignore` | [Writing tests](../guides/sdk-tests.md) |
 | `install --skills [--target claude\|codex\|cursor\|all] [--global] [--dry-run]` | copies the bundled agent skills | [CLI for coding agents](../guides/cli-for-agents.md) |
-| `test [files] [--config f] [--project p] [--reporter list,junit,json,html] [--grep re] [--retries n] [--list]` | runs `*.sap.ts` tests | [Writing tests](../guides/sdk-tests.md) |
+| `test [files] [--config f] [--project p] [--reporter list,junit,json,html] [--grep re] [--retries n] [--list] [--update-locks]` | runs `*.sap.ts` tests | [Writing tests](../guides/sdk-tests.md) |
 | `show-trace <file> [--out <file.html>] [--open]` | writes a recording or trace as one HTML page | [Trace viewer](../guides/trace-viewer.md) |
-| `look`, `act`, `confirm`, `use`, `screenshot`, `record`, `daemon` | the agent CLI | [CLI for coding agents](../guides/cli-for-agents.md) |
+| `sessions`, `look`, `act`, `use`, `screenshot`, `record`, `daemon` | the agent CLI | [CLI for coding agents](../guides/cli-for-agents.md) |
 
 `setup` also takes `cursor`, `windsurf` and `vscode` there.
 

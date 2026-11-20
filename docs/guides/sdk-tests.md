@@ -43,6 +43,7 @@ await sap.close();
 | `allowSystems`, `allowTcodes`, `blockTcodes` | the environment's | override `SAP_ALLOW_SYSTEMS`, `SAP_ALLOW_TCODES`, `SAP_BLOCK_TCODES` |
 | `timeout` | `5000` | default timeout of `expect` and `waitFor`, in ms |
 | `trace` | off | `{ dir, name, screenshots? }`: record the run as a trace (see [Trace viewer](trace-viewer.md)) |
+| `verify` | off | `{ lock, key, mode }`: check each action against a lock file (see [Lock files](#lock-files)) |
 
 An action the guard refuses throws `Refused`; the action did not run.
 
@@ -132,6 +133,58 @@ what the recording expects does it call `fallback` (a model, a person, any
 function) for a repair; repairs run under the replay's rules and, with
 `save`, are written into a new version of the recording.
 
+`runVerified` also runs test code against its [lock file](#lock-files):
+
+```ts
+const r = await runVerified(sap, { file: "sap-tests/create.sap.ts", export: "createOrder" },
+  { customer: "2200" },
+  { fallback: async (drift) => askModel(drift) }); // only for drift no saved repair fixes
+// r.passed, r.verified, r.unverified, r.fallbacks, r.repairs, r.patches, r.drift
+```
+
+On drift it pauses inside the run, before anything else happens in SAP,
+and awaits `fallback`. A repair runs under the replay's rules (at most 4
+actions, no write the action does not make, no leaving the transaction, no
+value that is in neither the lock, the parameters nor the screen) and must
+land where the lock says. A repair that worked is saved in the lock as an
+overlay and applied with no model the next time the same drift shows. The
+`.sap.ts` is never rewritten: `r.patches` proposes the change to the code
+for a person to review.
+
+## Lock files
+
+Test code says what to do. A lock file, `<name>.sap.lock.json` next to
+`<name>.sap.ts`, records what the screens looked like on runs that passed:
+for each `sap.step` block, each action's control, the screen it ran on, and
+the screen, popup and status it led to. Typed values are kept but not
+compared. With a lock, a code run checks every action as a replay checks a
+recording, with no model.
+
+- The runner verifies against the lock by default (`use: { lock: "verify" }`).
+  The first pass writes it; later passes rewrite it only when its paths,
+  repairs or system change, so a stable lock does not show in diffs.
+- Where SAP answers otherwise (another screen, a popup, a new error in the
+  status bar), the test fails with a `Drift` error that names the step, the
+  action, its line in the file, what the lock expected and what came. Every
+  read and action after it throws the same error.
+- When the code asks about the screen right after (`sap.at`, `sap.popup`,
+  `exists()`, `dismissInfo`, `save({ acceptWarnings })`), a different
+  landing is a branch, not drift: the code handles it, and a passing run
+  adds that path to the lock. This is how screens SAP shows for some data
+  only pass.
+- A lock verified on another system or surface is not compared.
+- Paths are only added. Delete the lock, or its entry, to start again.
+
+| Mode | Does |
+| --- | --- |
+| `verify` (default) | compare; a passing run adds what the lock does not have |
+| `write` | compare nothing, add this run's screens (`npx sap-gui test --update-locks`) |
+| `off` | leave the lock alone |
+
+In a script, `connect({ verify: { lock: "x.sap.lock.json", key: "my test", mode: "verify" } })`
+does the same. Commit lock files with the tests. `sap_code_test` also checks
+against the saved test's lock and reports drift.
+
 ## The test runner
 
 Test files end in `.sap.ts`:
@@ -159,7 +212,7 @@ export default defineConfig({
   retries: 0,
   reporter: "list", // list | junit | json | html
   outputDir: "sap-results",
-  use: { surface: "webgui", system: "ABA", write: "off", screenshots: true },
+  use: { surface: "webgui", system: "ABA", write: "off", screenshots: true, lock: "verify" },
 });
 ```
 
@@ -175,11 +228,13 @@ npx sap-gui test --list                # what would run
 The runner finds `sap.config.ts` (or `.js`, `.mjs`, `.json`) by walking up
 from the current folder. The `sap` fixture connects to SAP only for a test
 or hook that takes it as a parameter. A test that passes on a retry is
-reported as flaky; finding no tests exits with 1. The `html` reporter
+reported as flaky; finding no tests exits with 1. The list, JUnit and
+HTML reports name the step and action of a drift, and the lock. The `html` reporter
 writes `sap-results/index.html`, which links each test's trace page.
 
 Flags: `--config <file>`, `--project <p>`, `--reporter list,junit,json,html`,
-`--grep <re>`, `--retries <n>`, `--list`. Test files match
+`--grep <re>`, `--retries <n>`, `--list`, `--update-locks` (write the
+[lock files](#lock-files) from this run). Test files match
 `**/*.sap.{ts,js,mjs}` under `testDir` (default: the config's folder).
 
 Tests run one at a time (one SAP session is one user's screen). Each test's

@@ -19,7 +19,8 @@ open it.
 
 ## What to expect
 
-Typing, Enter and tabs run without asking. Save is held: clients that
-support MCP elicitation ask you directly; others get a token, and the agent
-must ask you in the chat before it calls `sap_confirm`. The confirmation is
-for that one action, on that screen, and expires after ten minutes.
+Typing, Enter and tabs run without asking. Before Save runs, your MCP
+client asks you, with the action, the system and the transaction. The yes
+is for that one action, on that screen; you have five minutes to answer.
+A client that does not support MCP elicitation cannot ask, and the save is
+refused: the agent then tells you what it would have saved.

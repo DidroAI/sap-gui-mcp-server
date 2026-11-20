@@ -24,15 +24,13 @@ The package installs two names for the same program: `sap-gui` and
 | `sap-gui act '<json>' [--full]` | runs one action ([actions](../reference/actions.md)) | `sap_act` |
 | `sap-gui act '[<json>, ...]' [--full]` | runs one screen's actions in one call | `sap_act` with `actions` |
 | `sap-gui act set <id> <value>`, `press <id>`, `key <n>`, `okcode <cmd>`, `select <id>`, `check <id> [true\|false]`, `combo <id> [key]`, `f4 <id>`, `dblclick <id>`, `scroll <id> <to>` | shorthand for one action | `sap_act` |
-| `sap-gui confirm <token>` | runs an action held for confirmation | `sap_confirm` |
 | `sap-gui screenshot` | writes a PNG of the window or tab | `sap_screenshot` |
 | `sap-gui record <op> ['<json>']` | `start <name>`, `assert '{"check":"status","contains":"saved"}'`, `stop`, `list`, ... | `sap_record` |
 | `sap-gui daemon status\|stop` | the background process that keeps the session attached between commands | |
 
 Each command prints one short line and the path of the screen file.
 `look`, `act`, `screenshot` and `record` take `--session <ref>`. Exit codes:
-0 done, 1 error or refused, 2 usage, 3 held for confirmation (run
-`sap-gui confirm <token>` after the user's yes).
+0 done, 1 error or refused, 2 usage.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -54,13 +52,16 @@ Quote the list as one argument. Each entry is an action, and may add
 The printed summary starts with the `Ran k of n actions.` line, which says
 why the batch stopped when it did. The exit codes are the same: a batch
 that stops at a popup or a status message exits 0, one where an action
-failed or was refused exits 1, and one that holds a write exits 3.
+failed or was refused exits 1.
 
 The daemon keeps the `SAP_*` settings it started with. A later command with
 different settings is refused: run `sap-gui daemon stop` first.
 
 The same settings apply as for the MCP server: writes stay refused
 unless `SAP_WRITE` allows them ([configuration](../reference/configuration.md)).
+The CLI cannot ask you, so `SAP_WRITE=confirm` refuses writes here: a
+write needs `SAP_WRITE=on`, and the agent's own approval of each command
+is then the confirmation.
 
 ## Teaching the agent
 

@@ -1,14 +1,9 @@
 # MCP tools
 
-The server registers its tools under the server name `sap-gui`. Six work
+The server registers its tools under the server name `sap-gui`. Five work
 on the open SAP sessions, two turn a session into a repeatable test, and
-two more save and run test code when you turn them on:
-
-- `sap_confirm` is listed only when `SAP_WRITE=confirm`. With writing off
-  or on it could never run anything.
-- `sap_code_save` and `sap_code_test` are listed only when
-  `SAP_CODE_TOOLS=on` ([Configuration](configuration.md#recording-and-files)).
-
+two more save and run test code when you turn them on
+(`SAP_CODE_TOOLS=on`, [Configuration](configuration.md#recording-and-files)).
 So a server with the default settings lists seven tools.
 
 | Tool | Does | Listed |
@@ -17,7 +12,6 @@ So a server with the default settings lists seven tools.
 | [`sap_use`](#sap-use) | makes a session the active one | always |
 | [`sap_look`](#sap-look) | the screen as text | always |
 | [`sap_act`](#sap-act) | one action, or several (`actions`), then the new screen | always |
-| [`sap_confirm`](#sap-confirm) | runs an action held for the user's yes | `SAP_WRITE=confirm` |
 | [`sap_screenshot`](#sap-screenshot) | a PNG of the window or tab | always |
 | [`sap_record`](#sap-record) | records the run as a test | always |
 | [`sap_replay`](#sap-replay) | runs a recorded test again, with no model | always |
@@ -40,7 +34,6 @@ ask the user before a call; the server's own guard does not read them.
 | `sap_use` | true | | | false |
 | `sap_look` | true | | true | false |
 | `sap_act` | false | true | | false |
-| `sap_confirm` | false | true | | false |
 | `sap_screenshot` | true | | true | false |
 | `sap_record` | false | false | | false |
 | `sap_replay` | false | true | | false |
@@ -193,12 +186,12 @@ Other answers:
 - **Refused:** `Refused: <reason>` (`isError`). The guard, the command-field
   rule or the transaction lists said no. With writing off, the reason ends
   "Tell the user what you would have saved; do not look for another way."
-- **Held** (with `SAP_WRITE=confirm`): when the client supports MCP
-  elicitation, the client asks the user and the answer is the result (or
+- **Asked** (with `SAP_WRITE=confirm`): the client asks the user through
+  MCP elicitation, and the answer is the result once they accept, or
   `Not run: the user declined ...`, which tells the agent to stop and not
-  retry). Otherwise the answer starts with `NOT RUN YET: needs the user's
-  confirmation: ...` and holds a token for `sap_confirm`. A held action is
-  not an error result.
+  retry. A client without elicitation gets `Refused: ... this client cannot
+  ask the user ...` (`isError`), and the first answer of the session opens
+  with a `NOTE:` line saying so ([Confirm mode](../concepts/confirm-mode.md)).
 - **Failed:** the reason, a `Next: ...` line when a field is closed or a
   control does not scroll, then where the session is: one line when the
   screen is as the agent saw it last, otherwise the screen.
@@ -208,7 +201,7 @@ Other answers:
   tree): the server leaves it with `/n` and says so (`isError`).
 
 ::: tip The SDK line
-While a recording is on, every `sap_act` and `sap_confirm` answer of an
+While a recording is on, every `sap_act` answer of an
 action that ran has a line such as `code: await sap.set("VBAK-VBELN", "4711");`:
 the [SDK](../guides/sdk-tests.md) call that repeats the action. Without a
 recording there is no such line. `SAP_CODE=on` adds it always,
@@ -245,7 +238,7 @@ as it is then, as if it were sent alone. The batch holds the session: no
 other call runs in between. It ends before the next action when:
 
 - an action fails or is refused;
-- an action may write and waits for the user's yes;
+- an action may write and the user is asked about it (it is asked alone);
 - a popup opened;
 - the status bar shows an error, a warning or a termination (a `set`,
   `check` or `focus` does not end it on a message that was there before);
@@ -256,6 +249,13 @@ other call runs in between. It ends before the next action when:
 `expect` lets the batch go on through what it names: `{"screen":"4001"}`,
 `{"popup":true}`, `{"status":"W"}`. None of these end the batch after its
 last action.
+
+An `okcode` that opens a transaction (`/nVA03`, `/*VA03`) needs no
+`expect`: the batch goes on into that transaction's first screen, as if
+the step said `{"transaction":"VA03"}`. So a batch can start with the
+transaction and fill its first screen in the same call. The actions after
+it are still checked one by one: an id that is not on that screen fails
+and ends the batch, and a write there needs `unseen`.
 
 **A write never runs on a screen the agent has not seen in the batch.** An
 action that may write, after the first, does not run when the screen or
@@ -285,32 +285,11 @@ STATUS E: Fill in all required fields  (error: correct the input it names, then 
 - While recording: `code:` and one SDK line per action.
 - Then the status line and the screen, once.
 
-A batch is an error result when an action failed or was refused. A held
-write puts the batch's lines first, then the held action's own answer
-(`NOT RUN YET: ...` with a token, or the result after the user's yes).
+A batch is an error result when an action failed or was refused. Under
+`SAP_WRITE=confirm`, the write that ends the batch is asked about on its
+own; the answer is then that action's result, or `Not run: the user
+declined ...`.
 While a recording is on, each action of a batch is its own step.
-
-## sap_confirm
-
-Runs an action that `sap_act` held for confirmation, with the token
-`sap_act` gave. Used only when the client cannot ask the user itself.
-Listed only when `SAP_WRITE=confirm`.
-
-| Parameter | Type | Required | Meaning |
-| --- | --- | --- | --- |
-| `token` | string | yes | the token from `sap_act` |
-
-Returns: the same as `sap_act` when the action runs.
-
-- A token works once, whatever the outcome, and for ten minutes. At most
-  50 tokens are held; the oldest go first. An unknown or expired token
-  says that nothing ran and that the user must be asked again.
-- Before running, the server reads the screen again. If the session,
-  surface, system, client, transaction, window title, action or the
-  server's assessment of it changed, the answer is `Not run: the screen
-  changed since the confirmation was asked (...)`.
-- The server cannot check that the user said yes. See
-  [Confirm mode](../concepts/confirm-mode.md).
 
 ## sap_screenshot
 
@@ -458,6 +437,10 @@ the line of the saved file, the `sap.step` it was in, the trace file and
 the screen after the run (`isError`).
 
 - The checks of `sap_code_save` run again on the file as it is.
+- The test is verified against `<name>.sap.lock.json`, which its first
+  pass writes. Where SAP answers otherwise, it fails with `Drift`: the
+  step, the action and the screen. Fix the code with `sap_code_save` if
+  SAP changed ([Lock files](../guides/sdk-tests.md#lock-files)).
 - The test runs under the server's `SAP_WRITE`, `SAP_ALLOW_TCODES` and
   `SAP_BLOCK_TCODES`, on the server's session. A test cannot widen them.
 - Refused while a recording is on.
@@ -465,8 +448,11 @@ the screen after the run (`isError`).
 ## Reading answers from code
 
 Answers are text. Code that reads them without `SAP_STRUCTURED=on` can rely
-on this order for `sap_act` and `sap_confirm`, top to bottom (each line only
-when it applies):
+on this order for `sap_act`, top to bottom (each line only
+when it applies). Under `SAP_WRITE=confirm` with a client without MCP
+elicitation, the first `sap_look` or `sap_act` answer of the server starts
+with one more line before these: `NOTE: writing is set to confirm, and this
+client cannot ask the user ...`.
 
 1. `(This call waited N s for the call before it on this session ...)`:
    another call on the same session ran first.
@@ -475,13 +461,11 @@ when it applies):
    `Ran K of N actions. Stopped: <why>. Actions J to N did not run.`, then `Action N: expected ...` when
    the last step's `expect` was not met, then one `n. <note>` line per
    action that ran.
-3. `NOT RUN YET: needs the user's confirmation: ...`, an `Action:` line and
-   the line with `token "<hex>"`: the write is held, and no screen follows.
-4. `STATUS E|W|A: <message>  (<what to do>)`: an error, warning or
+3. `STATUS E|W|A: <message>  (<what to do>)`: an error, warning or
    termination in the status bar, said before the screen.
-5. `code: await sap....;` (one action), or `code:` followed by one line per
+4. `code: await sap....;` (one action), or `code:` followed by one line per
    action (a batch): only while recording, or with `SAP_CODE=on`.
-6. An empty line, then the screen: the whole compact view (it starts with
+5. An empty line, then the screen: the whole compact view (it starts with
    `TRANSACTION ...` or the Fiori app's header), or on the same screen
    `CHANGED n of m lines (same screen; sap_look shows all of it):` followed
    by `~`, `+`, `-` and `=` lines, or `NO CHANGE on the screen (...)`. A
@@ -503,7 +487,7 @@ default should not cost tokens.
 | Tool | `structuredContent` |
 | --- | --- |
 | `sap_sessions` | `{sessions: [{n, active, id, surface, system, client, user, transaction, title, where}]}` |
-| `sap_act`, `sap_confirm` | `{ran, total, stopped?: {why, text}, held?: {token}, screen: {transaction, program, number, title, popup}, status?: {type, text}}` |
+| `sap_act` | `{ran, total, stopped?: {why, text}, screen: {transaction, program, number, title, popup}, status?: {type, text}}` |
 | `sap_replay` | `{passed, steps: [{n, outcome, ms, failures}], variables}` |
 | `sap_record` | `{recording, name?, steps?}`, after every op |
 

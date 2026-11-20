@@ -42,8 +42,9 @@ command and `/c npx -y sap-gui-mcp-server` as its arguments:
 
 Writes to SAP are refused until you allow them. Every snippet below can take
 settings as environment variables, for example `SAP_WRITE=confirm` so that
-each action that may write waits for your approval
-([Confirm mode](../concepts/confirm-mode.md)). All the variables are in
+your client asks you before each action that may write (clients
+with MCP elicitation; others get such actions refused,
+[Confirm mode](../concepts/confirm-mode.md)). All the variables are in
 [Configuration](../reference/configuration.md).
 
 ## Claude Code

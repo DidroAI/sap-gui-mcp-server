@@ -90,7 +90,7 @@ scrolling), **navigate** (typing, Enter, tabs, Back, Execute F8) or
 | `SAP_WRITE` | Read and navigate | Commit (Save, Post, Delete, Release, Yes on a save popup, unknown buttons) |
 | --- | --- | --- |
 | `off` (default) | allowed | refused |
-| `confirm` | allowed | held until the user says yes to that exact action |
+| `confirm` | allowed | run only after the user says yes to that exact action in the MCP client; refused when the client cannot ask |
 | `on` | allowed | allowed |
 
 Under every setting:
@@ -119,9 +119,12 @@ Turn it on only where you would let the agent's author run scripts on that
 machine. See
 [Code tools](guides/record-replay.md#code-tools-sap-code-save-and-sap-code-test).
 
-With `confirm`, MCP clients that support elicitation ask the user
-themselves. Other clients rely on the agent asking in the chat: the server
-cannot verify that the user was asked. See
+With `confirm`, the MCP client asks the user (MCP elicitation), so the
+agent cannot answer for them. A client without elicitation cannot ask, and
+every write is refused. With such a client, `SAP_WRITE=on` plus the
+client's own approval of each `sap_act` call is the alternative; that
+approval is then the only check on writes. The agent CLI cannot ask either.
+See
 [Confirm mode](concepts/confirm-mode.md).
 
 More in the [safety model](concepts/safety.md) and the

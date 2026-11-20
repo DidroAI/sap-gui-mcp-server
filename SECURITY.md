@@ -108,8 +108,8 @@ has no server side, and no account.
 
 - **Writes are off by default.** Each surface classifies an action as read,
   navigate or commit before it runs, and fails closed: anything not known
-  to be safe is a commit. Commits are refused (`SAP_WRITE=off`), held for
-  your yes (`confirm`), or allowed (`on`).
+  to be safe is a commit. Commits are refused (`SAP_WRITE=off`), asked
+  about in your MCP client (`confirm`), or allowed (`on`).
 - **Where:** allow lists of systems and clients (`SAP_ALLOW_SYSTEMS`), of
   browser origins (`SAP_ALLOW_ORIGINS`), and allow and block lists of
   transactions (`SAP_ALLOW_TCODES`, `SAP_BLOCK_TCODES`), checked on every
@@ -146,9 +146,11 @@ SAP's own authorisations.
   on the safe list can still write. **Execute (F8)** counts as navigate,
   and a report started with it can update the database. Put such programs
   in `SAP_BLOCK_TCODES`.
-- **Confirm mode without elicitation is advisory.** When the MCP client
-  cannot ask you itself, the agent asks you in the chat and passes a token
-  to `sap_confirm`. The server cannot tell whether you were asked.
+- **Confirm mode needs a client that can ask.** With `SAP_WRITE=confirm`,
+  the MCP client asks you (MCP elicitation). A client that cannot ask gets
+  every write refused. With `SAP_WRITE=on` the only check on writes is your
+  client's own approval of each tool call, if it asks; the agent CLI asks
+  nothing itself.
 - **What the agent reads leaves the server.** Screen content goes to your
   MCP client and the model behind it. The guard does not stop the agent
   from passing what it read to other tools it has (a web search, a file

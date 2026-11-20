@@ -1,8 +1,9 @@
 # Confirm mode
 
-With `SAP_WRITE=confirm`, an action that may write is held until you say
-yes. Every other action runs as usual. How you are asked depends on your
-MCP client.
+With `SAP_WRITE=confirm`, an action that may write runs only after you say
+yes to it in your MCP client. Every other action runs as usual. The client
+must support MCP elicitation; with one that does not, such actions are
+refused.
 
 ## The client supports MCP elicitation
 
@@ -23,33 +24,38 @@ told so. You have five minutes to answer.
 
 ## The client does not
 
-`sap_act` answers with a token instead:
+Then the server cannot ask you, and an action that may write is
+**refused**, as with `SAP_WRITE=off`:
 
 ```
-Needs the user's confirmation: <what it does>, on <system>/<client>, <transaction>.
-Action: <the action>
-Ask the user; only after they say yes to this exact action, call sap_confirm with token "<token>".
+Refused: this action may write to SAP (<what it does>) and writing is set to confirm, but this client cannot ask the user (it does not support MCP elicitation). Nothing ran. ...
 ```
 
-The agent asks you in the chat, then calls `sap_confirm` with the token.
+The agent is told to say what it would have saved and not to look for
+another way. The first `sap_look` or `sap_act` answer of the session starts
+with a `NOTE:` line that says writes will be refused, so the agent can tell
+you before it works towards a save. The server also writes the same note
+once to its log (stderr) when the client connects.
 
-::: warning
-This is **advisory**: the server cannot check that you were asked. Treat it
-as a reminder to the agent, not as a control. If you need a control, use
-`SAP_WRITE=off` or a client with elicitation.
-:::
+With such a client, use `SAP_WRITE=on` together with the client's own
+approval of each `sap_act` call (most clients ask before a tool that is
+marked destructive). That approval is then the check; the server does not
+add one of its own.
 
 ## What the confirmation is bound to
 
-In both cases the confirmation is bound to what was shown: the session,
-system, client, transaction, window title, the action and what the server
-said it would do. Before running, the server reads the screen again and
-refuses if any of these changed, with what changed; the agent then looks at
-the screen and calls `sap_act` again.
+The question is bound to what it showed: the session, system, client,
+transaction, window title, the action and what the server said it would
+do. Before running, the server reads the screen again and refuses if any
+of these changed, with what changed; the agent then looks at the screen
+and calls `sap_act` again.
 
-A token works once, whatever the outcome, and for ten minutes. While it
-waits, the session is not held: other calls on it go on, and if they change
-the screen, the token is refused.
+## In a batch
+
+In a batch (`actions`), the action that may write is asked about on its
+own, when its turn comes. If you decline, the batch ends there with
+`Not run: the user declined`. With a client that cannot ask, the batch ends
+there with the refusal.
 
 ## Limits
 
@@ -59,5 +65,5 @@ held, because the server does not rate them as writes
 ([Safety model](safety.md)). Use a test system and a user with the
 authorisations you want the agent to have.
 
-A recorded test that is replayed cannot ask for each step: a step that may
-write needs `SAP_WRITE=on` ([Recording and replay](../guides/record-replay.md)).
+A recorded test that is replayed, and the [agent CLI](../guides/cli-for-agents.md),
+cannot ask for each step: a step that may write needs `SAP_WRITE=on` ([Recording and replay](../guides/record-replay.md)).
