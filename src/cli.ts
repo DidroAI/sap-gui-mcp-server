@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  *   sap-gui-mcp-server            the stdio MCP server (default)
- *   sap-gui-mcp-server setup      adds the server to Claude Code, Codex and Claude Desktop
+ *   sap-gui-mcp-server setup      adds the server to Claude Code, Codex, Claude Desktop, Cursor and VS Code
  *   sap-gui-mcp-server doctor     checks what the server can reach on this machine
  *   sap-gui-mcp-server sessions   lists the SAP sessions it finds, then exits
  */
@@ -19,7 +19,7 @@ const HELP = `sap-gui-mcp-server ${SERVER_VERSION}: an MCP server that sees and 
 
 Usage:
   sap-gui-mcp-server            start the stdio server (what MCP clients run)
-  sap-gui-mcp-server setup [claude-code|codex|claude-desktop] [--dry-run]
+  sap-gui-mcp-server setup [claude-code|codex|claude-desktop|cursor|vscode] [--dry-run]
                                 add the server to the MCP clients found on this machine
   sap-gui-mcp-server doctor     check SAP GUI scripting and Chrome access on this machine
   sap-gui-mcp-server sessions   list the SAP sessions found now
