@@ -9,6 +9,7 @@
  *   sap-gui-mcp-server test       runs *.sap.ts tests (src/runner)
  */
 import { disconnectChrome } from "./browser/chrome.js";
+import { AGENT_COMMANDS, AGENT_HELP, agentCommand, daemonRunning } from "./cli/agent.js";
 import { doctorReport } from "./cli/doctor.js";
 import { init } from "./cli/init.js";
 import { setup } from "./cli/setup.js";
@@ -41,6 +42,8 @@ ${TRACE_HELP}
 ${TEST_HELP}
   sap-gui-mcp-server --version | --help
 
+${AGENT_HELP}
+
 Environment:
   SAP_WRITE=off|confirm|on      actions that may write to SAP: refused (default), confirmed by the user, or allowed
   SAP_ALLOW_SYSTEMS=ABA/800,S4H only these systems (and clients)
@@ -68,6 +71,10 @@ async function main(argv: string[]): Promise<number> {
   if (cmd === "init") return await initCommand(argv.slice(1));
   if (cmd === "install") return installCommand(argv.slice(1));
   if (cmd === "test") return testCommand(argv.slice(1));
+  const agent = { env: process.env, cwd: process.cwd(), out: (l: string) => console.log(l), err: (l: string) => console.error(l) };
+  if (AGENT_COMMANDS.has(cmd)) return agentCommand(argv, agent);
+  // With a daemon running, the agent CLI's list: the same numbers, and * on its active session.
+  if (cmd === "sessions" && (await daemonRunning(agent))) return agentCommand(argv, agent);
   const surfaces = surfacesFromEnv();
   if (cmd === "doctor") {
     if (surfaces.some((s) => s.name !== "sapgui")) console.error("Checking… (if Chrome asks whether to allow remote debugging, click Allow)\n");
