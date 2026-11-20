@@ -47,6 +47,38 @@ describe("tools/list", () => {
   });
 });
 
+describe("descriptions as instructions", () => {
+  test("each description fits what clients show whole (under 4,096 characters), and says when to use the tool", async () => {
+    for (const write of ["off", "confirm", "on"]) {
+      const { client } = await setup({ SAP_WRITE: write });
+      for (const t of (await client.listTools()).tools) {
+        expect([t.name, (t.description ?? "").length < 4096]).toEqual([t.name, true]);
+        expect([t.name, (t.description ?? "").length > 150]).toEqual([t.name, true]);
+      }
+    }
+  });
+  test("the first 512 characters of the instructions name the user's words and where to start", async () => {
+    const { client } = await setup();
+    const head = (client.getInstructions() ?? "").slice(0, 512);
+    for (const w of ["SAP GUI", "Web GUI", "Fiori", "VA01", "ALV", "popup", "sap_look", "okcode /n<transaction>", "never logs on"]) expect([w, head.includes(w)]).toEqual([w, true]);
+  });
+  test("sap_act carries the SAP habits and the batch", async () => {
+    const { client } = await setup();
+    const act = (await client.listTools()).tools.find((t) => t.name === "sap_act")?.description ?? "";
+    for (const w of ["set only types", "one Enter", "f4 on the field", "answer it before anything else", "actions:", "expect", "show:true", "unseen:true", "timeout", "focus", "tell the user what you would have saved"])
+      expect([w, act.includes(w)]).toEqual([w, true]);
+  });
+  test('sap_record {"op":"help"} gives every op with an example; the description does not', async () => {
+    const { client, call } = await setup();
+    const help = await call("sap_record", { op: "help" });
+    expect(help.error).toBe(false);
+    for (const op of ["start", "assert", "variable", "capture", "note", "undo", "status", "code", "stop", "list", "export"]) expect([op, help.text.includes(`{"op":"${op}"`)]).toEqual([op, true]);
+    const record = (await client.listTools()).tools.find((t) => t.name === "sap_record")?.description ?? "";
+    expect(record).toContain('{"op":"help"}');
+    expect(record).not.toContain('{"op":"capture"');
+  });
+});
+
 describe("sap_act's input: flat, with the older action object as an alias", () => {
   const cases: Record<string, unknown>[] = [
     { do: "set", id: "ctxtVBAK-AUART", value: "OR" },
