@@ -22,6 +22,7 @@
  * This file is the part without a session: reading the batch, and the rules.
  */
 import { type NormalizedAction, normalizeAction } from "./core/action.js";
+import { okcodeKind } from "./core/guard.js";
 import { ActionError } from "./core/types.js";
 import { type ParsedScreen, stillWorking } from "./record/screen.js";
 
@@ -73,6 +74,21 @@ function parseExpect(raw: unknown): Expect | undefined {
 }
 
 /**
+ * An okcode that starts a transaction ("/nVA03") says where it leads: the
+ * batch goes on into that transaction's first screen, as if the step said
+ * {"transaction":"VA03"}. Agents write a batch that way (seen on live
+ * systems: without it, every such batch ran its first action only). The
+ * actions after it are still checked one by one: an id that is not on that
+ * screen fails and ends the batch with the screen, and a write there does not
+ * run unless its step says "unseen" (`unseenWrite`).
+ */
+function opens(action: NormalizedAction): Expect | undefined {
+  if (action.do !== "okcode" || typeof action.value !== "string" || !/^\/[nN*]/.test(action.value.trim())) return undefined;
+  const k = okcodeKind(action.value);
+  return k.kind === "transaction" ? { transaction: k.tcode } : undefined;
+}
+
+/**
  * The steps of a batch, each action normalised as `sap_act` normalises one.
  * Any step that is not a valid action refuses the whole batch: nothing runs.
  */
@@ -85,8 +101,9 @@ export function parseBatch(input: unknown): BatchStep[] {
       const { expect, show, unseen, ...rest } = raw as Record<string, unknown>;
       if (show !== undefined && show !== null && typeof show !== "boolean") throw new ActionError('"show" is true or false.');
       if (unseen !== undefined && unseen !== null && typeof unseen !== "boolean") throw new ActionError('"unseen" is true or false.');
-      const e = parseExpect(expect);
-      return { action: normalizeAction(rest), ...(e ? { expect: e } : {}), show: show === true, unseen: unseen === true };
+      const action = normalizeAction(rest);
+      const e = parseExpect(expect) ?? opens(action);
+      return { action, ...(e ? { expect: e } : {}), show: show === true, unseen: unseen === true };
     } catch (e) {
       if (e instanceof ActionError) throw new ActionError(`Action ${i + 1} of ${input.length}: ${e.message}\nNothing ran.`);
       throw e;
