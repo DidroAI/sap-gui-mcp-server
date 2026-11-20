@@ -6,6 +6,7 @@
  * - Claude Desktop: an `mcpServers["sap-gui"]` entry in claude_desktop_config.json;
  * - Cursor: an `mcpServers["sap-gui"]` entry in the project's .cursor/mcp.json when
  *   that file exists, else in ~/.cursor/mcp.json;
+ * - Windsurf: an `mcpServers["sap-gui"]` entry in ~/.codeium/windsurf/mcp_config.json;
  * - VS Code (Copilot): a `servers["sap-gui"]` entry in the project's .vscode/mcp.json,
  *   only when that file exists or `vscode` is named.
  *
@@ -58,15 +59,15 @@ export interface SetupResult {
 
 export interface SetupOptions {
   dryRun: boolean;
-  /** Only these clients: claude-code, codex, claude-desktop, cursor, vscode. */
+  /** Only these clients: claude-code, codex, claude-desktop, cursor, windsurf, vscode. */
   only?: string[];
   /** The project folder for project-scoped configs (Cursor, VS Code). Default: process.cwd(). */
-  cwd?: string;
+  cwd?: string | undefined;
   /** Whether a command is on PATH (tests replace it). */
-  onPath?: (cmd: string) => boolean;
+  onPath?: ((cmd: string) => boolean) | undefined;
 }
 
-export const CLIENTS = ["claude-code", "codex", "claude-desktop", "cursor", "vscode"] as const;
+export const CLIENTS = ["claude-code", "codex", "claude-desktop", "cursor", "windsurf", "vscode"] as const;
 export type Client = (typeof CLIENTS)[number];
 
 /** Where Cursor's MCP servers go: the project's file when it has one, else the user's. */
@@ -77,8 +78,11 @@ function cursorConfig(cwd: string, home: string): string | undefined {
   return undefined;
 }
 
+/** Windsurf's MCP config; it counts as installed when ~/.codeium/windsurf exists. */
+const windsurfConfig = (home: string) => join(home, ".codeium", "windsurf", "mcp_config.json");
+
 /** The clients this machine (and project) has, without changing anything. */
-export function detectClients(opts: { cwd?: string; onPath?: (cmd: string) => boolean } = {}, env: Env = process.env, platform: NodeJS.Platform = process.platform, home: string = homedir()): Client[] {
+export function detectClients(opts: { cwd?: string | undefined; onPath?: ((cmd: string) => boolean) | undefined } = {}, env: Env = process.env, platform: NodeJS.Platform = process.platform, home: string = homedir()): Client[] {
   const has = opts.onPath ?? ((c: string) => onPath(c, platform));
   const cwd = opts.cwd ?? process.cwd();
   const found: Client[] = [];
@@ -87,6 +91,7 @@ export function detectClients(opts: { cwd?: string; onPath?: (cmd: string) => bo
   const desktop = claudeDesktopConfig(platform, env, home);
   if (desktop && existsSync(dirname(desktop))) found.push("claude-desktop");
   if (cursorConfig(cwd, home)) found.push("cursor");
+  if (existsSync(dirname(windsurfConfig(home)))) found.push("windsurf");
   if (existsSync(join(cwd, ".vscode", "mcp.json"))) found.push("vscode");
   return found;
 }
@@ -180,6 +185,16 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
       if (r.changed) changed++;
       lines.push(r.line);
     } else lines.push("– Cursor: not found (no ~/.cursor, no .cursor/mcp.json here).");
+  }
+
+  if (want("windsurf")) {
+    const file = windsurfConfig(home);
+    if (existsSync(dirname(file)) || opts.only?.includes("windsurf")) {
+      found++;
+      const r = addJsonServer(file, "mcpServers", { command: command[0], args: command.slice(1) }, "Windsurf", "Refresh Windsurf's MCP servers (Cascade → MCP) to load it.", opts.dryRun);
+      if (r.changed) changed++;
+      lines.push(r.line);
+    } else lines.push("– Windsurf: not found (no ~/.codeium/windsurf).");
   }
 
   // VS Code keeps MCP servers per workspace: only touch a project that already has the file, or when asked.
