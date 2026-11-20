@@ -45,7 +45,8 @@ const dos = (sap: FakeSap) => sap.acts.map((a) => (a.do === "key" ? `key ${a.key
 describe("sap_act with actions: several actions, one answer", () => {
   test("a whole transaction in one call: every action runs in order, the screen comes once", async () => {
     const { sap, batch } = await setup({ SAP_WRITE: "on" });
-    const r = await batch([OPEN, CUSTOMER, QUANTITY, { ...ENTER, expect: { screen: "200" } }, SAVE]);
+    // The save runs on screen 200, which the agent named but has not seen: it says so with "unseen".
+    const r = await batch([OPEN, CUSTOMER, QUANTITY, { ...ENTER, expect: { screen: "200" } }, { ...SAVE, unseen: true }]);
     expect(r.error).toBe(false);
     expect(dos(sap)).toEqual(["okcode", "set", "set", "key 0", "key 11"]);
     expect(r.text.split("\n")[0]).toBe("Ran 5 actions.");
@@ -155,6 +156,18 @@ describe("sap_act with actions: several actions, one answer", () => {
 });
 
 describe("a batch and the guard: each action has its own decision", () => {
+  test("a write on a screen the agent has not seen in the batch does not run; the answer is that screen", async () => {
+    const { sap, batch } = await setup({ SAP_WRITE: "on" });
+    const r = await batch([OPEN, CUSTOMER, QUANTITY, { ...ENTER, expect: { screen: "200" } }, SAVE]);
+    expect(r.error).toBe(false);
+    expect(dos(sap)).toEqual(["okcode", "set", "set", "key 0"]);
+    expect(r.text.split("\n")[0]).toBe('Ran 4 of 5 actions. Stopped: action 5 ({"do":"key","key":11}) did not run: it may write, on a screen you have not seen in this batch (ZA01, program SAPMZA01, screen 200 ("Create Order: Overview")). Read the screen below, then send it, or mark the step "unseen": true when you know that screen. Action 5 did not run.');
+    expect(r.text).toContain("SCREEN 200");
+    expect(sap.orders.size).toBe(1);
+    // Sent again on the screen it has now seen: it runs.
+    const again = await batch([SAVE]);
+    expect(again.text).toContain("S: Order 5001 has been saved");
+  });
   test("writes off: the batch runs up to the save, which is refused", async () => {
     const { sap, batch } = await setup();
     const r = await batch([OPEN, CUSTOMER, { ...ENTER, expect: { screen: "200" } }, SAVE, { do: "okcode", value: "/nZA03", expect: { transaction: "ZA03" } }]);
@@ -167,7 +180,7 @@ describe("a batch and the guard: each action has its own decision", () => {
 
   test("confirm: the save is held with a token and ends the batch; sap_confirm runs it alone", async () => {
     const { sap, call, batch } = await setup({ SAP_WRITE: "confirm" });
-    const r = await batch([OPEN, CUSTOMER, { ...ENTER, expect: { screen: "200" } }, SAVE, { do: "okcode", value: "/nZA03", expect: { transaction: "ZA03" } }]);
+    const r = await batch([OPEN, CUSTOMER, { ...ENTER, expect: { screen: "200" } }, { ...SAVE, unseen: true }, { do: "okcode", value: "/nZA03", expect: { transaction: "ZA03" } }]);
     expect(r.error).toBe(false);
     expect(r.text.split("\n")[0]).toBe('Ran 3 of 5 actions. Stopped: action 4 ({"do":"key","key":11}) may write and waits for the user\'s yes. Action 5 did not run.');
     expect(r.text).toContain("Needs the user's confirmation: key 11: Save, on ABA/800, ZA01");
@@ -180,7 +193,7 @@ describe("a batch and the guard: each action has its own decision", () => {
 
   test("confirm, with a client that asks the user: one question, for the save only; what follows it does not run", async () => {
     const { sap, batch, asked } = await setup({ SAP_WRITE: "confirm" }, "accept");
-    const r = await batch([OPEN, CUSTOMER, { ...ENTER, expect: { screen: "200" } }, SAVE, { do: "okcode", value: "/nZA03" }]);
+    const r = await batch([OPEN, CUSTOMER, { ...ENTER, expect: { screen: "200" } }, { ...SAVE, unseen: true }, { do: "okcode", value: "/nZA03" }]);
     expect(asked.length).toBe(1);
     expect(asked[0]).toContain('Action: {"do":"key","key":11}');
     expect(r.text).toContain("S: Order 5001 has been saved");
@@ -188,7 +201,7 @@ describe("a batch and the guard: each action has its own decision", () => {
     expect(sap.transaction).toBe("ZA01");
 
     const no = await setup({ SAP_WRITE: "confirm" }, "decline");
-    const d = await no.batch([OPEN, CUSTOMER, { ...ENTER, expect: { screen: "200" } }, SAVE]);
+    const d = await no.batch([OPEN, CUSTOMER, { ...ENTER, expect: { screen: "200" } }, { ...SAVE, unseen: true }]);
     expect(d.text).toContain("the user declined");
     expect(no.sap.orders.size).toBe(1);
   });
@@ -218,11 +231,11 @@ describe("a batch and the guard: each action has its own decision", () => {
   test("a recording gets one step per action of the batch, each with its own risk and screens", async () => {
     const { dir, call, batch } = await setup({ SAP_WRITE: "on" });
     await call("sap_record", { op: "start", name: "Batch" });
-    await batch([OPEN, CUSTOMER, QUANTITY, { ...ENTER, expect: { screen: "200" } }, SAVE]);
+    await batch([OPEN, CUSTOMER, QUANTITY, { ...ENTER, expect: { screen: "200" } }, { ...SAVE, unseen: true }]);
     await call("sap_record", { op: "stop" });
     const t = parseTest(await readFile(join(dir, "batch.saptest.json"), "utf8"));
     expect(t.steps.map((s) => s.action?.do)).toEqual(["okcode", "set", "set", "key", "key"]);
-    // The step is the action alone: what the batch needed to know is not part of it.
+    // The step is the action alone: what the batch needed to know ("expect", "unseen") is not part of it.
     expect(t.steps[3]?.action).toEqual({ do: "key", key: 0 });
     expect(t.steps[3]).toMatchObject({ on: { screen: "100" }, after: { screen: "200" } });
     expect(t.steps[4]).toMatchObject({ risk: "commit", after: { screen: "100", status: { type: "S" } } });
@@ -260,6 +273,6 @@ describe("the rules that end a batch", () => {
   });
   test("expect and show are not part of the action", () => {
     const [s] = parseBatch([{ do: "key", value: 0, expect: { screen: 4001, popup: false }, show: true }]);
-    expect(s).toEqual({ action: normalizeAction({ do: "key", key: 0 }), expect: { screen: "4001", popup: false }, show: true });
+    expect(s).toEqual({ action: normalizeAction({ do: "key", key: 0 }), expect: { screen: "4001", popup: false }, show: true, unseen: false });
   });
 });
