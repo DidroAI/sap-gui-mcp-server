@@ -7,7 +7,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { policyFromEnv } from "../src/core/guard.js";
 import type { Action, Assessment } from "../src/core/types.js";
-import { createServer, type ServerOptions } from "../src/server.js";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { recorderOptionsFromEnv } from "../src/record/recorder.js";
+import { codeFromEnv, createServer, type ServerOptions } from "../src/server.js";
 import { FakeSurface } from "./fakes.js";
 
 /** Save (key 11) commits; everything else navigates. */
@@ -76,6 +80,35 @@ describe("descriptions as instructions", () => {
     const record = (await client.listTools()).tools.find((t) => t.name === "sap_record")?.description ?? "";
     expect(record).toContain('{"op":"help"}');
     expect(record).not.toContain('{"op":"capture"');
+  });
+});
+
+describe("the code: line", () => {
+  const recording = async (code?: boolean) => {
+    const dir = mkdtempSync(join(tmpdir(), "sap-surface-"));
+    const s = await setup({}, { record: recorderOptionsFromEnv({ SAP_RECORD_DIR: dir }, "test"), ...(code === undefined ? {} : { code }) });
+    s.surface.add({ id: "chrome:1", system: "ABA", transaction: "VA03" }, { assess, view: "TRANSACTION VA03  PROGRAM SAPMV45A  SCREEN 102\nctxtVBAK-VBELN  field  Order = \"\"  (edit)" });
+    return s;
+  };
+  test("is off by default, on while a recording is on, in single answers and in a batch", async () => {
+    const { call } = await recording();
+    expect((await call("sap_act", { do: "set", id: "ctxtVBAK-VBELN", value: "1" })).text).not.toContain("code:");
+    expect((await call("sap_act", { actions: [{ do: "set", id: "ctxtVBAK-VBELN", value: "2" }] })).text).not.toContain("code:");
+    // The draft needs no recording.
+    expect((await call("sap_record", { op: "code" })).text).toContain('await sap.set("ctxtVBAK-VBELN", "2");');
+    expect((await call("sap_record", { op: "start", name: "t" })).error).toBe(false);
+    expect((await call("sap_act", { do: "set", id: "ctxtVBAK-VBELN", value: "3" })).text).toContain('code: await sap.set("ctxtVBAK-VBELN", "3");');
+    expect((await call("sap_act", { actions: [{ do: "set", id: "ctxtVBAK-VBELN", value: "4" }] })).text).toContain('code:\nawait sap.set("ctxtVBAK-VBELN", "4");');
+    await call("sap_record", { op: "stop" });
+    expect((await call("sap_act", { do: "set", id: "ctxtVBAK-VBELN", value: "5" })).text).not.toContain("code:");
+  });
+  test("SAP_CODE forces it: off even while recording, on without a recording", async () => {
+    const off = await recording(false);
+    await off.call("sap_record", { op: "start", name: "t" });
+    expect((await off.call("sap_act", { do: "set", id: "ctxtVBAK-VBELN", value: "1" })).text).not.toContain("code:");
+    const on = await recording(true);
+    expect((await on.call("sap_act", { do: "set", id: "ctxtVBAK-VBELN", value: "1" })).text).toContain("code: await sap.set");
+    expect([codeFromEnv("on"), codeFromEnv("OFF"), codeFromEnv(undefined), codeFromEnv("")]).toEqual([true, false, undefined, undefined]);
   });
 });
 
