@@ -67,6 +67,11 @@ export interface RunOptions {
   retries?: number;
   /** Surfaces to connect over instead of the real ones (tests of the runner). */
   surfaces?: Surface[];
+  /**
+   * Options no test, describe or project may change: they are applied over every `use`. For code an
+   * agent wrote (record/code-tools.ts): the session and the write policy are the server's.
+   */
+  clamp?: UseOptions;
   onTestEnd?: (result: TestResult) => void;
 }
 
@@ -203,9 +208,9 @@ const NO_SAP = new Proxy({} as Sap, {
 });
 
 /** One run of one test: connect (when the test asks for sap), beforeEach, the test, afterEach, close. */
-async function attempt(p: Planned, retry: number, slugDir: string, config: ResolvedConfig, surfaces: Surface[] | undefined): Promise<Attempt> {
+async function attempt(p: Planned, retry: number, slugDir: string, config: ResolvedConfig, surfaces: Surface[] | undefined, clamp: UseOptions = {}): Promise<Attempt> {
   const suites = suitesOf(p.test);
-  const use: UseOptions = Object.assign({}, config.use, p.project?.use, ...suites.map((s) => s.use), p.test.details.use);
+  const use: UseOptions = Object.assign({}, config.use, p.project?.use, ...suites.map((s) => s.use), p.test.details.use, clamp);
   const timeout = p.test.details.timeout ?? suites.reduce<number | undefined>((t, s) => s.timeout ?? t, undefined) ?? config.timeout;
   const outputDir = join(config.outputDir, retry ? `${slugDir}-retry${retry}` : slugDir);
   const info: TestInfo = { title: p.test.title, titlePath: p.titlePath, file: p.test.file, project: p.project?.name, retry, outputDir, timeout };
@@ -277,12 +282,12 @@ async function attempt(p: Planned, retry: number, slugDir: string, config: Resol
 }
 
 /** Runs one planned test with its retries. */
-async function runOne(p: Planned, slugDir: string, config: ResolvedConfig, retries: number, surfaces: Surface[] | undefined): Promise<TestResult> {
+async function runOne(p: Planned, slugDir: string, config: ResolvedConfig, retries: number, surfaces: Surface[] | undefined, clamp?: UseOptions): Promise<TestResult> {
   const base = { title: p.title, titlePath: p.titlePath, file: p.file, project: p.project?.name };
   if (p.skip) return { ...base, status: "skipped", ms: 0, attempts: [] };
   const attempts: Attempt[] = [];
   for (let retry = 0; retry <= retries; retry++) {
-    const a = await attempt(p, retry, slugDir, config, surfaces);
+    const a = await attempt(p, retry, slugDir, config, surfaces, clamp);
     attempts.push(a);
     if (a.status !== "failed") break;
   }
@@ -332,7 +337,7 @@ export async function runTests(o: RunOptions): Promise<RunResult> {
     const n = (used.get(dir) ?? 0) + 1;
     used.set(dir, n);
     if (n > 1) dir = `${dir}-${n}`;
-    const r = await runOne(p, dir, config, o.retries ?? config.retries, o.surfaces);
+    const r = await runOne(p, dir, config, o.retries ?? config.retries, o.surfaces, o.clamp);
     results.push(r);
     o.onTestEnd?.(r);
   }

@@ -9,6 +9,10 @@
  */
 import type { Action, Assessment, Driver, SessionInfo, Surface, SurfaceName } from "../src/core/types.js";
 import { ActionError } from "../src/core/types.js";
+import { vkeyNumber } from "../src/sapgui/keys.js";
+
+/** A key action with its key as SAP's virtual key number ("Enter" -> 0, "Control+S" -> 11), as SAP GUI takes it. */
+const vkeyed = (a: Action): Action => (a.do === "key" ? { ...a, key: vkeyNumber(a.key ?? a.value) ?? (a.key as number) } : a);
 
 export interface Popup {
   title: string;
@@ -120,8 +124,9 @@ export class FakeSap implements Surface {
     return hit;
   }
 
-  private run(a: Action): string {
-    this.acts.push(a);
+  private run(given: Action): string {
+    this.acts.push(given);
+    const a = vkeyed(given);
     const p = this.popups[0];
     if (p) {
       // A popup takes the keys and its own buttons; everything else waits behind it.
@@ -227,7 +232,7 @@ export class FakeSap implements Surface {
         if (this.stale && this.stale.left-- > 0) return `${this.stale.view}\nNOTE SAP is still working on a step (Web GUI has locked the page until its answer is drawn): this screen is from before that step and will change.`;
         return this.view();
       },
-      assess: async (a): Promise<Assessment> => (a.do === "key" && a.key === 11 ? { risk: "commit", reason: "key 11: Save" } : { risk: "navigate", reason: a.do }),
+      assess: async (a): Promise<Assessment> => (a.do === "key" && vkeyed(a).key === 11 ? { risk: "commit", reason: "key 11: Save" } : { risk: "navigate", reason: a.do }),
       act: async (a) => {
         const view = this.view();
         const note = this.run(a);
