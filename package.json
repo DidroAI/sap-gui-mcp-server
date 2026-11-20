@@ -43,7 +43,8 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "sap-gui-mcp-server": "dist/cli.js"
+    "sap-gui-mcp-server": "dist/cli.js",
+    "sap-gui": "dist/cli.js"
   },
   "files": [
     "dist",
