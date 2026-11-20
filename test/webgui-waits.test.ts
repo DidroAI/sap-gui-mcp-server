@@ -67,6 +67,8 @@ const PAGE = `<!doctype html><html lang="en"><head><title>Synthetic</title></hea
     window.queued = true;
   };
   document.addEventListener('keydown', function (e) {
+    // A request that leaves after the queue was seen empty (live 2026-11-20: VA03's first Enter after a logon).
+    if (e.key === 'Enter' && window.queued && window.outsideQueue) { setTimeout(function () { post('vkey/0'); }, 200); return; }
     if (window.queued) {
       var owner = window.UCF_System.oLS.oSemanticEventHandlerObject;
       if (e.key === 'Enter') owner.enqueueEvent({ sEvName: 'Hotkey', post: 'vkey/0' });
@@ -214,6 +216,18 @@ describe.skipIf(!exe)("waits of a Web GUI action", () => {
     // No guess of how long a request may take to leave: the queue is empty.
     expect(session.timing.start).toBeLessThan(250);
     expect(r.ms).toBeLessThan(1500);
+  });
+
+  test("a request that leaves after the queue looked empty is not answered as 'nothing was sent'", async () => {
+    await open();
+    await page.evaluate(() => {
+      (window as unknown as { makeQueue: () => void }).makeQueue();
+      (window as unknown as { outsideQueue: boolean }).outsideQueue = true;
+    });
+    const note = await act(session, { do: "key", key: 0 });
+    expect(note).toBe("key Enter");
+    expect(await posted()).toEqual(["vkey/0"]);
+    expect(session.started).toBe(true);
   });
 
   test("an event Lightspeed puts in the queue later (a scroll, 200 ms) is waited for too", async () => {
