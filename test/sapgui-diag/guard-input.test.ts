@@ -268,7 +268,7 @@ interface Fake {
   show(s: DiagScreen): void;
 }
 
-function fake(s: DiagScreen, buttons: { name: string; tip: string; enabled: boolean; x: number; y: number }[] = []): Fake {
+function fake(s: DiagScreen, buttons: { name: string; tip: string; enabled: boolean; x: number; y: number }[] = [], areas?: Record<string, unknown>[]): Fake {
   let current = s;
   const traffic = new Traffic();
   const conn = { n: 0, target: { host: "h", service: "3200" }, decoder: { screen: () => current, screens: () => new Map([[0, current]]) }, open: true, traffic, steps: new Map(), typed: new Map() };
@@ -278,7 +278,7 @@ function fake(s: DiagScreen, buttons: { name: string; tip: string; enabled: bool
       log.push({ op, ...params });
       const title = current.windows[0]?.title ?? "";
       if (op === "windows") return { windows: [{ hwnd: 1, kind: "session", title, foreground: true }] } as T;
-      if (op === "area") return { windows: [{ hwnd: 1, kind: "session", title, area: AREA, controls: [{ cls: "SAPALVGrid", rect: GRID_RECT }] }] } as T;
+      if (op === "area") return { windows: areas ?? [{ hwnd: 1, kind: "session", title, area: AREA, controls: [{ cls: "SAPALVGrid", rect: GRID_RECT }] }] } as T;
       if (op === "buttons") return { buttons } as T;
       return {} as T;
     },
@@ -484,3 +484,21 @@ describe("live 2026-11-20: ids an agent wrote the scripting way", () => {
   });
 });
 
+describe("live 2026-11-20: a popup is found by its title among the session's windows", () => {
+  test("an ownerless SAP GUI dialog listed before the popup does not hide the popup's screen area", async () => {
+    const popup = main({ index: 1, modal: true, title: "Select View(s)", program: "SAPLMGMM", dynpro: "0070", size: { rows: 20, cols: 46 }, elements: [], tabstrips: [], controls: [], tables: [{ ...TABLE, rows: TABLE.rows.map((r, i) => ({ ...r, index: i, row: 1 + i })) }] });
+    const s = screen([main(), popup]);
+    const POPUP: [number, number, number, number] = [389, 129, 360, 566];
+    const f = fake(s, [], [
+      { hwnd: 1, kind: "session", title: "Synthetic Order: Change", area: AREA, controls: [] },
+      { hwnd: 2, kind: "popup", title: "SAP GUI for Windows 800", area: null, controls: [] },
+      { hwnd: 3, kind: "popup", title: "Select View(s)", area: POPUP, controls: [] },
+    ]);
+    await f.d.act({ do: "select", id: "TC_ITEMS", row: 0 });
+    const click = f.log.find((x) => x.op === "act") as { action: { x: number; y: number } } | undefined;
+    expect(click).toBeDefined();
+    expect(click!.action.x).toBeGreaterThanOrEqual(POPUP[0]);
+    expect(click!.action.x).toBeLessThan(POPUP[0] + POPUP[2]);
+    expect(click!.action.y).toBeGreaterThanOrEqual(POPUP[1]);
+  });
+});
