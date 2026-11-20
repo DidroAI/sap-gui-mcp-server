@@ -10,12 +10,12 @@
  *   synthetic Web GUI screens, a sap_act answer that is a diff, a refusal,
  *   sap_sessions.
  *
- *   bun test/dev/tool-tokens.ts [--json FILE] [--dump DIR] [--show]
+ *   bun test/dev/tool-tokens.ts [--json FILE] [--dump DIR] [--show] [--write off|confirm|on]
  *
  * Tokens come from the Anthropic count_tokens API when ANTHROPIC_API_KEY is
  * set (tokens.ts). Without a key they are estimated as characters / 4 and
  * the table says so. --dump writes tools-list.json and instructions.txt;
- * --show prints the answers.
+ * --show prints the answers; --write sets SAP_WRITE for the definitions (default off).
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -71,7 +71,7 @@ type Row = { group: string; name: string; text: string };
 
 async function main() {
   const surface = new FakeSurface("webgui");
-  const { server } = createServer({ policy: policyFromEnv({}), surfaces: [surface], view: "diff" });
+  const { server } = createServer({ policy: policyFromEnv({ SAP_WRITE: opt("--write") ?? "off" }), surfaces: [surface], view: "diff" });
   const client = new Client({ name: "tool-tokens", version: "0" }, { capabilities: {} });
   const [a, b] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(a), client.connect(b)]);
@@ -136,7 +136,7 @@ async function main() {
   for (const r of out) console.log(`| ${r.group} | ${r.name} | ${r.chars} | ${r.tokens} |`);
   if (args.includes("--show")) for (const r of out.filter((x) => x.group === "answers")) console.log(`\n--- ${r.name}\n${r.text}`);
   const sum = (g: string, f: (r: (typeof out)[number]) => boolean = () => true) => out.filter((r) => r.group === g && f(r)).reduce((s, r) => s + r.tokens, 0);
-  console.log(`\nTool definitions (8 tools): ${sum("definitions", (r) => r.name !== "instructions")} tokens; with the instructions: ${sum("definitions")} tokens.`);
+  console.log(`\nTool definitions (${tools.length} tools): ${sum("definitions", (r) => r.name !== "instructions")} tokens; with the instructions: ${sum("definitions")} tokens.`);
   const looks = out.filter((r) => r.group === "sap_look (compact)");
   console.log(`sap_look compact: ${looks.length} screens, mean ${Math.round(looks.reduce((s, r) => s + r.tokens, 0) / looks.length)} tokens.`);
   const json = opt("--json");
