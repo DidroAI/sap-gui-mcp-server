@@ -47,34 +47,29 @@ export function registerRecordTools(server: McpServer, registry: Registry, polic
     "sap_record",
     {
       title: "Record the SAP session as a test",
-      description: `Records what sap_act does as a repeatable test, and marks what the test must check. Off until "start". Operations ("op"):
-  {"op":"start","name":"VA03 display order"}        every sap_act that works is a step from now on; begin with an okcode like /nVA03
-  {"op":"assert","check":"status","contains":"saved"}   the status bar must say this after the last step
-  {"op":"assert","check":"field","id":"txtVBAK-NETWR","equals":"2.500,00"}   a field's value (without equals/contains/matches: its value now)
-  {"op":"assert","check":"title","contains":"Overview"}   also: "transaction", and "text" (anywhere on the screen)
+      description: `Records what sap_act does as a repeatable test, with checks. Off until "start". "op":
+  {"op":"start","name":"VA03 display order"}  each sap_act that works is a step from now on; begin with an okcode such as /nVA03
+  {"op":"assert","check":"status","contains":"saved"}  after the last step; check: status, field (with id), title, transaction, text (anywhere); with equals, contains or matches, or none: the value now
   {"op":"variable","name":"order","value":"19097"}  a value that changes between runs: written \${order} wherever it was typed or expected
-  {"op":"capture","name":"order","from":"status","pattern":"Order (\\\\d+)"}   a value SAP produced at the last step (a document number), for the steps after it; also from "field" (with id) or "title"
-  {"op":"note","text":"Open the order"}             what the last step is for
-  {"op":"undo"}                                     drop the last step from the recording (SAP is not undone)
-  {"op":"status"}                                   the steps so far
-  {"op":"stop"}                                     finish; the file is ${FILE_SUFFIX} in the recordings directory
-  {"op":"list"}                                     recordings in the directory
-  {"op":"export","name":"...","to":"calm"}          ${TARGET_NAMES.join(", ")}
-A check or capture is tried on the screen as it is now and refused if it does not hold. Recorded values are written to the file as typed.`,
+  {"op":"capture","name":"order","from":"status","pattern":"Order (\\\\d+)"}  a value SAP produced at the last step (a document number), for the steps after it; from: status, field (with id), title
+  {"op":"note","text":"Open the order"}  what the last step is for
+  {"op":"undo"}  drops the last step (SAP is not undone); also "status", "list", and "stop" (writes <name>${FILE_SUFFIX} in the recordings directory)
+  {"op":"export","name":"...","to":"calm"}  ${TARGET_NAMES.join(", ")}
+A check or capture that does not hold on the screen now is refused. Typed values are written to the file as typed.`,
       inputSchema: {
         op: z.enum(OPS),
-        name: z.string().optional().describe("start, export: the recording's name; variable, capture: the variable's name"),
+        name: z.string().optional().describe("the recording's (start, export) or the variable's (variable, capture)"),
         description: z.string().optional(),
         replace: z.boolean().optional().describe("start: record over a recording of the same name"),
         check: z.enum(["status", "field", "title", "transaction", "text"]).optional(),
-        id: z.string().optional().describe("assert, capture on a field: the control id from sap_look"),
+        id: z.string().optional(),
         equals: z.string().optional(),
         contains: z.string().optional(),
         matches: z.string().optional().describe("a regular expression"),
-        value: z.string().optional().describe("variable: the value it has in this recording"),
+        value: z.string().optional(),
         from: z.enum(["status", "field", "title"]).optional(),
-        pattern: z.string().optional().describe("capture: a regular expression whose first group is the value"),
-        text: z.string().optional().describe("note: the text"),
+        pattern: z.string().optional().describe("regular expression; its first group is the value"),
+        text: z.string().optional(),
         to: z.enum(TARGET_NAMES as [string, ...string[]]).optional(),
         session,
       },
@@ -141,7 +136,7 @@ A check or capture is tried on the screen as it is now and refused if it does no
     {
       title: "Replay a recorded SAP test",
       description:
-        'Runs a recording made with sap_record again on the active session, step by step, with no model: the same actions on the same ids, under the same write setting and transaction lists as sap_act. Answers pass or fail per step; on a failure, the screen there (the session stays on it). A window SAP shows that the recording does not have is confirmed only when it just informs, and the first line then says PASS WITH NOTES; a question or a choice fails the step. Give "variables" to run it on other data, e.g. {"order":"4711"}. Steps that may write need SAP_WRITE=on.',
+        'Runs a recording again on the active session with no model: the same actions on the same ids, under the same write setting and transaction lists as sap_act (steps that may write need SAP_WRITE=on). Answers pass or fail per step and, on a failure, the screen there. A window the recording lacks is confirmed only when it just informs (PASS WITH NOTES); a question or a choice fails the step. "variables" runs it on other data, e.g. {"order":"4711"}.',
       inputSchema: {
         name: z.string().optional().describe("the recording (default: the one just stopped)"),
         variables: z.record(z.string(), z.string()).optional(),
@@ -149,14 +144,15 @@ A check or capture is tried on the screen as it is now and refused if it does no
         choices: z
           .enum(["stop", "continue"])
           .optional()
-          .describe('a screen with a choice the recording does not have (availability control). stop (default): the step fails and names the ways on. continue: press its neutral Continue and say so'),
-        from: z.number().int().min(1).optional().describe("resume at this step on the screen as it is (after a failure there), with the variables the failed run ended with"),
+          .describe("a choice screen the recording lacks (availability check). stop (default): the step fails and names the ways on; continue: press its neutral Continue"),
+        // A whole number: .int() would put the safe-integer bounds into tools/list.
+        from: z.number().min(1).refine(Number.isInteger, "a whole number").optional().describe("resume at this step on the screen as it is, after a failure there, with that run's variables"),
         repair: repairSchema
           .optional()
           .describe(
-            'with "from": a repair for that one step, then the replay goes on as recorded. {"why":"what changed","actions":[...],"place":"before|instead|after"} (at most 4 actions; before: then the recorded action runs; instead: they replace it; after: it already ran) or {"why":"...","capture":{"var":"order","from":"status","pattern":"Order (\\d+)"}} for a number SAP makes anew when it saves. Refused: a write the recorded step does not have, leaving the transaction, a typed value that is neither in the recording nor on the screen. The recorded checks still judge the step. The answer holds a proposed test; nothing is saved',
+            'with "from": a fix for that one step, then the replay goes on as recorded. {"why":"what changed","actions":[...],"place":"before|instead|after"} (at most 4 actions; after: the recorded action already ran) or {"why":"...","capture":{"var":"order","from":"status","pattern":"Order (\\d+)"}} for a number SAP makes anew. Refused: a write the step does not have, leaving the transaction, a typed value neither recorded nor on screen. The recorded checks still judge the step. The answer proposes a test; nothing is saved',
           ),
-        format: z.enum(["text", "json"]).optional().describe("json: the result as data (steps with the phase of a failure, the full screen, the proposed test)"),
+        format: z.enum(["text", "json"]).optional().describe("json: the result as data (steps, the failure's phase and full screen, the proposed test)"),
         session,
       },
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },

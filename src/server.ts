@@ -25,13 +25,10 @@ import { registerRecordTools } from "./record/tools.js";
 export const SERVER_NAME = "sap-gui";
 export const SERVER_VERSION = "0.1.0";
 
-const INSTRUCTIONS = `Sees and drives SAP screens the user already has open: SAP GUI for Windows, SAP GUI for HTML (Web GUI) in Chrome, and SAP Fiori in Chrome. It never logs on; it works in the user's own sessions, as the user.
-Start with sap_look (or sap_sessions when several are open). The view has one line per control: its id, its type, its label and value, and its state. Act with sap_act on those ids, one action at a time; each action answers with the new screen, so you rarely need sap_look in between. Read the status bar line after each action: SAP reports errors there.
-When an action leaves you on the same screen, the answer holds only what changed since your last view: "~" a changed line, "+" a new one, "-" one that is gone, "=" an unchanged line for context; everything else is as you saw it. A new transaction, screen or popup is always shown whole, and sap_look shows the whole screen at any time.
-Long lists show the rows on screen and the total: {"do":"scroll"} moves them, sap_look with id and rows reads a range. A dropdown shows its current entry and how many it has: {"do":"combo","id":...} without a key lists them.
-Actions that may write to SAP (save, post, delete, release...) follow the user's write setting: refused, held for the user's confirmation, or run. When held, the user is asked in the client itself where the client can do that; otherwise sap_act answers with a token for sap_confirm, to call only after the user said yes to that exact action.
-Commands go through {"do":"okcode"} only; the command field itself cannot be typed into.
-To keep a run as a repeatable test, use sap_record (start, then act as usual, mark checks with assert, stop); sap_replay runs it again without a model.`;
+const INSTRUCTIONS = `Sees and drives the SAP screens the user already has open (SAP GUI for Windows; Web GUI and Fiori in Chrome), as the user. It never logs on.
+Start with sap_look (sap_sessions when several are open). Act with sap_act, one action at a time, on the ids the view shows: each answer is the new screen, so look again only when you need to. Read the status bar after each action: SAP reports errors there.
+Actions that may write are refused, held for the user's yes, or run, as the user set it up. Call sap_confirm only after the user said yes to that exact action.
+sap_record turns a run into a test; sap_replay runs it again without a model.`;
 
 function text(t: string): CallToolResult {
   return { content: [{ type: "text", text: t }] };
@@ -138,16 +135,17 @@ const ELICIT_TIMEOUT_MS = 5 * 60_000;
 const actionSchema = z
   .object({
     do: z.string().describe(VERBS.join(", ")),
-    id: z.string().optional().describe("control id from sap_look (short ids work)"),
+    id: z.string().optional(),
     value: z.any().optional(),
     key: z.any().optional(),
     node: z.string().optional(),
     how: z.string().optional(),
-    row: z.number().int().optional(),
+    // Whole numbers, checked by normalizeAction: .int() would put the safe-integer bounds into tools/list.
+    row: z.number().optional(),
     col: z.string().optional(),
     button: z.string().optional(),
-    app: z.string().optional().describe('open: the intent of a Fiori launchpad app, e.g. "#SalesOrder-manage"'),
-    to: z.union([z.number().int(), z.string()]).optional().describe('scroll: a row counted from 0, or "next", "prev", "first", "last"; sideways "right", "left"'),
+    app: z.string().optional(),
+    to: z.union([z.number(), z.string()]).optional(),
   })
   .passthrough();
 
@@ -181,7 +179,7 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
   const recorder = new Recorder(record ?? recorderOptionsFromEnv(process.env, `${SERVER_NAME}-mcp-server ${SERVER_VERSION}`));
   const pending = new Map<string, { shown: Shown; at: number }>();
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, { instructions: INSTRUCTIONS });
-  const session = z.string().optional().describe("session from sap_sessions (number, id, system, transaction, or a surface: sapgui, webgui, fiori); default: the active one");
+  const session = z.string().optional().describe("from sap_sessions: number, id, system, transaction, or sapgui, webgui, fiori; default: the active one");
   const queue = new SessionQueue();
 
   /** The queue a call on `ref` waits in: the session's id, found without opening it. */
@@ -212,7 +210,7 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
     "sap_sessions",
     {
       title: "List open SAP sessions",
-      description: "Lists the SAP sessions open on this machine (SAP GUI windows, Web GUI and Fiori tabs in Chrome), with system, client, user and transaction. * marks the active one.",
+      description: "The SAP sessions open on this machine (SAP GUI windows; Web GUI and Fiori tabs in Chrome): system, client, user, transaction. * marks the active one.",
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -231,8 +229,8 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
     "sap_use",
     {
       title: "Switch the active SAP session",
-      description: "Makes a session the active one for sap_look and sap_act.",
-      inputSchema: { session: z.string().describe("number, id, system or transaction from sap_sessions, or a surface name: sapgui, webgui, fiori") },
+      description: "Makes a session the active one for the other tools, and shows its screen.",
+      inputSchema: { session: z.string().describe("from sap_sessions: number, id, system, transaction, or sapgui, webgui, fiori") },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     ({ session: ref }) =>
@@ -249,20 +247,15 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
     "sap_look",
     {
       title: "Look at the SAP screen",
-      description: `The current SAP screen as text: header (where you are: transaction or app, screen, and the system when known), then one line per control with its id, type, label, value and state; tables as rows, popups as their own windows.
-  full=true   every id, every column, each toolbar button and its key on a line of its own (larger)
-  diff=true   only what changed since the view you got last
-  id="..."    one control, whole: all the entries of a dropdown, all the rows read of a grid, table, tree or list; id="mbar" lists every menu entry
-  id="...", rows="120-180"   those rows of a grid, table control, tree or list (counted from 0; the control is scrolled there)
-  cols="VBELN,NETWR"         with id: only these columns of a grid or table control (ids or titles);
-                             without rows, the first ${COLS_ONLY_ROWS.to + 1} rows`,
+      description:
+        'The current SAP screen as compact text: a header (transaction or app, screen, system), then one line per control (id, type, label, value, state); tables as rows, popups as their own windows. Long lists show the rows on screen and the total: read others with id and rows, or {"do":"scroll"}. id "mbar" lists every menu entry.',
       inputSchema: {
         session,
-        full: z.boolean().optional().describe("full view instead of compact"),
+        full: z.boolean().optional().describe("every id, column, toolbar button and its key (larger)"),
         diff: z.boolean().optional().describe("only what changed since your last view"),
-        id: z.string().optional().describe("one control, whole (an id from the view)"),
-        rows: z.string().optional().describe('with id: a range of rows counted from 0, e.g. "120-180"'),
-        cols: z.string().optional().describe('with id, for a grid or a table control: only these columns, by id or title, e.g. "VBELN,NETWR" (without rows: the first rows)'),
+        id: z.string().optional().describe("one control, whole: every dropdown entry, every row read of a grid, table, tree or list"),
+        rows: z.string().optional().describe('with id: rows counted from 0, e.g. "120-180" (scrolls there)'),
+        cols: z.string().optional().describe(`with id, a grid or table control: only these columns, by id or title, e.g. "VBELN,NETWR"; without rows, the first ${COLS_ONLY_ROWS.to + 1} rows`),
       },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -467,27 +460,24 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
     "sap_act",
     {
       title: "Act on the SAP screen",
-      description: `One action on the active SAP screen, by an id from sap_look; answers with the new screen, or with only what changed when the screen is the same one ("~" changed line, "+" new, "-" gone, "=" unchanged, for context). Actions:
-  {"do":"set","id":"ctxtVBAK-AUART","value":"OR"}   type into a field (Fiori: an input)
-  {"do":"set","id":"<grid>","row":0,"col":"SEATSOCC","value":"12"}   a cell of a grid that takes input (the grid's line names those columns); in a text editor "\\n" in the value is a line break
-  {"do":"press","id":"btn[8]"}                      button (Fiori: "click" works too)
-  {"do":"key","key":0}                              0 Enter, 3 Back, 4 F4, 8 F8, 11 Save, 12 Cancel
-  {"do":"select","id":"tabpT\\08"}                tab, radio button, menu entry, list item, an open menu's entry (its id from the view)
-  {"do":"select","id":"<table or grid>","row":2}    select that row (its row selector); "value":false deselects
-  {"do":"check","id":"...","value":true}            checkbox (also a list's chk[col,row]); answers the state it has after
-  {"do":"combo","id":"...","key":"PROG"}            dropdown entry, by key or shown text; without "key": lists the entries, changes nothing
-  {"do":"okcode","value":"/nVA03"}                  command field (SAP GUI, Web GUI)
-  {"do":"f4","id":"..."}                            value help
-  {"do":"dblclick","id":"..."}                      list entry or label
+      description: `One action on the SAP screen, on an id from the view. Answers with the new screen; on the same screen, only what changed: "~" changed line, "+" new, "-" gone, "=" unchanged, for context.
+  {"do":"set","id":"ctxtVBAK-AUART","value":"OR"}  type into a field; a grid cell: add "row" and "col"; in a text editor "\\n" is a line break
+  {"do":"press","id":"btn[8]"}  button ("click" too); btn[N] is function key N
+  {"do":"key","key":0}  0 Enter, 3 Back, 4 F4, 8 F8, 11 Save, 12 Cancel, or a name: "Enter", "F4", "Control+S"
+  {"do":"select","id":"tabpT\\08"}  tab, radio button, menu entry, list item; with "row": a table or grid row ("value":false deselects)
+  {"do":"check","id":"...","value":true}  checkbox
+  {"do":"combo","id":"...","key":"PROG"}  dropdown entry, by key or text; without "key": lists the entries
+  {"do":"okcode","value":"/nVA03"}  commands go here only: the command field cannot be typed into
+  {"do":"f4","id":"..."}  value help
+  {"do":"dblclick","id":"..."}  list entry or label
   {"do":"tree","id":"...","node":"<key>","how":"double|select|expand|collapse"}
-  {"do":"grid","id":"...","row":0,"col":"VBELN","how":"double|select|cell"}   any row of the grid: one that is not on screen is scrolled to first; "select" selects the row, "cell" only puts the cursor on the cell; "select" with "col" and no "row" selects the column (for the grid's sort or total buttons)
+  {"do":"grid","id":"...","row":0,"col":"VBELN","how":"double|select|cell"}  any row (scrolled to); "select" without "row" selects the column
   {"do":"toolbar","id":"...","button":"<id>"}
-  {"do":"scroll","id":"...","to":120}               grid, table control, tree or list: to a row counted from 0, or "next", "prev", "first", "last"; a table control's columns: "right", "left" (Fiori: scrolls a table or the page when the view ends with SCROLL)
-  {"do":"open","app":"#SalesOrder-manage"}          Fiori only: opens a launchpad app by its intent (the part of its address after #; parameters allowed, e.g. "#SalesOrder-display?SalesOrder=4711"). Never a URL: the tab stays on its launchpad. An intent the user may not open answers with the launchpad's error popup
-Ids: use them as the view shows them. A toolbar button btn[N] is function key N: press it, or send the key. A handle such as cntlGRID1/shell or shellcont[1]/shell is a shortened id; an id that names several controls is refused with the list of them, and an id from an earlier screen is refused with the screen you are on.
-For "key", "key" is an SAP virtual key number (0 to 99) or a key name (Enter, Escape, Tab, F4, Control+S). The command field takes commands through "okcode" only.
-An action that may write to SAP is refused, run, or held for the user's yes, as the user set it up. When held, the client asks the user itself if it can, and the answer here is the result; if it cannot, the answer holds a token for sap_confirm.`,
-      inputSchema: { action: actionSchema, session, full: z.boolean().optional().describe("answer with the whole screen even when little changed") },
+  {"do":"scroll","id":"...","to":120}  a row counted from 0, "next", "prev", "first", "last"; a table control's columns "right", "left" (Fiori: when the view ends with SCROLL)
+  {"do":"open","app":"#SalesOrder-manage"}  Fiori launchpad only: an app by its intent (parameters allowed), never a URL
+Short ids work; an id that names several controls is refused with the list, one from an earlier screen with the screen you are on.
+An action that may write (save, post, delete...) is refused, run, or held for the user's yes, as the user set it up. When held, the client asks the user if it can; if not, the answer holds a token for sap_confirm.`,
+      inputSchema: { action: actionSchema, session, full: z.boolean().optional().describe("answer with the whole screen, not the changes") },
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
     },
     ({ action, session: ref, full }) => answer(() => run(ref, action, full === true)),
@@ -498,7 +488,7 @@ An action that may write to SAP is refused, run, or held for the user's yes, as 
     {
       title: "Run a confirmed SAP action",
       description:
-        "Runs an action that sap_act held for confirmation, with the token sap_act gave. Call it only after the user said yes to that exact action. The server checks that the session, the screen and the action are still the ones the token was given for, and refuses otherwise. It cannot check that the user said yes: without a client that asks the user itself (MCP elicitation), this confirmation is advisory and rests on the agent asking. Not used when the client asks the user itself.",
+        "Runs an action sap_act held, with the token it gave. Call it only after the user said yes to that exact action. Refused when the session, the screen or the action changed. The server cannot see the user's yes: without a client that asks the user itself (MCP elicitation), this confirmation is advisory.",
       inputSchema: { token: z.string() },
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
     },
@@ -516,7 +506,7 @@ An action that may write to SAP is refused, run, or held for the user's yes, as 
     "sap_screenshot",
     {
       title: "Screenshot of the SAP session",
-      description: "A PNG of the session's window or tab, to check a result or see what the text view cannot (charts, HTML panels).",
+      description: "A PNG of the session's window or tab, for what the text view cannot show (charts, HTML panels).",
       inputSchema: { session },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
