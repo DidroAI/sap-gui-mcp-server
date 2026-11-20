@@ -467,6 +467,10 @@ the recording marked.
 `sap_record {"op":"code"}` gives the same file for the recording that is on,
 or, with none on, a draft of every action the server ran on the session.
 
+Every `sap_act` (and `sap_confirm`) answer of an action that ran ends its
+note with the same line, e.g. `code: await sap.set("VBAK-VBELN", "4711");`
+(about ten tokens); `SAP_CODE=off` leaves it out.
+
 ### Gherkin, and Tosca-like tools
 
 `gherkin` writes a `Scenario Outline` with the variables as `Examples`. It

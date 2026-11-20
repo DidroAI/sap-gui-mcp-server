@@ -21,6 +21,7 @@ import { ActionError, type Assessment, type Driver, type LookOptions, type Sessi
 import { type ViewMode, Views } from "./core/views.js";
 import { Recorder, type RecorderOptions, recorderOptionsFromEnv } from "./record/recorder.js";
 import { registerRecordTools } from "./record/tools.js";
+import { codeOf } from "./sdk/code.js";
 
 export const SERVER_NAME = "sap-gui";
 export const SERVER_VERSION = "0.1.0";
@@ -158,7 +159,12 @@ export interface ServerOptions {
   view?: ViewMode;
   /** Where recordings go and whether every session is recorded; default: from SAP_RECORD_DIR and SAP_RECORD. */
   record?: RecorderOptions;
+  /** Ends each answer of an action that ran with the SDK line that repeats it; default: on unless SAP_CODE=off. */
+  code?: boolean;
 }
+
+/** The actions kept per session for a draft test (sap_record {"op":"code"} with no recording on). */
+const MAX_HISTORY = 200;
 
 /** "120-180" or "120": the first and last row, counted from 0. */
 export function parseRows(rows: string): { from: number; to: number } {
@@ -175,7 +181,7 @@ const MAX_ROWS = 200;
 /** The rows read when "cols" comes without "rows": from the first row on. */
 const COLS_ONLY_ROWS = { from: 0, to: 49 };
 
-export function createServer({ policy, surfaces, view = "diff", record }: ServerOptions) {
+export function createServer({ policy, surfaces, view = "diff", record, code = !/^(off|false|0)$/i.test(process.env.SAP_CODE ?? "") }: ServerOptions) {
   const registry = new Registry(surfaces, policy);
   const views = new Views(view);
   const recorder = new Recorder(record ?? recorderOptionsFromEnv(process.env, `${SERVER_NAME}-mcp-server ${SERVER_VERSION}`));
@@ -183,6 +189,14 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, { instructions: INSTRUCTIONS });
   const session = z.string().optional().describe("session from sap_sessions (number, id, system, transaction, or a surface: sapgui, webgui, fiori); default: the active one");
   const queue = new SessionQueue();
+  /** The actions that ran, per session, oldest first. */
+  const history = new Map<string, NormalizedAction[]>();
+  function remember(session: string, action: NormalizedAction): void {
+    const list = history.get(session) ?? [];
+    list.push(action);
+    if (list.length > MAX_HISTORY) list.splice(0, list.length - MAX_HISTORY);
+    history.set(session, list);
+  }
 
   /** The queue a call on `ref` waits in: the session's id, found without opening it. */
   async function laneOf(ref: string | undefined): Promise<string> {
@@ -315,6 +329,12 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
     // While a recording is on, an action that works becomes a step of it.
     const done = await recorder.act(d, action, risk, () => d.act(action));
     const acted = Date.now();
+    // The line that repeats this action in a script: last in the note block. Kept for a draft test when the action ran where it should.
+    const line = code ? `\ncode: ${codeOf(action)}` : "";
+    const ok = (t: string) => {
+      remember(session, action);
+      return text(t);
+    };
     const note = (screen: () => Promise<string>) =>
       screen().then((v) => ({ v, n: clock ? timed(done, d, clock.wanted, clock.t0, [["judge", clock.judged], ["act", acted - a0], ["answer", Date.now() - acted]]) : done }));
     if (before) {
@@ -324,12 +344,12 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
           registry.active = fresh.id;
           const nd = await registry.driver(fresh.id);
           const { v, n } = await note(() => nd.look({ compact: true }));
-          return text(`${n}\nA new session opened (${fresh.where}); it is now the active one. The previous session is still open (sap_sessions lists both).\n\n${views.present(fresh.id, v, true)}`);
+          return ok(`${n}\nA new session opened (${fresh.where}); it is now the active one. The previous session is still open (sap_sessions lists both).${line}\n\n${views.present(fresh.id, v, true)}`);
         }
         await new Promise((r) => setTimeout(r, 500));
       }
       const { v, n } = await note(() => d.look({ compact: true }));
-      return text(`${n}\nNo new session appeared within 5 s (SAP allows at most 6 per logon): this is still the previous session.\n\n${views.present(session, v, whole)}`);
+      return ok(`${n}\nNo new session appeared within 5 s (SAP allows at most 6 per logon): this is still the previous session.${line}\n\n${views.present(session, v, whole)}`);
     }
     // A menu entry, a favourite or a tree node can open a transaction no okcode named.
     const after = await d.refresh().catch(() => undefined);
@@ -351,7 +371,7 @@ export function createServer({ policy, surfaces, view = "diff", record }: Server
     const { v, n } = await note(() => d.look({ compact: true }));
     const shown = withStatus(views.present(session, v, whole), v);
     const top = statusTop(shown, v);
-    return text(`${n}${top ? `\n${top}` : ""}\n\n${shown}`);
+    return ok(`${n}${top ? `\n${top}` : ""}${line}\n\n${shown}`);
   }
 
   /** The session as it is now, and what the guard says about this action on it. */
@@ -527,7 +547,7 @@ An action that may write to SAP is refused, run, or held for the user's yes, as 
       }),
   );
 
-  registerRecordTools(server, registry, policy, recorder, serial);
+  registerRecordTools(server, registry, policy, recorder, serial, (id) => history.get(id) ?? []);
 
   return { server, registry, recorder };
 }

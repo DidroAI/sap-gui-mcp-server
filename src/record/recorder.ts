@@ -120,6 +120,11 @@ export class Recorder {
     return !!this.test;
   }
 
+  /** The recording that is on, as it is now. */
+  get current(): SapTest | undefined {
+    return this.test;
+  }
+
   get file(): string | undefined {
     return this.path;
   }
