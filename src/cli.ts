@@ -6,6 +6,7 @@
  *   sap-gui-mcp-server sessions   lists the SAP sessions it finds, then exits
  */
 import { disconnectChrome } from "./browser/chrome.js";
+import { AGENT_COMMANDS, AGENT_HELP, agentCommand, daemonRunning } from "./cli/agent.js";
 import { doctorReport } from "./cli/doctor.js";
 import { setup } from "./cli/setup.js";
 import { policyFromEnv } from "./core/guard.js";
@@ -25,6 +26,8 @@ Usage:
   sap-gui-mcp-server sessions   list the SAP sessions found now
 ${RECORD_HELP}
   sap-gui-mcp-server --version | --help
+
+${AGENT_HELP}
 
 Environment:
   SAP_WRITE=off|confirm|on      actions that may write to SAP: refused (default), confirmed by the user, or allowed
@@ -49,6 +52,10 @@ async function main(argv: string[]): Promise<number> {
   if (cmd === "--help" || cmd === "-h" || cmd === "help") return console.log(HELP), 0;
   if (!cmd) return await serveStdio(), -1;
   if (cmd === "export") return exportCommand(argv.slice(1));
+  const agent = { env: process.env, cwd: process.cwd(), out: (l: string) => console.log(l), err: (l: string) => console.error(l) };
+  if (AGENT_COMMANDS.has(cmd)) return agentCommand(argv, agent);
+  // With a daemon running, the agent CLI's list: the same numbers, and * on its active session.
+  if (cmd === "sessions" && (await daemonRunning(agent))) return agentCommand(argv, agent);
   const surfaces = surfacesFromEnv();
   if (cmd === "doctor") {
     if (surfaces.some((s) => s.name !== "sapgui")) console.error("Checking… (if Chrome asks whether to allow remote debugging, click Allow)\n");
