@@ -6,10 +6,8 @@
  *   sap_use         make one the active session
  *   sap_look        the active screen as compact text (or full)
  *   sap_act         one action (guardrails first), then the new screen
- *   sap_confirm     run an action that waits for the user's yes (SAP_WRITE=confirm only)
  *   sap_screenshot  a PNG of the session's window or tab
  */
-import { randomBytes } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
@@ -32,14 +30,15 @@ export const SERVER_VERSION = "0.1.0";
 
 /**
  * What the agent is told about actions that may write, for the write setting
- * the server runs with: one sentence, true for this server. sap_confirm
- * exists only in confirm mode, the one mode that hands out tokens.
+ * the server runs with: one sentence, true for this server. Under confirm the
+ * client asks the user (MCP elicitation); a client that cannot gets writes
+ * refused, and the first answer says so (`confirmNotice`).
  */
 export function writeRule(policy: Policy): string {
   if (policy.write === "off")
     return "An action that may write (save, post, delete...) is refused: the user has set writing off. Then tell the user what you would have saved, and stop: do not look for another way.";
   if (policy.write === "on") return "An action that may write (save, post, delete...) runs: the user has set writing on. Say what you saved, with the document number from the status bar.";
-  return "An action that may write (save, post, delete...) waits for the user's yes: the client asks the user if it can; if not, the answer holds a token for sap_confirm, to call only after the user said yes to that exact action.";
+  return "An action that may write (save, post, delete...) runs only after the user says yes in a dialog the client shows; if they decline, stop and ask how to go on. A client that cannot ask the user gets it refused: then tell the user what you would have saved.";
 }
 
 /**
@@ -163,8 +162,6 @@ export function changedSince(then: Shown, now: Shown): string[] {
   return out;
 }
 
-const TOKEN_LIFE_MS = 10 * 60_000;
-const MAX_PENDING = 50;
 /** The time the user has to answer the client's confirmation dialog. */
 const ELICIT_TIMEOUT_MS = 5 * 60_000;
 
@@ -255,7 +252,6 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   const registry = new Registry(surfaces, policy);
   const views = new Views(view);
   const recorder = new Recorder(record ?? recorderOptionsFromEnv(process.env, `${SERVER_NAME}-mcp-server ${SERVER_VERSION}`));
-  const pending = new Map<string, { shown: Shown; at: number }>();
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, { instructions: instructions(policy) });
   const session = z.string().optional().describe("from sap_sessions: number, id, system, transaction, or sapgui, webgui, fiori; default: the active one");
   const queue = new SessionQueue();
@@ -360,7 +356,7 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
       annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     },
     ({ session: ref, full, diff, id, rows, cols }) =>
-      answer(() => serial(ref, "sap_look", () => look(ref, full, diff, id, rows, cols))),
+      answer(() => serial(ref, "sap_look", () => look(ref, full, diff, id, rows, cols))).then(confirmNotice),
   );
 
   async function look(ref: string | undefined, full: boolean | undefined, diff: boolean | undefined, id: string | undefined, rows: string | undefined, cols: string | undefined): Promise<CallToolResult> {
@@ -383,8 +379,25 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
         return text(views.present(info.id, await driver.look({ compact: true }), !diff));
   }
 
-  /** Can the client ask the user itself (MCP elicitation, form mode)? Then no token is needed. */
+  /** Can the client ask the user (MCP elicitation, form mode)? Under SAP_WRITE=confirm, a write runs only after it did. */
   const canElicit = () => !!server.server.getClientCapabilities()?.elicitation?.form;
+  /** Why a write is refused under confirm when the client cannot ask the user. */
+  const cannotAsk = (reason: string) =>
+    `this action may write to SAP (${reason}) and writing is set to confirm, but this client cannot ask the user (it does not support MCP elicitation). Nothing ran. Tell the user what you would have saved; do not look for another way. The user can set SAP_WRITE=on and approve sap_act in the client's own tool approval, or use a client that asks (MCP elicitation).`;
+  /**
+   * Confirm mode with a client that cannot ask the user: said once, before
+   * anything else of the first answer, so the agent knows before the work
+   * that a save will be refused (stdio.ts also says it in the server's log).
+   */
+  let noticed = false;
+  function confirmNotice(r: CallToolResult): CallToolResult {
+    if (noticed || policy.write !== "confirm" || r.isError) return r;
+    noticed = true;
+    if (canElicit()) return r;
+    const first = r.content[0];
+    if (first?.type !== "text") return r;
+    return { ...r, content: [{ ...first, text: `NOTE: writing is set to confirm, and this client cannot ask the user (no MCP elicitation): actions that may write will be refused. Say so to the user before working towards a save.\n${first.text}` }, ...r.content.slice(1)] };
+  }
 
   /**
    * Where the time of an action went, when asked for (SAP_TIMINGS=on, or "timing":true in the action):
@@ -540,6 +553,7 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
       const { driver, info, assessment, verdict } = j;
       if (verdict.run) return withTurn(await perform(driver, action, whole, assessment.risk, { t0: q0, judged: Date.now() - q0, wanted }).catch((e: unknown) => failedOn(ref, e)), turn);
       if ("refused" in verdict) return withTurn(fail(`Refused: ${verdict.refused}`), turn);
+      if (!canElicit()) return withTurn(fail(`Refused: ${cannotAsk(verdict.confirm)}`), turn);
       box.held = { info, assessment, confirm: verdict.confirm };
       return undefined;
     });
@@ -547,41 +561,29 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
     return confirmHeld(box.held, action, whole);
   }
 
-  /** An action the guard holds for the user's yes: asks the user when the client can, else answers with a token for sap_confirm. */
+  /** An action the guard holds for the user's yes: the client asks the user (MCP elicitation); it runs on a yes, if the screen is still what the user was shown. */
   async function confirmHeld(held: { info: SessionInfo; assessment: Assessment; confirm: string }, action: NormalizedAction, whole: boolean): Promise<CallToolResult> {
-    const { info, assessment } = held;
-    const verdict = { confirm: held.confirm };
+    const { info, assessment, confirm } = held;
     const shown = shownOf(info, action, assessment);
-    const what = `${verdict.confirm}, on ${place(info)}`;
-    if (canElicit()) {
-      let answer: Awaited<ReturnType<typeof server.server.elicitInput>>;
-      try {
-        answer = await server.server.elicitInput(
-          {
-            mode: "form",
-            message: `Allow this action in SAP? It may write to the system.\n\nWhat: ${verdict.confirm}\nWhere: ${place(info)} [${info.where}]\nAction: ${actionText(action)}`,
-            requestedSchema: { type: "object", properties: {} },
-          },
-          { timeout: ELICIT_TIMEOUT_MS },
-        );
-      } catch (e) {
-        return fail(`Not run: the user could not be asked to confirm (${(e as Error).message.split("\n")[0]}).`);
-      }
-      if (answer.action !== "accept") {
-        const said = `Not run: the user ${answer.action === "decline" ? "declined" : "dismissed the confirmation of"} this action (${what}). Stop here: do not retry it or look for another way; tell the user it was not done and ask how to go on.`;
-        return withData(text(said), data((): ActOutput => ({ ran: 0, total: 1, stopped: { why: "declined", text: said.split(". Stop here")[0] as string }, screen: screenOfInfo(info) })));
-      }
-      return serial(shown.session, actionText(action), () => runConfirmed(shown, whole));
+    const what = `${confirm}, on ${place(info)}`;
+    let answer: Awaited<ReturnType<typeof server.server.elicitInput>>;
+    try {
+      answer = await server.server.elicitInput(
+        {
+          mode: "form",
+          message: `Allow this action in SAP? It may write to the system.\n\nWhat: ${confirm}\nWhere: ${place(info)} [${info.where}]\nAction: ${actionText(action)}`,
+          requestedSchema: { type: "object", properties: {} },
+        },
+        { timeout: ELICIT_TIMEOUT_MS },
+      );
+    } catch (e) {
+      return fail(`Not run: the user could not be asked to confirm (${(e as Error).message.split("\n")[0]}).`);
     }
-    const now = Date.now();
-    for (const [t, p] of pending) if (now - p.at > TOKEN_LIFE_MS) pending.delete(t);
-    while (pending.size >= MAX_PENDING) pending.delete(pending.keys().next().value as string);
-    const token = randomBytes(6).toString("hex");
-    pending.set(token, { shown, at: now });
-    const asData = data((): ActOutput => ({ ran: 0, total: 1, stopped: { why: "held", text: `${verdict.confirm} waits for the user's yes` }, held: { token }, screen: screenOfInfo(info) }));
-    return withData(text(
-      `NOT RUN YET: needs the user's confirmation: ${what}.\nAction: ${actionText(action)}\nAsk the user; only after they say yes to this exact action, call sap_confirm with token "${token}". The token works once, for 10 minutes, on this screen and this action only: if the screen changes, it is refused.`,
-    ), asData);
+    if (answer.action !== "accept") {
+      const said = `Not run: the user ${answer.action === "decline" ? "declined" : "dismissed the confirmation of"} this action (${what}). Stop here: do not retry it or look for another way; tell the user it was not done and ask how to go on.`;
+      return withData(text(said), data((): ActOutput => ({ ran: 0, total: 1, stopped: { why: "declined", text: said.split(". Stop here")[0] as string }, screen: screenOfInfo(info) })));
+    }
+    return serial(shown.session, actionText(action), () => runConfirmed(shown, whole));
   }
 
   /** The screen once SAP is done with the step before it (at most 15 s), as the compact view. */
@@ -662,6 +664,10 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
           end = { why: "unseen", text: `${what} did not run: ${blind}`, error: false, next: n };
           break;
         }
+        if (!j.verdict.run && !canElicit()) {
+          end = { why: "refused", text: `${what} was refused: ${cannotAsk(j.verdict.confirm)}`, error: true, next: n + 1 };
+          break;
+        }
         if (!j.verdict.run) {
           box.held = { info: j.info, assessment: j.assessment, confirm: j.verdict.confirm, action: s.action };
           end = { why: "held", text: `${what} may write and waits for the user's yes`, error: false, next: n + 1 };
@@ -704,7 +710,7 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
       const body = [head, ...(note ? [note] : []), ...lines, ...(codeLine() && codes.length ? [`code:\n${codes.join("\n")}`] : [])].join("\n");
       const stopped = end ? { why: end.why, text: end.text } : undefined;
       if (box.held) {
-        // The held action's own answer follows (the user's yes, or a token); the screen comes with it or with sap_confirm.
+        // The held action's own answer follows: what it did after the user's yes, or that the user said no.
         box.head = body;
         box.ran = ran;
         if (stopped) box.stopped = stopped;
@@ -730,7 +736,7 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
     const r = await confirmHeld(box.held, box.held.action, whole);
     const first = r.content[0];
     if (first?.type !== "text") return r;
-    // As data: the actions before the held one, and what the held one did (ran after the user's yes, or holds a token).
+    // As data: the actions before the held one, and what the held one did (ran after the user's yes, or not).
     const after = r.structuredContent as ActOutput | undefined;
     const merged = after && data((): ActOutput => ({ ...after, ran: (box.ran ?? 0) + after.ran, total, stopped: after.stopped ?? box.stopped }));
     return withData({ ...r, content: [{ ...first, text: `${box.head}\n\n${first.text}` }, ...r.content.slice(1)] }, merged);
@@ -787,29 +793,7 @@ ${writeRule(policy)}`,
         if (one && action !== undefined) return fail('Send the action\'s fields ("do", "id", ...) at the top level, not also inside "action".');
         if (actions !== undefined) return withAnyData(await runBatch(ref, actions, full === true), actions);
         return withAnyData(await run(ref, one ? flat : action, full === true));
-      }),
-  );
-
-  // Only confirm mode holds actions for a token: with writing off or on, sap_confirm could never run anything.
-  if (policy.write === "confirm") server.registerTool(
-    "sap_confirm",
-    {
-      title: "Run a confirmed SAP action",
-      description:
-        "Runs the action a sap_act answer held (\"NOT RUN YET: needs the user's confirmation ... token\"). First tell the user in plain words what will be written (document, values, system) and wait for their yes to that exact action; then call this with the token. Never call it in the same turn as the sap_act that gave the token. Answers like sap_act. A token works once and for 10 minutes; it is refused when the screen or the session changed: look, then sap_act again. The server cannot see the user's yes: without a client that asks the user itself (MCP elicitation), this confirmation is advisory.",
-      inputSchema: { token: z.string() },
-      ...(structured ? { outputSchema: actOutput } : {}),
-      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
-    },
-    ({ token }) =>
-      answer(async () => {
-        const p = pending.get(token.trim());
-        // A token works once, whatever the outcome.
-        pending.delete(token.trim());
-        if (!p || Date.now() - p.at > TOKEN_LIFE_MS)
-          return fail("Unknown or expired token: a token works once, for 10 minutes. Nothing ran. Look at the screen, call sap_act again for a new token, and ask the user again.");
-        return withAnyData(await serial(p.shown.session, actionText(p.shown.action), () => runConfirmed(p.shown)));
-      }),
+      }).then(confirmNotice),
   );
 
   server.registerTool(

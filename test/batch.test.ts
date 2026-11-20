@@ -179,17 +179,16 @@ describe("a batch and the guard: each action has its own decision", () => {
     expect(r.text).toContain("SCREEN 200");
   });
 
-  test("confirm: the save is held with a token and ends the batch; sap_confirm runs it alone", async () => {
-    const { sap, call, batch } = await setup({ SAP_WRITE: "confirm" });
+  test("confirm, with a client that cannot ask the user: the save is refused and ends the batch", async () => {
+    const { sap, batch } = await setup({ SAP_WRITE: "confirm" });
     const r = await batch([OPEN, CUSTOMER, { ...ENTER, expect: { screen: "200" } }, { ...SAVE, unseen: true }, { do: "okcode", value: "/nZA03", expect: { transaction: "ZA03" } }]);
-    expect(r.error).toBe(false);
-    expect(r.text.split("\n")[0]).toBe('Ran 3 of 5 actions. Stopped: action 4 ({"do":"key","key":11}) may write and waits for the user\'s yes. Action 5 did not run.');
-    expect(r.text).toContain("NOT RUN YET: needs the user's confirmation: key 11: Save, on ABA/800, ZA01");
+    expect(r.error).toBe(true);
+    expect(r.text.split("\n")[0]).toStartWith('Ran 3 of 5 actions. Stopped: action 4 ({"do":"key","key":11}) was refused: this action may write to SAP (key 11: Save) and writing is set to confirm, but this client cannot ask the user');
+    expect(r.text.split("\n")[0]).toEndWith("Action 5 did not run.");
+    expect(r.text).not.toContain("token");
     expect(sap.orders.size).toBe(1);
-    const token = /token "([0-9a-f]+)"/.exec(r.text)?.[1] ?? "";
-    const c = await call("sap_confirm", { token });
-    expect(c.text).toContain("S: Order 5001 has been saved");
-    expect(dos(sap)).toEqual(["okcode", "set", "key 0", "key 11"]);
+    expect(dos(sap)).toEqual(["okcode", "set", "key 0"]);
+    expect(r.text).toContain("SCREEN 200");
   });
 
   test("confirm, with a client that asks the user: one question, for the save only; what follows it does not run", async () => {
@@ -203,7 +202,8 @@ describe("a batch and the guard: each action has its own decision", () => {
 
     const no = await setup({ SAP_WRITE: "confirm" }, "decline");
     const d = await no.batch([OPEN, CUSTOMER, { ...ENTER, expect: { screen: "200" } }, { ...SAVE, unseen: true }]);
-    expect(d.text).toContain("the user declined");
+    expect(d.text.split("\n")[0]).toBe('Ran 3 of 4 actions. Stopped: action 4 ({"do":"key","key":11}) may write and waits for the user\'s yes.');
+    expect(d.text).toContain("Not run: the user declined");
     expect(no.sap.orders.size).toBe(1);
   });
 

@@ -49,7 +49,6 @@ sap-gui use <n|id|system|tcode>        make one the active session
 sap-gui look [--full] [--diff]         the screen (file); --print prints it
 sap-gui look --id <id> [--rows 100-150] [--cols VBELN,NETWR]   one control whole, a range of rows
 sap-gui act '<json>' [--full]          one action (below); '[...]' one screen's actions
-sap-gui confirm <token>                run a held write, only after the user said yes
 sap-gui screenshot                     a PNG (charts, HTML panels the text cannot show)
 sap-gui record start "<name>" | assert '<json>' | stop | list | status   a repeatable test
 sap-gui replay <file>                  run a recorded test again, no model
@@ -103,10 +102,10 @@ Quote JSON for the shell with single quotes. Shorthands for the common ones:
 
 Saving, posting, releasing, deleting change the system. The user's
 `SAP_WRITE` decides: `off` (default) refuses: tell the user what you would
-have saved, and stop; `confirm` holds the action (`NOT RUN YET`) and
-exits 3 with `sap-gui confirm <token>`: describe the action to the user in
-plain words and run it only after they say yes to that exact action; `on`
-runs it. Never work around the setting (no save codes in the command field).
+have saved, and stop; `confirm` refuses it too here, because the CLI
+cannot ask the user (only an MCP client can); `on` runs it, and your own
+command approval is the user's check. Before a save under `on`, describe
+the action to the user in plain words when they have not asked for it. Never work around the setting (no save codes in the command field).
 
 The CLI keeps a background daemon per directory, started on the first call
 with that call's `SAP_*` settings. A call with other settings is refused:

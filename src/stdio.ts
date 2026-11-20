@@ -16,5 +16,10 @@ export async function serveStdio(env: Record<string, string | undefined> = proce
   process.on("SIGINT", close);
   process.on("SIGTERM", close);
   process.stdin.on("close", close);
+  // Confirm mode with a client that cannot ask the user: every write will be refused. Said in the client's server log.
+  server.server.oninitialized = () => {
+    if (policyFromEnv(env).write === "confirm" && !server.server.getClientCapabilities()?.elicitation?.form)
+      process.stderr.write("sap-gui: SAP_WRITE=confirm, but this client does not support MCP elicitation: actions that may write will be refused. Set SAP_WRITE=on and use the client's tool approval, or use a client that supports elicitation.\n");
+  };
   await server.connect(new StdioServerTransport());
 }

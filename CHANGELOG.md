@@ -22,8 +22,8 @@ The first public version.
 
 ### Tools
 
-- `sap_sessions`, `sap_use`, `sap_look`, `sap_act`, `sap_confirm`,
-  `sap_screenshot`, `sap_record`, `sap_replay`.
+- `sap_sessions`, `sap_use`, `sap_look`, `sap_act`, `sap_screenshot`,
+  `sap_record`, `sap_replay`.
 - One set of JSON actions on every surface: `set`, `press`, `key`,
   `select`, `check`, `combo`, `okcode`, `f4`, `focus`, `dblclick`, `tree`,
   `grid`, `toolbar`, `scroll` (and `click` on Fiori).
@@ -41,8 +41,9 @@ The first public version.
 
 ### Safety
 
-- Writes are off by default (`SAP_WRITE=off`); `confirm` holds them for
-  the user's yes, through MCP elicitation when the client supports it.
+- Writes are off by default (`SAP_WRITE=off`); `confirm` asks the user
+  for each one through MCP elicitation, and refuses it when the client
+  cannot ask.
 - Every action is classified as read, navigate or commit, failing closed.
 - Allow and block lists for systems, transactions and browser origins.
 - Never logs on, never types into password fields, never acts on a logon

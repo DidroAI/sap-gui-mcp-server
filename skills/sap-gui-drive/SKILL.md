@@ -69,10 +69,10 @@ server's write setting decides what happens:
 - **off** (default): such actions are refused. Tell the user what you
   would have saved and that writes are off, then stop: do not look for
   another way.
-- **confirm**: the action is held (`NOT RUN YET: ...`). Describe it to the
-  user in plain words (what document, which values, which system) and call
-  `sap_confirm` only after they say yes to that exact action. If they
-  decline, stop.
+- **confirm**: the client asks the user before the action runs. If they
+  decline, stop and ask how to go on. If the answer says this client cannot
+  ask the user, the write is refused: tell the user what you would have
+  saved, and stop.
 - **on**: actions run. Still say what you saved, with the document number
   from the status bar.
 
