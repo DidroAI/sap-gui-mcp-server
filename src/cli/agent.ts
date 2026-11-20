@@ -44,7 +44,7 @@ export const AGENT_HELP = `Agent CLI (one short answer per call; the whole scree
   sap-gui screenshot                       a PNG of the session's window or tab
   sap-gui record <op> ['<json>']           start <name>, assert '{"check":"status","contains":"saved"}', stop, list, ...
   sap-gui daemon status|stop               the background process that keeps the SAP connection
-  Every command takes --session <ref>. Exit code: 0 done, 1 error or refused, 2 usage, 3 held for confirmation.
+  look, act, screenshot and record take --session <ref>. Exit code: 0 done, 1 error or refused, 2 usage, 3 held for confirmation.
   SAP_CLI_DIR=dir       where answers go (default .sap-gui/screens); SAP_CLI_IDLE=30  minutes before the daemon exits
   SAP_CLI_SESSION=name  one daemon for every directory that sets this name (default: one per directory)`;
 

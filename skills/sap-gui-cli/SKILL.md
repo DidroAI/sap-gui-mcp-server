@@ -50,7 +50,7 @@ sap-gui replay <file>                  run a recorded test again, no model
 sap-gui daemon status | stop
 ```
 
-Every command takes `--session <ref>`. Exit codes: 0 done, 1 error or
+`look`, `act`, `screenshot` and `record` take `--session <ref>`. Exit codes: 0 done, 1 error or
 refused (the message is on stderr), 2 usage, 3 held for confirmation.
 
 ## Actions
