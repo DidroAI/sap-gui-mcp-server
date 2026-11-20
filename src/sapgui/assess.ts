@@ -22,7 +22,7 @@
  * The tables are in core/words.ts, shared with the other surfaces.
  */
 import { ActionError, type Action, type Assessment } from "../core/types.js";
-import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayTitle, endsLogon, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
+import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayTitle, endsLogon, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS, showsOnly } from "../core/words.js";
 import type { Control, Screen } from "./facts.js";
 import { vkeyNumber } from "./keys.js";
 import { allControls } from "./resolve.js";
@@ -171,6 +171,9 @@ function assessButton(screen: Screen, b: Control, how: string): Assessment {
   if (endsLogon(b.text, b.tip)) return closes(named);
   const win = /^(wnd\[\d+\])\//.exec(b.id)?.[1] ?? "";
   if (buttonKey(b.id) === 0 && isMessagePopup(screen, win)) return { risk: "navigate", reason: `${named} acknowledges the message` };
+  // "Display deletion log" on a screen that only displays: the commit word names what is shown (showsOnly).
+  const worded = [b.text, b.tip].filter((t) => commitWord(t));
+  if (worded.length && worded.every((t) => showsOnly(screen.language, t)) && displayButton(screen, b)) return { risk: "navigate", reason: `${named} shows something on a screen that only displays` };
   if (commitWord(b.text, b.tip)) return commit(named);
   const question = commitQuestion(screen);
   if (question && b.id.startsWith(`${screen.activeWindow}/`) && !declines(screen, b))

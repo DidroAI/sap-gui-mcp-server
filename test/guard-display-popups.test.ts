@@ -6,6 +6,7 @@ import { assess } from "../src/sapgui/assess.js";
 import type { Control, Screen } from "../src/sapgui/facts.js";
 import { resolve } from "../src/sapgui/resolve.js";
 import { assessAction } from "../src/webgui/assess.js";
+import { showsOnly } from "../src/core/words.js";
 
 // Guard false positives with SAP_WRITE=off on display transactions (bench smoke test of 2026-11-14:
 // "Continue" on MM03's Select View(s) popup was refused as a possible write, and the lookup task failed).
@@ -213,5 +214,37 @@ describe("SAP GUI: a screen that only displays", () => {
     expect(gui(ask, { do: "press", id: "wnd[1]/usr/btnSPOP-OPTION1" })).toBe("commit");
     expect(gui(ask, { do: "key", key: 0 })).toBe("commit");
     expect(gui(ask, { do: "press", id: "wnd[1]/usr/btnSPOP-OPTION2" })).toBe("navigate");
+  });
+});
+
+// ---- "Display deletion log": a commit word as the name of what is shown ------------------------------
+
+describe("a display button whose commit word is a noun (showsOnly)", () => {
+  test("the words", () => {
+    for (const t of ["Display deletion log", "Show reversal document", "Display release strategy (Shift+F5)", "Löschprotokoll anzeigen", "Afficher la suppression"]) expect([t, showsOnly("EN", t)]).toEqual([t, true]);
+    for (const t of ["Display and release", "Show + delete", "Delete", "Deletion log", "Display/Delete", "Show print output"]) expect([t, showsOnly("EN", t)]).toEqual([t, false]);
+    expect(showsOnly("JA", "Display deletion log")).toBe(false);
+  });
+  const withButton = (view: string, text: string) => lines(...view.split("\n"), `wnd[0]/usr/btnX  button  ${text}`);
+  test("Web GUI: navigates on a screen that only displays, nowhere else", () => {
+    expect(web({ do: "press", id: "btnX" }, withButton(MM03_INIT, "Display deletion log"))).toBe("navigate");
+    expect(web({ do: "press", id: "btnX" }, withButton(MM03_INIT, "Show reversal document"))).toBe("navigate");
+    expect(web({ do: "press", id: "btnX" }, withButton(MM03_INIT, "Display and release"))).toBe("commit");
+    expect(web({ do: "press", id: "btnX" }, withButton(MM03_INIT, "Release"))).toBe("commit");
+    expect(web({ do: "press", id: "btnX" }, withButton(MM03_INIT, "Display deletion log"), "JA")).toBe("commit");
+    const change = MM03_INIT.replace("Display Material (Initial Screen)", "Change Material (Initial Screen)");
+    expect(web({ do: "press", id: "btnX" }, withButton(change, "Display deletion log"))).toBe("commit");
+    const german = MM03_INIT.replace("Display Material (Initial Screen)", "Material anzeigen (Einstieg)");
+    expect(web({ do: "press", id: "btnX" }, withButton(german, "Löschprotokoll anzeigen"), "DE")).toBe("navigate");
+  });
+  test("SAP GUI: the same rule, on the text and the tooltip", () => {
+    const s = (text: string, tip: string, base: Screen = sapgui()): Screen => ({
+      ...base,
+      windows: [{ ...base.windows[0]!, controls: [...base.windows[0]!.controls, btn("wnd[0]/usr/btnX", tip, text)] }],
+    });
+    expect(gui(s("Display deletion log", ""), { do: "press", id: "wnd[0]/usr/btnX" })).toBe("navigate");
+    expect(gui(s("", "Show reversal document"), { do: "press", id: "wnd[0]/usr/btnX" })).toBe("navigate");
+    expect(gui(s("Deletion log", "Delete the log"), { do: "press", id: "wnd[0]/usr/btnX" })).toBe("commit");
+    expect(gui(s("Display deletion log", "", sapgui({ saveOn: true })), { do: "press", id: "wnd[0]/usr/btnX" })).toBe("commit");
   });
 });
