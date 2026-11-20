@@ -1,14 +1,10 @@
-# Turn an agent's run into a test
+# Recording and replay
 
-Status: working prototype.
-What was run and what is only written is listed under
-[What was checked](#what-was-checked).
-
-When an agent drives SAP through this server, every `sap_act` is already a
-small, exact instruction: a normalised JSON action on an SAP control id. This
-feature keeps those instructions, with what the screen showed after each one,
-as a file. The file can be run again with no model, and written out in the
-formats test teams already use.
+An agent's run in SAP can be kept as a test and run again with no model.
+Every `sap_act` is already a small, exact instruction: a JSON action on an
+SAP control id. Recording keeps those instructions, with what the screen
+showed after each one, in one file. `replay` runs the file again;
+`export` writes it in formats test teams already use.
 
 ```
 agent run ──record──▶ <name>.saptest.json ──replay──▶ pass / fail per step
@@ -17,9 +13,184 @@ agent run ──record──▶ <name>.saptest.json ──replay──▶ pass /
                                            Playwright spec · Gherkin feature
 ```
 
-## 1. Record
+Status: a working prototype. Record and replay have been run on Web GUI;
+not yet on SAP GUI for Windows or Fiori. Details under
+[What was checked](#what-was-checked).
 
-### Where the recording lives
+::: warning Recordings hold typed values
+A recording holds every value that was typed, as it was typed, and the
+status bar and titles of the screens. Passwords cannot be typed through this
+server at all, but business data can. Treat recordings like the system's
+data: keep them where that data may be kept, and review them before you
+commit or share them.
+:::
+
+## Record a run
+
+Ask the agent to record, or call the tool yourself. Start with a command
+that opens the transaction, so the test has a clean start:
+
+```
+sap_record {"op":"start","name":"VA03 display order"}
+sap_act    {"action":{"do":"okcode","value":"/nVA03"}}
+sap_act    {"action":{"do":"set","id":"ctxtVBAK-VBELN","value":"19097"}}
+sap_act    {"action":{"do":"key","key":0}}
+sap_record {"op":"stop"}
+```
+
+- From `start` on, every `sap_act` that works on that session is a step. An
+  action that failed, was refused, or was held and not confirmed is not
+  recorded.
+- `{"op":"undo"}` drops the last step from the recording. SAP is not
+  undone.
+- `{"op":"status"}` shows the steps so far.
+- `stop` writes `va03-display-order.saptest.json` in the recordings
+  directory and gives hints: typed values that are still fixed, a document
+  number reused without a capture, a test with no check.
+- Recordings go to `SAP_RECORD_DIR` (default `./sap-tests` in the server's
+  working directory). The tools take a name, never a path.
+- `SAP_RECORD=on` records every session from its first action, without
+  `start`: a trace of whatever the agent did, to sort out afterwards.
+
+## Add checks, variables and captures
+
+A test needs checks: what must be true after a step. Mark them on the
+screen they are about, right after the step:
+
+```
+sap_record {"op":"assert","check":"field","id":"txtVBAK-NETWR","equals":"2.500,00"}
+sap_record {"op":"assert","check":"status","contains":"has been saved"}
+sap_record {"op":"assert","check":"title","contains":"Overview"}
+```
+
+`check` is `status`, `field`, `title`, `transaction` or `text` (anywhere on
+the screen); the value is `equals`, `contains` or `matches` (a regular
+expression). A field check without one of them takes the field's value now.
+A check is tried at once and refused if it does not hold, so a recording
+cannot contain a check that was false when it was made.
+
+Values that change between runs become variables:
+
+```
+sap_record {"op":"variable","name":"order","value":"19097"}
+```
+
+The value is replaced by `${order}` wherever it stands alone: in what was
+typed, in what is expected, in the recorded status bar and titles.
+
+A value SAP makes at a step (a new document number) is a capture: read from
+the screen at every replay and used by the steps after it.
+
+```
+sap_record {"op":"capture","name":"order","from":"status","pattern":"Order (\\d+)"}
+```
+
+`{"op":"note","text":"Open the order"}` says what the last step is for; the
+exports use it.
+
+## Replay
+
+From the command line:
+
+```sh
+sap-gui-mcp-server replay sap-tests/va03-display-order.saptest.json --var order=4711
+```
+
+From the agent:
+
+```
+sap_replay {"name":"VA03 display order","variables":{"order":"4711"}}
+```
+
+- Replay runs on a session you have open. It never logs on.
+- It uses no model: the same actions on the same ids, through the same
+  driver and **the same guard** as `sap_act`. `SAP_WRITE`, the system list
+  and the transaction lists apply to every step.
+- A step that may write needs `SAP_WRITE=on`. With `off` or `confirm` it
+  fails with that reason: a replay cannot stop to ask at each step.
+- Each step checks that SAP showed no error, that the screen is the recorded
+  one, and that every check and capture holds. The first failing step stops
+  the run, and the result shows the screen there.
+- A popup that only informs, which the recording does not have, is
+  confirmed and noted (`PASS ... WITH NOTES`). A question, or a screen that
+  offers a choice (availability control), fails the step.
+
+Options:
+
+| Command line | `sap_replay` | Effect |
+| --- | --- | --- |
+| `--var name=value` | `"variables"` | another value for a variable |
+| `--loose` | `"screens":"loose"` | another screen number than recorded is a note, not a failure |
+| `--continue` | `"choices":"continue"` | press the neutral Continue on a choice the recording does not have |
+| `--stay` | (always) | stay on the failing screen; the command line otherwise leaves with `/n` |
+| `--json` | `"format":"json"` | the result as data |
+| `--junit <file>` | | JUnit XML, one case per step |
+| `--session <ref>` | `"session"` | the session to run on |
+| several files | | run in order on one session, handing variables on |
+| | `"from"`, `"repair"` | resume at a failed step with a repair ([below](#repairing-one-step-and-going-on)) |
+
+Every flag: [CLI commands](../reference/cli.md#replay). Every parameter:
+[MCP tools](../reference/tools.md#sap-replay).
+
+## Export
+
+```sh
+sap-gui-mcp-server export sap-tests/va03-display-order.saptest.json --to calm
+```
+
+or `sap_record {"op":"export","name":"VA03 display order","to":"calm"}`.
+
+| Target | File | For |
+| --- | --- | --- |
+| `calm` | `.calm.json` | SAP Cloud ALM manual test case |
+| `vbs` | `.vbs` | SAP GUI scripting, for SAP GUI for Windows |
+| `playwright` | `.spec.ts` | Playwright test for Web GUI |
+| `playwright-sap` | `.psap.spec.ts` | the same with playwright-sap's `locateSID` |
+| `gherkin` | `.feature` | a step list in Given / When / Then |
+
+The Playwright spec logs on by itself from `SAP_WEBGUI_URL` (or
+`SAP_FIORI_URL`), `SAP_USER` and `SAP_PASSWORD`, and reads variables from
+`SAP_VAR_<NAME>`. It is a file you run; the server never logs on. Details
+of each target under [Export targets](#export-targets).
+
+## In CI
+
+`replay` exits with 0 when every test passed and 1 otherwise, and writes
+JUnit XML with `--junit`, which CI servers read:
+
+```sh
+sap-gui-mcp-server replay sap-tests/*.saptest.json --junit report.xml
+```
+
+It needs a machine where an SAP session is open and logged on: a Chrome
+with a Web GUI tab (and remote debugging allowed, or `SAP_CHROME_CDP`), or
+a Windows desktop with SAP GUI. It does not create the data a test needs
+or restore the system afterwards: run it on a test system. For a runner
+that logs on by itself, export to Playwright.
+
+## With the network reader
+
+Recordings made with `SAP_GUI_METHOD=diag` name controls the way that
+method's actions do, and record the method, so they are replayed with the
+same method and are not exported to VBS. Information popups are passed with
+their Enter key. A recorded Enter on a popup that only informed is not sent
+when SAP does not show that popup this time (its checks still run); the
+recorded answer to a question (Yes, Save, any button of a popup that asks)
+is never skipped: if SAP does not show the question, or shows another popup
+in its place, the step fails. A screen damaged in transit is never judged:
+the replay waits for a whole one, or fails the step with "screen damaged in
+transit". This has run against synthetic traffic and recorded captures
+only, not yet against SAP GUI itself. See [Network reader](network-reader.md).
+
+## File format and design
+
+The rest of this page is the design: what is recorded and why, the file
+format, how replay finds controls and repairs a step, each export target,
+what was tested, and open questions.
+
+### Record
+
+#### Where the recording lives
 
 A tool, `sap_record`, with an environment variable for the directory and for
 "record everything".
@@ -48,10 +219,10 @@ written in the one directory, and the name is reduced to letters, digits and
 dashes, so an agent cannot make the server read or write elsewhere. The
 command line takes paths, because the user types them.
 
-### What is recorded
+#### What is recorded
 
 The server calls the recorder around every action it runs
-(`src/server.ts`, one line in `perform`). While a recording is on, for the
+([`src/server.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/server.ts), one line in `perform`). While a recording is on, for the
 recorded session:
 
 1. read the full view of the screen (before);
@@ -80,7 +251,7 @@ Cost while recording: two extra reads of the screen per action. On Web GUI
 (an ECC demo system) a full read took 30 to 50 ms; an `okcode` took about 1.2 s with or
 without recording.
 
-### Marking checks, variables and captures
+#### Marking checks, variables and captures
 
 | Operation | Does |
 | --- | --- |
@@ -109,7 +280,7 @@ without recording.
   number in a status bar that later steps reuse without a capture, no check
   at all.
 
-## 2. File format
+### File format
 
 One JSON file per run, `<name>.saptest.json`, format id `sap-gui-test/1`.
 
@@ -166,7 +337,7 @@ every action in it must be one the server accepts today.
 The file is meant to be edited by hand: delete a step, change a default, add
 a check.
 
-## 3. Replay
+### Replay
 
 ```sh
 sap-gui-mcp-server replay sap-tests/va03-display-order.saptest.json --var order=4711 --junit report.xml
@@ -208,7 +379,7 @@ handled by what it asks:
 When the replay did anything the recording does not have, the first line of
 the result says `PASS ... WITH NOTES` and names the steps.
 
-### Repairing one step and going on
+#### Repairing one step and going on
 
 A replay that fails says where the step failed (`failed (act)`, `(landing)`,
 `(check)`, `(refused)`) and leaves the session on that screen. Whoever ran
@@ -234,7 +405,7 @@ same step already ran without getting it through: they are not run again,
 and the proposed recording holds them before the new ones.
 
 The server calls no model. It carries out the repair under rules the caller
-cannot change (`src/record/repair.ts`):
+cannot change ([`src/record/repair.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/record/repair.ts)):
 
 - every action passes the guard, as in `sap_act`;
 - no write the recording does not have: an action that may write is refused
@@ -269,7 +440,7 @@ they would only repeat the failure. The result holds, per step, pass, fail or
 skipped, the time, what held, what failed and why, and **the screen at the
 failure** in the compact view an agent or a person can read.
 
-### Robust to small screen changes
+#### Robust to small screen changes
 
 Steps address controls by SAP scripting id, which SAP keeps stable. The id is
 a path, and only its last segment names the control:
@@ -294,7 +465,7 @@ Controls that are numbered, not named (`btn[8]`, `menu[1]`, `lbl[1,13]`,
 is another button. Labels are never used either: two fields can share a
 label, and acting on the wrong one is worse than failing.
 
-### Data
+#### Data
 
 - **Values to change:** variables, with the recorded value as default.
   `--var name=value` or `"variables"`. A name no test has is an error.
@@ -320,13 +491,13 @@ What replay does not do: create the data a test needs (a customer, stock, an
 open period), or restore the system afterwards. A test that needs a document
 should create it in an earlier step or an earlier test.
 
-### Output
+#### Output
 
 Text (above), `--json` (the result objects), `--junit <file>` (JUnit XML, one
 suite per test and one case per step, which CI servers read). Exit code 0
 when every test passed, 1 otherwise.
 
-## 4. Export targets
+### Export targets
 
 `sap-gui-mcp-server export <file> --to <target>` or
 `sap_record {"op":"export","name":"...","to":"<target>"}`. Each exporter is a
@@ -340,7 +511,7 @@ pure function from the recording to a text file.
 | `playwright-sap` | `.psap.spec.ts` | the same with playwright-sap's `locateSID` |
 | `gherkin` | `.feature` | a step list in Given / When / Then |
 
-### SAP Cloud ALM
+#### SAP Cloud ALM
 
 **Manual test cases.** Cloud ALM's test management API creates a manual test
 case with `POST calm-testmanagement/v1/ManualTestCases`: a title, activities
@@ -385,7 +556,7 @@ contract was not read (it is on SAP Business Accelerator Hub); sources:
 [SAP blog on the test automation tool](https://blogs.sap.com/2021/08/16/integrating-sap-cloud-alm-and-the-test-automation-tool-for-sap-s-4-hana-cloud/),
 [UiPath Test Manager and SAP Cloud ALM](https://docs.uipath.com/test-manager/automation-cloud/latest/user-guide/sap-cloud-alm).
 
-### SAP GUI scripting (VBS)
+#### SAP GUI scripting (VBS)
 
 A VBScript in the style of SAP GUI's own recorder (Customize Local Layout →
 Script Recording and Playback): the recorder's header that attaches to the
@@ -409,7 +580,7 @@ each check, `Capture` for each capture, exit code 1 at the first failure.
 A Web GUI recording exports to VBS as well, because Web GUI carries the same
 scripting ids. A Fiori recording does not.
 
-### Playwright
+#### Playwright
 
 A stand-alone `@playwright/test` spec for Web GUI. It logs on from
 `SAP_WEBGUI_URL`, `SAP_USER` and `SAP_PASSWORD`, reads variables from
@@ -444,7 +615,7 @@ because it works on both `lsdata` forms and needs no fork.
 A Fiori recording is written with UI5 id suffixes (`[id$="..."]`). That
 output is a starting point and has not been run.
 
-### Gherkin, and Tosca-like tools
+#### Gherkin, and Tosca-like tools
 
 `gherkin` writes a `Scenario Outline` with the variables as `Examples`. It
 is the step list for people and for Cucumber-style tools; its steps are
@@ -456,7 +627,7 @@ file format a recorder can write. What they do take is a step list with
 control ids and data, which the recording already is. A converter for one of
 them is work to do with a client who owns the tool.
 
-## What was checked
+### What was checked
 
 Run on an SAP ERP 6.0 demo system through Web GUI in Chrome, read-only
 (nothing was saved in SAP):
@@ -478,10 +649,10 @@ Run on an SAP ERP 6.0 demo system through Web GUI in Chrome, read-only
   on, with the spec's log-off hook removed. Its own logon from a new browser
   was not verified: during the check the system sent every new logon of the
   test user back to the logon page without an error, for this repository's
-  own `test/dev/webgui-logon.ts` too.
+  own [`test/dev/webgui-logon.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/test/dev/webgui-logon.ts) too.
 
-Unit tests (`test/record.test.ts`, 43 tests) run record, replay and the
-exports against a small SAP in memory (`test/record-fakes.ts`), including
+Unit tests ([`test/record.test.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/test/record.test.ts), 43 tests when this was checked; 54 in November 2026) run record, replay and the
+exports against a small SAP in memory ([`test/record-fakes.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/test/record-fakes.ts)), including
 what the live check could not: a document created by one step and used by
 the next, a field moved to another subscreen, a write refused by the guard,
 and two tests in a row.
@@ -499,7 +670,7 @@ Not run:
   recording over.
 - Creating the exported test case in a Cloud ALM tenant.
 
-## Open questions
+### Open questions
 
 1. **Screens that differ by data.** A popup that appears only for some
    customers ("credit limit exceeded") makes the replay land on another
@@ -517,23 +688,23 @@ Not run:
 5. **Checks on tables and lists.** A cell is checked by position (`[1,0]`).
    "The row whose material is M-08" needs a way to name a row.
 6. **Fiori.** Field checks need the reader of this file to understand the
-   Fiori view, or the Fiori view to move towards the common format. The
+   Fiori view, or the Fiori view to move towards the common format.
 7. **Format of the view.** Replay reads facts from the text view
-   (`src/record/screen.ts`). If the view changes, that file changes. A
+   ([`src/record/screen.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/record/screen.ts)). If the view changes, that file changes. A
    structured screen from the drivers would be firmer, and is a larger
    change to the `Driver` contract.
 
-## Files
+### Files
 
 | | |
 | --- | --- |
-| `src/record/format.ts` | the file format, its schema, variables |
-| `src/record/screen.ts` | reads a screen's facts from its text view; finds a control again |
-| `src/record/checks.ts` | evaluates checks and captures |
-| `src/record/recorder.ts` | the recorder |
-| `src/record/replay.ts` | the replay, its text and JUnit output |
-| `src/record/repair.ts` | a repair of one step: its rules, the capture, the proposed test |
-| `src/record/tools.ts` | `sap_record` and `sap_replay` |
-| `src/record/cli.ts` | `replay` and `export` on the command line |
-| `src/record/export/` | `calm.ts`, `vbs.ts`, `playwright.ts`, `gherkin.ts`, and `words.ts` (a step in a tester's words) |
-| `src/server.ts`, `src/cli.ts`, `src/index.ts` | the hook in `perform`, the two commands, the exports of the package |
+| [`src/record/format.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/record/format.ts) | the file format, its schema, variables |
+| [`src/record/screen.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/record/screen.ts) | reads a screen's facts from its text view; finds a control again |
+| [`src/record/checks.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/record/checks.ts) | evaluates checks and captures |
+| [`src/record/recorder.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/record/recorder.ts) | the recorder |
+| [`src/record/replay.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/record/replay.ts) | the replay, its text and JUnit output |
+| [`src/record/repair.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/record/repair.ts) | a repair of one step: its rules, the capture, the proposed test |
+| [`src/record/tools.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/record/tools.ts) | `sap_record` and `sap_replay` |
+| [`src/record/cli.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/record/cli.ts) | `replay` and `export` on the command line |
+| [`src/record/export/`](https://github.com/DidroAI/sap-gui-mcp-server/tree/main/src/record/export) | `calm.ts`, `vbs.ts`, `playwright.ts`, `gherkin.ts`, and `words.ts` (a step in a tester's words) |
+| [`src/server.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/server.ts), [`src/cli.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/cli.ts), [`src/index.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/index.ts) | the hook in `perform`, the two commands, the exports of the package |
