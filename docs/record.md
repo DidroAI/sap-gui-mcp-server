@@ -472,6 +472,49 @@ the recording marked.
 `sap_record {"op":"code"}` gives the same file for the recording that is on,
 or, with none on, a draft of every action the server ran on the session.
 
+#### Tidy: the test a person would have written
+
+The export above is the recording step for step: an agent's detours, typos
+and error round trips included. `sap_record {"op":"code","tidy":true}` (with
+`"name"`, or the recording that is on) and `exportSapTs(test, { tidy: true })`
+first tidy it (`src/record/tidy.ts`). Each rule logs one line with its reason:
+
+| Rule | What it does |
+|---|---|
+| abandoned | drops a `/n<tcode>` visit where nothing was saved, checked, captured or noted, when the next `/n` left it |
+| error | drops a key or button that only raised E (or A) and stayed on the screen, when steps follow |
+| repeat | keeps the last set, check or dropdown of a control, or tab of a tab strip, before any round trip (a tab is kept when something was done on it) |
+| capture | captures a 5+ digit number of a status bar that later steps type or expect |
+| variable | makes each typed value a variable |
+| status | checks the success message (S) a save led to |
+| title | checks the title a step landed on, when it changed the screen to one not reached before (not after `/n`, not into a popup or a data-dependent screen) |
+| handle | uses the shortest unique id recorded for each control (`target.handle`); numbered controls such as `btn[0]` keep their full id, because a popup's buttons share those numbers |
+
+The code then has one `sap.step(...)` block per screen, key names
+(`sap.key("Enter")`), `sap.save()` for key 11, and conditions for what SAP
+shows for some data only: `sap.dismissInfo()` for an information popup,
+`if (await sap.at("SAPLATP4/0500")) await sap.button("Continue").press()` for
+the availability screen, `sap.save({ acceptWarnings: true })` for a save that
+answered with a warning, and `const order = await expect(sap.status()).capture(/Order (\d+)/)`.
+A numbered button is pressed by its label. The answer ends with the removal
+log and a TODO list (what tidy could not decide).
+
+On the fake SAP of the tests, an agent-like run of 23 steps (two wrong
+transactions, a forgotten field, a typo, a checkbox toggled, tabs clicked to
+and fro) becomes 13 steps; its code passes through the runner on a system
+with the availability screen, the save warning and the popup, and on one
+without them. The step-for-step export fails on the second.
+
+`verifyTidy(sapOrDriver, recording)` checks the removals on a system: it
+replays the tidied recording and, when a step fails, puts back the last
+removal before it and runs again (at most 4 runs). Each run is a whole
+replay, writes included when the test writes and the policy allows: use a
+test system. It verifies the tidied *recording*, not the code: a replay has
+no "if", so the conditions above are checked only by running the code.
+
+To save and run such code from an agent without a file system, see
+[code-tools.md](code-tools.md).
+
 Every `sap_act` (and `sap_confirm`) answer of an action that ran ends its
 note with the same line, e.g. `code: await sap.set("VBAK-VBELN", "4711");`
 (about ten tokens); `SAP_CODE=off` leaves it out.
@@ -566,6 +609,8 @@ Not run:
 | `src/record/replay.ts` | the replay, its text and JUnit output |
 | `src/record/repair.ts` | a repair of one step: its rules, the capture, the proposed test |
 | `src/record/tools.ts` | `sap_record` and `sap_replay` |
+| `src/record/tidy.ts` | tidy (the rules, the log, the TODO list) and `verifyTidy` |
+| `src/record/code-tools.ts` | `sap_code_save` and `sap_code_test` (off unless `SAP_CODE_TOOLS=on`; see code-tools.md) |
 | `src/record/cli.ts` | `replay` and `export` on the command line |
-| `src/record/export/` | `calm.ts`, `vbs.ts`, `playwright.ts`, `sap-ts.ts`, `gherkin.ts`, and `words.ts` (a step in a tester's words) |
+| `src/record/export/` | `calm.ts`, `vbs.ts`, `playwright.ts`, `sap-ts.ts` (with `sap-ts-tidy.ts`), `gherkin.ts`, and `words.ts` (a step in a tester's words) |
 | `src/server.ts`, `src/cli.ts`, `src/index.ts` | the hook in `perform`, the two commands, the exports of the package |
