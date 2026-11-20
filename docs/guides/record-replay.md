@@ -147,6 +147,7 @@ or `sap_record {"op":"export","name":"VA03 display order","to":"calm"}`.
 | `playwright` | `.spec.ts` | Playwright test for Web GUI |
 | `playwright-sap` | `.psap.spec.ts` | the same with playwright-sap's `locateSID` |
 | `gherkin` | `.feature` | a step list in Given / When / Then |
+| `sap-ts` | `.sap.ts` | a test for `sap-gui test` ([Writing tests with the SDK](sdk-tests.md)) |
 
 The Playwright spec logs on by itself from `SAP_WEBGUI_URL` (or
 `SAP_FIORI_URL`), `SAP_USER` and `SAP_PASSWORD`, and reads variables from

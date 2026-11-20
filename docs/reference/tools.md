@@ -1,7 +1,8 @@
 # MCP tools
 
-The server registers eight tools under the server name `sap-gui`. Six work
-on the open SAP sessions; two turn a session into a repeatable test.
+The server registers eight tools under the server name `sap-gui`
+(`sap_confirm` only when `SAP_WRITE=confirm`). Six work on the open SAP
+sessions; two turn a session into a repeatable test.
 
 | Tool | Does | Read-only hint |
 | --- | --- | --- |
@@ -143,10 +144,17 @@ Other answers:
 - **Landed in a refused transaction** (through a menu, a favourite or a
   tree): the server leaves it with `/n` and says so (`isError`).
 
+::: tip The SDK line
+Every `sap_act` and `sap_confirm` answer ends with a line such as
+`code: await sap.set("VBAK-VBELN", "4711");`: the [SDK](../guides/sdk-tests.md)
+call that repeats the action. `SAP_CODE=off` drops it.
+:::
+
 ## sap_confirm
 
 Runs an action that `sap_act` held for confirmation, with the token
 `sap_act` gave. Used only when the client cannot ask the user itself.
+Listed only when `SAP_WRITE=confirm`.
 
 | Parameter | Type | Required | Meaning |
 | --- | --- | --- | --- |
@@ -182,7 +190,7 @@ must check. Off until `start`. Guide: [Recording and replay](../guides/record-re
 
 | Parameter | Type | Used by | Meaning |
 | --- | --- | --- | --- |
-| `op` | `start`, `stop`, `status`, `assert`, `capture`, `variable`, `note`, `undo`, `list`, `export` | all (required) | the operation |
+| `op` | `start`, `stop`, `status`, `assert`, `capture`, `variable`, `note`, `undo`, `list`, `export`, `code` | all (required) | the operation; `code` answers the recording so far as a draft `*.sap.ts` test |
 | `name` | string | `start`, `export`, `variable`, `capture` | the recording's name (`start`, `export`), or the variable's name |
 | `description` | string | `start`, `variable` | a description of the test or the variable |
 | `replace` | boolean | `start` | record over a recording of the same name |
@@ -194,7 +202,7 @@ must check. Off until `start`. Guide: [Recording and replay](../guides/record-re
 | `from` | `status`, `field`, `title` | `capture` | where the value is read |
 | `pattern` | string | `capture` | a regular expression whose first group is the value |
 | `text` | string | `note` | what the last step is for |
-| `to` | `calm`, `vbs`, `playwright`, `playwright-sap`, `gherkin` | `export` | the format |
+| `to` | `calm`, `vbs`, `playwright`, `playwright-sap`, `gherkin`, `sap-ts` | `export` | the format |
 | `session` | string | `start`, `assert`, `capture` | the session; default the active one |
 
 What each operation answers:
