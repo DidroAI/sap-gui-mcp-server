@@ -1,6 +1,6 @@
 /**
  *   sap-gui-mcp-server test [files or filters] [--config f] [--project p] [--reporter list,junit]
- *                           [--grep re] [--retries n] [--list]
+ *                           [--grep re] [--retries n] [--list] [--update-locks]
  *
  * Exit code 0 when no test failed (flaky ones count as passed), 1 otherwise.
  *
@@ -15,11 +15,13 @@ import { reporters, type TraceHtml } from "./reporters.js";
 import { collect, findTestFiles, plan, runTests } from "./run.js";
 
 export const TEST_HELP = `  sap-gui-mcp-server test [files or filters] [--config f] [--project p] [--reporter list,junit,json,html]
-                         [--grep re] [--retries n] [--list]
-                                run *.sap.ts tests (sap.config.ts) on open sessions; exit code 1 on a failure`;
+                         [--grep re] [--retries n] [--list] [--update-locks]
+                                run *.sap.ts tests (sap.config.ts) on open sessions; exit code 1 on a failure.
+                                Each test is verified against x.sap.lock.json next to it (written by a passing run);
+                                --update-locks compares nothing and adds this run's screens to the locks`;
 
 const VALUE_FLAGS = new Set(["--config", "--project", "--reporter", "--grep", "--retries"]);
-const BOOL_FLAGS = new Set(["--list"]);
+const BOOL_FLAGS = new Set(["--list", "--update-locks"]);
 
 export interface TestArgs {
   filters: string[];
@@ -29,10 +31,12 @@ export interface TestArgs {
   grep?: RegExp;
   retries?: number;
   list: boolean;
+  /** --update-locks: lock mode "write" for every test. */
+  updateLocks: boolean;
 }
 
 export function parseTestArgs(argv: string[]): TestArgs {
-  const out: TestArgs = { filters: [], projects: [], reporters: [], list: false };
+  const out: TestArgs = { filters: [], projects: [], reporters: [], list: false, updateLocks: false };
   for (let i = 0; i < argv.length; i++) {
     let a = argv[i] as string;
     let v: string | undefined;
@@ -43,7 +47,8 @@ export function parseTestArgs(argv: string[]): TestArgs {
     const eq = a.indexOf("=");
     if (eq > 0) [a, v] = [a.slice(0, eq), a.slice(eq + 1)];
     if (BOOL_FLAGS.has(a)) {
-      out.list = true;
+      if (a === "--list") out.list = true;
+      else out.updateLocks = true;
       continue;
     }
     if (!VALUE_FLAGS.has(a)) throw new Error(`Unknown option ${a}.\n${TEST_HELP}`);
@@ -115,6 +120,7 @@ export async function testCommand(argv: string[], o: TestCommandOptions = {}): P
     projects: args.projects,
     ...(args.grep ? { grep: args.grep } : {}),
     ...(args.retries !== undefined ? { retries: args.retries } : {}),
+    ...(args.updateLocks ? { lock: "write" as const } : {}),
     ...(o.surfaces ? { surfaces: o.surfaces } : {}),
     onTestEnd: (r) => reps.forEach((x) => x.onTestEnd?.(r)),
   });

@@ -512,6 +512,13 @@ replay, writes included when the test writes and the policy allows: use a
 test system. It verifies the tidied *recording*, not the code: a replay has
 no "if", so the conditions above are checked only by running the code.
 
+Once code passes, the runner writes `<name>.sap.lock.json` next to it:
+what each screen looked like, per `sap.step`. Later runs compare each
+action's landing with it and fail with `Drift` where SAP answers otherwise,
+so the code keeps the model-free drift detection of a replay; screens the
+code asks about (`sap.at`, `sap.popup`, `dismissInfo`) are branches, not
+drift. See [cached-steps.md, "Lock files"](cached-steps.md#lock-files).
+
 To save and run such code from an agent without a file system, see
 [code-tools.md](code-tools.md).
 

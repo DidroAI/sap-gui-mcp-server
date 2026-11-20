@@ -15,7 +15,9 @@ import { join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Surface } from "../core/types.js";
 import { slug } from "../record/format.js";
+import { lockPathFor } from "../sdk/lock.js";
 import { connect, type Sap } from "../sdk/session.js";
+import type { DriftInfo, LockMode, VerifySummary } from "../sdk/verify.js";
 import { beginFile, endFile, isSkip, registry, suitesOf, type TestCase, type TestInfo, titlePath } from "./collect.js";
 import type { ProjectConfig, ResolvedConfig, UseOptions } from "./config.js";
 
@@ -27,6 +29,23 @@ export interface Attempt {
   error?: { message: string; stack?: string };
   /** The `.saptest.json` this run wrote. */
   trace?: string;
+  /** The drift it failed on, when that is why (sdk/verify.ts). */
+  drift?: DriftInfo;
+  /** What the lock said about this run, when one was used. */
+  lock?: LockReport;
+}
+
+/** The lock's part of a test result. */
+export interface LockReport {
+  file: string;
+  key: string;
+  mode: LockMode;
+  verified: number;
+  unverified: number;
+  written: boolean;
+  /** Repairs applied: saved in the lock earlier, or none (the runner has no fallback). */
+  repairs: VerifySummary["repairs"];
+  notes: string[];
 }
 
 export interface TestResult {
@@ -42,6 +61,9 @@ export interface TestResult {
   /** The last run's error and trace. */
   error?: { message: string; stack?: string };
   trace?: string;
+  /** The last run's drift and lock. */
+  drift?: DriftInfo;
+  lock?: LockReport;
 }
 
 export interface RunResult {
@@ -72,6 +94,10 @@ export interface RunOptions {
    * agent wrote (record/code-tools.ts): the session and the write policy are the server's.
    */
   clamp?: UseOptions;
+  /** The lock mode over every `use.lock` ("write" for `--update-locks`). */
+  lock?: LockMode;
+  /** The lock file of a test file; default next to it (sdk/lock.ts `lockPathFor`). */
+  lockFile?: (testFile: string) => string;
   onTestEnd?: (result: TestResult) => void;
 }
 
@@ -208,13 +234,27 @@ const NO_SAP = new Proxy({} as Sap, {
 });
 
 /** One run of one test: connect (when the test asks for sap), beforeEach, the test, afterEach, close. */
-async function attempt(p: Planned, retry: number, slugDir: string, config: ResolvedConfig, surfaces: Surface[] | undefined, clamp: UseOptions = {}): Promise<Attempt> {
+/** A drift, as its own class or a copy of it from another load of the SDK. */
+const driftOf = (e: unknown): DriftInfo | undefined =>
+  e instanceof Error && e.name === "Drift" && typeof (e as { toJSON?: unknown }).toJSON === "function" ? ((e as unknown as { toJSON(): DriftInfo }).toJSON()) : undefined;
+
+/** The test's entry in its lock: its title path, after its project. */
+export const lockKey = (p: Pick<Planned, "title" | "project">): string => (p.project ? `[${p.project.name}] ${p.title}` : p.title);
+
+interface Locking {
+  mode?: LockMode | undefined;
+  file?: ((testFile: string) => string) | undefined;
+}
+
+async function attempt(p: Planned, retry: number, slugDir: string, config: ResolvedConfig, surfaces: Surface[] | undefined, clamp: UseOptions = {}, locking: Locking = {}): Promise<Attempt> {
   const suites = suitesOf(p.test);
   const use: UseOptions = Object.assign({}, config.use, p.project?.use, ...suites.map((s) => s.use), p.test.details.use, clamp);
   const timeout = p.test.details.timeout ?? suites.reduce<number | undefined>((t, s) => s.timeout ?? t, undefined) ?? config.timeout;
   const outputDir = join(config.outputDir, retry ? `${slugDir}-retry${retry}` : slugDir);
   const info: TestInfo = { title: p.test.title, titlePath: p.titlePath, file: p.test.file, project: p.project?.name, retry, outputDir, timeout };
-  const { screenshots, ...connectUse } = use;
+  const { screenshots, lock: lockUse, ...connectUse } = use;
+  const lockMode: LockMode = locking.mode ?? lockUse ?? "verify";
+  const lockFile = (locking.file ?? lockPathFor)(p.test.file);
   const t0 = Date.now();
   const deadline = new Deadline(timeout);
   const r = registry();
@@ -225,6 +265,7 @@ async function attempt(p: Planned, retry: number, slugDir: string, config: Resol
         ...connectUse,
         timeout: config.expectTimeout,
         trace: { dir: outputDir, name: p.title, screenshots: screenshots ?? false },
+        ...(lockMode !== "off" ? { verify: { lock: lockFile, key: lockKey(p), mode: lockMode } } : {}),
         ...(surfaces ? { surfaces } : {}),
       })
     : Promise.resolve(NO_SAP);
@@ -248,6 +289,7 @@ async function attempt(p: Planned, retry: number, slugDir: string, config: Resol
   // Teardown gets a time of its own, as long as the test's.
   const down = new Deadline(deadline.ms);
   let trace: string | undefined;
+  let lock: LockReport | undefined;
   const teardown = (async () => {
     const sap = await sapP.catch(() => undefined);
     if (!sap) return;
@@ -262,6 +304,14 @@ async function attempt(p: Planned, retry: number, slugDir: string, config: Resol
             await Promise.resolve(h({ sap, info })).catch((e: unknown) => {
               if (!isSkip(e)) error ??= e;
             });
+      // A test that passed writes the lock: what it saw that the lock did not have yet.
+      if (sap.lock) {
+        const s = await sap.lock.finish(!error && !skipped && !timedOut).catch((e: unknown) => {
+          error ??= (e as Error).name === "Drift" ? e : new Error(`Could not write the lock ${lockFile}: ${(e as Error).message}`);
+          return sap.lock?.result;
+        });
+        if (s) lock = { file: s.lock, key: s.key, mode: s.mode, verified: s.verified, unverified: s.unverified, written: s.written, repairs: s.repairs, notes: s.notes };
+      }
     } finally {
       trace = (await sap.close().catch(() => ({ trace: sap.traceFile }))).trace ?? sap.traceFile;
     }
@@ -278,16 +328,17 @@ async function attempt(p: Planned, retry: number, slugDir: string, config: Resol
   r.running = undefined;
   const ms = Date.now() - t0;
   const status = error ? "failed" : skipped ? "skipped" : "passed";
-  return { status, ms, ...(error ? { error: errorOf(error) } : {}), ...(trace ? { trace } : {}) };
+  const drift = driftOf(error);
+  return { status, ms, ...(error ? { error: errorOf(error) } : {}), ...(trace ? { trace } : {}), ...(drift ? { drift } : {}), ...(lock ? { lock } : {}) };
 }
 
 /** Runs one planned test with its retries. */
-async function runOne(p: Planned, slugDir: string, config: ResolvedConfig, retries: number, surfaces: Surface[] | undefined, clamp?: UseOptions): Promise<TestResult> {
+async function runOne(p: Planned, slugDir: string, config: ResolvedConfig, retries: number, surfaces: Surface[] | undefined, clamp?: UseOptions, locking?: Locking): Promise<TestResult> {
   const base = { title: p.title, titlePath: p.titlePath, file: p.file, project: p.project?.name };
   if (p.skip) return { ...base, status: "skipped", ms: 0, attempts: [] };
   const attempts: Attempt[] = [];
   for (let retry = 0; retry <= retries; retry++) {
-    const a = await attempt(p, retry, slugDir, config, surfaces, clamp);
+    const a = await attempt(p, retry, slugDir, config, surfaces, clamp, locking);
     attempts.push(a);
     if (a.status !== "failed") break;
   }
@@ -301,6 +352,8 @@ async function runOne(p: Planned, slugDir: string, config: ResolvedConfig, retri
     attempts,
     ...(status === "failed" && failed?.error ? { error: failed.error } : {}),
     ...(last.trace ? { trace: last.trace } : {}),
+    ...(status === "failed" && failed?.drift ? { drift: failed.drift } : {}),
+    ...(last.lock ? { lock: last.lock } : {}),
   };
 }
 
@@ -337,7 +390,7 @@ export async function runTests(o: RunOptions): Promise<RunResult> {
     const n = (used.get(dir) ?? 0) + 1;
     used.set(dir, n);
     if (n > 1) dir = `${dir}-${n}`;
-    const r = await runOne(p, dir, config, o.retries ?? config.retries, o.surfaces, o.clamp);
+    const r = await runOne(p, dir, config, o.retries ?? config.retries, o.surfaces, o.clamp, { mode: o.lock, file: o.lockFile });
     results.push(r);
     o.onTestEnd?.(r);
   }

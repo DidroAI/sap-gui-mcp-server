@@ -287,7 +287,8 @@ describe("config", () => {
 
   test("args", () => {
     const a = parseTestArgs(["orders", "--project=s4,ecc", "--reporter", "list,junit", "--grep", "save", "--retries", "2", "--list"]);
-    expect(a).toEqual({ filters: ["orders"], projects: ["s4", "ecc"], reporters: ["list", "junit"], grep: /save/, retries: 2, list: true });
+    expect(a).toEqual({ filters: ["orders"], projects: ["s4", "ecc"], reporters: ["list", "junit"], grep: /save/, retries: 2, list: true, updateLocks: false });
+    expect(parseTestArgs(["--update-locks"]).updateLocks).toBe(true);
     expect(() => parseTestArgs(["--workers", "2"])).toThrow(/Unknown option --workers/);
   });
 });
@@ -345,5 +346,68 @@ describe("the sap fixture", () => {
     expect(wantsSap(async () => 1)).toBe(false);
     expect(wantsSap(async function (f: unknown) { return f; })).toBe(true);
     expect(wantsSap(async (f: unknown) => f)).toBe(true);
+  });
+});
+
+describe("lock files", () => {
+  const SHOW = `${head}
+test("shows order 5000", async ({ sap }) => {
+  await sap.step("Display", async () => {
+    await sap.okcode("/nZA03");
+    await sap.set("ctxtZORD-VBELN", "5000");
+    await sap.key(0);
+  });
+  await expect(sap.field("ZORD-KUNNR")).toHaveValue("2200");
+});
+`;
+  const informing = () => {
+    const f = new FakeSap();
+    f.popupsFor.set("5000", [{ title: "Information", text: "Order has a delivery block" }]);
+    return f;
+  };
+
+  test("written by a pass, verified next; drift fails with the step and the lock; --update-locks adds the new screen", async () => {
+    const dir = await project({ "sap.config.json": JSON.stringify({ expectTimeout: 300, reporter: ["list", "junit"] }), "orders.sap.ts": SHOW });
+    const lockFile = join(dir, "orders.sap.lock.json");
+    const first = await cli(dir);
+    expect(first.code).toBe(0);
+    expect(existsSync(lockFile)).toBe(true);
+    expect(first.out).toContain("[3 unverified actions added to the lock]");
+    const lock = JSON.parse(await readFile(lockFile, "utf8"));
+    expect(Object.keys(lock.tests)).toEqual(["shows order 5000"]);
+    expect(lock.tests["shows order 5000"].steps[0].step).toBe("Display");
+
+    const again = await cli(dir);
+    expect(again.code).toBe(0);
+    expect(again.out).not.toContain("unverified");
+
+    // SAP now shows an Information popup after Enter: the code would pass it, the lock has not seen it.
+    const drift = await cli(dir, [], informing());
+    expect(drift.code).toBe(1);
+    expect(drift.out).toContain('Drift in step "Display", action 3 (await sap.key(0);');
+    expect(drift.out).toContain('drift: step "Display", action 3 await sap.key(0); (landing)');
+    expect(drift.out).toContain(`lock: ${lockFile}`);
+    const junit = await readFile(join(dir, "sap-results", "junit.xml"), "utf8");
+    expect(junit).toContain('<failure message="Drift in step &quot;Display&quot;, action 3');
+
+    const update = await cli(dir, ["--update-locks"], informing());
+    expect(update.code).toBe(0);
+    const paths = JSON.parse(await readFile(lockFile, "utf8")).tests["shows order 5000"].steps[0].paths;
+    expect(paths.length).toBe(2);
+    expect((await cli(dir, [], informing())).code).toBe(0);
+    expect((await cli(dir)).code).toBe(0);
+  });
+
+  test('use: { lock: "off" } writes no lock; the HTML report shows the drift', async () => {
+    const off = await project({ "sap.config.json": JSON.stringify({ use: { lock: "off" } }), "orders.sap.ts": SHOW });
+    expect((await cli(off)).code).toBe(0);
+    expect(existsSync(join(off, "orders.sap.lock.json"))).toBe(false);
+
+    const dir = await project({ "sap.config.json": JSON.stringify({ expectTimeout: 300 }), "orders.sap.ts": SHOW });
+    await run(dir);
+    const r = await runTests({ config: await configFor(dir), surfaces: [informing()] });
+    expect(r.tests[0]?.drift).toMatchObject({ step: "Display", actionIndex: 2, phase: "landing" });
+    const page = htmlReport(r, join(dir, "index.html"), new Map());
+    expect(page).toContain("drift: step &quot;Display&quot;, action 3");
   });
 });

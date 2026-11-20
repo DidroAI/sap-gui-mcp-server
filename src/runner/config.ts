@@ -36,6 +36,13 @@ export interface UseOptions {
   blockTcodes?: string[];
   /** Keep a PNG of each step in the trace. Default false. */
   screenshots?: boolean;
+  /**
+   * The lock file next to each test file (`x.sap.ts` -> `x.sap.lock.json`, sdk/lock.ts):
+   * verify (default) compares each action with it, throws Drift where SAP answers otherwise,
+   * and a passing test adds what the lock does not have yet (all of it when there is none);
+   * write compares nothing and adds this run's screens (`--update-locks`); off leaves it alone.
+   */
+  lock?: "verify" | "write" | "off";
 }
 
 export type ReporterName = "list" | "junit" | "json" | "html";

@@ -26,6 +26,7 @@ import { Recorder } from "../record/recorder.js";
 import { detour, popupOf } from "../record/replay.js";
 import { type ParsedScreen, parseScreen, readSettled } from "../record/screen.js";
 import { codeOf, draftTest } from "./code.js";
+import { callSite, type Performed, Verifier, type VerifyHost, type VerifyOptions } from "./verify.js";
 import { ButtonLocator, ControlLocator, GridLocator, type StatusState, StatusLocator } from "./locators.js";
 
 /** Where `sap.at` asks the session to be: "SAPLATP4/0500", "SAPLATP4", or the parts by name. */
@@ -85,6 +86,12 @@ export interface ConnectOptions {
    * the directory and the trace's name. The runner sets it for each test.
    */
   trace?: { dir: string; name: string; screenshots?: boolean };
+  /**
+   * Verified mode (sdk/verify.ts): each action is compared with the lock file
+   * and throws `Drift` where SAP answers otherwise; a passing run (`sap.lock.finish(true)`,
+   * which the runner calls) adds what the lock does not have yet.
+   */
+  verify?: VerifyOptions;
   /** Environment to read defaults from; default process.env. */
   env?: Record<string, string | undefined>;
   /** Surfaces to use instead of the real ones (tests). */
@@ -156,6 +163,7 @@ export class Sap {
   readonly timeout: number;
   private recorder: Recorder | undefined;
   private driverInfo: SessionInfo | undefined;
+  private verifier: Verifier | undefined;
 
   constructor(
     readonly registry: Registry,
@@ -177,6 +185,21 @@ export class Sap {
       this.recorder = new Recorder({ dir: t.dir, auto: false, by: `sap-gui-mcp-server sdk ${SDK_VERSION}`, trace: { screens: true, screenshots: t.screenshots ?? false } });
       await this.recorder.start(driver, info, t.name, undefined, true);
     }
+    if (this.options.verify) await this.useLock(this.options.verify);
+  }
+
+  /** Turns verified mode on (or off with undefined) from the next action on; a Verifier puts back one that was on. */
+  async useLock(options: VerifyOptions | Verifier | undefined): Promise<Verifier | undefined> {
+    if (options instanceof Verifier) return (this.verifier = options);
+    this.verifier = options && options.mode !== "off" ? await Verifier.open(options, this.info ?? (await this.registry.session(this.sessionId)).info, this.host) : undefined;
+    // Blocks already open count from here.
+    if (this.verifier && this.stepName) this.verifier.enter(this.stepName);
+    return this.verifier;
+  }
+
+  /** The verifier of verified mode, when it is on: what was verified, repaired, and `finish(passed)`. */
+  get lock(): Verifier | undefined {
+    return this.verifier;
   }
 
   /** The session as it was last refreshed: system, client, transaction, title. */
@@ -199,12 +222,14 @@ export class Sap {
 
   /** The screen as text: compact by default (what an agent reads), `full` for every id and column. */
   async look(options: { full?: boolean; id?: string; rows?: { from: number; to: number }; cols?: string[] } = {}): Promise<string> {
+    await this.checkpoint();
     const d = await this.driver();
     return d.look({ compact: !options.full, ...(options.id ? { id: options.id } : {}), ...(options.rows ? { rows: options.rows } : {}), ...(options.cols ? { cols: options.cols } : {}) });
   }
 
   /** The screen parsed: transaction, program, screen, title, status bar and every control (full view). */
   async screen(): Promise<ParsedScreen> {
+    await this.checkpoint();
     const d = await this.driver();
     return readSettled(() => d.look({ compact: false }));
   }
@@ -245,6 +270,46 @@ export class Sap {
    */
   async act(input: Action): Promise<string> {
     const action = normalizeAction(input);
+    if (!this.verifier) return (await this.perform(action)).note;
+    // Before any await: the stack still holds the test's line.
+    const site = callSite();
+    return this.verifier.act(action, site);
+  }
+
+  /** What the verifier runs actions and reads screens with. */
+  private readonly host: VerifyHost = {
+    perform: (a, rated) => this.perform(a, rated),
+    screen: async () => readSettled(async () => (await this.driver()).look({ compact: false })),
+    look: async () => (await this.driver()).look({ compact: true }),
+    driver: () => this.driver(),
+  };
+
+  /** Reads that branch on the screen (sap.at, popup, exists...): nested count. */
+  private asking = 0;
+
+  /**
+   * Before a read, in verified mode: a read that asks about the screen
+   * accepts an action that led elsewhere as a branch; any other read
+   * settles it as drift (verify.ts).
+   */
+  private async checkpoint(): Promise<void> {
+    if (!this.verifier) return;
+    if (this.asking) this.verifier.branch();
+    else await this.verifier.settle();
+  }
+
+  /** Runs `f` as a question about the screen, which the code branches on (see `checkpoint`). */
+  async asks<T>(f: () => Promise<T>): Promise<T> {
+    this.asking++;
+    try {
+      return await f();
+    } finally {
+      this.asking--;
+    }
+  }
+
+  /** One action through the guard, the driver and the trace; no lock. `rated`: a repair's own rating of it. */
+  private async perform(action: NormalizedAction, rated?: Assessment): Promise<Performed> {
     const field = commandFieldRefusal(action);
     if (field) throw new Refused(field);
     const { driver, info } = await this.registry.session(this.sessionId);
@@ -252,11 +317,13 @@ export class Sap {
     const here = sessionRefusal(this.policy, info);
     if (here && !leavesTransaction(this.policy, action)) throw new Refused(`this session is in a transaction scripts may not work in: ${here}`);
     if (action.do === "open" && info.surface !== "fiori") throw new ActionError('open works in a Fiori launchpad tab only; elsewhere use okcode("/n<transaction>").');
-    const assessment = await driver.assess(action);
+    const assessment = rated ?? (await driver.assess(action));
     await this.allowed(action, assessment, info);
     const t0 = Date.now();
     const run = () => driver.act(action);
+    if (this.recorder) this.recorder.last = undefined;
     const note = this.recorder ? await this.recorder.act(driver, action, assessment.risk, run) : await run();
+    const seen = this.recorder?.last;
     const ms = Date.now() - t0;
     // A menu entry or a tree node can open a transaction no okcode named.
     const after = await driver.refresh().catch(() => undefined);
@@ -267,7 +334,7 @@ export class Sap {
       throw new Refused(`${note}: this led to a transaction scripts may not work in (${landed}); left it with /n.`);
     }
     this.history.push({ action, code: codeOf(action), note, ms, ...(this.stepName ? { step: this.stepName } : {}) });
-    return note;
+    return { note, risk: assessment.risk, before: seen?.before, after: seen?.after };
   }
 
   // ---- steps and screens SAP shows for some data only ----------------------------
@@ -294,15 +361,18 @@ export class Sap {
     const full = outer ? `${outer} › ${name}` : name;
     this.stepName = full;
     if (this.recorder) this.recorder.group = full;
+    this.verifier?.enter(full);
     try {
       return await fn();
     } catch (e) {
-      if (e instanceof Error && !named.has(e)) {
+      // A drift names its own step (it may be settled in a later one).
+      if (e instanceof Error && !named.has(e) && e.name !== "Drift") {
         named.add(e);
         e.message = `${e.message} (in step "${full}")`;
       }
       throw e;
     } finally {
+      this.verifier?.exit();
       this.stepName = outer;
       if (this.recorder) this.recorder.group = outer;
     }
@@ -310,12 +380,12 @@ export class Sap {
 
   /** Is the session on this screen now? `sap.at("SAPLATP4/0500")`, `sap.at({ transaction: "VA01" })`. Reads once, never waits. */
   async at(place: Place): Promise<boolean> {
-    return isAt(await this.screen(), place);
+    return this.asks(async () => isAt(await this.screen(), place));
   }
 
   /** The popup in front, if one is open: its title and text. */
   async popup(): Promise<{ title: string; text: string } | undefined> {
-    const s = await this.screen();
+    const s = await this.asks(() => this.screen());
     const p = popupOf(s);
     if (!p) return undefined;
     const text = s.controls
@@ -341,11 +411,13 @@ export class Sap {
    */
   async save(options: { acceptWarnings?: boolean; max?: number } = {}): Promise<StatusState> {
     await this.key(11);
-    let st = await this.status().state();
+    // With acceptWarnings, a warning is a branch the code expects.
+    const read = () => (options.acceptWarnings ? this.asks(() => this.status().state()) : this.status().state());
+    let st = await read();
     const max = options.max ?? 3;
     for (let i = 0; options.acceptWarnings && st.type === "W" && i < max; i++) {
       await this.key(0);
-      st = await this.status().state();
+      st = await read();
     }
     if (options.acceptWarnings && st.type === "W") throw new Error(`save: SAP still answers with a warning after ${max} Enter: ${st.text}`);
     return st;
@@ -358,7 +430,7 @@ export class Sap {
    * popup or it asks something.
    */
   async dismissInfo(): Promise<boolean> {
-    const s = await this.screen();
+    const s = await this.asks(() => this.screen());
     if (!popupOf(s)) return false;
     const d = detour(s);
     if (d?.kind !== "pass" || !d.action) return false;
