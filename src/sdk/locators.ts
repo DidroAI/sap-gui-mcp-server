@@ -55,7 +55,7 @@ export class ControlLocator {
   }
 
   async exists(): Promise<boolean> {
-    return (await this.state()).found;
+    return this.sap.asks(async () => (await this.state()).found);
   }
 
   async editable(): Promise<boolean> {
@@ -281,7 +281,7 @@ export class ButtonLocator {
   }
 
   async exists(): Promise<boolean> {
-    return !!findButton(await this.sap.screen(), this.label).control;
+    return this.sap.asks(async () => !!findButton(await this.sap.screen(), this.label).control);
   }
 
   /** Presses it, through the guard like any action. */

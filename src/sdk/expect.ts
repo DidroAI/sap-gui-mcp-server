@@ -37,6 +37,8 @@ async function poll<T>(subject: string, name: string, negate: boolean, timeout: 
       error = undefined;
       if (test(last) !== negate) return;
     } catch (e) {
+      // Drift from the lock (sdk/verify.ts) is not a reading to wait out.
+      if ((e as Error).name === "Drift") throw e;
       error = e;
     }
     if (Date.now() >= until) break;

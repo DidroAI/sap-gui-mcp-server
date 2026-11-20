@@ -251,6 +251,38 @@ describe("branches and modes", () => {
     bunExpect([back.passed, back.unverified]).toEqual([true, 0]);
   });
 
+  test("code that asks about the screen (at, save with acceptWarnings) branches on it: a new screen there is a new path, not drift", async () => {
+    const dir = await tmp();
+    const lock = join(dir, "create.sap.lock.json");
+    const handles = async (sap: Sap, p: { quantity: string }) => {
+      await sap.step("Create", async () => {
+        await sap.okcode("/nZA01");
+        await sap.set("ctxtZORD-KUNNR", "2200");
+        await sap.set("txtZORD-MENGE", p.quantity);
+        await sap.key("Enter");
+        if (await sap.at("SAPLATP4/0500")) await sap.button("Continue").press();
+      });
+      await sap.step("Save", () => sap.save({ acceptWarnings: true }));
+    };
+    const quirky = () => {
+      const f = new FakeSap();
+      f.available = 10;
+      f.saveWarning = "Credit limit nearly reached";
+      return f;
+    };
+    // Written on 5 pieces with no warning: no availability screen, Save goes straight through.
+    bunExpect((await runVerified((await session()).sap, handles, { quantity: "5" }, { lock, key: "c" })).passed).toBe(true);
+    // 50 pieces on a system with a credit warning: both are screens the code asks about.
+    const r = await runVerified((await session(quirky())).sap, handles, { quantity: "50" }, { lock, key: "c", fallback: never });
+    bunExpect(r.passed).toBe(true);
+    bunExpect(r.drift).toBeUndefined();
+    bunExpect(r.unverified).toBe(4);
+    const steps = (await lockOf(lock)).tests.c?.steps;
+    bunExpect(steps?.map((s) => s.paths.length)).toEqual([2, 2]);
+    const again = await runVerified((await session(quirky())).sap, handles, { quantity: "50" }, { lock, key: "c", fallback: never });
+    bunExpect([again.passed, again.unverified]).toEqual([true, 0]);
+  });
+
   test("write mode compares nothing and adds the new screens; a failing run writes nothing", async () => {
     const dir = await tmp();
     const lock = join(dir, "create.sap.lock.json");
