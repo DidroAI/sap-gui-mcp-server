@@ -235,6 +235,8 @@ describe("confirm mode with elicitation", () => {
       surface.add({ id: "chrome:1", system: "ABA", transaction: "VA02" }, { assess });
       const r = await call("sap_act", { action: { do: "key", key: 11 } });
       expect(r.text).toContain("Not run");
+      // A dismissal may come from a client with nobody to ask (claude -p answers "cancel" at once): not said to be the user's no.
+      expect(r.text).toContain(answer === "decline" ? "the user declined" : "the client could not show it");
       expect(surface.acts()).toEqual([]);
     }
   });

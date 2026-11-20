@@ -274,6 +274,16 @@ export const SAFE_WORDS: WordRow<SafeLanguage>[] = [
     },
   },
   {
+    // A classic list wider than the window (SE16's 250 characters): its columns move sideways; nothing is sent but the view.
+    means: "list columns",
+    words: {
+      en: ["list width left", "list width right", "first column", "last column"],
+      de: ["listbreite links", "listbreite rechts", "erste spalte", "letzte spalte"],
+      fr: ["première colonne", "dernière colonne"],
+      es: ["primera columna", "última columna"],
+    },
+  },
+  {
     means: "sort",
     words: {
       en: ["sort", "ascending", "descending"],

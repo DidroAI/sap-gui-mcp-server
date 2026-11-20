@@ -580,7 +580,12 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
       return fail(`Not run: the user could not be asked to confirm (${(e as Error).message.split("\n")[0]}).`);
     }
     if (answer.action !== "accept") {
-      const said = `Not run: the user ${answer.action === "decline" ? "declined" : "dismissed the confirmation of"} this action (${what}). Stop here: do not retry it or look for another way; tell the user it was not done and ask how to go on.`;
+      // Claude Code run headless (claude -p) says it can ask, then answers every question "cancel" at once, unseen by anyone.
+      const who =
+        answer.action === "decline"
+          ? "the user declined"
+          : "the confirmation was dismissed, or the client could not show it (a client run without a user, such as claude -p, dismisses every question): no yes came for";
+      const said = `Not run: ${who} this action (${what}). Stop here: do not retry it or look for another way; tell the user it was not done and ask how to go on.`;
       return withData(text(said), data((): ActOutput => ({ ran: 0, total: 1, stopped: { why: "declined", text: said.split(". Stop here")[0] as string }, screen: screenOfInfo(info) })));
     }
     return serial(shown.session, actionText(action), () => runConfirmed(shown, whole));

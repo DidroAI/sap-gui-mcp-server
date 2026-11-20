@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { pageOf, readRows, type RowSource } from "../src/core/rows.js";
+import { onlyColumns, type Page, pageOf, readRows, type RowSource } from "../src/core/rows.js";
 import { ActionError } from "../src/core/types.js";
 
 const FRAME = ["TRANSACTION ZT05  PROGRAM ZLIST  SCREEN 500", 'WINDOW wnd[0]  "Synthetic list (93 entries)"'];
@@ -84,5 +84,28 @@ describe("readRows: a range, read by scrolling", () => {
     const one = [...FRAME, 'wnd[0]/usr/ctxtZ  field  Z = "1"  (edit)'].join("\n");
     const field: RowSource = { scrollTo: async () => {}, block: async () => ({ block: one, screen: one }) };
     expect(readRows(field, "ctxtZ", 0, 9)).rejects.toThrow("has no rows to read");
+  });
+});
+
+describe("onlyColumns on a table control (live 2026-11-20, VA03 items)", () => {
+  const legend = "  columns: 0 Item=txtVBAP-POSNR (read-only), 1 Material=ctxtRV45A-MABNR (read-only), 2 Order Quantity=txtRV45A-KWMENG (read-only), 4 Description=txtVBAP-ARKTX (read-only), 67 Description=txtTPRIT-BEZEI; 41 more to the right";
+  const page = (): Page => ({
+    head: "wnd[0]/usr/tblT  table  rows 5 (visible 2, first 0)",
+    frame: FRAME,
+    kind: "table",
+    titles: [legend],
+    rows: [{ n: 0, text: "  row 0: Item=10; Material=M-17; Order Quantity=3; Description [col 4]=Jotachi SN4000; Description [col 67]=Bulk" }],
+    total: 5,
+  });
+  test("columns asked for by their cell ids, or by the SAP name in them, are kept (they came back empty)", () => {
+    expect(onlyColumns(page(), ["txtVBAP-POSNR", "ctxtRV45A-MABNR", "txtRV45A-KWMENG"]).rows[0]?.text).toBe("  row 0: Item=10; Material=M-17; Order Quantity=3");
+    expect(onlyColumns(page(), ["VBAP-POSNR", "RV45A-KWMENG"]).rows[0]?.text).toBe("  row 0: Item=10; Order Quantity=3");
+  });
+  test("by id, of two columns with one title only that one; by title, both, as before", () => {
+    expect(onlyColumns(page(), ["txtVBAP-ARKTX"]).rows[0]?.text).toBe("  row 0: Description [col 4]=Jotachi SN4000");
+    expect(onlyColumns(page(), ["Item", "Description"]).rows[0]?.text).toBe("  row 0: Item=10; Description [col 4]=Jotachi SN4000; Description [col 67]=Bulk");
+  });
+  test("no column of the table: said, with the columns it has", () => {
+    expect(() => onlyColumns(page(), ["VBELN"])).toThrow("none of the columns VBELN is in this table: its columns are item=txtvbap-posnr");
   });
 });
