@@ -185,6 +185,8 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
     // the screen itself. Said wrongly, the agent's next action goes to a screen it has not seen.
     // A box that was already as asked: nothing is waiting in the page for SAP either.
     if (nothing?.startsWith("(Set in the page") && /nothing changed/.test(done)) nothing = undefined;
+    // A dropdown can carry a function code of its own, whose request may leave a moment later.
+    if (nothing?.startsWith("(Set in the page") && a.do === "combo" && (await session.sentLate(mark))) nothing = undefined;
     if (nothing?.startsWith("Nothing was sent")) {
       if (await session.sentLate(mark)) nothing = undefined;
       else if (before) {

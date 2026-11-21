@@ -47,7 +47,8 @@ export function nothingSent(a: Action): string | undefined {
   }
   // A box ticked, a radio button chosen or a table row selected: Web GUI keeps it in the page until the next step,
   // which is how SAP works (live 2026-11-21: MM02's "Select View(s)" row answered "Nothing was sent", then Enter went on).
-  if (a.do === "check" || (a.do === "select" && (a.row !== undefined || /(^|\/)rad[^/]*$/.test(String(a.id ?? "")))))
+  // So is an entry chosen in a dropdown that has no function code of its own (VA02's delivery block, live 2026-11-21).
+  if (a.do === "check" || a.do === "combo" || (a.do === "select" && (a.row !== undefined || /(^|\/)rad[^/]*$/.test(String(a.id ?? "")))))
     return "(Set in the page: SAP gets it with the next Enter or key.)";
   return "Nothing was sent to SAP for this action: what changed (if anything) changed only in the page.";
 }
