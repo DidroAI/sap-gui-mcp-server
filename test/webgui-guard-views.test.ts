@@ -377,3 +377,22 @@ describe("an action on a control needs its id (P2P-10)", () => {
     expect(normalizeAction({ do: "scroll" }).do).toBe("scroll");
   });
 });
+
+describe("a popup's button and its twin in the main window", () => {
+  // Icon buttons have no text: two of them are not the same function, so a blank one on a popup is not
+  // taken for the main window's blank one (review of 2026-11-21).
+  const BLANK = lines(
+    ...MM03_INIT.split("\n"),
+    "wnd[0]/tbar[1]/btn[9]  button  ",
+    'WINDOW wnd[1]  "Select View(s)"',
+    "wnd[1]/tbar[0]/btn[0]  button  Continue (Enter)",
+    "wnd[1]/tbar[0]/btn[9]  button  ",
+    "wnd[1]/tbar[0]/btn[12]  button  Cancel (Escape)",
+  );
+  test("a blank button on a popup does not borrow a blank button's verdict", () => {
+    expect(risk({ do: "press", id: "wnd[1]/tbar[0]/btn[9]" }, BLANK, MM03_MENUS)).toBe("commit");
+  });
+  test("a button with the same text and shortcut still does", () => {
+    expect(risk({ do: "press", id: "wnd[1]/tbar[0]/btn[7]" }, MM03_VIEWS, MM03_MENUS)).toBe("navigate");
+  });
+});

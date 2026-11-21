@@ -391,18 +391,28 @@ function topMenuOf(entry: MenuEntry, menus: MenuEntry[]): MenuEntry | undefined 
  * Is this button the same function as an entry of the Goto menu? Matched by
  * its shortcut ("Org. Levels (F6)" and "Organizational Levels... (F6)") or by
  * its text ("Company Code Data (Ctrl+F2)" and "Company Code Data"). A popup's
- * button that repeats a button of the main window (same text, same key) is
- * that button again (MM03's Select View(s) popup repeats "Data (F7)").
+ * button that repeats a button of the main window (see `mainTwin`) is that
+ * button again (MM03's Select View(s) popup repeats "Data (F7)").
  */
 function inGotoMenu(control: ViewControl, text: string, scene: Scene, ctx: AssessContext): boolean {
   if (control.window > 0) {
-    const twin = scene.windows.find((w) => w.number === 0)?.controls.find((c) => c.kind === "button" && c.text === text);
+    const twin = mainTwin(text, scene);
     return !!twin && inGotoMenu(twin, twin.text, scene, ctx);
   }
   const sc = shortcutOf(text);
   const want = bareText(text);
   const twins = scene.menus.filter((m) => /\/mbar\/menu\[\d+\]\/menu\[/.test(m.sid) && ((sc && m.key && keyName(m.key) === sc) || (want && bareText(m.text) === want)));
   return twins.length > 0 && twins.every((m) => isGotoMenu(ctx.language, topMenuOf(m, scene.menus)?.text));
+}
+
+/**
+ * The main window's button that a popup's button repeats: the same text as Web GUI shows it, which carries
+ * the shortcut when the button has one ("Data (F7)"); the key is not compared apart from it. A button with no
+ * text (an icon only) repeats nothing: two blank texts are not the same function.
+ */
+function mainTwin(text: string, scene: Scene): ViewControl | undefined {
+  if (!text.trim()) return undefined;
+  return scene.windows.find((w) => w.number === 0)?.controls.find((c) => c.kind === "button" && c.text === text);
 }
 
 /** A button, an open menu row, or a link or button of an HTML viewer: what pressing it may do. */
@@ -449,9 +459,9 @@ function assessFunction(what: string, text: string, control: ViewControl | undef
   // screen body, not the toolbar of a grid or a tree. A function named as one that acts (print, issue
   // output, start, execute...) is still held back.
   if (control && displayButton(control, text, scene, ctx)) return navigate(`${named} on a screen that only displays`);
-  // A popup's button that repeats such a button of the main window (same text and key) is that button again.
+  // A popup's button that repeats such a button of the main window (the same text, shortcut included) is that button again.
   if (control && control.window > 0 && control.kind === "button") {
-    const twin = scene.windows.find((w) => w.number === 0)?.controls.find((c) => c.kind === "button" && c.text === text);
+    const twin = mainTwin(text, scene);
     if (twin && displayButton(twin, twin.text, scene, ctx)) return navigate(`${named} repeats the button of a screen that only displays`);
   }
   return notSafe(named);
