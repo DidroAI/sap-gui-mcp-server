@@ -176,6 +176,9 @@ describe("error answers say what to do next", () => {
     const r = await call("sap_act", { do: "key", key: 11 });
     expect(r.error).toBe(true);
     expect(r.text).toContain("Tell the user what you would have saved; do not look for another way.");
+    // How to leave so the lock is released (live 2026-11-20: VA02 and MM02 were left open and locked).
+    expect(r.text).toContain('leave it now without saving so SAP releases the lock on that document: {"do":"okcode","value":"/n"}');
+    expect(r.text).toContain("Do not leave it open for the user to save by hand");
   });
   test("a declined confirmation says to stop", async () => {
     const surface = new FakeSurface("webgui");
@@ -188,6 +191,7 @@ describe("error answers say what to do next", () => {
     const r = (await client.callTool({ name: "sap_act", arguments: { do: "key", key: 11 } })) as { content: { text: string }[] };
     expect(r.content[0]?.text).toContain("the user declined");
     expect(r.content[0]?.text).toContain("Stop here: do not retry it");
+    expect(r.content[0]?.text).toContain('{"do":"okcode","value":"/n"}');
     expect(surface.acts()).toEqual([]);
   });
   test('"read-only" and "does not scroll" add the next step, with the screen', async () => {
