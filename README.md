@@ -315,10 +315,27 @@ and received, your logon included, and is made readable by its owner only
 where the system allows it. A capture that cannot be written is stopped and
 reported; reading and the logon go on.
 
-**Not verified live yet.** The actions, waits, cell sizes, window matching
-and record/replay of this method have run against synthetic traffic and
-recorded captures only, not yet against SAP GUI itself. Expect to set
-`SAP_DIAG_CELL` on another theme or scaling.
+**Live status.** First run against SAP GUI for Windows on 2026-11-20
+(`docs/live-agents-2026-11-20.md`): reading, batches, long lists, the
+guard and record/replay work. Expect to set `SAP_DIAG_CELL` on another
+theme or scaling.
+
+**Known limits of this experimental method:**
+
+- **The router lives and dies with the server.** SAP GUI connects through
+  the server's SAProuter, so when the server stops, SAP GUI's connection
+  drops and the user must log on again. Most MCP clients start the server
+  per conversation and stop it when the conversation ends, which logs SAP
+  GUI off each time. Keep one long-lived server process for this method,
+  not one per conversation: for example the agent CLI, whose daemon stays
+  up between calls (raise `SAP_CLI_IDLE`, in minutes, default 30).
+- **The view is bounded by SAP GUI's window.** SAP sends a screen sized to
+  the window, so a small window gives a short, narrow view: lists are cut
+  at its width. Maximise SAP GUI.
+- **Inputs can miss.** An Enter or a double-click that SAP GUI did not
+  turn into a request within `SAP_DIAG_REQUEST_MS` is answered "SAP GUI
+  sent nothing to SAP… the input may have missed"; look, then send it
+  again.
 
 ### Web GUI and Fiori in Chrome
 
@@ -716,8 +733,9 @@ Every setting is an environment variable of the server process.
   - Scrolling long lists is covered by tests against a fake SAP GUI, but
     has not been run against a real SAP GUI yet.
   - The `diag` method is experimental: it needs the window on screen,
-    cannot read SNC-encrypted connections, and acts with the keyboard and
-    mouse.
+    cannot read SNC-encrypted connections, acts with the keyboard and
+    mouse, and drops SAP GUI's connection when the server stops (see
+    [SAP GUI without scripting](#sap-gui-without-scripting-experimental)).
 - **Browsers:** Chrome is supported; Microsoft Edge (also Chromium) is
   found the same way and is likely to work; Firefox and Safari are not.
 - **Long lists:**
