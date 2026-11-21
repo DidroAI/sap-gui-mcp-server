@@ -150,6 +150,13 @@ describe("commit parity", () => {
     expect(commitCalls(code).some((x) => x.includes("Enter") || x.includes("Continue"))).toBe(false);
   });
 
+  test("a press of a control the recording wrote with counts as a write (Yes on SAP's save question)", () => {
+    const code = ['  await sap.key("Enter");', '  await sap.press("wnd[1]/usr/btnSPOP-OPTION1");', '  await sap.press("btnSPOP-OPTION2");'].join("\n");
+    expect(commitCalls(code)).toEqual([]);
+    expect(commitCalls(code, ["wnd[1]/usr/btnSPOP-OPTION1"])).toEqual(['line 2: wnd[1]/usr/btnSPOP-OPTION1 (a control the recording wrote with)']);
+    expect(commitCalls('  await sap.press("SPOP-OPTION1");', ["wnd[1]/usr/btnSPOP-OPTION1"])).toHaveLength(1);
+  });
+
   test("a write the recording does not have is refused; one it has is not", async () => {
     const save = wrap("  await sap.save();");
     const read = await unmarkedRun();

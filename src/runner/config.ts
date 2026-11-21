@@ -115,11 +115,25 @@ export function findConfig(from: string): string | undefined {
   }
 }
 
+/**
+ * Node loads TypeScript without a flag from 22.18, with --experimental-strip-types
+ * from 22.6 (the test command re-runs itself with it), and not at all before.
+ * Where it cannot, its error is only `Unknown file extension ".ts" for <file>`:
+ * this says what to do. Other errors come back as they are.
+ */
+export function explainTypeScriptLoad(e: unknown, node: string = process.versions.node): unknown {
+  const err = e as { code?: unknown; message?: unknown } | null;
+  if (err?.code !== "ERR_UNKNOWN_FILE_EXTENSION" || typeof err.message !== "string" || !/"\.[cm]?ts"/.test(err.message)) return e;
+  return new Error(`${err.message}: Node ${node} cannot load TypeScript here. Use Node 22.18 or later, which loads it without a flag, or write the file as .js or .mjs.`, { cause: e });
+}
+
 /** Reads a config file: JSON, or a module whose default export is the config. */
 export async function loadConfig(file: string): Promise<SapConfig> {
   if (file.endsWith(".json")) return JSON.parse(await readFile(file, "utf8")) as SapConfig;
   loadTestFilesAsModules();
-  const m = (await import(pathToFileURL(file).href)) as { default?: SapConfig; config?: SapConfig };
+  const m = (await import(pathToFileURL(file).href).catch((e: unknown) => {
+    throw explainTypeScriptLoad(e);
+  })) as { default?: SapConfig; config?: SapConfig };
   const c = m.default ?? m.config;
   if (!c || typeof c !== "object") throw new Error(`${file}: export the config as default (export default defineConfig({...}))`);
   return c;

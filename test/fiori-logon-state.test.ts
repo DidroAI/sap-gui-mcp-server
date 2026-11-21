@@ -51,6 +51,32 @@ describe.skipIf(!exe)("Fiori: is the launchpad still logged on", () => {
     expect(await logonState(page)).toBe("expired");
   });
 
+  test("the probe names the tab's client: another client's sap-usercontext on the same host is not an expired logon", async () => {
+    // Live 2026-11-21: ECC on localhost:8010 set sap-usercontext=sap-client=800 for host localhost; S/4 on
+    // localhost:44300 then answered a request without sap-client from client 800, where the tab has no logon.
+    const server = Bun.serve({
+      port: 0,
+      fetch: (req) => {
+        const u = new URL(req.url);
+        if (u.pathname !== "/sap/bc/ui2/start_up") return new Response("<!doctype html><title>Home</title>", { headers: { "content-type": "text/html" } });
+        const client = u.searchParams.get("sap-client") ?? /sap-client=(\d+)/.exec(req.headers.get("cookie") ?? "")?.[1];
+        return client === "100"
+          ? new Response('{"client":"100"}', { headers: { "content-type": "application/json" } })
+          : new Response("<html>logon</html>", { status: 401, headers: { "content-type": "text/html", "www-authenticate": 'Basic realm="SAP"' } });
+      },
+    });
+    servers.push(server);
+    const context = await browser.newContext();
+    await context.addCookies([{ name: "sap-usercontext", value: "sap-language=EN&sap-client=800", domain: "127.0.0.1", path: "/" }]);
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${server.port}/sap/bc/ui2/flp?sap-client=100`);
+    expect(await logonState(page)).toBe("ok");
+    // No sap-client in the URL: the client the session read from the launchpad is named instead.
+    await page.goto(`http://127.0.0.1:${server.port}/sap/bc/ui2/flp`);
+    expect(await logonState(page, "100")).toBe("ok");
+    expect(await logonState(page)).toBe("expired");
+  });
+
   test("another launchpad without that path is not called expired", async () => {
     const page = await launchpad({ status: 404, type: "text/html", body: "<html>Not found</html>" });
     expect(await logonState(page)).toBe("unknown");

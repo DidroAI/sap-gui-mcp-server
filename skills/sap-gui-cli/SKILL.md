@@ -102,7 +102,8 @@ Quote JSON for the shell with single quotes. Shorthands for the common ones:
 
 Saving, posting, releasing, deleting change the system. The user's
 `SAP_WRITE` decides: `off` (default) refuses: tell the user what you would
-have saved, and stop; `confirm` refuses it too here, because the CLI
+have saved, leave the transaction without saving (`okcode /n`) so SAP
+releases the document's lock, and stop; `confirm` refuses it too here, because the CLI
 cannot ask the user (only an MCP client can); `on` runs it, and your own
 command approval is the user's check. Before a save under `on`, describe
 the action to the user in plain words when they have not asked for it. Never work around the setting (no save codes in the command field).
@@ -111,3 +112,8 @@ The CLI keeps a background daemon per directory, started on the first call
 with that call's `SAP_*` settings. A call with other settings is refused:
 `sap-gui daemon stop` first, and only when the user asked for the new
 settings.
+
+The `SAP_*` settings are the user's. Never set, export or change them
+yourself (no `SAP_WRITE=on` in front of a command, no `export`), not even to
+repeat what is already set: a refused write is reported to the user, who
+decides.
