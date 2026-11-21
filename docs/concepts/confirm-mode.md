@@ -22,6 +22,31 @@ The action runs only if you accept. The agent cannot answer for you. If you
 decline or dismiss the question, the action is not run and the agent is
 told so. You have five minutes to answer.
 
+## Which clients can ask
+
+Checked on 21 November 2026 from each client's changelog, documentation and
+source. Clients change quickly: try a harmless write on a test system first.
+
+| Client | Asks? | Notes |
+| --- | --- | --- |
+| Claude Code | yes, from 2.1.76 | In interactive sessions. In `claude -p` (headless) only an `Elicitation` hook or the Agent SDK's `onElicitation` can answer; otherwise the question is cancelled and the write does not run. |
+| VS Code (GitHub Copilot, Agent mode) | yes, from 1.102 | The question appears in the chat. |
+| Codex (CLI, IDE extension, app) | yes, from 0.119 | `codex exec` cancels every question, so writes do not run there. **In Full Access mode (approvals set to never), Codex accepts these questions without showing them**: there `confirm` protects nothing; use `off`. |
+| Cursor | supported since 1.5, unreliable | Users report the question never showing on Windows, its buttons hidden until the tool row is expanded, and a timeout of about a minute. Test it before relying on it; else keep `off`. |
+| Claude Desktop | not documented | No statement either way for the chat. Keep `off`; with `confirm`, a write is refused if Claude Desktop does not ask. |
+| Windsurf / Devin Desktop | not checked | Keep `off` until you have tried it. |
+| The agent CLI (`sap-gui act`) | no | It cannot ask: writes need `SAP_WRITE=on`. |
+
+Sources: the [Claude Code changelog](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md)
+and [MCP docs](https://code.claude.com/docs/en/mcp);
+[VS Code 1.102 release notes](https://code.visualstudio.com/updates/v1_102);
+Codex [PR 17043](https://github.com/openai/codex/pull/17043),
+[PR 17164](https://github.com/openai/codex/pull/17164) and
+[`exec`](https://github.com/openai/codex/blob/main/codex-rs/exec/src/lib.rs);
+[Cursor 1.5 changelog](https://cursor.com/changelog/1-5) and its
+[forum](https://forum.cursor.com/t/mcp-elicitation-create-hangs-agent-on-windows-in-cursor-3-10-20-but-works-on-macos/165391);
+[claude-ai-mcp issue 153](https://github.com/anthropics/claude-ai-mcp/issues/153).
+
 ## The client does not
 
 Then the server cannot ask you, and an action that may write is
@@ -40,7 +65,10 @@ once to its log (stderr) when the client connects.
 With such a client, use `SAP_WRITE=on` together with the client's own
 approval of each `sap_act` call (most clients ask before a tool that is
 marked destructive). That approval is then the check; the server does not
-add one of its own.
+add one of its own. In Claude Code, leave `mcp__sap-gui__sap_act` out of
+`permissions.allow` (or put it in `ask`); in Codex, set
+`approval_mode = "prompt"` for that tool. That approval covers every
+`sap_act` call, not only the ones that write.
 
 ## What the confirmation is bound to
 

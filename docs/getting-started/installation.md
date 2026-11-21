@@ -14,16 +14,16 @@ Chrome: it reads the screens open there.
 Pick your client below. Each one names the server `sap-gui`.
 
 ::: tip The quick way
-`setup` finds Claude Code, Codex and Claude Desktop on this machine and adds
-the server to each, without touching an existing `sap-gui` entry:
+`setup` finds Claude Code, Codex, Claude Desktop, Cursor, Windsurf and
+VS Code on this machine and adds the server to each, without touching an
+existing `sap-gui` entry:
 
 ```sh
 npx -y sap-gui-mcp-server setup --dry-run   # show what it would change
 npx -y sap-gui-mcp-server setup             # change it
 ```
 
-Support for Cursor, VS Code and Windsurf in `setup` is coming; for now, use
-the steps below for those. Then run `npx -y sap-gui-mcp-server doctor` to
+It adds no settings, so writes stay off. Then run `npx -y sap-gui-mcp-server doctor` to
 check what the server can reach (SAP GUI scripting, Chrome). Or have your
 agent do all of it: [Set up with your agent](setup-prompt.md).
 :::
@@ -40,21 +40,28 @@ command and `/c npx -y sap-gui-mcp-server` as its arguments:
 `setup` does this for you on Windows.
 :::
 
-Writes to SAP are refused until you allow them. Every snippet below can take
-settings as environment variables, for example `SAP_WRITE=confirm` so that
-your client asks you before each action that may write (clients
-with MCP elicitation; others get such actions refused,
-[Confirm mode](../concepts/confirm-mode.md)). All the variables are in
-[Configuration](../reference/configuration.md).
+Writes to SAP are refused until you allow them. Settings are environment
+variables of the server; all of them are in
+[Configuration](../reference/configuration.md). The one to decide first is
+`SAP_WRITE`:
+
+- `off` (the default): anything that may save is refused. Start here.
+- `confirm`: your client asks you before each action that may save. This
+  needs a client that supports MCP elicitation. The snippets below set
+  `confirm` for Claude Code, VS Code and Codex, which do, and keep `off`
+  for the others ([which clients can ask](../concepts/confirm-mode.md#which-clients-can-ask)).
+- `on`: such actions run; your client's own tool approval is then the only
+  check.
 
 ## Claude Code
 
 ::: code-group
 
 ```sh [CLI]
+# read-only (SAP_WRITE=off):
 claude mcp add sap-gui --scope user -- npx -y sap-gui-mcp-server
 
-# with a setting:
+# asks you before each write:
 claude mcp add --scope user --env SAP_WRITE=confirm --transport stdio sap-gui -- npx -y sap-gui-mcp-server
 ```
 
@@ -67,7 +74,8 @@ claude mcp add --scope user --env SAP_WRITE=confirm --transport stdio sap-gui --
 
 `--scope user` makes it available in every project; leave it out to add it
 to the current project only. Check it with `claude mcp get sap-gui`, or `/mcp`
-in a session.
+in a session. Claude Code asks in interactive sessions; in `claude -p` a
+write under `confirm` does not run unless a hook answers.
 
 The **plugin** brings the server and the `sap-gui-drive` skill, which teaches
 the agent how to work in SAP transactions. From your shell, the same is
@@ -124,14 +132,20 @@ Desktop.
 The file is `~/Library/Application Support/Claude/claude_desktop_config.json`
 on macOS and `%APPDATA%\Claude\claude_desktop_config.json` on Windows.
 
+The snippets keep `SAP_WRITE` at `off`: Claude Desktop does not document
+whether it asks about a server's questions (MCP elicitation), so with
+`confirm` a write may simply be refused. Try it on a test system before
+you rely on it.
+
 ## Codex
 
 ::: code-group
 
 ```sh [CLI]
+# read-only (SAP_WRITE=off):
 codex mcp add sap-gui -- npx -y sap-gui-mcp-server
 
-# with a setting:
+# asks you before each write:
 codex mcp add sap-gui --env SAP_WRITE=confirm -- npx -y sap-gui-mcp-server
 ```
 
@@ -141,13 +155,17 @@ command = "npx"
 args = ["-y", "sap-gui-mcp-server"]
 
 [mcp_servers.sap-gui.env]
-SAP_WRITE = "off"
+SAP_WRITE = "confirm"   # off | confirm | on
 ```
 
 :::
 
 The Codex CLI, the IDE extension and the desktop app share this
-configuration. `codex mcp list` shows it.
+configuration. `codex mcp list` shows it. Codex asks from version 0.119.
+Two exceptions: `codex exec` cancels every question, so a write under
+`confirm` does not run; and in **Full Access** mode Codex accepts the
+question without showing it, so `confirm` protects nothing there: use
+`off`.
 
 ## Cursor
 
@@ -174,6 +192,11 @@ in a project:
 
 It appears under **Settings > MCP**.
 
+The snippet keeps `SAP_WRITE` at `off`. Cursor lists MCP elicitation as
+supported, but users report the question not showing (on Windows), its
+buttons hidden until the tool row is expanded, and a short timeout. If you
+set `confirm`, try a harmless write on a test system first.
+
 ## VS Code (GitHub Copilot)
 
 [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_sap--gui-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522sap-gui%2522%252C%2522type%2522%253A%2522stdio%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522sap-gui-mcp-server%2522%255D%257D)
@@ -194,7 +217,7 @@ team, put the same `mcpServers` block in `.mcp.json` at the workspace root.
       "type": "stdio",
       "command": "npx",
       "args": ["-y", "sap-gui-mcp-server"],
-      "env": { "SAP_WRITE": "off" },
+      "env": { "SAP_WRITE": "confirm" },
       "tools": ["*"]
     }
   }
@@ -224,6 +247,9 @@ editor's own format, under **`servers`**, not `mcpServers`. VS Code documents
 that format as part of its older local agent, which it plans to remove in
 February 2027, so prefer the Copilot user file for a new setup. Run
 **MCP: List Servers** to see the server, and use Copilot Chat in Agent mode.
+VS Code asks about each write in the chat (from 1.102), so the Copilot file
+above sets `confirm`; the install button and `code --add-mcp` leave it at
+`off`.
 
 ## Windsurf
 
@@ -246,6 +272,9 @@ MCP panel:
   }
 }
 ```
+
+Whether Windsurf asks about a server's questions (MCP elicitation) was not
+checked: keep `off` until you have tried `confirm` on a test system.
 
 ## Other clients
 

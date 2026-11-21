@@ -15,6 +15,10 @@ args = ["-y", "sap-gui-mcp-server"]
 SAP_WRITE = "confirm"   # off (default) | confirm | on
 ```
 
+`confirm` makes Codex ask you before each write (Codex 0.119 or later).
+`codex exec` cancels such questions, so the write does not run, and in
+Full Access mode Codex accepts them without asking: use `off` there.
+
 The CLI, the IDE extension and the desktop app share this file. More:
 [installation](../../docs/getting-started/installation.md#codex).
 
