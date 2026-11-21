@@ -83,12 +83,7 @@ export function registerRecordTools(server: McpServer, registry: Registry, polic
     "sap_record",
     {
       title: "Record the SAP session as a test",
-      description: `Turns what you do with sap_act into a test that sap_replay runs without a model. Use it only when the user asks to record, automate or regression-test a flow. In order: start (name), an okcode that opens the transaction, your sap_act steps, assert after the step it checks, stop (writes the file). {"op":"help"} answers with every op and its fields, with examples; a call that lacks a field says which.
-  start name | stop | status | list | undo (drops the last step) | note text
-  assert check (status, field, title, transaction, text), id for a field, equals, contains or matches
-  variable name, value: differs per run | capture name, from, pattern: a number SAP made
-  code: the steps so far as a script, also with no recording on | export name, to
-A check that does not hold on the screen now is refused. Typed values are written as typed: do not record secrets.`,
+      description: `Turns what you do with sap_act into a test that sap_replay runs without a model. Use it only when the user asks to record, automate or regression-test a flow. In order: start (name), an okcode that opens the transaction, your sap_act steps, assert after the step it checks, stop (writes the file); code gives the steps as a script. {"op":"help"} lists every op with its fields and examples; a call that lacks a field says which. Typed values are written as typed: do not record secrets.`,
       inputSchema: {
         op: z.enum(OPS),
         name: z.string().optional().describe("the recording's (start, export) or the variable's (variable, capture)"),
@@ -104,7 +99,7 @@ A check that does not hold on the screen now is refused. Typed values are writte
         pattern: z.string().optional().describe("regular expression; its first group is the value"),
         text: z.string().optional(),
         to: z.enum(TARGET_NAMES as [string, ...string[]]).optional(),
-        tidy: z.boolean().optional().describe("code: the recording tidied (detours, corrections and error round trips dropped; checks from what SAP showed), with the removal log and a TODO list"),
+        tidy: z.boolean().optional().describe("code: without detours and corrections, with a log and a TODO list"),
         session,
       },
       ...(structured ? { outputSchema: recordOutput } : {}),
@@ -190,19 +185,18 @@ A check that does not hold on the screen now is refused. Typed values are writte
     {
       title: "Replay a recorded SAP test",
       description:
-        'Runs a recording (sap_record) again on the active session with no model: the same actions on the same ids, under the same write setting and transaction lists as sap_act (steps that may write need SAP_WRITE=on). Use it to re-run a recorded flow, also on other data with "variables", e.g. {"order":"4711"}. Answers PASS or FAIL per step; on a failure, the screen there and how to go on (from, repair). A window the recording lacks is confirmed only when it just informs (PASS WITH NOTES); a question or a choice fails the step. Stop a recording first.',
+        'Runs a recording (sap_record) again on the active session with no model, under the same write setting and transaction lists as sap_act. Use it to re-run a recorded flow, also on other data with "variables", e.g. {"order":"4711"}. Answers PASS or FAIL per step; a failure gives the screen there and how to go on (from, repair). Stop a recording first.',
       inputSchema: {
         name: z.string().optional().describe("the recording (default: the one just stopped)"),
         variables: z.record(z.string(), z.string()).optional(),
         screens: z.enum(["strict", "loose"]).optional().describe("loose: landing on another screen than recorded is a note, not a failure"),
-        choices: z
-          .enum(["stop", "continue"])
-          .optional()
-          .describe("a choice screen the recording lacks (availability check). stop (default): the step fails and names the ways on; continue: press its neutral Continue"),
+        choices: z.enum(["stop", "continue"]).optional().describe("a choice screen the recording lacks: stop (default) fails the step; continue presses its neutral Continue"),
         // A whole number: .int() would put the safe-integer bounds into tools/list.
         from: z.number().min(1).refine(Number.isInteger, "a whole number").optional().describe("resume at this step on the screen as it is, after a failure there, with that run's variables"),
-        repair: repairSchema.optional().describe('with "from": a fix for that one step; a failure answer says its shape'),
-        format: z.enum(["text", "json"]).optional().describe("json: the result as data (steps, the failure's phase and full screen, the proposed test)"),
+        // Its shape is checked here, not in tools/list: the failure answer that asks for it says the shape (goOnText),
+        // and the full schema cost about 200 tokens in every conversation for a field few calls use.
+        repair: z.record(z.string(), z.unknown()).optional().describe('with "from": a fix for that one step; a failure answer says its shape'),
+        format: z.enum(["text", "json"]).optional().describe("json: the result as data"),
         session,
       },
       ...(structured ? { outputSchema: replayOutput } : {}),
@@ -211,13 +205,16 @@ A check that does not hold on the screen now is refused. Typed values are writte
     (a) =>
       answer(async () => {
         if (recorder.recording) return fail('A recording is on: stop it first with sap_record {"op":"stop"}.');
+        const fixed = a.repair === undefined ? undefined : repairSchema.safeParse(a.repair);
+        if (fixed && !fixed.success)
+          return fail(`"repair" is not a repair: ${fixed.error.issues.map((i) => `${i.path.join(".") || "repair"}: ${i.message}`).join("; ")}. Its shape: {"why":"what changed","actions":[...],"place":"before|instead|after"} or {"why":"...","capture":{"var":"order","from":"status","pattern":"Order (\\d+)"}}.`);
         const name = a.name ?? last;
         if (!name) return fail('Give "name", the recording to replay (sap_record {"op":"list"} lists them).');
         const test = await recorder.load(name);
         // The whole replay is one turn of the session: no other call acts in between.
         return serial(a.session, `sap_replay ${test.name}`, async () => {
           const { driver } = await registry.session(a.session);
-          const r = await replay(driver, policy, test, { ...(a.variables ? { variables: a.variables } : {}), ...(a.screens ? { screens: a.screens } : {}), ...(a.choices ? { choices: a.choices } : {}), ...(a.from !== undefined ? { from: a.from } : {}), ...(a.repair ? { repair: a.repair } : {}), leaveOnFailure: false });
+          const r = await replay(driver, policy, test, { ...(a.variables ? { variables: a.variables } : {}), ...(a.screens ? { screens: a.screens } : {}), ...(a.choices ? { choices: a.choices } : {}), ...(a.from !== undefined ? { from: a.from } : {}), ...(fixed?.success ? { repair: fixed.data } : {}), leaveOnFailure: false });
           const needs = inputsOf(test);
           const failed = r.steps.find((s) => s.outcome === "fail");
           const said = `${resultText(r)}${r.aborted && needs.length ? `\nThe test takes: ${needs.join(", ")}.` : ""}${failed ? `\n\n${goOnText(failed.n)}` : ""}`;
