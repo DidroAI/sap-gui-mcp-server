@@ -19,7 +19,7 @@ import { lockPathFor } from "../sdk/lock.js";
 import { connect, type Sap } from "../sdk/session.js";
 import type { DriftInfo, LockMode, VerifySummary } from "../sdk/verify.js";
 import { beginFile, endFile, isSkip, registry, suitesOf, type TestCase, type TestInfo, titlePath } from "./collect.js";
-import type { ProjectConfig, ResolvedConfig, UseOptions } from "./config.js";
+import { explainTypeScriptLoad, type ProjectConfig, type ResolvedConfig, type UseOptions } from "./config.js";
 
 export type Status = "passed" | "failed" | "skipped" | "flaky";
 
@@ -148,7 +148,7 @@ export async function collect(files: string[]): Promise<{ tests: TestCase[]; bro
       if (r.tests.length || !declared.has(file)) declared.set(file, r.tests);
       tests.push(...(declared.get(file) ?? []));
     } catch (e) {
-      broken.push({ file, error: e as Error });
+      broken.push({ file, error: explainTypeScriptLoad(e) as Error });
     } finally {
       endFile();
     }
