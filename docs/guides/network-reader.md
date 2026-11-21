@@ -226,10 +226,23 @@ logon go on.
 
 ## Limits
 
-- **Not verified live yet.** The actions, waits, cell sizes, window
-  matching and record/replay of this method have run against synthetic
-  traffic and recorded captures only, not yet against SAP GUI itself.
+- **Live status.** First run against SAP GUI for Windows on 20 November
+  2026: reading, batches, long lists, the guard and record and replay
+  work. Writes over this method have not been tried on a live system yet.
   Expect to set `SAP_DIAG_CELL` on another theme or scaling.
+- **The router lives and dies with the server.** SAP GUI connects through
+  the server's router, so when the server stops, SAP GUI's connection
+  drops and you must log on again. Most MCP clients start the server per
+  conversation and stop it when the conversation ends, which logs SAP GUI
+  off each time. Keep one long-lived server process for this method: for
+  example the [agent CLI](cli-for-agents.md), whose daemon stays up between
+  calls (raise `SAP_CLI_IDLE`, in minutes, default 30).
+- **The view is bounded by SAP GUI's window.** SAP sends a screen sized to
+  the window, so a small window gives a short, narrow view, and lists are
+  cut at its width. Maximise SAP GUI.
+- **Inputs can miss.** An Enter or a double-click that SAP GUI did not turn
+  into a request within `SAP_DIAG_REQUEST_MS` is answered "SAP GUI sent
+  nothing to SAP ... the input may have missed": look, then send it again.
 - It needs SAP GUI's window on the screen (not minimised), since it acts
   with the keyboard and mouse.
 - It cannot read connections encrypted with SNC.

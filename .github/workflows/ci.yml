@@ -59,7 +59,7 @@ jobs:
             // cache, source maps, env files, recorded tests and screen captures (they hold business data).
             const forbidden = [
               /^docs\/launch-checklist\.md$/,
-              /^docs\/(agent-surface-plan|cached-steps|code-tools|phase1-summary|tool-review|live-[a-z]+-[0-9-]+)\.md$/,
+              /^docs\/(agent-surface-plan|cached-steps|code-tools|phase1-summary|tool-review|live-[a-z]+-[0-9-]+|node[0-9]+-[a-z]+-[0-9-]+)\.md$/,
               /^docs\/node_modules\//,
               /(^|\/)\.vitepress\//,
               /\.map$/,

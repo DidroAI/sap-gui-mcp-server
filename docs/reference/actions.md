@@ -82,7 +82,8 @@ A write never runs on a screen you have not seen in the batch: an action
 that may write, after the first, does not run when the screen or the
 popups differ from the ones you saw when you sent the batch. Read the
 screen in the answer and send the write again, or mark the step
-`"unseen": true` when you know that screen.
+`"unseen": true` when you know that screen. A write as the first action
+needs SAP to be on the screen you were last shown, as a single write does.
 
 How the answer reads: [MCP tools](tools.md#several-actions-in-one-call).
 

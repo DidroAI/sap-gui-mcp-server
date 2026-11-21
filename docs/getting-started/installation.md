@@ -9,7 +9,12 @@ npx -y sap-gui-mcp-server
 
 You need **Node.js 22 or later** on the machine where the client runs
 (`node -v`). The server must run on the same machine as your SAP GUI or
-Chrome: it reads the screens open there.
+Chrome: it reads the screens open there. TypeScript tests and configs (`*.sap.ts`, `sap.config.ts`, `sap_code_test`)
+want **22.18 or later**, which loads TypeScript without a flag. The test
+command also works from 22.6 (it re-runs itself with
+`--experimental-strip-types`) and `sap_code_test` from 22.13; on an older
+Node they say to use 22.18 instead of failing with "Unknown file
+extension".
 
 Pick your client below. Each one names the server `sap-gui`.
 

@@ -66,13 +66,17 @@ What a client loads before the first call: the tool definitions and the
 server's instructions, counted exactly with the Anthropic `count_tokens`
 API (`claude-opus-5-5`,
 [`test/dev/tool-tokens.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/test/dev/tool-tokens.ts),
-20 November 2026):
+21 November 2026):
 
 | | Tokens |
 | --- | ---: |
-| 7 tools, default settings | 4,872 |
-| 7 tools and the instructions | 5,200 |
-| `sap_act` alone | 1,929 |
+| 7 tools, default settings | 4,460 |
+| 7 tools and the instructions | 4,811 |
+| `sap_record` and `sap_replay` | 1,192 |
+
+On 20 November the same count was 4,872 for the tools; the record and
+replay definitions were trimmed since (their op list moved to
+`sap_record {"op":"help"}`).
 
 ### Real screens
 

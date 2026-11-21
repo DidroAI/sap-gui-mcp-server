@@ -20,6 +20,12 @@ that may write to SAP are refused unless you allow them.
 ## Requirements
 
 - **Node.js 22 or later** on the machine where your MCP client runs.
+  TypeScript tests and configs (`*.sap.ts`, `sap.config.ts`, `sap_code_test`)
+  want **22.18 or later**, which loads TypeScript without a flag. The test
+  command also works from 22.6 (it re-runs itself with
+  `--experimental-strip-types`) and `sap_code_test` from 22.13; on an older
+  Node they say to use 22.18 instead of failing with "Unknown file
+  extension".
 - At least one of these, depending on how you use SAP:
 
 | Surface | You need |

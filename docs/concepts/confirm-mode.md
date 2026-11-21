@@ -29,7 +29,7 @@ source. Clients change quickly: try a harmless write on a test system first.
 
 | Client | Asks? | Notes |
 | --- | --- | --- |
-| Claude Code | yes, from 2.1.76 | In interactive sessions. In `claude -p` (headless) only an `Elicitation` hook or the Agent SDK's `onElicitation` can answer; otherwise the question is cancelled and the write does not run. |
+| Claude Code | yes, from 2.1.76 | Tried live on Web GUI (21 November 2026): the question, a decline, and a screen that changed before the yes. In interactive sessions. In `claude -p` (headless) only an `Elicitation` hook or the Agent SDK's `onElicitation` can answer; otherwise the question is cancelled and the write does not run. |
 | VS Code (GitHub Copilot, Agent mode) | yes, from 1.102 | The question appears in the chat. |
 | Codex (CLI, IDE extension, app) | yes, from 0.119 | `codex exec` cancels every question, so writes do not run there. **In Full Access mode (approvals set to never), Codex accepts these questions without showing them**: there `confirm` protects nothing; use `off`. |
 | Cursor | supported since 1.5, unreliable | Users report the question never showing on Windows, its buttons hidden until the tool row is expanded, and a timeout of about a minute. Test it before relying on it; else keep `off`. |
@@ -86,6 +86,10 @@ own, when its turn comes. If you decline, the batch ends there with
 there with the refusal.
 
 ## Limits
+
+Confirm mode was tried on a live system on Web GUI, through interactive
+Claude Code. On Fiori and on SAP GUI for Windows it has run against test
+fakes only.
 
 This is a safety net, not a guarantee. A custom button whose name is on the
 safe list can still write, and so can a report started with F8: neither is

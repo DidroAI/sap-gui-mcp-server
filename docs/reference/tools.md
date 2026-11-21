@@ -184,8 +184,15 @@ with `SAP_VIEW=full`.
 Other answers:
 
 - **Refused:** `Refused: <reason>` (`isError`). The guard, the command-field
-  rule or the transaction lists said no. With writing off, the reason ends
-  "Tell the user what you would have saved; do not look for another way."
+  rule or the transaction lists said no. With writing off, the reason says
+  "Tell the user what you would have saved; do not look for another way",
+  then how to leave the transaction without saving (`okcode /n`, or Back
+  and SAP's discard answer) so that SAP releases the document's lock.
+- **Not run, the screen moved:** `Not run: it may write, and SAP is not on
+  the screen you last saw: it is now ...`, then the screen. A write runs
+  only on the screen the server last showed the agent; sent again, it runs
+  ([Safety model](../concepts/safety.md#a-write-goes-only-to-the-screen-the-agent-saw)).
+  This also holds for the first write of a batch.
 - **Asked** (with `SAP_WRITE=confirm`): the client asks the user through
   MCP elicitation, and the answer is the result once they accept, or
   `Not run: the user declined ...`, which tells the agent to stop and not
@@ -264,7 +271,11 @@ the popups are not the ones the agent saw when it sent the batch (an
 wrong but valid data, such as another customer or a zero price, so the
 stop rules cannot catch it. The answer says so and shows the screen; send
 the write again from there, or mark the step `"unseen": true` when you know
-that screen. A refusal from the write setting still comes first.
+that screen. A refusal from the write setting still comes first. The
+first action of a batch, when it may write, must find SAP on the screen
+the server last showed the agent, as a single write must; otherwise the
+batch stops before it (`Ran 0 of N actions. Stopped: action 1 (...) did
+not run: ...`) and shows the screen.
 
 The answer:
 
