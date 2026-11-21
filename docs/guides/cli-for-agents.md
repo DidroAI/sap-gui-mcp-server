@@ -55,8 +55,11 @@ different settings is refused: run `sap-gui daemon stop` first.
 The same settings apply as for the MCP server: writes stay refused
 unless `SAP_WRITE` allows them ([configuration](../reference/configuration.md)).
 The CLI cannot ask you, so `SAP_WRITE=confirm` refuses writes here: a
-write needs `SAP_WRITE=on`, and the agent's own approval of each command
-is then the confirmation.
+write needs `SAP_WRITE=on`, and your approval of each command is then the
+confirmation. The settings are yours: the bundled skill tells the agent
+never to set `SAP_*` itself, but an agent with a shell could put
+`SAP_WRITE=on` in front of a command, and only your command approval stops
+that ([Security](../security.md#what-the-agent-can-do)).
 
 ## Teaching the agent
 

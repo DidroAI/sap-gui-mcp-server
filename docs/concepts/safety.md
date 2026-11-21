@@ -147,6 +147,35 @@ the draft (Save, Create) is. Opening an app is navigation; an intent that
 carries a function code for a transaction (`DYNP_OKCODE`) counts as a
 write.
 
+## A write goes only to the screen the agent saw
+
+Before an action that may write runs, the server compares SAP's screen with
+the last one it showed the agent: transaction, program, screen number and
+popups. When SAP has moved on (a late answer, a popup, another program
+acting on the session), the write does not run, and the answer is the
+screen SAP is on now:
+
+```
+Not run: it may write, and SAP is not on the screen you last saw: it is now ZA01, program SAPMZA01, screen 100. Read the screen below; send the action again only if it is still what you want here
+```
+
+Sent again after that, it runs, because the agent has now seen that
+screen. The same rule holds for the first write of a batch; the later
+writes of a batch follow the batch's own rule ([Several actions in one
+call](../reference/tools.md#several-actions-in-one-call)). Before any
+screen was shown there is nothing to compare, and the write runs.
+
+## After a write that did not run
+
+A refused or declined write leaves the transaction as the agent left it,
+often with a document open for change, and SAP keeps that document locked
+for everyone else. So the answer tells the agent to leave without saving,
+if it typed anything or opened a document to change it:
+`{"do":"okcode","value":"/n"}`, or Back (F3) and the answer to SAP's "data
+will be lost" question that leaves without saving. It is not to leave the
+transaction open for you to save by hand, unless you ask for that. The
+bundled agent skills say the same.
+
 ## What it does not catch
 
 This is a safety net, not a guarantee. A custom button whose name is on the

@@ -228,6 +228,11 @@ npx sap-gui test --grep "order" --project s4
 npx sap-gui test --list                # what would run
 ```
 
+Node 22.18 or later loads the TypeScript files as they are; from 22.6 the
+runner re-runs itself with `--experimental-strip-types`, and below that it
+says to use 22.18. Test files and configs load as ES modules even when the
+project's `package.json` says `"type": "commonjs"`.
+
 The runner finds `sap.config.ts` (or `.js`, `.mjs`, `.json`) by walking up
 from the current folder. The `sap` fixture connects to SAP only for a test
 or hook that takes it as a parameter. A test that passes on a retry is

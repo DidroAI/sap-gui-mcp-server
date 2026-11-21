@@ -38,7 +38,8 @@ ctxtVBAK-VTWEG  field  Distribution Channel = ""  (edit)
 [![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_sap--gui-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode-insiders%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522sap-gui%2522%252C%2522type%2522%253A%2522stdio%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522sap-gui-mcp-server%2522%255D%257D)
 [![Claude Desktop extension](https://img.shields.io/badge/Claude_Desktop-Download_.mcpb-D97757?style=flat-square&logo=claude&logoColor=white)](https://github.com/DidroAI/sap-gui-mcp-server/releases/latest)
 
-You need Node.js 22 or later. Pick your client:
+You need Node.js 22 or later (22.18 or later for TypeScript tests). Pick
+your client:
 
 **Claude Code**
 

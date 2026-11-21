@@ -152,6 +152,16 @@ SAP's own authorisations.
   left is your client's own approval of each `sap_act` call, which you
   configure in the client. The agent CLI asks
   nothing itself.
+- **An agent with a shell can widen its own settings.** The settings are
+  environment variables: an agent that runs shell commands can start the
+  agent CLI with `SAP_WRITE=on` in front of the command. The bundled skills
+  forbid it, but only your approval of each command stops it.
+- **A write runs only on the screen the agent was last shown.** When SAP
+  has moved on, the write does not run and the agent gets the current
+  screen; a write that did not run tells the agent to leave the
+  transaction without saving, so SAP releases the document's lock.
+- **Not tried live yet:** confirm mode on Fiori and SAP GUI for Windows
+  (it was tried on Web GUI), and writes through the network reader.
 - **What the agent reads leaves the server.** Screen content goes to your
   MCP client and the model behind it. The guard does not stop the agent
   from passing what it read to other tools it has (a web search, a file

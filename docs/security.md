@@ -127,6 +127,20 @@ approval is then the only check on writes. The agent CLI cannot ask either.
 See
 [Confirm mode](concepts/confirm-mode.md).
 
+**The agent CLI and a shell.** The settings are environment variables. An
+agent that can run shell commands (Bash in Claude Code, Codex, Cursor) can
+start the agent CLI with `SAP_WRITE=on` in front of the command itself.
+The CLI cannot tell who set it. The bundled skills tell the agent never to
+set `SAP_*` itself, but only your approval of each command actually stops
+it: do not auto-approve `sap-gui` commands, or shell commands in general,
+when the agent works on a system where writes matter. The same applies to
+an agent that can edit its MCP client's configuration.
+
+**Not tried on a live system yet:** confirm mode on Fiori and on SAP GUI
+for Windows (it was tried on Web GUI through interactive Claude Code: the
+question, a decline, and a screen that changed before the yes), confirm in
+clients other than Claude Code, and writes through the network reader.
+
 More in the [safety model](concepts/safety.md) and the
 [configuration reference](reference/configuration.md).
 
@@ -183,11 +197,14 @@ gets a recording or a capture.
 **Mitigations:** writes off by default and failing closed; allow lists of
 systems, transactions and browser origins on every call; the command field
 only through `okcode`; no logon, no passwords; confirmations bound to one
-action and used once; the network reader bound to `127.0.0.1`; DIAG
+action and the screen it was asked on; a write runs only on the screen the
+agent was last shown; the network reader bound to `127.0.0.1`; DIAG
 captures readable by their owner only; recordings confined to one folder.
 
 **Not protected against:** an agent that passes what it read to another
-tool it has; a custom button whose text looks safe but writes; reports that
+tool it has; an agent with a shell that sets `SAP_WRITE=on` for the agent
+CLI itself, where you approve commands without reading them; a custom
+button whose text looks safe but writes; reports that
 write on F8; other local programs using the DevTools endpoint; anything the
 SAP user's authorisations allow once writes are on. The guard is a safety
 net for an agent that makes mistakes, not a security boundary.
