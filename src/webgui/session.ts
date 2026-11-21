@@ -44,6 +44,8 @@ const BUSY_BEFORE_MS = 1000;
 const FRONT_MS = 1500;
 /** How often a wait looks at the traffic and the page. */
 const POLL_MS = 25;
+/** The second look before "nothing was sent" is said (see `sentLate`). */
+const LATE_MS = 400;
 /** How long a click, a focus or a key may wait for its control. */
 const ACTION_TIMEOUT_MS = 10_000;
 
@@ -562,6 +564,26 @@ export class WebGuiSession {
     } catch {
       return "";
     }
+  }
+
+  /**
+   * Before "nothing was sent" is said: one more short watch for a request, the loading sign or the lock.
+   * A step whose request left late (seen live on 2026-11-20: an Enter on VA03's first screen after a fresh
+   * logon) was otherwise answered "nothing was sent" with the old screen, and the agent's next action went
+   * to a screen it had not seen. When something did leave, its answer is waited for. True when it did.
+   */
+  async sentLate(before: number, ms = LATE_MS): Promise<boolean> {
+    const t0 = Date.now();
+    let sent = this.traffic.posts > before || this.traffic.inflight > 0;
+    while (!sent && Date.now() - t0 < ms) {
+      await this.pause(POLL_MS * 4);
+      const st = await this.state();
+      sent = this.traffic.posts > before || this.traffic.inflight > 0 || st.busy || st.locked === true;
+    }
+    if (!sent) return false;
+    await this.waitIdle(this.quietMs, false, 0, "answer");
+    this.started = this.traffic.posts > before;
+    return true;
   }
 
   /** Requests that carried a step so far: an action that ends with the same count sent nothing to SAP. */

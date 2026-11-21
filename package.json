@@ -40,10 +40,15 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./test": {
+      "types": "./dist/runner/index.d.ts",
+      "default": "./dist/runner/index.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {
-    "sap-gui-mcp-server": "dist/cli.js"
+    "sap-gui-mcp-server": "dist/cli.js",
+    "sap-gui": "dist/cli.js"
   },
   "files": [
     "dist",
@@ -52,6 +57,13 @@
     "docs/**/*.md",
     "!docs/node_modules/**",
     "!docs/launch-checklist.md",
+    "!docs/agent-surface-plan.md",
+    "!docs/cached-steps.md",
+    "!docs/code-tools.md",
+    "!docs/live-agents-2026-11-20.md",
+    "!docs/live-check-2026-11-20.md",
+    "!docs/phase1-summary.md",
+    "!docs/tool-review.md",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"

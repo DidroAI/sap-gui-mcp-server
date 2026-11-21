@@ -67,6 +67,8 @@ const PAGE = `<!doctype html><html lang="en"><head><title>Synthetic</title></hea
     window.queued = true;
   };
   document.addEventListener('keydown', function (e) {
+    // A request that leaves after the queue was seen empty (live 2026-11-20: VA03's first Enter after a logon).
+    if (e.key === 'Enter' && window.queued && window.outsideQueue) { setTimeout(function () { post('vkey/0'); }, 200); return; }
     if (window.queued) {
       var owner = window.UCF_System.oLS.oSemanticEventHandlerObject;
       if (e.key === 'Enter') owner.enqueueEvent({ sEvName: 'Hotkey', post: 'vkey/0' });
@@ -216,6 +218,18 @@ describe.skipIf(!exe)("waits of a Web GUI action", () => {
     expect(r.ms).toBeLessThan(1500);
   });
 
+  test("a request that leaves after the queue looked empty is not answered as 'nothing was sent'", async () => {
+    await open();
+    await page.evaluate(() => {
+      (window as unknown as { makeQueue: () => void }).makeQueue();
+      (window as unknown as { outsideQueue: boolean }).outsideQueue = true;
+    });
+    const note = await act(session, { do: "key", key: 0 });
+    expect(note).toBe("key Enter");
+    expect(await posted()).toEqual(["vkey/0"]);
+    expect(session.started).toBe(true);
+  });
+
   test("an event Lightspeed puts in the queue later (a scroll, 200 ms) is waited for too", async () => {
     await open();
     await page.evaluate(() => (window as unknown as { makeQueue: () => void }).makeQueue());
@@ -319,6 +333,11 @@ describe("what an action that sends nothing says", () => {
     expect(nothingSent({ do: "key", key: "Shift+Tab" })).toContain("moves in the page");
     expect(nothingSent({ do: "key", key: 81 })).toContain("this key does nothing on this screen");
     expect(nothingSent({ do: "press", id: "btn[8]" })).toContain("Nothing was sent to SAP for this action");
+    // A radio button or a checkbox posts nothing until the next step: that is said as the normal case, not as a failure.
+    expect(nothingSent({ do: "select", id: "radPVBALL" })).toBe("(Set in the page: SAP gets it with the next Enter or key.)");
+    expect(nothingSent({ do: "select", id: "wnd[0]/usr/radPVBALL" })).toContain("SAP gets it with the next Enter");
+    expect(nothingSent({ do: "check", id: "chkFLAG", value: true })).toContain("SAP gets it with the next Enter");
+    expect(nothingSent({ do: "select", id: "tabpT\\02" })).toContain("Nothing was sent to SAP for this action");
   });
   test("F12 by name is Cancel, sent as Escape like key 12", () => {
     expect([vkey("F12"), vkey("f12"), vkey(12)]).toEqual(["Escape", "Escape", "Escape"]);

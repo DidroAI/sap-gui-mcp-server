@@ -137,6 +137,31 @@ describe("ui5Control", () => {
     g.sap.ui.getCore = () => core;
     expect(ui5Control({ handle: "Save", op: "facts" }).language).toBeUndefined();
   });
+  test("fill with nothing on a field with tokens removes them (a filter's values), and says which", () => {
+    let tokens = [new FakeControl({ type: "sap.m.Token", id: "__token2", props: { text: "=24" } })];
+    const fired: string[] = [];
+    const multi = new FakeControl({
+      type: "sap.m.MultiInput",
+      id: `${VIEW}fe::Filter::SalesOrder`,
+      isA: ["sap.m.InputBase", "sap.m.MultiInput"],
+      props: { value: "", editable: true },
+      methods: {
+        getTokens: () => tokens,
+        removeAllTokens: (() => {
+          tokens = [];
+        }) as never,
+        fireTokenUpdate: ((e: { type: string }) => fired.push(`tokenUpdate:${e.type}`)) as never,
+        fireChange: (() => fired.push("change")) as never,
+      },
+    });
+    installPage([...controls, multi], { title: "Demo Object", hash: "#Demo-display" });
+    expect(ui5Control({ handle: "SalesOrder", op: "fill", value: "" })).toMatchObject({ status: "DONE", note: expect.stringContaining('removed 1 value ("=24")') });
+    expect(tokens).toEqual([]);
+    expect(fired).toEqual(["tokenUpdate:removed", "change"]);
+    // With no tokens left, or with a value to type, it is typed as before.
+    expect(ui5Control({ handle: "SalesOrder", op: "fill", value: "" }).status).toBe("TARGET");
+    expect(ui5Control({ handle: "SalesOrder", op: "fill", value: "25" }).status).toBe("TARGET");
+  });
   test("fill marks the input; a disabled control is refused", () => {
     expect(ui5Control({ handle: "Name", op: "fill", value: "x" }).status).toBe("TARGET");
     expect(marked(controls)).toBe(`${VIEW}fe::Field::Name`);

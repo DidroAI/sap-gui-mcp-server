@@ -9,7 +9,8 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: false,
   // Internal pages: in the repository, not on the site.
-  srcExclude: ["launch-checklist.md", "README.md", "node_modules/**"],
+  // Internal design notes and live-check reports stay in the repository, off the site and out of the npm package.
+  srcExclude: ["launch-checklist.md", "README.md", "node_modules/**", "agent-surface-plan.md", "cached-steps.md", "code-tools.md", "live-agents-2026-11-20.md", "live-check-2026-11-20.md", "phase1-summary.md", "tool-review.md"],
   // Links to repository files (src/, CONTRIBUTING.md, ...) use full GitHub URLs, so every relative link must resolve.
   ignoreDeadLinks: false,
   head: [["meta", { name: "robots", content: "index,follow" }]],

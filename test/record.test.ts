@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -10,9 +10,10 @@ import { exportTest, toCalm } from "../src/record/export/index.js";
 import { tsString } from "../src/record/export/playwright.js";
 import { vbsString, vkeyNumber } from "../src/record/export/vbs.js";
 import { fill, FORMAT, inputsOf, parseTest, type SapTest, slug, withVariable } from "../src/record/format.js";
-import { hints, recorderOptionsFromEnv } from "../src/record/recorder.js";
-import { detour, junit, replay, replayAll, resultText } from "../src/record/replay.js";
+import { hints, recorderOptionsFromEnv, stepLine } from "../src/record/recorder.js";
+import { detour, junit, replay, replayAll, resultText, slowerNote, type StepResult } from "../src/record/replay.js";
 import { locate, parseScreen } from "../src/record/screen.js";
+import { connect } from "../src/sdk/index.js";
 import { createServer } from "../src/server.js";
 import { FakeSap } from "./record-fakes.js";
 
@@ -85,6 +86,18 @@ describe("finding a control again", () => {
   });
   test("an unknown control is not found", () => {
     expect(locate(s, "wnd[0]/usr/ctxtVBAK-XXXXX")).toBeUndefined();
+  });
+  test("a bare field name finds the field, not its label (SAP GUI for Windows lists both)", () => {
+    const g = parseScreen(
+      [
+        "TRANSACTION VA03  PROGRAM SAPMV45A  SCREEN 4001",
+        'WINDOW wnd[0]  "Display Standard Order 4969: Overview"',
+        "wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021/lblVBAK-NETWR  label  Net value",
+        'wnd[0]/usr/subSUBSCREEN_HEADER:SAPMV45A:4021/txtVBAK-NETWR  field  Net value = "5.500,00"  (read-only)',
+      ].join("\n"),
+    );
+    expect(locate(g, "VBAK-NETWR")?.control.value).toBe("5.500,00");
+    expect(locate(g, "lblVBAK-NETWR")?.control.type).toBe("label");
   });
 });
 
@@ -225,6 +238,18 @@ describe("sap_record", () => {
     expect((await act({ do: "press", id: "btnNOPE" })).error).toBe(true);
     expect((await act({ do: "key", key: 11 })).text).toContain("writes are off");
     expect((await file("t.saptest.json")).steps.map((s) => s.action?.do)).toEqual(["okcode"]);
+  });
+
+  test('{"op":"code"} is the recording so far as a *.sap.ts test', async () => {
+    const { act, rec } = await setup();
+    await rec("start", { name: "Draft so far" });
+    await act({ do: "okcode", value: "/nZA03" });
+    await act({ do: "set", id: "ctxtZORD-VBELN", value: "5000" });
+    await rec("variable", { name: "order", value: "5000" });
+    const r = await rec("code");
+    expect(r.error).toBe(false);
+    expect(r.text).toContain('test("Draft so far", async ({ sap }) => {');
+    expect(r.text).toContain('  await sap.set("ctxtZORD-VBELN", vars.order);');
   });
 
   test("undo drops the last step and the variable it captured", async () => {
@@ -566,6 +591,27 @@ describe("replay: windows the recording does not have", () => {
     expect(other.steps[2]?.failures[0]).toBe("SAP reported an error in the status bar: Order 998 does not exist");
   });
 
+  test("each step's time, and the recorded one; a step much slower than recorded is said, never failed", async () => {
+    const { test: t, sap, policy, rec } = await recordDisplay();
+    expect(t.steps.every((s) => typeof s.ms === "number")).toBe(true);
+    expect(stepLine({ action: { do: "key", key: 0 }, ms: 812 }, 2)).toBe('3. {"do":"key","key":0}  (812 ms)');
+    expect(stepLine({ action: { do: "key", key: 0 }, ms: 2400 }, 2)).toBe('3. {"do":"key","key":0}  (2.4 s)');
+    expect((await rec("status")).text).toContain("No recording");
+    const r = await replay(sap.driver(), policy, t);
+    expect(r.passed).toBe(true);
+    expect(r.steps.every((s) => s.recordedMs !== undefined && s.actMs !== undefined && !s.slower)).toBe(true);
+    expect(resultText(r)).toMatch(/^ok {3}1\. \{"do":"okcode","value":"\/nZA03"\} {2}\(\d+ ms; recorded \d+ ms\)$/m);
+    // Over twice and over a second more than recorded.
+    expect(slowerNote(3100, 800)).toBe("the action took 3.1 s, 3.9x the 800 ms recorded");
+    expect(slowerNote(1300, 400)).toBeUndefined();
+    expect(slowerNote(9000, 5000)).toBeUndefined();
+    expect(slowerNote(3100, undefined)).toBeUndefined();
+    const slow = { ...r, steps: [{ ...(r.steps[0] as StepResult), ms: 3300, actMs: 3100, recordedMs: 800, slower: slowerNote(3100, 800) as string }] };
+    expect(resultText(slow)).toContain('ok   1. {"do":"okcode","value":"/nZA03"}  (3.3 s; recorded 800 ms)\n       slower: the action took 3.1 s, 3.9x the 800 ms recorded');
+    expect(resultText(slow).split("\n")[0]).not.toContain("NOTES");
+    expect(junit([slow])).toContain('time="3.300"><system-out>recorded 0.800 s\nslower: the action took 3.1 s, 3.9x the 800 ms recorded</system-out></testcase>');
+  });
+
   test("the report: values not captured in this run, unknown variables, an empty recording", async () => {
     const { test: t, sap, policy } = await recordCreateAndDisplay();
     const r = await replay(sap.driver(), policy, t, { variables: { customer: "" } });
@@ -665,6 +711,102 @@ describe("exports", () => {
     expect(g).toContain("| order | customer |");
     expect(() => exportTest(t, "tosca")).toThrow("Unknown export target");
   });
+
+  test("sap-ts: SDK lines, variables in vars, captures as consts, checks as expect", async () => {
+    const { test: t } = await recordCreateAndDisplay();
+    const s = exportTest(t, "sap-ts");
+    expect(s.suffix).toBe(".sap.ts");
+    expect(s.text).toContain('import { expect, test } from "sap-gui-mcp-server/test";');
+    expect(s.text).toContain('test("Create and display", async ({ sap }) => {');
+    expect(s.text).toContain('    // a customer of sales area 1000\n    customer: "2200",');
+    expect(s.text).toContain('  await sap.set("ctxtZORD-KUNNR", vars.customer);');
+    expect(s.text).toContain('  const order = /Order (\\d+)/.exec(await sap.status().text())?.[1] ?? "";\n  expect(order).toBeTruthy();');
+    expect(s.text).toContain('  await expect(sap.status()).toContainText("has been saved");');
+    expect(s.text).toContain('  await sap.set("ctxtZORD-VBELN", order);');
+    expect(s.text).toContain('  await expect(sap.field("wnd[0]/usr/subHEAD:SAPMZA03:0301/ctxtZORD-KUNNR")).toHaveValue(vars.customer);');
+    expect(s.text).not.toContain("order:");
+  });
+
+  test("sap-ts: the generated tests type-check against the SDK and pass on the fake SAP", async () => {
+    const { test: created } = await recordCreateAndDisplay();
+    // An Information popup confirmed while recording, that SAP does not show at the next run.
+    const p = await setup();
+    p.sap.popupsFor.set("5000", [{ title: "Information", text: "Consider the subsequent documents" }]);
+    await p.rec("start", { name: "with popup" });
+    await p.act({ do: "okcode", value: "/nZA03" });
+    await p.act({ do: "set", id: "ctxtZORD-VBELN", value: "5000" });
+    await p.act({ do: "key", key: 0 });
+    await p.act({ do: "press", id: "wnd[1]/tbar[0]/btn[0]" });
+    await p.rec("stop");
+    const popup = await p.file("with-popup.saptest.json");
+    // Every kind of check and capture, a capture under a reserved word, a note on two lines.
+    const kinds: SapTest = {
+      format: FORMAT,
+      name: 'kinds "of" `checks`',
+      description: "every check",
+      recorded: { at: "2026-01-02T03:04:05Z", surface: "webgui", system: "ABA", client: "800" },
+      start: { transaction: "SMEN" },
+      variables: { order: { value: "5000" }, class: { value: "5000" }, cust: { value: "2200" } },
+      steps: [
+        { action: { do: "okcode", value: "/nZA03" }, note: "open\nthe order" },
+        { action: { do: "set", id: "ctxtZORD-VBELN", value: "${order}" } },
+        {
+          action: { do: "key", key: 0 },
+          capture: [
+            { var: "class", from: "title", pattern: "Order (\\d+)" },
+            { var: "cust", from: "field", id: "ctxtZORD-KUNNR" },
+          ],
+          expect: [
+            { check: "title", op: "contains", value: "Order ${order}" },
+            { check: "title", op: "matches", value: "Order \\d+|a/b" },
+            { check: "title", op: "equals", value: "Display Order ${class}: Overview" },
+            { check: "transaction", op: "equals", value: "ZA03" },
+            { check: "transaction", op: "matches", value: "^ZA0\\d$" },
+            { check: "transaction", op: "contains", value: "A0" },
+            { check: "text", op: "contains", value: "${cust}" },
+            { check: "text", op: "matches", value: "Customer" },
+            { check: "field", id: "ctxtZORD-KUNNR", op: "contains", value: "22" },
+            { check: "field", id: "ctxtZORD-KUNNR", op: "matches", value: "^\\d{4}$" },
+            { check: "status", op: "equals", value: "" },
+          ],
+        },
+      ],
+    };
+    const gen = join(import.meta.dir, `.sap-ts-${process.pid}`);
+    await mkdir(gen, { recursive: true });
+    try {
+      const files: string[] = [];
+      for (const [i, t] of [created, popup, kinds].entries()) {
+        const f = `t${i}.sap.ts`;
+        await writeFile(join(gen, f), exportTest(t, "sap-ts").text.replace('"sap-gui-mcp-server/test"', '"../../src/runner/index.js"'));
+        files.push(f);
+      }
+      expect(await readFile(join(gen, "t1.sap.ts"), "utf8")).toContain('  if (await sap.control("wnd[1]/tbar[0]/btn[0]").exists()) await sap.press("wnd[1]/tbar[0]/btn[0]");');
+      const k = await readFile(join(gen, "t2.sap.ts"), "utf8");
+      expect(k).toContain("  // open\n  // the order\n");
+      expect(k).toContain("vars.class = /Order (\\d+)/.exec");
+      expect(k).toContain("  const cust = await sap.field(\"ctxtZORD-KUNNR\").value();");
+      expect(k).toContain("toHaveTitle(/Order \\d+|a\\/b/)");
+      expect(k).toContain("toHaveTitle(new RegExp(`Order ${vars.order}`))");
+      expect(k).toContain("await expect(sap).toContainText(cust);");
+      // Type-checked as the repository is, against the SDK's own types.
+      await writeFile(join(gen, "tsconfig.json"), JSON.stringify({ extends: "../../tsconfig.json", include: [], files }));
+      const tsc = Bun.spawnSync([join(import.meta.dir, "../node_modules/.bin/tsc"), "-p", join(gen, "tsconfig.json")], { stdout: "pipe", stderr: "pipe" });
+      expect(`${tsc.stdout.toString()}${tsc.stderr.toString()}`).toBe("");
+      expect(tsc.exitCode).toBe(0);
+      // Run by the test runner itself, on a fake SAP with writes on: the popup does not come again, the order is created anew.
+      const { resolveConfig, runTests } = await import("../src/runner/index.js");
+      const config = resolveConfig({ use: { write: "on" }, expectTimeout: 300, outputDir: "out" }, gen);
+      const run = await runTests({ config, files: files.map((f) => join(gen, f)), surfaces: [new FakeSap()], retries: 0 });
+      expect(run.tests.map((t) => [t.title, t.status, t.error?.message])).toEqual([
+        ["Create and display", "passed", undefined],
+        ["with popup", "passed", undefined],
+        ['kinds "of" `checks`', "passed", undefined],
+      ]);
+    } finally {
+      await rm(gen, { recursive: true, force: true });
+    }
+  });
 });
 
 // ---- command line ---------------------------------------------------------------
@@ -690,5 +832,8 @@ describe("command line", () => {
     expect(await exportCommand([join(dir, "create-and-display.saptest.json"), "--to", "gherkin"], (s) => out.push(s))).toBe(0);
     expect(out[0]).toBe(join(dir, "create-and-display.feature"));
     expect(await readFile(out[0] as string, "utf8")).toContain("Feature: Create and display");
+    expect(await exportCommand([join(dir, "create-and-display.saptest.json"), "--to", "sap-ts"], (s) => out.push(s))).toBe(0);
+    expect(out[1]).toBe(join(dir, "create-and-display.sap.ts"));
+    expect(await readFile(out[1] as string, "utf8")).toContain('await sap.okcode("/nZA01");');
   });
 });
