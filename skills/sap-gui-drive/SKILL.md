@@ -79,6 +79,12 @@ server's write setting decides what happens:
 Never work around the setting (for example by typing `/11` or a save
 function code into the command field).
 
+When a write did not run (refused, declined or not asked), and you had
+typed into the transaction or opened a document to change it, leave it
+without saving: `{"do":"okcode","value":"/n"}`, or Back and the "leave
+without saving" answer to SAP's question. That releases SAP's lock on the
+document. Don't leave it open for the user to save by hand unless they ask.
+
 ## When the view is not enough
 
 `sap_screenshot` shows the window as an image: use it for charts, HTML

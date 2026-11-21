@@ -151,6 +151,14 @@ export function tcodeRefusal(policy: Policy, tcode: string | undefined): string 
   return undefined;
 }
 
+/**
+ * After a write that did not run: how to leave the transaction so SAP drops the input and the document's
+ * lock. Live 2026-11-20, agents stopped as told and left VA02 or MM02 open with the lock held, offering the
+ * user to press Save; the next user (or the next run) was then blocked from that document.
+ */
+export const LEAVE_UNSAVED =
+  'If you entered or changed anything in this transaction, or opened a document to change it, leave it now without saving so SAP releases the lock on that document: {"do":"okcode","value":"/n"}, or Back (F3) and the answer of SAP\'s "data will be lost" question that leaves without saving. Do not leave it open for the user to save by hand unless they ask you to.';
+
 export type Verdict =
   | { run: true }
   | { run: false; refused: string }
@@ -176,6 +184,6 @@ export function decide(policy: Policy, action: Action, assessment: Assessment): 
   if (policy.write === "confirm") return { run: false, confirm: assessment.reason };
   return {
     run: false,
-    refused: `this action may write to SAP (${assessment.reason}) and writes are off. Tell the user what you would have saved; do not look for another way. Only the user can allow writes (SAP_WRITE=confirm or on).`,
+    refused: `this action may write to SAP (${assessment.reason}) and writes are off. Tell the user what you would have saved; do not look for another way. ${LEAVE_UNSAVED} Only the user can allow writes (SAP_WRITE=confirm or on).`,
   };
 }

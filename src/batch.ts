@@ -189,3 +189,17 @@ export function unseenWrite(step: BatchStep, start: ParsedScreen, now: ParsedScr
   if (!moved(start, now) && popups(start).length === popups(now).length) return undefined;
   return `it may write, on a screen you have not seen in this batch (${where(now)}). Read the screen below, then send it, or mark the step "unseen": true when you know that screen`;
 }
+
+/**
+ * Why a write must not run: SAP is not on the screen the agent was last shown
+ * (another transaction, program or screen, or another number of popups). A
+ * step that ended "nothing was sent" while SAP moved on, a timer, another
+ * user of the session: the agent would write on a screen it decided nothing
+ * about (live 2026-11-20, a stale Web GUI answer led a press into VD03).
+ * Undefined when the write may run. The answer shows the screen, so sending
+ * the same action again after reading it runs.
+ */
+export function staleWrite(seen: ParsedScreen, now: ParsedScreen): string | undefined {
+  if (!moved(seen, now) && popups(seen).length === popups(now).length) return undefined;
+  return `it may write, and SAP is not on the screen you last saw: it is now ${where(now)}. Read the screen below; send the action again only if it is still what you want here`;
+}

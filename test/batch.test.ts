@@ -172,6 +172,54 @@ describe("a batch that opens a transaction", () => {
   });
 });
 
+describe("a write goes only to the screen the agent last saw", () => {
+  // SAP moved on behind the agent's back (a step answered "nothing was sent" while SAP went on, live
+  // 2026-11-20): the agent decided on screen 200, SAP is on screen 100 now.
+  async function movedBehind() {
+    const t = await setup({ SAP_WRITE: "on" });
+    const r = await t.batch([OPEN, CUSTOMER, { ...ENTER, expect: { screen: "200" } }]);
+    expect(r.text).toContain("SCREEN 200");
+    t.sap.screen = "100";
+    return t;
+  }
+
+  test("a single write is not run, and the answer is the screen SAP is on", async () => {
+    const { sap, call } = await movedBehind();
+    const before = sap.acts.length;
+    const r = await call("sap_act", SAVE);
+    expect(r.error).toBe(true);
+    expect(r.text).toStartWith("Not run: it may write, and SAP is not on the screen you last saw: it is now ZA01, program SAPMZA01, screen 100");
+    expect(r.text).toContain("SCREEN 100");
+    expect(sap.acts.length).toBe(before);
+    // The agent has now seen that screen: the same action again runs.
+    const again = await call("sap_act", SAVE);
+    expect(again.text).not.toContain("Not run");
+    expect(sap.acts.length).toBe(before + 1);
+  });
+
+  test("the first write of a batch is held to it too", async () => {
+    const { sap, batch } = await movedBehind();
+    const before = sap.acts.length;
+    const r = await batch([SAVE, { do: "okcode", value: "/nZA03" }]);
+    expect(r.text.split("\n")[0]).toStartWith('Ran 0 of 2 actions. Stopped: action 1 ({"do":"key","key":11}) did not run: it may write, on a screen you have not seen in this batch');
+    expect(sap.acts.length).toBe(before);
+  });
+
+  test("an action that does not write is not held: the agent's ids fail by themselves if they are gone", async () => {
+    const { sap, call } = await movedBehind();
+    const r = await call("sap_act", { do: "key", key: 0 });
+    expect(r.text).not.toContain("Not run");
+    expect(dos(sap).at(-1)).toBe("key 0");
+  });
+
+  test("with no screen shown yet there is nothing to compare: the write runs", async () => {
+    const { sap, call } = await setup({ SAP_WRITE: "on" });
+    const r = await call("sap_act", SAVE);
+    expect(r.text).not.toContain("Not run");
+    expect(dos(sap)).toEqual(["key 11"]);
+  });
+});
+
 describe("a batch and the guard: each action has its own decision", () => {
   test("a write on a screen the agent has not seen in the batch does not run; the answer is that screen", async () => {
     const { sap, batch } = await setup({ SAP_WRITE: "on" });

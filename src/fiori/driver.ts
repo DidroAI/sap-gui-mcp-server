@@ -100,17 +100,24 @@ export const FIORI_LOGGED_OFF =
  * 2026-11-20: that is also why the app's own requests never came back). "expired": SAP or the identity
  * provider answered with a logon (401, 403, a redirect elsewhere, a logon form); "unknown": no answer in 5 s,
  * or the path is not there (another launchpad). Never claims more than it saw.
+ * The request names the tab's client (its URL's sap-client, else `client`): without it SAP takes the client from
+ * the sap-usercontext cookie, which is per host, not per port, so another SAP system on the same host can have
+ * set it to another client, where this logon does not exist (live 2026-11-21: ECC client 800 on localhost:8010
+ * made a logged-on S/4 tab on localhost:44300 read as expired).
  */
-export async function logonState(page: Page): Promise<"ok" | "expired" | "unknown"> {
-  let origin: string;
+export async function logonState(page: Page, client?: string): Promise<"ok" | "expired" | "unknown"> {
+  let url: URL;
   try {
-    origin = new URL(page.url()).origin;
+    url = new URL(page.url());
   } catch {
     return "unknown";
   }
+  const origin = url.origin;
   if (!/^https?:/.test(origin)) return "unknown";
+  const mandt = url.searchParams.get("sap-client") ?? client;
+  const q = /^\d{3}$/.test(mandt ?? "") ? `&sap-client=${mandt}` : "";
   try {
-    const r = await page.context().request.get(`${origin}/sap/bc/ui2/start_up?shellType=FLP&depth=0`, {
+    const r = await page.context().request.get(`${origin}/sap/bc/ui2/start_up?shellType=FLP&depth=0${q}`, {
       headers: { "X-Requested-With": "XMLHttpRequest" },
       timeout: 5000,
       maxRedirects: 0,
@@ -216,7 +223,7 @@ export class FioriDriver implements Driver {
     this.idleAt = Date.now();
     // A launchpad whose logon expired looks busy: its OData requests never come back (live 2026-11-20, an agent
     // spent 5 minutes on it). When a wait ran out, SAP is asked once whether this tab is still logged on.
-    if (/^busy:|waitForUI5 timed out/.test(note) && (await logonState(this.page)) === "expired") throw new ActionError(FIORI_LOGGED_OFF);
+    if (/^busy:|waitForUI5 timed out/.test(note) && (await logonState(this.page, this.info.client)) === "expired") throw new ActionError(FIORI_LOGGED_OFF);
     return note || "no UI5";
   }
 
@@ -246,7 +253,7 @@ export class FioriDriver implements Driver {
       return `${parts.join("\n")}${options.rows ? '\n(Fiori reads the rows the page has loaded, not a range: "rows" was not used. For more rows: {"do":"scroll","id":"<the table>","how":"bottom"}, then look again.)' : ""}`;
     }
     if (!ui5.length) {
-      if ((await logonState(this.page)) === "expired") throw new ActionError(FIORI_LOGGED_OFF);
+      if ((await logonState(this.page, this.info.client)) === "expired") throw new ActionError(FIORI_LOGGED_OFF);
       parts.push("[SAPUI5 is not running in this tab: a logon page, or the app is still loading]");
     }
     for (const f of wf) {

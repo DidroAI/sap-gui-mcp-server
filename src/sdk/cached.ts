@@ -25,6 +25,7 @@ import { pathToFileURL } from "node:url";
 import { parseTest, type SapTest, serializeTest, type Step } from "../record/format.js";
 import type { Phase, Repair } from "../record/repair.js";
 import { replay, type ReplayResult, type StepResult } from "../record/replay.js";
+import { registry } from "../runner/collect.js";
 import { loadTestFilesAsModules } from "../runner/esm.js";
 import { lockPathFor } from "./lock.js";
 import type { Sap } from "./session.js";
@@ -108,6 +109,29 @@ export interface RunVerifiedCodeResult extends VerifySummary {
   ms: number;
 }
 
+/**
+ * Imports a code file for its exports. A `*.sap.ts` file usually also declares runner tests (`test(...)` at its top
+ * level), which throw outside a runner's collection: they are collected here into a scratch suite and dropped
+ * (live 2026-11-21: `runVerified(sap, { file: "x.sap.ts", export })` failed on the file's own `test(...)`).
+ */
+async function importCode(file: string): Promise<Record<string, unknown>> {
+  const r = registry();
+  const was = { file: r.file, suite: r.suite, count: r.tests.length };
+  if (!r.suite) {
+    r.file = file;
+    r.suite = { title: "", parent: undefined, mode: "skip", beforeEach: [], afterEach: [], use: {}, timeout: undefined };
+  }
+  try {
+    return (await import(pathToFileURL(file).href)) as Record<string, unknown>;
+  } finally {
+    if (!was.suite) {
+      r.tests.length = was.count;
+      r.file = was.file;
+      r.suite = was.suite;
+    }
+  }
+}
+
 const isCode = (x: unknown): x is VerifiedCode<unknown> => typeof x === "function" || (typeof x === "object" && x !== null && "file" in x && !("format" in x));
 
 /**
@@ -140,7 +164,7 @@ async function runVerifiedCode<P>(sap: Sap, code: VerifiedCode<P>, params: P, op
     const file = resolve(code.file);
     const name = code.export ?? "default";
     loadTestFilesAsModules();
-    const m = (await import(pathToFileURL(file).href)) as Record<string, unknown>;
+    const m = await importCode(file);
     const f = m[name];
     if (typeof f !== "function") throw new Error(`runVerified: ${file} has no function export "${name}".`);
     fn = f as typeof fn;
