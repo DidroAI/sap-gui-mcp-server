@@ -13,7 +13,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { actionText, normalizeAction, type NormalizedAction, VERBS } from "./core/action.js";
 import { MAX_BATCH, parseBatch, stopAfter, unseenWrite } from "./batch.js";
-import { commandFieldRefusal, decide, leavesTransaction, type Policy, sessionRefusal, tcodeOf, tcodeRefusal } from "./core/guard.js";
+import { commandFieldRefusal, decide, LEAVE_UNSAVED, leavesTransaction, type Policy, sessionRefusal, tcodeOf, tcodeRefusal } from "./core/guard.js";
 import { type Turn, SessionQueue, waitedLine } from "./core/queue.js";
 import { Registry } from "./core/registry.js";
 import { ActionError, type Assessment, type Driver, type LookOptions, type SessionInfo, type Surface } from "./core/types.js";
@@ -36,9 +36,9 @@ export const SERVER_VERSION = "0.1.0";
  */
 export function writeRule(policy: Policy): string {
   if (policy.write === "off")
-    return "An action that may write (save, post, delete...) is refused: the user has set writing off. Then tell the user what you would have saved, and stop: do not look for another way.";
+    return "An action that may write (save, post, delete...) is refused: the user has set writing off. Then tell the user what you would have saved, leave the transaction without saving (okcode /n) so its lock is released, and stop: do not look for another way.";
   if (policy.write === "on") return "An action that may write (save, post, delete...) runs: the user has set writing on. Say what you saved, with the document number from the status bar.";
-  return "An action that may write (save, post, delete...) runs only after the user says yes in a dialog the client shows; if they decline, stop and ask how to go on. A client that cannot ask the user gets it refused: then tell the user what you would have saved.";
+  return "An action that may write (save, post, delete...) runs only after the user says yes in a dialog the client shows; if they decline, leave the transaction without saving (okcode /n), then ask how to go on. A client that cannot ask the user gets it refused: then tell the user what you would have saved.";
 }
 
 /**
@@ -383,7 +383,7 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
   const canElicit = () => !!server.server.getClientCapabilities()?.elicitation?.form;
   /** Why a write is refused under confirm when the client cannot ask the user. */
   const cannotAsk = (reason: string) =>
-    `this action may write to SAP (${reason}) and writing is set to confirm, but this client cannot ask the user (it does not support MCP elicitation). Nothing ran. Tell the user what you would have saved; do not look for another way. The user can set SAP_WRITE=on and approve sap_act in the client's own tool approval, or use a client that asks (MCP elicitation).`;
+    `this action may write to SAP (${reason}) and writing is set to confirm, but this client cannot ask the user (it does not support MCP elicitation). Nothing ran. Tell the user what you would have saved; do not look for another way. ${LEAVE_UNSAVED} The user can set SAP_WRITE=on and approve sap_act in the client's own tool approval, or use a client that asks (MCP elicitation).`;
   /**
    * Confirm mode with a client that cannot ask the user: said once, before
    * anything else of the first answer, so the agent knows before the work
@@ -585,7 +585,7 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
         answer.action === "decline"
           ? "the user declined"
           : "the confirmation was dismissed, or the client could not show it (a client run without a user, such as claude -p, dismisses every question): no yes came for";
-      const said = `Not run: ${who} this action (${what}). Stop here: do not retry it or look for another way; tell the user it was not done and ask how to go on.`;
+      const said = `Not run: ${who} this action (${what}). Stop here: do not retry it or look for another way; tell the user it was not done and ask how to go on. ${LEAVE_UNSAVED}`;
       return withData(text(said), data((): ActOutput => ({ ran: 0, total: 1, stopped: { why: "declined", text: said.split(". Stop here")[0] as string }, screen: screenOfInfo(info) })));
     }
     return serial(shown.session, actionText(action), () => runConfirmed(shown, whole));
