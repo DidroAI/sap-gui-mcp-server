@@ -5,11 +5,6 @@ open, acts on it with the same actions as `sap_act`, and checks the screen
 with assertions that wait. It goes through the same guard as the MCP server:
 `SAP_WRITE`, `SAP_ALLOW_SYSTEMS` and the transaction lists apply.
 
-::: info Version
-The SDK and the test runner are new; check `npx sap-gui --help` for the
-flags of the version you have.
-:::
-
 ## A script
 
 ```ts
@@ -113,6 +108,14 @@ SAP made, for the steps after it. It cannot be negated.
 
 Grid locators also act: `selectRow(row)`, `double(row, col)`,
 `setCell(row, col, value)`, `scroll(to)`.
+
+::: warning Row counts of table controls
+On a table control (the classic step loop, such as the items of VA03), SAP
+draws empty lines to fill the visible area, and `rowCount()` and
+`toHaveRowCount` count them: an order with one item gives 9 on VA03. On an
+ALV grid the count is the real number of rows. For a table control, check
+the rows you expect instead, with `cell(row, col)` or `toContainText`.
+:::
 
 ### From an agent's run to a script
 
@@ -231,6 +234,16 @@ or hook that takes it as a parameter. A test that passes on a retry is
 reported as flaky; finding no tests exits with 1. The list, JUnit and
 HTML reports name the step and action of a drift, and the lock. The `html` reporter
 writes `sap-results/index.html`, which links each test's trace page.
+
+Two things to know about the output in this version:
+
+- `sap-results/` is not emptied before a run. Traces of tests that no
+  longer exist, or of earlier retries, stay next to the new ones. Delete
+  the folder first when you want only this run (`rm -rf sap-results`).
+- `--reporter` on the command line replaces the config's reporters with
+  their default files: `--reporter html` writes `sap-results/index.html`
+  even when the config says `["html", { outputFile: "report.html" }]`. Set
+  the reporters in the config when you need their `outputFile`.
 
 Flags: `--config <file>`, `--project <p>`, `--reporter list,junit,json,html`,
 `--grep <re>`, `--retries <n>`, `--list`, `--update-locks` (write the

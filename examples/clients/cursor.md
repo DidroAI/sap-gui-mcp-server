@@ -16,10 +16,14 @@ Or in `~/.cursor/mcp.json` (every project) or `.cursor/mcp.json` (one project):
 }
 ```
 
+Writes stay `off`. Cursor lists MCP elicitation as supported, but it is
+reported unreliable (the question not showing on Windows, buttons hidden,
+a short timeout); try `confirm` on a test system before relying on it.
+
 Check under Settings > MCP. More: [installation](../../docs/getting-started/installation.md#cursor).
 
 ## Try
 
 - "Look at my SAP screen and list the required fields that are still empty."
 - "Read the error message on my SAP screen and find where it comes from in this repository's ABAP sources."
-- With `"SAP_WRITE": "confirm"`: "Enter the test data from fixtures/order.json into the open VA01 screen. Stop and ask me before saving."
+- "Enter the test data from fixtures/order.json into the open VA01 screen, then stop and show me the screen. Do not save." (works with writes off)

@@ -12,12 +12,15 @@ Copilot CLI), or `.mcp.json` at the workspace root:
       "type": "stdio",
       "command": "npx",
       "args": ["-y", "sap-gui-mcp-server"],
-      "env": { "SAP_WRITE": "off" },
+      "env": { "SAP_WRITE": "confirm" },
       "tools": ["*"]
     }
   }
 }
 ```
+
+`confirm` makes VS Code ask you in the chat before each write (VS Code
+1.102 or later); `off` refuses writes.
 
 The editor's own format (`code --add-mcp`, `.vscode/mcp.json`) uses `servers`
 instead of `mcpServers`. More: [installation](../../docs/getting-started/installation.md#vs-code-github-copilot).

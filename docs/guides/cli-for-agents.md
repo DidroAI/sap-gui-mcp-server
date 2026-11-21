@@ -6,11 +6,6 @@ reads a short answer, and opens the screen file only when it needs it. This
 keeps screens out of the conversation until they matter, and works in
 agents that have no MCP support.
 
-::: info Version
-The agent CLI ships with the SDK and the test runner. Check
-`npx sap-gui --help` for the commands of the version you have.
-:::
-
 ## Commands
 
 The package installs two names for the same program: `sap-gui` and

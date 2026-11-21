@@ -69,7 +69,8 @@ To let the agent save, set `SAP_WRITE` in the server's environment:
 
 - `SAP_WRITE=confirm`: your client asks you before each such action
   ([Confirm mode](../concepts/confirm-mode.md)). Start here, if your
-  client supports MCP elicitation; otherwise writes are refused.
+  client can ask ([which clients can](../concepts/confirm-mode.md#which-clients-can-ask));
+  otherwise writes are refused.
 - `SAP_WRITE=on`: such actions run.
 
 For example, in Claude Code:

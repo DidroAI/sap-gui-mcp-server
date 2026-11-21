@@ -26,11 +26,22 @@ Preparing the first public release.
 - Install docs with copy-paste snippets and install links for Cursor,
   VS Code, Windsurf and Codex.
 
+### Fixes
+
+- `sap-gui test` loads `sap.config.ts` and `*.sap.ts` as ES modules in a
+  project whose `package.json` says `"type": "commonjs"` (what `npm init`
+  writes). It used to fail with "Cannot use import statement outside a
+  module".
+- `init` creates a `.gitignore` in a git project that has none, so traces
+  and results, which hold screens of business data, are not committed.
+- zod 4.6.7 (GHSA-mrhx-c7xc-m3w5).
+
 ### Project
 
 - CI runs on Linux, Windows and macOS with Node 22 and 24, checks what the
-  npm package holds, runs the built command on plain Node, and builds the
-  docs site.
+  npm package holds, runs the built command on plain Node, sets up a fresh
+  project from the packed tarball (`init --yes`, `test --list`), and builds
+  the docs site.
 - CodeQL and Dependabot.
 - Releases are published from a tag only, by a workflow, with npm
   provenance.

@@ -17,7 +17,8 @@ To let the agent prepare writes that you approve one by one:
 claude mcp add --scope user --env SAP_WRITE=confirm --transport stdio sap-gui -- npx -y sap-gui-mcp-server
 ```
 
-Check with `/mcp` in a session. More: [installation](../../docs/getting-started/installation.md#claude-code).
+Claude Code asks in interactive sessions; in `claude -p` a write under
+`confirm` does not run unless a hook answers. Check with `/mcp` in a session. More: [installation](../../docs/getting-started/installation.md#claude-code).
 
 ## Try
 

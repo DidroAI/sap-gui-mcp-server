@@ -56,7 +56,7 @@
     "SAP_WRITE": {
       "type": "string",
       "title": "Writes to SAP (SAP_WRITE)",
-      "description": "off: actions that may write to SAP are refused (default). confirm: Claude asks you before each one (refused if it cannot ask). on: they run.",
+      "description": "off: actions that may write to SAP are refused (default). confirm: you are asked before each one, if Claude Desktop supports it (MCP elicitation, not documented); otherwise they are refused. on: they run.",
       "default": "off",
       "required": false
     },

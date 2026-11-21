@@ -5,11 +5,6 @@ agent or the test did, step by step, and what SAP showed after each step.
 Use it to see why a test failed, or to review what an agent did before you
 trust it with more.
 
-::: info Version
-`show-trace` and the trace fields below are new with the SDK and the test
-runner.
-:::
-
 ## Making a trace
 
 - **Tests:** the [test runner](sdk-tests.md#the-test-runner) writes a trace

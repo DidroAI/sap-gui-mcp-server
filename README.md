@@ -78,7 +78,7 @@ args = ["-y", "sap-gui-mcp-server"]
 ```
 
 Or let it configure the clients it finds (Claude Code, Codex, Claude
-Desktop), then check what it can reach:
+Desktop, Cursor, Windsurf, VS Code), then check what it can reach:
 
 ```sh
 npx -y sap-gui-mcp-server setup
@@ -89,6 +89,11 @@ On Windows, some clients cannot start `npx` directly: use
 `"command": "cmd", "args": ["/c", "npx", "-y", "sap-gui-mcp-server"]`
 (`setup` does this for you). One-click buttons, the Claude Code plugin and
 every client: [Installation](docs/getting-started/installation.md).
+
+These snippets are read-only: writes are refused. With `SAP_WRITE=confirm`
+in the server's environment, Claude Code, VS Code and Codex ask you before
+each write; other clients may not be able to ask, and then refuse the
+write ([which clients can ask](docs/concepts/confirm-mode.md#which-clients-can-ask)).
 
 Then open SAP and ask: *"Look at my SAP screen and tell me which fields are
 required."*
