@@ -12,7 +12,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { actionText, normalizeAction, type NormalizedAction, VERBS } from "./core/action.js";
-import { MAX_BATCH, parseBatch, stopAfter, unseenWrite } from "./batch.js";
+import { MAX_BATCH, parseBatch, staleWrite, stopAfter, unseenWrite } from "./batch.js";
 import { commandFieldRefusal, decide, LEAVE_UNSAVED, leavesTransaction, type Policy, sessionRefusal, tcodeOf, tcodeRefusal } from "./core/guard.js";
 import { type Turn, SessionQueue, waitedLine } from "./core/queue.js";
 import { Registry } from "./core/registry.js";
@@ -551,6 +551,13 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
       }
       if ("refused" in j) return withTurn(fail(`Refused: ${j.refused}`), turn);
       const { driver, info, assessment, verdict } = j;
+      // A write goes only to the screen the agent was last shown (staleWrite); before any first view there is nothing to compare.
+      const seen = assessment.risk === "commit" && !("refused" in verdict) ? views.last(info.id) : undefined;
+      if (seen !== undefined) {
+        const now = await settled(driver);
+        const stale = staleWrite(parseScreen(seen), parseScreen(now));
+        if (stale) return withTurn(fail(`Not run: ${stale}.\n\n${views.present(info.id, now, true)}`), turn);
+      }
       if (verdict.run) return withTurn(await perform(driver, action, whole, assessment.risk, { t0: q0, judged: Date.now() - q0, wanted }).catch((e: unknown) => failedOn(ref, e)), turn);
       if ("refused" in verdict) return withTurn(fail(`Refused: ${verdict.refused}`), turn);
       if (!canElicit()) return withTurn(fail(`Refused: ${cannotAsk(verdict.confirm)}`), turn);
@@ -663,8 +670,12 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
           break;
         }
         before ??= parseScreen(await settled(driver));
-        start ??= before;
-        const blind = j.assessment.risk === "commit" && i > 0 ? unseenWrite(s, start, before) : undefined;
+        // The screen the agent saw when it sent the batch: the one it was last shown, else the one the batch began on.
+        if (!start) {
+          const seen = views.last(id);
+          start = seen === undefined ? before : parseScreen(seen);
+        }
+        const blind = j.assessment.risk === "commit" ? unseenWrite(s, start, before) : undefined;
         if (blind) {
           end = { why: "unseen", text: `${what} did not run: ${blind}`, error: false, next: n };
           break;
