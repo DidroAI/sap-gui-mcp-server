@@ -222,6 +222,8 @@ describe("confirm mode with elicitation", () => {
     const r = await call("sap_act", { action: { do: "key", key: 11 } });
     expect(r.error).toBe(false);
     expect(r.text).toContain("did key");
+    // The agent never sees the dialog: the answer says the user said yes, and to what.
+    expect(r.text).toStartWith("The user confirmed this action in the client (key 11: Save");
     expect(r.text).not.toContain("token");
     expect(surface.acts()).toEqual([{ do: "key", key: 11 }]);
     expect(asked).toHaveLength(1);

@@ -588,7 +588,12 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
       const said = `Not run: ${who} this action (${what}). Stop here: do not retry it or look for another way; tell the user it was not done and ask how to go on.`;
       return withData(text(said), data((): ActOutput => ({ ran: 0, total: 1, stopped: { why: "declined", text: said.split(". Stop here")[0] as string }, screen: screenOfInfo(info) })));
     }
-    return serial(shown.session, actionText(action), () => runConfirmed(shown, whole));
+    const r = await serial(shown.session, actionText(action), () => runConfirmed(shown, whole));
+    // The agent does not see the dialog: without this line it told the user a confirmed popup "Yes" had saved
+    // without asking them (live 2026-11-21, interactive Claude Code).
+    const [first, ...more] = r.content;
+    if (r.isError || first?.type !== "text") return r;
+    return { ...r, content: [{ ...first, text: `The user confirmed this action in the client (${confirm}).\n${first.text}` }, ...more] };
   }
 
   /** The screen once SAP is done with the step before it (at most 15 s), as the compact view. */
