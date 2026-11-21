@@ -24,7 +24,7 @@ import type { Assessment, Driver } from "../core/types.js";
 import { compact } from "../core/compact.js";
 import { vkeyNumber } from "../sapgui/keys.js";
 import { captureValue, evaluate } from "./checks.js";
-import { actionWith, fill, inputsOf, type SapTest, type Step } from "./format.js";
+import { actionWith, duration, fill, inputsOf, type SapTest, type Step } from "./format.js";
 import { applyCapture, type Phase, type Proposal, propose, type Repair, type RepairRecord, RepairRefused, repairRefusal, runRepairActions } from "./repair.js";
 import { type Control, locate, type ParsedScreen, readSettled } from "./screen.js";
 
@@ -60,6 +60,12 @@ export interface StepResult {
   action?: string;
   note?: string;
   ms: number;
+  /** How long the action took from sending it to SAP's answer, as `ms` of a recorded step counts it. */
+  actMs?: number;
+  /** How long the action took when it was recorded. */
+  recordedMs?: number;
+  /** The action took much longer than recorded (over twice as long, and over a second more): said, never a failure. */
+  slower?: string;
   /** Why it failed. */
   failures: string[];
   /** What differed without failing the step. */
@@ -185,7 +191,7 @@ export interface Detour {
  * is then saved unconfirmed, a result the recording did not have. So this
  * is a choice, not a detail (see Detour).
  */
-const OPTIONAL_SCREENS: { what: string; is: (s: ParsedScreen) => boolean; button: RegExp }[] = [
+export const OPTIONAL_SCREENS: { what: string; is: (s: ParsedScreen) => boolean; button: RegExp }[] = [
   {
     what: "availability control",
     is: (s) => s.program === "SAPLATP4" || /availability control|verf(ü|ue)gbarkeitskontrolle/i.test(s.title ?? ""),
@@ -194,12 +200,12 @@ const OPTIONAL_SCREENS: { what: string; is: (s: ParsedScreen) => boolean; button
 ];
 
 const topWindowOf = (s: ParsedScreen) => s.windows.filter((w) => /^wnd\[\d+\]$/.test(w.id)).at(-1);
-const popupOf = (s: ParsedScreen) => {
+export const popupOf = (s: ParsedScreen) => {
   const w = topWindowOf(s);
   return w && w.id !== "wnd[0]" ? w : undefined;
 };
 /** The action that presses a button: by its id, or on the DIAG method a function key or toolbar button by its key. */
-const pressOf = (c: Control): NormalizedAction => (c.vkey !== undefined && !c.id.startsWith("wnd[") ? normalizeAction({ do: "key", key: c.vkey }) : normalizeAction({ do: "press", id: c.id }));
+export const pressOf = (c: Control): NormalizedAction => (c.vkey !== undefined && !c.id.startsWith("wnd[") ? normalizeAction({ do: "key", key: c.vkey }) : normalizeAction({ do: "press", id: c.id }));
 /** A popup's Continue: SAP GUI's green tick (wnd[1]/tbar[0]/btn[0]), on the DIAG method the popup's Enter key. */
 const continueOf = (mine: Control[], window: string) => mine.find((c) => c.id === `${window}/tbar[0]/btn[0]`) ?? mine.find((c) => c.zone === "bar" && c.vkey === 0);
 const editable = (c: Control) => (c.type === "field" || c.type === "dropdown" || c.type === "textedit") && !/\(read-only\)|\(display\)/.test(c.rest);
@@ -438,7 +444,9 @@ export async function replay(driver: Driver, policy: Policy, recorded: SapTest, 
           throw undefined;
         }
         if (runs) {
+          const a0 = Date.now();
           await guarded(driver, policy, action);
+          r.actMs = Date.now() - a0;
           screen = await read(driver);
         }
         phase = "landing";
@@ -526,6 +534,9 @@ export async function replay(driver: Driver, policy: Policy, recorded: SapTest, 
       else if (e !== undefined) r.failures.push(first(e));
     }
     r.ms = Date.now() - s0;
+    if (step.ms !== undefined) r.recordedMs = step.ms;
+    const slower = slowerNote(r.actMs, step.ms);
+    if (slower) r.slower = slower;
     if (r.repair) {
       if (r.failures.length) {
         if (r.repair.outcome !== "refused") r.repair.outcome = "failed";
@@ -566,6 +577,17 @@ export async function replayAll(driver: Driver, policy: Policy, tests: SapTest[]
   return out;
 }
 
+/** Over twice as long as recorded and over a second more: worth saying, not failing. */
+const SLOWER_FACTOR = 2;
+const SLOWER_MS = 1000;
+
+/** The note for an action that took much longer than when it was recorded, if it did. */
+export function slowerNote(actMs: number | undefined, recordedMs: number | undefined): string | undefined {
+  if (actMs === undefined || recordedMs === undefined) return undefined;
+  if (actMs <= recordedMs * SLOWER_FACTOR || actMs - recordedMs <= SLOWER_MS) return undefined;
+  return `the action took ${duration(actMs)}, ${(actMs / Math.max(recordedMs, 1)).toFixed(1)}x the ${duration(recordedMs)} recorded`;
+}
+
 export function resultText(r: ReplayResult): string {
   // What the replay did that the recording does not have (a popup it confirmed, a control it found elsewhere)
   // is said in the first line too: a PASS with notes is not the recorded run.
@@ -583,7 +605,9 @@ export function resultText(r: ReplayResult): string {
   if (r.from !== undefined) lines.push(`Resumed at step ${r.from}, on the screen as it was.`);
   for (const b of r.before ?? []) lines.push(`Before step 1: ${b}.`);
   for (const s of r.steps) {
-    lines.push(`${s.outcome === "pass" ? "ok  " : s.outcome === "fail" ? "FAIL" : "skip"} ${s.n}. ${s.action ?? "(check only)"}${s.note ? `  — ${s.note}` : ""}`);
+    const took = s.outcome === "skipped" ? "" : `  (${duration(s.ms)}${s.recordedMs !== undefined ? `; recorded ${duration(s.recordedMs)}` : ""})`;
+    lines.push(`${s.outcome === "pass" ? "ok  " : s.outcome === "fail" ? "FAIL" : "skip"} ${s.n}. ${s.action ?? "(check only)"}${s.note ? `  — ${s.note}` : ""}${took}`);
+    if (s.slower) lines.push(`       slower: ${s.slower}`);
     for (const f of s.failures) lines.push(`       failed${s.phase ? ` (${s.phase})` : ""}: ${f}`);
     if (s.repair) lines.push(`       ${s.repair.outcome === "repaired" ? "repaired" : `repair ${s.repair.outcome}`}: ${s.repair.why}${s.repair.did.length ? `  did: ${s.repair.did.join(", ")}${s.repair.place ? ` (${s.repair.place})` : ""}` : ""}${s.repair.captured ? `  ${s.repair.captured}` : ""}`);
     for (const w of s.warnings) lines.push(`       note: ${w}`);
@@ -597,7 +621,7 @@ export function resultText(r: ReplayResult): string {
   return lines.join("\n");
 }
 
-const xml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "");
+export const xml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "");
 
 /** JUnit XML, the format CI servers read: one suite per test, one case per step. */
 export function junit(results: ReplayResult[]): string {
@@ -605,8 +629,11 @@ export function junit(results: ReplayResult[]): string {
     const cases = r.steps.map((s) => {
       const head = `    <testcase name="${xml(`${s.n}. ${s.action ?? "check"}`)}" classname="${xml(r.name)}" time="${(s.ms / 1000).toFixed(3)}"`;
       if (s.outcome === "skipped") return `${head}><skipped/></testcase>`;
-      if (s.outcome === "fail") return `${head}><failure message="${xml(s.failures[0] ?? "failed")}">${xml([...s.failures, "", r.screen ?? ""].join("\n"))}</failure></testcase>`;
-      return `${head}/>`;
+      // The recorded time, and a step much slower than recorded: said in the case's output.
+      const said = [s.recordedMs !== undefined ? `recorded ${(s.recordedMs / 1000).toFixed(3)} s` : "", s.slower ? `slower: ${s.slower}` : ""].filter(Boolean).join("\n");
+      const out = said ? `<system-out>${xml(said)}</system-out>` : "";
+      if (s.outcome === "fail") return `${head}><failure message="${xml(s.failures[0] ?? "failed")}">${xml([...s.failures, "", r.screen ?? ""].join("\n"))}</failure>${out}</testcase>`;
+      return out ? `${head}>${out}</testcase>` : `${head}/>`;
     });
     if (r.aborted) cases.unshift(`    <testcase name="start" classname="${xml(r.name)}"><error message="${xml(r.aborted)}"/></testcase>`);
     const fails = r.steps.filter((s) => s.outcome === "fail").length;

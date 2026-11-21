@@ -954,6 +954,17 @@ export function ui5Control(a: ControlRequest): ControlResult {
     // A password is never typed by this server.
     if (isPassword(c)) return { status: "NOTFIT", note: `${what} is a password field: this server never types a password. Type it yourself.` };
     if (prop(c, "editable") === false) return { status: "DISABLED", note: `${what} is read-only` };
+    // "" on a field that holds tokens (a filter's values, "=24"): the tokens go, as the user removes them one by one.
+    // Typing nothing left them there (live 2026-11-20: the agent then fought with Backspace and Delete).
+    if ((a.value === "" || a.value == null) && typeof c.getTokens === "function" && typeof c.removeAllTokens === "function") {
+      const tokens = c.getTokens() as C[];
+      if (tokens.length) {
+        c.removeAllTokens();
+        c.fireTokenUpdate?.({ type: "removed", addedTokens: [], removedTokens: tokens });
+        c.fireChange?.({ value: "" });
+        return { status: "DONE", note: `${what}: removed ${tokens.length} value${tokens.length > 1 ? "s" : ""} (${tokens.map((t) => `"${text(t.getText?.())}"`).slice(0, 10).join(", ")})` };
+      }
+    }
     let d: Element | null = c.getFocusDomRef?.() ?? null;
     if (!d?.matches?.("input,textarea")) d = (c.getDomRef?.() as Element | null)?.querySelector?.("input:not([type=checkbox]):not([type=radio]),textarea") ?? null;
     if (!d) return { status: "NOTFIT", note: `${what} is not an input field` };

@@ -59,6 +59,7 @@ jobs:
             // cache, source maps, env files, recorded tests and screen captures (they hold business data).
             const forbidden = [
               /^docs\/launch-checklist\.md$/,
+              /^docs\/(agent-surface-plan|cached-steps|code-tools|phase1-summary|tool-review|live-[a-z]+-[0-9-]+)\.md$/,
               /^docs\/node_modules\//,
               /(^|\/)\.vitepress\//,
               /\.map$/,
@@ -71,6 +72,7 @@ jobs:
             for (const need of [
               "dist/cli.js",
               "dist/index.js",
+              "dist/runner/index.js",
               "dist/sapgui/ps/host.ps1",
               "docs/getting-started/installation.md",
               "LICENSE",

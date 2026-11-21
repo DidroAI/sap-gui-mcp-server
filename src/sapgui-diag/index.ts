@@ -101,7 +101,8 @@ export function assessDiag(s: DiagScreen, action: Action, target?: Target): Asse
   const assessKey = (n: number, how: string): Assessment => {
     if (SAVE_VKEYS.has(n)) return commit(`${how}: Save (Ctrl+S)`);
     const k = keyOf(w, n);
-    const named = k ? `${how} "${clean(k.text)}"` : how;
+    // A toolbar button may have only a tooltip ("List Width Right"): named by it, not as "".
+    const named = k ? `${how} "${clean(k.text || k.tooltip)}"` : how;
     if (k && commitWord(k.text, k.tooltip)) return commit(named);
     const q = n === 0 || (k && !/^(no|cancel|back|exit)$/.test(safeWord(lang, k.text) ?? "")) ? commitQuestion(s) : undefined;
     if (q && n !== 12 && n !== 3 && n !== 15) return commit(`${named} on the popup "${q.slice(0, 90)}"`);
@@ -339,6 +340,9 @@ export function findTarget(s: DiagScreen, action: Action): Found {
   const last = raw.includes("/") ? raw.slice(raw.lastIndexOf("/") + 1) : raw;
   // A scripting type prefix (ctxt, txt, chk, btn...): lower case before SAP's upper-case name, or one of the known ones.
   const bare = /^[a-z]+[A-Z%<*]/.test(last) ? last.replace(/^[a-z]+/, "") : last.replace(/^(?:ctxt|txt|lbl|chk|rad|cmb|btn|tbl|pwd)(?=.)/i, "");
+  // A classic list's label as scripting names it, lbl[col,row]: that place of the screen, as @row,col.
+  const label = /^lbl\[(\d+),(\d+)\]$/i.exec(last);
+  if (label) return lookup(w, `@${label[2]},${label[1]}`, action, true);
   const forms = [...new Set([raw, last, bare])];
   const unique = (f: Found): { target: Target } | undefined => ("target" in f ? f : undefined);
   for (const f of forms) {
@@ -627,6 +631,9 @@ export class DiagDriver implements Driver {
   async assess(action: Action): Promise<Assessment> {
     const s = this.screen();
     const target = resolveTarget(s, action);
+    // An id that names nothing here is said as such, with the closest ids, not refused as a write the guard cannot see.
+    if (!target && /^(set|focus|check|click|dblclick|press|select|f4)$/.test(action.do) && !((action.row !== undefined || action.node !== undefined) && namedControl(s, action.id)))
+      throw new ActionError(noTargetText(s, String(action.id ?? action.name ?? "")));
     // Something SAP greys out is refused here, before the guard could ask the user to confirm it.
     const grey = greyedRefusal(s, action, target);
     if (grey) throw new ActionError(grey);
@@ -660,7 +667,10 @@ export class DiagDriver implements Driver {
     const main = !active(s).modal;
     const top = wins[wins.length - 1] as WindowFacts;
     const env = cellsFromEnv(this.shared.env.SAP_DIAG_CELL);
-    const hostOf = (w: DiagWindow): WindowFacts => (main ? wins[0] : wins[w.index]) ?? top;
+    // A popup is the host window of its title: a dialog SAP GUI left with no owner (a dropped connection's error,
+    // live 2026-11-20) is listed among the session's windows too, so the n-th one is not always the n-th popup.
+    const titled = (w: DiagWindow) => (w.index > 0 ? wins.filter((x, i) => i > 0 && clean(x.title) === clean(w.title)) : []);
+    const hostOf = (w: DiagWindow): WindowFacts => (main ? wins[0] : (titled(w).length === 1 ? titled(w)[0] : wins[w.index])) ?? top;
     const cellsOf = (w: DiagWindow): Cells => {
       const area = hostOf(w).area;
       if (!area) throw new ActionError("The screen area of this SAP GUI window was not found.");

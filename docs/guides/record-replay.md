@@ -587,6 +587,11 @@ should create it in an earlier step or an earlier test.
 
 #### Output
 
+Each step says how long it took, and how long it took when recorded (the
+recording keeps `ms` per step). An action that took over twice as long as
+recorded, and over a second more, gets a `slower:` line (in JUnit, the
+case's `<system-out>`); it never fails the step.
+
 Text (above), `--json` (the result objects), `--junit <file>` (JUnit XML, one
 suite per test and one case per step, which CI servers read). Exit code 0
 when every test passed, 1 otherwise.
@@ -603,6 +608,7 @@ pure function from the recording to a text file.
 | `vbs` | `.vbs` | SAP GUI scripting, for SAP GUI for Windows |
 | `playwright` | `.spec.ts` | Playwright test for Web GUI |
 | `playwright-sap` | `.psap.spec.ts` | the same with playwright-sap's `locateSID` |
+| `sap-ts` | `.sap.ts` | a test for this package's runner, written with its scripting API |
 | `gherkin` | `.feature` | a step list in Given / When / Then |
 
 #### SAP Cloud ALM
@@ -709,6 +715,84 @@ because it works on both `lsdata` forms and needs no fork.
 A Fiori recording is written with UI5 id suffixes (`[id$="..."]`). That
 output is a starting point and has not been run.
 
+#### sap-ts: the scripting API
+
+`sap-ts` writes the recording as a `*.sap.ts` test that imports
+`sap-gui-mcp-server/test` and drives the session through the scripting API:
+each step is the SDK line `sap_act` answers with (`await sap.set("VBAK-VBELN",
+vars.order);`), the variables are a `const vars = {...}` block with the
+recorded values, a capture is a `const` read with its pattern
+(`const order = /Order (\d+)/.exec(await sap.status().text())?.[1] ?? "";`)
+and used as `order` in the steps after it, and each check is a waiting
+`expect` (`toContainText`, `toHaveValue`, `toHaveTitle`, `toHaveTransaction`;
+`matches` becomes a regular expression). Notes are comments.
+
+A step that confirmed a popup that only informs is written as
+`if (await sap.control("wnd[1]/tbar[0]/btn[0]").exists()) await sap.press(...)`:
+a replay skips that step when SAP does not show the popup again, and so does
+the test. The checks a replay makes on its own after every step (no error in
+the status bar, the recorded screen) are not written; the test checks what
+the recording marked.
+
+`sap_record {"op":"code"}` gives the same file for the recording that is on,
+or, with none on, a draft of every action the server ran on the session.
+
+##### Tidy: the test a person would have written
+
+The export above is the recording step for step: an agent's detours, typos
+and error round trips included. `sap_record {"op":"code","tidy":true}` (with
+`"name"`, or the recording that is on) and `exportSapTs(test, { tidy: true })`
+first tidy it (`src/record/tidy.ts`). Each rule logs one line with its reason:
+
+| Rule | What it does |
+|---|---|
+| abandoned | drops a `/n<tcode>` visit where nothing was saved, checked, captured or noted, when the next `/n` left it |
+| error | drops a key or button that only raised E (or A) and stayed on the screen, when steps follow |
+| repeat | keeps the last set, check or dropdown of a control, or tab of a tab strip, before any round trip (a tab is kept when something was done on it) |
+| capture | captures a 5+ digit number of a status bar that later steps type or expect |
+| variable | makes each typed value a variable |
+| status | checks the success message (S) a save led to |
+| title | checks the title a step landed on, when it changed the screen to one not reached before (not after `/n`, not into a popup or a data-dependent screen) |
+| handle | uses the shortest unique id recorded for each control (`target.handle`); numbered controls such as `btn[0]` keep their full id, because a popup's buttons share those numbers |
+
+The code then has one `sap.step(...)` block per screen, key names
+(`sap.key("Enter")`), `sap.save()` for key 11, and conditions for what SAP
+shows for some data only: `sap.dismissInfo()` for an information popup,
+`if (await sap.at("SAPLATP4/0500")) await sap.button("Continue").press()` for
+the availability screen, `sap.save({ acceptWarnings: true })` for a save that
+answered with a warning, and `const order = await expect(sap.status()).capture(/Order (\d+)/)`.
+A numbered button is pressed by its label. The answer ends with the removal
+log and a TODO list (what tidy could not decide).
+
+On the fake SAP of the tests, an agent-like run of 23 steps (two wrong
+transactions, a forgotten field, a typo, a checkbox toggled, tabs clicked to
+and fro) becomes 13 steps; its code passes through the runner on a system
+with the availability screen, the save warning and the popup, and on one
+without them. The step-for-step export fails on the second.
+
+`verifyTidy(sapOrDriver, recording)` checks the removals on a system: it
+replays the tidied recording and, when a step fails, puts back the last
+removal before it and runs again (at most 4 runs). Each run is a whole
+replay, writes included when the test writes and the policy allows: use a
+test system. It verifies the tidied *recording*, not the code: a replay has
+no "if", so the conditions above are checked only by running the code.
+
+Once code passes, the runner writes `<name>.sap.lock.json` next to it:
+what each screen looked like, per `sap.step`. Later runs compare each
+action's landing with it and fail with `Drift` where SAP answers otherwise,
+so the code keeps the model-free drift detection of a replay; screens the
+code asks about (`sap.at`, `sap.popup`, `dismissInfo`) are branches, not
+drift. See [Lock files](sdk-tests.md#lock-files).
+
+To save and run such code from an agent without a file system, see
+[Code tools](#code-tools-sap-code-save-and-sap-code-test).
+
+While a recording is on, every `sap_act` answer of an
+action that ran ends its note with the same line, e.g.
+`code: await sap.set("VBAK-VBELN", "4711");` (about ten tokens).
+`SAP_CODE=on` adds it without a recording too; `SAP_CODE=off` leaves it out
+even while recording.
+
 #### Gherkin, and Tosca-like tools
 
 `gherkin` writes a `Scenario Outline` with the variables as `Examples`. It
@@ -799,6 +883,8 @@ Not run:
 | [`src/record/replay.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/record/replay.ts) | the replay, its text and JUnit output |
 | [`src/record/repair.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/record/repair.ts) | a repair of one step: its rules, the capture, the proposed test |
 | [`src/record/tools.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/record/tools.ts) | `sap_record` and `sap_replay` |
+| [`src/record/tidy.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/record/tidy.ts) | tidy (the rules, the log, the TODO list) and `verifyTidy` |
+| [`src/record/code-tools.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/record/code-tools.ts) | `sap_code_save` and `sap_code_test` (off unless `SAP_CODE_TOOLS=on`) |
 | [`src/record/cli.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/record/cli.ts) | `replay` and `export` on the command line |
-| [`src/record/export/`](https://github.com/DidroAI/sap-gui-mcp-server/tree/main/src/record/export) | `calm.ts`, `vbs.ts`, `playwright.ts`, `gherkin.ts`, and `words.ts` (a step in a tester's words) |
+| [`src/record/export/`](https://github.com/DidroAI/sap-gui-mcp-server/tree/main/src/record/export) | `calm.ts`, `vbs.ts`, `playwright.ts`, `sap-ts.ts` (with `sap-ts-tidy.ts`), `gherkin.ts`, and `words.ts` (a step in a tester's words) |
 | [`src/server.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/server.ts), [`src/cli.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/cli.ts), [`src/index.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/index.ts) | the hook in `perform`, the two commands, the exports of the package |
