@@ -5,7 +5,7 @@
  *   sap-tests/example.sap.ts  a read-only example test
  *   skills                    for the agents chosen (see skills.ts)
  *   MCP clients               registered through setup() (see setup.ts)
- *   .gitignore                gains .sap-gui/ and sap-results/ when the project has one
+ *   .gitignore                gains .sap-gui/ and sap-results/ when the project has one or is a git repository
  *
  * Interactive by default (a few questions, Enter keeps the default); `--yes`,
  * or a stdin that is not a terminal, takes every default. Existing files are
@@ -161,8 +161,9 @@ export async function init(opts: InitOptions = {}): Promise<InitResult> {
   } else lines.push("– MCP clients: none chosen (run sap-gui-mcp-server setup later)");
 
   const gitignore = join(cwd, ".gitignore");
-  if (existsSync(gitignore)) {
-    const text = readFileSync(gitignore, "utf8");
+  // A git project without a .gitignore gets one: traces and results hold business data.
+  if (existsSync(gitignore) || existsSync(join(cwd, ".git"))) {
+    const text = existsSync(gitignore) ? readFileSync(gitignore, "utf8") : "";
     const have = new Set(text.split(/\r?\n/).map((l) => l.trim()));
     const missing = [".sap-gui/", "sap-results/"].filter((e) => !have.has(e) && !have.has(e.slice(0, -1)));
     if (!missing.length) lines.push("✓ .gitignore: already ignores .sap-gui/ and sap-results/");

@@ -45,6 +45,15 @@ describe("init", () => {
     expect(read(join(cwd, ".gitignore")).match(/sap-results/g)?.length).toBe(1);
   });
 
+  test("a git project without a .gitignore gets one; a folder that is not a repository does not", async () => {
+    await init({ ...base(), yes: true });
+    expect(existsSync(join(cwd, ".gitignore"))).toBe(false);
+    mkdirSync(join(cwd, ".git"));
+    const r = await init({ ...base(), yes: true });
+    expect(read(join(cwd, ".gitignore"))).toBe("# sap-gui-mcp-server: traces and test results hold screens of business data\n.sap-gui/\nsap-results/\n");
+    expect(r.lines).toContain("✓ .gitignore: added .sap-gui/, sap-results/");
+  });
+
   test("Windows defaults to SAP GUI and Web GUI", async () => {
     await init({ ...base(), platform: "win32", yes: true });
     expect(read(join(cwd, "sap.config.ts"))).toContain('surface: ["sapgui", "webgui"]');

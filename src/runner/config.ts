@@ -20,6 +20,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { loadTestFilesAsModules } from "./esm.js";
 import type { WriteMode } from "../core/guard.js";
 import type { SurfaceName } from "../core/types.js";
 
@@ -117,6 +118,7 @@ export function findConfig(from: string): string | undefined {
 /** Reads a config file: JSON, or a module whose default export is the config. */
 export async function loadConfig(file: string): Promise<SapConfig> {
   if (file.endsWith(".json")) return JSON.parse(await readFile(file, "utf8")) as SapConfig;
+  loadTestFilesAsModules();
   const m = (await import(pathToFileURL(file).href)) as { default?: SapConfig; config?: SapConfig };
   const c = m.default ?? m.config;
   if (!c || typeof c !== "object") throw new Error(`${file}: export the config as default (export default defineConfig({...}))`);
