@@ -250,9 +250,19 @@ export function staticProblems(src: string): string[] {
   return [...new Set(problems)];
 }
 
-/** Calls in the code that may write to SAP, as read from its text: what commit parity compares with the recording. */
-export function commitCalls(src: string): string[] {
+/**
+ * Calls in the code that may write to SAP, as read from its text: what commit parity compares with the recording.
+ * `written`: ids of the controls the recording's writes acted on. A press of one of them is a write too, whatever
+ * its name says: "Yes" on SAP's save question is `btnSPOP-OPTION1` (live 2026-11-21, it was counted as no write).
+ */
+export function commitCalls(src: string, written: readonly string[] = []): string[] {
   const out: string[] = [];
+  const ids = new Set(written.map(bareId).filter(Boolean));
+  if (ids.size)
+    for (const m of src.matchAll(/["'`]([^"'`\n]+)["'`]/g)) {
+      const id = bareId(m[1] ?? "");
+      if (ids.has(id) && !/\.(?:okcode|key)\s*\(\s*$/.test(src.slice(Math.max(0, (m.index ?? 0) - 12), m.index))) out.push(`line ${lineOf(src, m.index ?? 0)}: ${m[1]} (a control the recording wrote with)`);
+    }
   const arg = `\\s*(["'\`])((?:\\\\.|(?!\\1).)*)\\1\\s*`;
   for (const m of src.matchAll(/\.save\s*\(/g)) out.push(`line ${lineOf(src, m.index ?? 0)}: sap.save()`);
   for (const m of src.matchAll(new RegExp(`\\.key\\((?:${arg}|\\s*(\\d+)\\s*)\\)`, "g"))) {
@@ -313,7 +323,8 @@ export async function checkCode(src: string, recording: SapTest | undefined): Pr
   const syntax = await syntaxProblem(src);
   if (syntax.problem) problems.unshift(`syntax: ${syntax.problem}`);
   checked.unshift(syntax.by ? `syntax (${syntax.by})` : "syntax: not checked (no TypeScript parser in this runtime)");
-  const writes = commitCalls(src);
+  const written = (recording?.steps ?? []).filter((s) => s.risk === "commit").map((s) => String(s.action?.id ?? "")).filter(Boolean);
+  const writes = [...new Set(commitCalls(src, written))];
   const recorded = recording?.steps.some((s) => s.risk === "commit");
   if (writes.length && !recorded)
     problems.push(
@@ -481,4 +492,10 @@ export function registerCodeTools(server: McpServer, registry: Registry, policy:
       }),
   );
   return true;
+}
+
+/** A control id without its window path and type prefix, as code and recordings may write it either way. */
+function bareId(id: string): string {
+  const last = id.trim().replace(/^.*\//, "");
+  return /^[a-z]+[A-Z%<*]/.test(last) ? last.replace(/^[a-z]+/, "").toLowerCase() : last.toLowerCase();
 }
