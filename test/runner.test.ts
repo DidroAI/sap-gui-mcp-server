@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { parseTest } from "../src/record/format.js";
-import { configFor, globToRegExp, resolveConfig } from "../src/runner/config.js";
+import { configFor, explainTypeScriptLoad, globToRegExp, resolveConfig } from "../src/runner/config.js";
 import { parseTestArgs, testCommand } from "../src/runner/cli.js";
 import { htmlReport, junitReport, listLine } from "../src/runner/reporters.js";
 import { runTests } from "../src/runner/run.js";
@@ -290,6 +290,39 @@ describe("config", () => {
     expect(a).toEqual({ filters: ["orders"], projects: ["s4", "ecc"], reporters: ["list", "junit"], grep: /save/, retries: 2, list: true, updateLocks: false });
     expect(parseTestArgs(["--update-locks"]).updateLocks).toBe(true);
     expect(() => parseTestArgs(["--workers", "2"])).toThrow(/Unknown option --workers/);
+  });
+});
+
+describe("a Node that cannot load TypeScript (22.0-22.5; 22.6-22.12 inside the server)", () => {
+  // What such a Node throws on importing a .ts file; a module that throws it stands in for one.
+  const NODE_ERROR = `const e = new Error('Unknown file extension ".ts" for /p/helper.ts'); e.code = "ERR_UNKNOWN_FILE_EXTENSION"; throw e;`;
+
+  test("says to use Node 22.18 or later, keeping Node's own words and error", () => {
+    const e = Object.assign(new Error('Unknown file extension ".ts" for /p/a.sap.ts'), { code: "ERR_UNKNOWN_FILE_EXTENSION" });
+    const out = explainTypeScriptLoad(e, "22.5.1") as Error;
+    expect(out.message).toBe('Unknown file extension ".ts" for /p/a.sap.ts: Node 22.5.1 cannot load TypeScript here. Use Node 22.18 or later, which loads it without a flag, or write the file as .js or .mjs.');
+    expect(out.cause).toBe(e);
+    const mts = Object.assign(new Error('Unknown file extension ".mts" for /p/a.mts'), { code: "ERR_UNKNOWN_FILE_EXTENSION" });
+    expect((explainTypeScriptLoad(mts, "22.5.1") as Error).message).toContain("Node 22.18 or later");
+  });
+
+  test("other errors come back as they are", () => {
+    const css = Object.assign(new Error('Unknown file extension ".css" for /p/a.css'), { code: "ERR_UNKNOWN_FILE_EXTENSION" });
+    const plain = new Error('Unknown file extension ".ts"');
+    for (const e of [css, plain, "text", null, undefined]) expect(explainTypeScriptLoad(e, "22.5.1")).toBe(e);
+  });
+
+  test("a test file that cannot load says it", async () => {
+    const dir = await project({ "sap-tests/a.sap.mjs": NODE_ERROR, "sap-tests/b.sap.mjs": `throw new Error("broken");` });
+    const { code, out } = await cli(dir, ["--list"]);
+    expect(code).toBe(1);
+    expect(out).toContain(`cannot load ${join(dir, "sap-tests/a.sap.mjs")}: Unknown file extension ".ts" for /p/helper.ts: Node ${process.versions.node} cannot load TypeScript here. Use Node 22.18 or later`);
+    expect(out).toContain(`cannot load ${join(dir, "sap-tests/b.sap.mjs")}: broken\n`);
+  });
+
+  test("a config that cannot load says it", async () => {
+    const dir = await project({ "sap.config.mjs": NODE_ERROR });
+    await expect(configFor(dir)).rejects.toThrow(`Node ${process.versions.node} cannot load TypeScript here. Use Node 22.18 or later`);
   });
 });
 
