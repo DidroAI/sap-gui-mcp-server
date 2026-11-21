@@ -340,6 +340,9 @@ describe("what an action that sends nothing says", () => {
     expect(nothingSent({ do: "select", id: "tabpT\\02" })).toContain("Nothing was sent to SAP for this action");
     // A table control row selected (MM02's "Select View(s)"): kept in the page too, sent with the next Enter.
     expect(nothingSent({ do: "select", id: "tblSAPLMGMMTC_VIEW", row: 12 })).toBe("(Set in the page: SAP gets it with the next Enter or key.)");
+    // A dropdown entry chosen (VA02's delivery block): the same.
+    expect(nothingSent({ do: "combo", id: "cmbVBAK-LIFSK", key: "01" })).toBe("(Set in the page: SAP gets it with the next Enter or key.)");
+    expect(nothingSent({ do: "combo", id: "cmbVBAK-LIFSK" })).toBeUndefined();
   });
   test("F12 by name is Cancel, sent as Escape like key 12", () => {
     expect([vkey("F12"), vkey("f12"), vkey(12)]).toEqual(["Escape", "Escape", "Escape"]);
