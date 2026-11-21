@@ -391,4 +391,13 @@ describe("sap_replay with from, repair and format json", () => {
     expect(r.error).toBe(true);
     expect(r.text).toContain('a repair needs "from"');
   });
+
+  test("a repair of the wrong shape is refused with its shape (the schema is checked by the tool, not in tools/list)", async () => {
+    const s = await recordDisplay();
+    const r = await s.call("sap_replay", { name: "display", from: 3, repair: { actions: [{ do: "key", key: "Enter" }], place: "later" } });
+    expect(r.error).toBe(true);
+    expect(r.text).toContain('"repair" is not a repair: why:');
+    expect(r.text).toContain("place:");
+    expect(r.text).toContain('Its shape: {"why":"what changed"');
+  });
 });
