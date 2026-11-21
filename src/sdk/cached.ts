@@ -25,6 +25,7 @@ import { pathToFileURL } from "node:url";
 import { parseTest, type SapTest, serializeTest, type Step } from "../record/format.js";
 import type { Phase, Repair } from "../record/repair.js";
 import { replay, type ReplayResult, type StepResult } from "../record/replay.js";
+import { loadTestFilesAsModules } from "../runner/esm.js";
 import { lockPathFor } from "./lock.js";
 import type { Sap } from "./session.js";
 import { Drift, type VerifySummary } from "./verify.js";
@@ -138,6 +139,7 @@ async function runVerifiedCode<P>(sap: Sap, code: VerifiedCode<P>, params: P, op
   } else {
     const file = resolve(code.file);
     const name = code.export ?? "default";
+    loadTestFilesAsModules();
     const m = (await import(pathToFileURL(file).href)) as Record<string, unknown>;
     const f = m[name];
     if (typeof f !== "function") throw new Error(`runVerified: ${file} has no function export "${name}".`);

@@ -13,6 +13,7 @@
 import { readdirSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
+import { loadTestFilesAsModules } from "./esm.js";
 import type { Surface } from "../core/types.js";
 import { slug } from "../record/format.js";
 import { lockPathFor } from "../sdk/lock.js";
@@ -137,6 +138,7 @@ const declared = new Map<string, TestCase[]>();
 
 /** Imports test files and returns what they declared. A file that fails to load is a failed test of its own. */
 export async function collect(files: string[]): Promise<{ tests: TestCase[]; broken: { file: string; error: Error }[] }> {
+  loadTestFilesAsModules();
   const r = registry();
   const tests: TestCase[] = [];
   const broken: { file: string; error: Error }[] = [];
