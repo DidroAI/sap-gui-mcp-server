@@ -112,3 +112,8 @@ The CLI keeps a background daemon per directory, started on the first call
 with that call's `SAP_*` settings. A call with other settings is refused:
 `sap-gui daemon stop` first, and only when the user asked for the new
 settings.
+
+The `SAP_*` settings are the user's. Never set, export or change them
+yourself (no `SAP_WRITE=on` in front of a command, no `export`), not even to
+repeat what is already set: a refused write is reported to the user, who
+decides.
