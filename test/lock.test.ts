@@ -332,4 +332,21 @@ describe("branches and modes", () => {
     bunExpect(other.written).toBe(false);
     bunExpect(other.notes[0]).toContain("verified on system ABA");
   });
+
+  test("a *.sap.ts that also declares runner tests runs by its export; its tests are not kept", async () => {
+    // Live 2026-11-21: the tidied test file exports the flow and calls it from test(...); the import threw.
+    const dir = await tmp();
+    const file = join(dir, "flow.sap.ts");
+    const SDK = JSON.stringify(join(import.meta.dir, "../src/sdk/index.ts"));
+    const RUNNER = JSON.stringify(join(import.meta.dir, "../src/runner/index.ts"));
+    await Bun.write(
+      file,
+      `import type { Sap } from ${SDK};\nimport { test } from ${RUNNER};\nexport async function show(sap: Sap, p: { order: string }) {\n  await sap.okcode("/nZA03");\n  await sap.set("ctxtZORD-VBELN", p.order);\n  await sap.key("Enter");\n}\ntest.describe("orders", () => {\n  test("shows 5000", async ({ sap }) => show(sap, { order: "5000" }));\n});\n`,
+    );
+    const { registry } = await import("../src/runner/collect.js");
+    const r = await runVerified((await session()).sap, { file, export: "show" }, { order: "5000" });
+    bunExpect(r.error?.message).toBeUndefined();
+    bunExpect(r.passed).toBe(true);
+    bunExpect([registry().tests.length, registry().suite, registry().file]).toEqual([0, undefined, undefined]);
+  });
 });
