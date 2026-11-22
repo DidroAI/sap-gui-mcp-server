@@ -26,7 +26,7 @@
  */
 import { menuSid, resolveId } from "../core/ids.js";
 import type { Action, Assessment } from "../core/types.js";
-import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayTitle, endsLogon, isGotoMenu, languageCovered, listChoice, listTitle, MENU_PROGRAMS, okcodeKind, runSwitch, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS, showsOnly } from "../core/words.js";
+import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayTitle, endsLogon, isGotoMenu, languageCovered, layoutMenu, listChoice, listTitle, MENU_PROGRAMS, okcodeKind, runSwitch, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS, showsOnly } from "../core/words.js";
 import type { MenuEntry } from "./page.js";
 import { vkey } from "./keys.js";
 
@@ -481,6 +481,9 @@ function assessMenu(entry: MenuEntry, menus: MenuEntry[], ctx: AssessContext, sc
   }
   if (key && SAFE_KEYS.has(key)) return NAVIGATE;
   if (safeWord(ctx.language, entry.text)) return NAVIGATE;
+  // "Settings > Layout > Change...": an entry of a list's layout menu changes how the list looks (layoutMenu).
+  const parents = menus.filter((m) => entry.sid.startsWith(`${m.sid}/`)).map((m) => m.text);
+  if (layoutMenu(ctx.language, ...parents) && !actWord(entry.text)) return navigate(`menu entry ${quote(entry.text)} is in the layout menu`);
   // SAP's Goto menu moves between the screens of an object (isGotoMenu).
   if (isGotoMenu(ctx.language, topMenuOf(entry, menus)?.text)) return navigate(`menu entry ${quote(entry.text)} is in the Goto menu`);
   // An entry of the transaction's own menus on a screen that only displays (isDisplayScreen), unless it is
