@@ -54,6 +54,7 @@
     "dist",
     "!dist/**/*.map",
     "skills",
+    "extension",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"

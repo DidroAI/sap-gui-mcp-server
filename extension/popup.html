@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>sap-gui-mcp-server bridge</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <h1>sap-gui-mcp-server bridge</h1>
+    <div id="status" class="pill">…</div>
+  </header>
+
+  <section id="pairing">
+    <h2>Pairing</h2>
+    <p id="pair-managed" class="note" hidden>Pairing code set by your organization.</p>
+    <form id="pair-form">
+      <input id="code" type="text" autocomplete="off" spellcheck="false"
+             placeholder="ABCDE-FGHJK-MNPQR-STVWX-YZ012-3" aria-label="Pairing code">
+      <button type="submit">Save</button>
+    </form>
+    <p id="pair-hint" class="note">Run <code>sap-gui-mcp-server extension pair</code> and paste the code.</p>
+  </section>
+
+  <section id="this-tab" hidden>
+    <h2>This tab</h2>
+    <div class="row">
+      <span id="tab-origin" class="origin"></span>
+      <span id="tab-state" class="tag"></span>
+    </div>
+    <button id="allow" type="button" hidden>Allow this site</button>
+  </section>
+
+  <section>
+    <h2>Allowed sites</h2>
+    <ul id="origins" class="list"></ul>
+    <p id="no-origins" class="note">No site allowed yet. Open your SAP system and click “Allow this site”.</p>
+    <p id="wildcard-note" class="note warn" hidden>Chrome allows this extension on all sites; only sites you add with “Allow this site” are shared.</p>
+  </section>
+
+  <section>
+    <h2>Shared tabs</h2>
+    <ul id="shared" class="list"></ul>
+    <p id="no-shared" class="note">The server is not using any tab.</p>
+    <button id="pause" type="button">Pause sharing</button>
+    <p id="paused-note" class="note warn" hidden>Sharing is paused: the server sees no tab until you resume.</p>
+  </section>
+
+  <details>
+    <summary>Advanced</summary>
+    <form id="port-form" class="row">
+      <label for="port">Port</label>
+      <input id="port" type="number" min="1" max="65535" placeholder="47823–47830">
+      <button type="submit">Save</button>
+      <button id="reconnect" type="button">Reconnect</button>
+    </form>
+    <p id="version" class="note"></p>
+  </details>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
