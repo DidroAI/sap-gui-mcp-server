@@ -12,9 +12,16 @@ The first public version.
 
 - **SAP GUI for Windows**, through SAP GUI scripting, driven from Windows
   PowerShell (nothing else to install).
-- **SAP GUI for HTML (Web GUI)** and **SAP Fiori** in Chrome (or Edge),
-  attached to the browser you already use once remote debugging is
-  allowed, or to a DevTools endpoint named in `SAP_CHROME_CDP`.
+- **SAP GUI for HTML (Web GUI)** and **SAP Fiori** in Chrome. The server
+  starts the installed Google Chrome itself, with a profile of its own (the
+  SAP window), the first time the agent needs SAP: you log on there once,
+  and nothing has to be set up in Chrome. The window stays open between
+  agent sessions and is found again; `sap-gui-mcp-server browser` opens it
+  by hand; `doctor` says whether it runs. `SAP_CHROME_PATH` names the
+  Chrome to start, `SAP_START_URL` the address a new window opens on.
+- `SAP_BROWSER=attach` uses the browser you already work in instead
+  (Chrome or Edge, once remote debugging is allowed at `chrome://inspect`).
+  A DevTools endpoint named in `SAP_CHROME_CDP` wins over both.
 - **SAP GUI without scripting (experimental)**: `SAP_GUI_METHOD=diag` reads
   the screen from SAP GUI's DIAG traffic through a local SAProuter, and acts
   with the keyboard and mouse (see below).
