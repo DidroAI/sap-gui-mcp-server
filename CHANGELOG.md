@@ -35,6 +35,12 @@ Preparing the first public release.
 - `init` creates a `.gitignore` in a git project that has none, so traces
   and results, which hold screens of business data, are not committed.
 - zod 4.6.7 (GHSA-mrhx-c7xc-m3w5).
+- With `SAP_WRITE=off`, changing or choosing a list layout (`&OL0`, `&OAD`,
+  Settings > Layout) and further selection criteria or dynamic selections
+  navigate instead of being refused. Saving or deleting a layout is still a
+  write.
+- A classic list's row range (`look` with `rows`) no longer reads a row twice
+  or loses one at a page boundary.
 
 ### Project
 
