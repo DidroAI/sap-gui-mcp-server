@@ -36,8 +36,11 @@ export interface Page {
   total: number | undefined;
 }
 
-/** The rows of one control, as the compact view writes them, numbered in the whole list. */
-export function pageOf(block: string, screen?: string): Page {
+/**
+ * The rows of one control, as the compact view writes them, numbered in the whole list. `fixedRows`, for a
+ * list, is its number of title rows when the caller knows it better than the control's head (readRows).
+ */
+export function pageOf(block: string, screen?: string, fixedRows?: number): Page {
   const lines = compact(block, { maxChars: 0, emptyColumns: false, listColumns: false, emptyRuns: false, ...(screen === undefined ? {} : { screen }) }).split("\n");
   const at = lines.findIndex((l, i) => i > 0 && !l.startsWith("WINDOW ") && !l.startsWith(" "));
   const head = lines[at] ?? "";
@@ -45,7 +48,7 @@ export function pageOf(block: string, screen?: string): Page {
   // Rows of a table control, a list and a tree are counted on the screen: `first` is where the screen starts.
   const first = Number(/\bfirst (\d+)/.exec(head)?.[1] ?? 0);
   // A list keeps its title rows on screen while the rows below them scroll.
-  const fixed = kind === "list" ? Number(/\bbelow (\d+) title rows/.exec(head)?.[1] ?? 0) : 0;
+  const fixed = kind === "list" ? (fixedRows ?? listTitleRows(head)) : 0;
   const total = Number(/(\d+) (?:rows|lines)\b|\brows (\d+)|of (\d+) \(/.exec(head)?.slice(1).find((x) => x !== undefined) ?? Number.NaN);
   const rows: Page["rows"] = [];
   const titles: string[] = [];
@@ -68,6 +71,9 @@ export function pageOf(block: string, screen?: string): Page {
   }
   return { head, frame: lines.slice(0, at), titles, kind, rows, total: Number.isNaN(total) ? undefined : total };
 }
+
+/** The title rows a list's head says it keeps on screen ("below 17 title rows"), 0 when it says none. */
+const listTitleRows = (head: string): number => Number(/\bbelow (\d+) title rows/.exec(head)?.[1] ?? 0);
 
 /** The most pages one read scrolls through. */
 const MAX_PAGES = 60;
@@ -139,11 +145,30 @@ export async function readRows(source: RowSource, id: string, from: number, to: 
   const got = new Map<number, string>();
   let page: Page | undefined;
   let next = from;
+  // A classic list's title rows, counted at the top of the list and kept for every page. Web GUI works them
+  // out from the rows its scrollbar calls a page, and that page shrinks by one once the list has moved
+  // (ECC FBL5N, 2026-11-22: 22 rows at the top, 21 after any scroll, with the same 17 title rows on screen).
+  // Counted on each page, a row at a page boundary was numbered as the one before it: read twice, or lost.
+  let fixed: number | undefined;
   for (let n = 0; n < MAX_PAGES && next <= to; n++) {
     await source.scrollTo(next);
     const now = await source.block();
     if (!now) throw new ActionError(`No control "${id}" on this screen any more. Look at the screen again.`);
-    page = pageOf(now.block, now.screen);
+    if (fixed === undefined) {
+      const head = pageOf(now.block, now.screen);
+      if (head.kind === "list" && /\bscroll for the others\b/.test(head.head)) {
+        if (Number(/\bfirst (\d+)/.exec(head.head)?.[1] ?? 0) === 0) fixed = listTitleRows(head.head);
+        else {
+          // Not at the top: go there to count them, then back to the row asked for.
+          await source.scrollTo(0);
+          const top = await source.block();
+          fixed = top ? listTitleRows(pageOf(top.block, top.screen).head) : listTitleRows(head.head);
+          n--;
+          continue;
+        }
+      }
+    }
+    page = pageOf(now.block, now.screen, fixed);
     if (page.kind === "other") throw new ActionError(`"${id}" has no rows to read: "rows" works on a grid, a table control, a tree or a list.`);
     let progress = false;
     let last = -1;
