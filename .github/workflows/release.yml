@@ -1,0 +1,96 @@
+name: Release
+
+# Runs only when a version tag is pushed (git tag v0.1.0 && git push origin v0.1.0).
+# The tag must equal "v" + the version in package.json.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # create the GitHub release and upload its assets
+  id-token: write # npm provenance (and npm trusted publishing, see below)
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Settings > Environments > npm: add required reviewers there and every publish waits for approval.
+    # Keep NPM_TOKEN as an environment secret of "npm" so only this job can read it.
+    environment: npm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: The tag matches the package version
+        shell: bash
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json version $version (expected v$version)"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run test
+      - run: bun run build
+      - name: The built command runs on plain Node
+        run: node dist/cli.js --version
+
+      # Everything that will be published is built before anything is published.
+      - name: Pack the npm tarball
+        run: npm pack
+      - name: Build the Claude Desktop bundle (.mcpb)
+        run: bun run build:mcpb
+      - name: Collect release assets
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          # npm pack and scripts/build-mcpb.mjs both write to the repository root.
+          mv "sap-gui-mcp-server-$VERSION.tgz" "sap-gui-mcp-server-$VERSION.mcpb" release-assets/
+          ls -l release-assets
+
+      # Publishes exactly the tarball attached to the release below (lifecycle scripts do not run
+      # for a tarball; it was built and tested above).
+      #
+      # Authentication: an npm automation/granular token in the NPM_TOKEN secret of the "npm" environment.
+      # Alternative: npm trusted publishing (OIDC). Once the maintainer configures it on npmjs.com
+      # (package Settings > Trusted publishing > GitHub Actions: DidroAI/sap-gui-mcp-server,
+      # workflow release.yml, environment npm), npm (11.5+, bundled with Node 24) authenticates
+      # with the id-token permission above and needs no token: drop NODE_AUTH_TOKEN and the secret.
+      # Trusted publishing also records provenance automatically.
+      - name: Publish to npm
+        shell: bash
+        run: |
+          tag=latest
+          case "$VERSION" in *-*) tag=next ;; esac
+          npm publish "release-assets/sap-gui-mcp-server-$VERSION.tgz" --provenance --access public --tag "$tag"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create the GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=()
+          case "$VERSION" in *-*) prerelease=(--prerelease) ;; esac
+          gh release create "$GITHUB_REF_NAME" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            --verify-tag \
+            "${prerelease[@]}"

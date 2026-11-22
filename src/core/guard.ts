@@ -8,7 +8,7 @@
  */
 import type { Action, Assessment, SessionInfo } from "./types.js";
 
-/** off: commits are refused (default). confirm: each commit waits for sap_confirm. on: commits run. */
+/** off: commits are refused (default). confirm: each commit runs after the user's yes, asked through the client (MCP elicitation) or a script's onConfirm. on: commits run. */
 export type WriteMode = "off" | "confirm" | "on";
 
 export interface Policy {
@@ -32,9 +32,10 @@ const list = (v: string | undefined) =>
     .filter(Boolean);
 
 export function policyFromEnv(env: Record<string, string | undefined> = process.env): Policy {
-  const w = (env.SAP_WRITE ?? "off").toLowerCase();
+  // An empty value counts as unset: clients such as Claude Desktop pass "" for a setting left blank.
+  const w = (env.SAP_WRITE?.trim() || "off").toLowerCase();
   if (w !== "off" && w !== "confirm" && w !== "on") throw new Error(`SAP_WRITE must be off, confirm or on (got "${env.SAP_WRITE}")`);
-  const off = (env.SAP_ALLOW_LOGOFF ?? "off").toLowerCase();
+  const off = (env.SAP_ALLOW_LOGOFF?.trim() || "off").toLowerCase();
   if (off !== "off" && off !== "on") throw new Error(`SAP_ALLOW_LOGOFF must be off or on (got "${env.SAP_ALLOW_LOGOFF}")`);
   return {
     write: w,
@@ -150,6 +151,14 @@ export function tcodeRefusal(policy: Policy, tcode: string | undefined): string 
   return undefined;
 }
 
+/**
+ * After a write that did not run: how to leave the transaction so SAP drops the input and the document's
+ * lock. Live 2026-11-20, agents stopped as told and left VA02 or MM02 open with the lock held, offering the
+ * user to press Save; the next user (or the next run) was then blocked from that document.
+ */
+export const LEAVE_UNSAVED =
+  'If you entered or changed anything in this transaction, or opened a document to change it, leave it now without saving so SAP releases the lock on that document: {"do":"okcode","value":"/n"}, or Back (F3) and the answer of SAP\'s "data will be lost" question that leaves without saving. Do not leave it open for the user to save by hand unless they ask you to.';
+
 export type Verdict =
   | { run: true }
   | { run: false; refused: string }
@@ -175,6 +184,6 @@ export function decide(policy: Policy, action: Action, assessment: Assessment): 
   if (policy.write === "confirm") return { run: false, confirm: assessment.reason };
   return {
     run: false,
-    refused: `this action may write to SAP (${assessment.reason}) and writes are off. The user can allow them with SAP_WRITE=confirm or SAP_WRITE=on.`,
+    refused: `this action may write to SAP (${assessment.reason}) and writes are off. Tell the user what you would have saved; do not look for another way. ${LEAVE_UNSAVED} Only the user can allow writes (SAP_WRITE=confirm or on).`,
   };
 }

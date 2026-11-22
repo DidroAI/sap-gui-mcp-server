@@ -181,6 +181,19 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
     const windows = session.windowsOpened;
     const done = await run(session, resolved);
     let nothing = session.posts === mark && !done.endsWith(NOTHING_TO_SAP) ? nothingSent(a) : undefined;
+    // "Nothing was sent" is checked twice before it is said: once more for a request that left late, then by
+    // the screen itself. Said wrongly, the agent's next action goes to a screen it has not seen.
+    // A box that was already as asked: nothing is waiting in the page for SAP either.
+    if (nothing?.startsWith("(Set in the page") && /nothing changed/.test(done)) nothing = undefined;
+    // A dropdown can carry a function code of its own, whose request may leave a moment later.
+    if (nothing?.startsWith("(Set in the page") && a.do === "combo" && (await session.sentLate(mark))) nothing = undefined;
+    if (nothing?.startsWith("Nothing was sent")) {
+      if (await session.sentLate(mark)) nothing = undefined;
+      else if (before) {
+        const now = await look(session).catch(() => "");
+        if (now && headerOf(now) !== headerOf(before)) nothing = undefined;
+      }
+    }
     // A key the popup in front has no function for: the answer names the popup, the key did not reach the window behind it.
     const front = nothing && a.do === "key" && !LOCAL_KEY.test(vkey(a.key ?? a.value)) ? topPopup(before) : undefined;
     if (front) nothing = `Nothing was sent to SAP: the popup ${popupName(before, front)} is open and this key does nothing on it.`;
@@ -817,4 +830,9 @@ async function actHtml(session: WebGuiSession, a: Action): Promise<string> {
   // The viewer's frame tells Web GUI by a message: its event reaches the queue a moment after the click.
   await session.waitRoundtrip(1200, before, LEAVE_MS);
   return `${a.do} ${id}`;
+}
+
+/** The screen's header line (transaction, program, screen, title): what tells one screen from another. */
+function headerOf(view: string): string {
+  return view.slice(0, view.indexOf("\n") >>> 0);
 }

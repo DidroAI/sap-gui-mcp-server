@@ -105,16 +105,33 @@ export function onlyColumns(page: Page, cols: string[]): Page {
       }),
     };
   }
-  if (page.kind === "table")
+  if (page.kind === "table") {
+    // The legend names each column "N Title=cell id": a column asked for by its cell id ("txtVBAP-POSNR"), or by
+    // the SAP name in it ("VBAP-POSNR"), is the column of that title and index. Before, only titles matched, and
+    // every row of a read by ids came back "(empty)" (live 2026-11-20, VA03 items).
+    const legend = page.titles.find((t) => t.startsWith("  columns: ")) ?? "";
+    const columns = [...legend.matchAll(/(?:^ {2}columns: |, )(\d+) ([^=]+?)=([^\s,;]+)/g)].map((m) => ({ index: Number(m[1]), title: (m[2] ?? "").toLowerCase(), id: (m[3] ?? "").toLowerCase() }));
+    const byId = columns.filter((c) => want.includes(c.id) || want.includes(c.id.replace(/^(?:ctxt|txt|chk|rad|cmb|btn|lbl|pwd)/, "")));
+    const titleOf = (c: string) => (/^(.*?)(=| \[)/.exec(c)?.[1] ?? c).toLowerCase();
+    const indexOf = (c: string) => /^[^=]*? \[col (\d+)\]=/.exec(c)?.[1];
+    const kept = (c: string) => {
+      const t = titleOf(c);
+      if (want.includes(t)) return true;
+      const i = indexOf(c);
+      return byId.some((b) => b.title === t && (i === undefined || Number(i) === b.index));
+    };
+    if (columns.length && !columns.some((c) => want.includes(c.title) || byId.includes(c)))
+      throw new ActionError(`none of the columns ${cols.join(", ")} is in this table: its columns are ${columns.map((c) => `${c.title}=${c.id}`).join(" | ")}.`);
     return {
       ...page,
       rows: page.rows.map((r) => {
         const p = split(r.text);
         if (!p) return r;
-        const cells = p.body.split("; ").filter((c) => want.includes((/^(.*?)(=| \[)/.exec(c)?.[1] ?? c).toLowerCase()));
+        const cells = p.body.split("; ").filter(kept);
         return { ...r, text: `${p.prefix}${cells.join("; ") || "(empty)"}` };
       }),
     };
+  }
   return page;
 }
 

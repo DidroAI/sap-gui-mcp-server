@@ -1,0 +1,29 @@
+# Compare a Fiori app with its GUI transaction
+
+**Settings:** `SAP_WRITE=off`. `SAP_ALLOW_ORIGINS` with your SAP host, for
+example `https://sap.example.com`.
+
+**Before:** log on to the Fiori launchpad in Chrome (remote debugging
+allowed) and to SAP GUI or Web GUI for the same system.
+
+## Prompt
+
+> I have two SAP sessions open: the Fiori launchpad and SAP GUI, on the
+> same system. List them with `sap_sessions`.
+>
+> For purchase order 4500000001:
+>
+> 1. in Fiori, open "Manage Purchase Orders", find the order and read its
+>    header and items;
+> 2. in SAP GUI, open ME23N for the same order and read the same data.
+>
+> Make a table of the fields both show (supplier, document date, net value,
+> items with material, quantity, price, delivery date), with the value on
+> each side. Then list the fields only one of them shows. Only display;
+> change nothing.
+
+## What to expect
+
+The agent switches between the two sessions with `sap_use`. The view of
+both is the same text format, so the comparison is field by field. Say if
+a value differs only in format (decimal comma, date order).

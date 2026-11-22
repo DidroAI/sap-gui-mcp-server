@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thank you for the report. **Leave real SAP data out**: replace customer names, numbers and texts in views and logs with made-up ones. Security issues go through [SECURITY.md](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/SECURITY.md), not here.
+        Thank you for the report. **Leave real SAP data out**: replace customer names, numbers, texts, host names and user names in views and logs with made-up ones. Security issues go through [SECURITY.md](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/SECURITY.md), not here.
   - type: textarea
     id: what
     attributes:
@@ -30,10 +30,12 @@ body:
       label: Surface
       options:
         - SAP GUI for Windows (scripting)
-        - SAP GUI for Windows (SAP_GUI_METHOD=diag)
+        - SAP GUI for Windows, network reader (SAP_GUI_METHOD=diag)
         - Web GUI (SAP GUI for HTML)
         - Fiori launchpad
         - Web GUI app inside the Fiori launchpad
+        - Record and replay, or export
+        - Command line (setup, doctor, sessions)
         - Not specific to a surface
     validations:
       required: true
@@ -47,18 +49,28 @@ body:
   - type: input
     id: sap-release
     attributes:
-      label: SAP system and release
-      description: For example "SAP ERP 6.0 EHP8, NetWeaver 7.50" or "S/4HANA 2023". Logon language too, if not English.
+      label: SAP product and SAP_BASIS release
+      description: For example "SAP ERP 6.0 EHP8, SAP_BASIS 750" or "S/4HANA 2023, SAP_BASIS 758" (System > Status > Component information). Logon language too, if not English.
   - type: input
     id: gui-version
     attributes:
-      label: SAP GUI or browser version
-      description: For example "SAP GUI for Windows 8.00 PL 12" or "Chrome 146".
+      label: SAP GUI version
+      description: For SAP GUI surfaces. For example "SAP GUI for Windows 8.00 PL 12" (Help > About SAP Logon).
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version
+      description: For Web GUI and Fiori. For example "Chrome 146" or "Edge 145".
   - type: input
     id: client
     attributes:
-      label: MCP client and OS
-      description: For example "Claude Code 2.1 on Windows 11", "Codex on macOS 15".
+      label: MCP client and version
+      description: For example "Claude Code 2.1", "Codex 0.9", "Cursor 1.8", "VS Code 1.106".
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: For example "Windows 11 24H2", "macOS 15.5".
   - type: textarea
     id: view
     attributes:
@@ -69,7 +81,7 @@ body:
     id: doctor
     attributes:
       label: Output of doctor
-      description: "`npx -y sap-gui-mcp-server doctor`, for setup problems."
+      description: "`npx -y sap-gui-mcp-server doctor`. Replace host names and user names."
       render: text
   - type: textarea
     id: settings
@@ -77,3 +89,10 @@ body:
       label: Settings
       description: The SAP_* environment variables you set (never a password).
       render: text
+  - type: checkboxes
+    id: scrubbed
+    attributes:
+      label: Data
+      options:
+        - label: I removed business data, host names and personal data from what I pasted.
+          required: true

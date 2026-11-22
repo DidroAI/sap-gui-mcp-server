@@ -63,6 +63,8 @@ describe("words: safe", () => {
       ["EN", "Refresh", "refresh"],
       ["EN", "Next item", "next or previous"],
       ["EN", "Sort in ascending order", "sort"],
+      ["EN", "List Width Right", "list columns"],
+      ["EN", "First Column", "list columns"],
       ["EN", "Set Filter", "filter"],
       ["EN", "Print preview", "print preview"],
       ["EN", "Select all", "choose or select"],
