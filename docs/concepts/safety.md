@@ -82,7 +82,10 @@ is a commit unless it is known to be safe:
 - by its key: Enter, Back, Cancel, F4, paging... (a toolbar button `btn[N]`
   is function key N);
 - by its function code, such as the standard functions of ALV grids (sort,
-  filter, find, details);
+  filter, find, details) and choosing or changing a classic list's layout
+  (saving or deleting a layout stays a commit);
+- by its menu, on Web GUI: entries under a list's Settings > Layout, and
+  further selection criteria or dynamic selections;
 - by its text, when the logon language is one the word lists cover;
 - by its place, on Web GUI: the Goto menu, value help, a message popup, a
   report's selection screen, a screen that only displays (below).
