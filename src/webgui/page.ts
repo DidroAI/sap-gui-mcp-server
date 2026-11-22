@@ -417,7 +417,10 @@ export function extractLook(limits: {
         break;
       }
       case "GuiComboBox": {
-        if (el.tagName !== "INPUT") break;
+        // An input, or in a table control of S/4HANA a text box span (ct CB) that holds the SID and the value
+        // in its lsdata (MIRO's Tax Code, cmbDRSEG-MWSKZ): it was skipped, so the column never showed.
+        const spanCombo = el.tagName === "SPAN" && el.getAttribute("ct") === "CB" && el.getAttribute("role") === "textbox";
+        if (el.tagName !== "INPUT" && !spanCombo) break;
         // A dropdown cell of a table control scrolled out sideways is not on the screen.
         const tblC = el.closest("[data-ls*=\"Type:'GuiTableControl'\"]");
         if (tblC && !inView(el, tblC.getBoundingClientRect())) break;
@@ -434,7 +437,7 @@ export function extractLook(limits: {
         const ro = fieldLocked(el);
         const opts: string[] = [];
         // The input shows the entry chosen now; lsdata holds what the server drew last.
-        const shown = norm(h.value ?? "");
+        const shown = norm(spanCombo ? h.innerText : (h.value ?? ""));
         let key = s4 ? norm(prop(ls, 4)) : k3;
         let text = s4 ? shown : shown || prop(ls, 4);
         for (const it of Array.from(
@@ -1998,7 +2001,8 @@ export function comboEntries(sid: string): { key: string; text: string }[] | str
     return m ? unesc(m[1] ?? "") : "";
   };
   const norm = (t: string | null | undefined) => (t ?? "").replace(/[\s\u00a0]+/g, " ").replace(/^ | $/g, "");
-  const el = Array.from(document.querySelectorAll("input[data-ls*=\"Type:'GuiComboBox'\"]")).find((e) => {
+  // An input, or the text box span (ct CB) of a dropdown cell in an S/4HANA table control.
+  const el = Array.from(document.querySelectorAll("input[data-ls*=\"Type:'GuiComboBox'\"],span[ct='CB'][role='textbox'][data-ls*=\"Type:'GuiComboBox'\"]")).find((e) => {
     const ls = e.getAttribute("data-ls") ?? "";
     const raw = /OrigID:'((?:[^'\\]|\\.)*)'/.exec(ls)?.[1] ?? /SID:'((?:[^'\\]|\\.)*)'/.exec(ls)?.[1] ?? "";
     return raw.replace(/\\\\/g, "\\") === sid && (e as HTMLElement).offsetWidth > 0;
