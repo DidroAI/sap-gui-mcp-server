@@ -41,6 +41,10 @@ Preparing the first public release.
   write.
 - A classic list's row range (`look` with `rows`) no longer reads a row twice
   or loses one at a page boundary.
+- With `SAP_WRITE=off`, BP's Open BP and the locator's Start, and OK in
+  Fiori's Adapt Filters dialog, navigate instead of being refused.
+- Web GUI on S/4HANA reads dropdown cells of a table control (the Tax Code
+  column in MIRO).
 
 ### Project
 
