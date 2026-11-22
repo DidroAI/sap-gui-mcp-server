@@ -26,7 +26,7 @@
  */
 import { menuSid, resolveId } from "../core/ids.js";
 import type { Action, Assessment } from "../core/types.js";
-import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayTitle, endsLogon, isGotoMenu, languageCovered, layoutMenu, listChoice, listTitle, MENU_PROGRAMS, okcodeKind, runSwitch, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS, showsOnly } from "../core/words.js";
+import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayTitle, endsLogon, isGotoMenu, languageCovered, layoutMenu, listChoice, listTitle, MENU_PROGRAMS, okcodeKind, runSwitch, SAFE_VKEYS, safeCode, safeWord, searchButton, SAVE_VKEYS, showsOnly } from "../core/words.js";
 import type { MenuEntry } from "./page.js";
 import { vkey } from "./keys.js";
 
@@ -445,6 +445,8 @@ function assessFunction(what: string, text: string, control: ViewControl | undef
   if (key !== undefined && SAFE_VKEYS.has(key)) return NAVIGATE;
   if (sc && SAFE_KEYS.has(sc)) return NAVIGATE;
   if (safeWord(ctx.language, text)) return NAVIGATE;
+  // A search button by its SAP name (BP's locator "Start", btnBUS_LOCA_SRCH01-GO), unless its text says it acts.
+  if (control && control.kind === "button" && searchButton(control.id) && !actWord(text.replace(/\([^()]*\)\s*$/, "").trim().replace(/^start$/i, ""))) return navigate(`${named} starts a search`);
   // An answer to "Data will be lost..." (discardQuestion) discards the input or keeps it.
   if (control && control.window > 0 && control.kind === "button" && control.window === topOf(scene.windows)?.number && discardQuestion(scene.windows))
     return navigate(`${named} on a popup that asks whether to discard unsaved input`);
