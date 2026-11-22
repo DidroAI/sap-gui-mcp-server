@@ -124,15 +124,6 @@ function explicitEndpoint(env: Env): ChromeEndpoint | undefined {
 /** DevToolsActivePort files that exist but that this app may not read (macOS privacy protection). */
 export const blockedFiles: string[] = [];
 
-/** The name of the process listening on a local port (macOS and Linux, through lsof), if it can be told. */
-export async function portOwner(port: number, platform: NodeJS.Platform = process.platform): Promise<string | undefined> {
-  if (platform === "win32") return undefined;
-  const { spawnSync } = await import("node:child_process");
-  const r = spawnSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-Fc"], { encoding: "utf8", timeout: 3000 });
-  const name = /^c(.+)$/m.exec(r.stdout ?? "")?.[1];
-  return name || undefined;
-}
-
 export async function activePortEndpoints(
   env: Env,
   tried: string[] = [],
@@ -154,14 +145,12 @@ export async function activePortEndpoints(
     } catch (e) {
       const code = (e as NodeJS.ErrnoException).code;
       if (code === "EPERM" || code === "EACCES") {
-        // macOS privacy protection: the file is there, but this app may not read another app's data.
-        // Chrome's remote debugging listens on 9222 by default: use it when Chrome's own process holds that port.
+        // macOS privacy protection: the file is there, but this app may not read another app's data. Without
+        // it there is no way in: a Chrome that allows remote debugging from chrome://inspect answers only on
+        // the WebSocket path the file names, and its /json/version is a 404 (live on macOS, 2026-11-22: the
+        // fallback to http://127.0.0.1:9222 that stood here got that 404, and Playwright's error ended the process).
         blockedFiles.push(file);
-        const owner = await portOwner(9222, platform);
-        if (owner && /chrome|google|edge/i.test(owner)) {
-          tried.push(`${file}: macOS does not let this app read it; ${owner} listens on 127.0.0.1:9222`);
-          found.push({ url: "http://127.0.0.1:9222", from: `${name} with remote debugging allowed (port 9222; ${file} could not be read)` });
-        } else tried.push(`${file}: macOS does not let this app read it`);
+        tried.push(`${file}: macOS does not let this app read it`);
         continue;
       }
       tried.push(`${file}: not there (${name} is not running, or remote debugging is not allowed)`);
@@ -214,6 +203,16 @@ async function open(env: Env, key: string): Promise<Connection> {
   const errors: string[] = [];
   const attach = async (endpoint: ChromeEndpoint): Promise<Connection | undefined> => {
     try {
+      // An http endpoint must serve /json/version, where Playwright finds the WebSocket. Asked first here: when
+      // it does not (a Chrome that allows debugging from chrome://inspect answers 404), Playwright's own
+      // request leaves an error on its socket that nothing handles, and the process ends.
+      if (/^https?:/.test(endpoint.url)) {
+        const r = await fetch(`${endpoint.url.replace(/\/+$/, "")}/json/version`, { signal: AbortSignal.timeout(5000) });
+        if (!r.ok)
+          throw new Error(
+            `${endpoint.url}/json/version answers ${r.status}: this is not a Chrome started with --remote-debugging-port. A Chrome that allows remote debugging from chrome://inspect is reached at the ws:// address its DevToolsActivePort file names`,
+          );
+      }
       const browser = await chromium.connectOverCDP(endpoint.url, { noDefaults: true, isLocal: true, timeout: CONNECT_TIMEOUT_MS });
       keepDialogs(browser);
       const c: Connection = { browser, endpoint, key };
@@ -402,8 +401,8 @@ export async function chromeDoctor(env: Record<string, string | undefined>): Pro
         {
           ok: false,
           check,
-          detail: `Chrome allows remote debugging, but macOS does not let this app read Chrome's DevToolsActivePort file (privacy protection), and Chrome did not answer on port 9222 without it`,
-          fix: `Give the app that runs the server (Terminal or iTerm for doctor; Claude, Codex or your editor for the MCP server) access in System Settings > Privacy & Security > Full Disk Access, restart that app, then run doctor again.`,
+          detail: `Chrome may allow remote debugging, but macOS does not let this app read Chrome's DevToolsActivePort file (privacy protection), and the server cannot reach Chrome without it`,
+          fix: `Give the app that runs the server (Terminal or iTerm for doctor; Claude, Codex or your editor for the MCP server) access in System Settings > Privacy & Security > Full Disk Access, restart that app, then run doctor again. Or set SAP_CHROME_CDP to ws://127.0.0.1:<port><path> from the two lines of that file (it changes each time Chrome starts).`,
         },
       ];
     const busy = await portOpen("127.0.0.1", 9222);

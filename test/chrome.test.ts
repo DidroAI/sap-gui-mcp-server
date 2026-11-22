@@ -94,3 +94,20 @@ describe("finding a running Chrome", () => {
     expect(e).not.toContain("9222: answers");
   });
 });
+
+describe("an http endpoint that serves no /json/version", () => {
+  // macOS, 2026-11-22: Chrome allowed remote debugging from chrome://inspect, where http://127.0.0.1:9222/json/version
+  // is a 404. Playwright's connection then left an unhandled socket error and doctor ended with a Node stack trace.
+  test("is refused with the reason, and the process carries on", async () => {
+    const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("not found", { status: 404 }) });
+    try {
+      const e = await chromeTabs({ SAP_CHROME_CDP: `http://127.0.0.1:${server.port}` }).catch((x: Error) => x.message);
+      expect(e).toContain("No Chrome answers at SAP_CHROME_CDP");
+      expect(e).toContain("/json/version answers 404");
+      expect(e).toContain("chrome://inspect");
+      await Bun.sleep(200);
+    } finally {
+      server.stop(true);
+    }
+  });
+});
