@@ -22,7 +22,7 @@
  * The tables are in core/words.ts, shared with the other surfaces.
  */
 import { ActionError, type Action, type Assessment } from "../core/types.js";
-import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayTitle, endsLogon, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS, showsOnly } from "../core/words.js";
+import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayTitle, endsLogon, layoutMenu, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS, showsOnly } from "../core/words.js";
 import type { Control, Screen } from "./facts.js";
 import { vkeyNumber } from "./keys.js";
 import { allControls } from "./resolve.js";
@@ -195,6 +195,9 @@ function assessMenu(screen: Screen, m: Control | undefined): Assessment {
   if (endsLogon(m.text, m.tip)) return closes(named);
   if (commitWord(m.text, m.tip)) return commit(named);
   if (safeWord(screen.language, m.text, m.tip)) return { risk: "navigate", reason: named };
+  // "Settings > Layout > Change...": an entry of a list's layout menu changes how the list looks (layoutMenu).
+  const parents = allControls(screen).filter((c) => c.type === "GuiMenu" && m.id.startsWith(`${c.id}/`)).map((c) => c.text);
+  if (layoutMenu(screen.language, ...parents) && !actWord(m.text, m.tip)) return { risk: "navigate", reason: `${named} is in the layout menu` };
   return notSafe(named);
 }
 
