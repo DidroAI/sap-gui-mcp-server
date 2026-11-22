@@ -323,10 +323,21 @@ export const SAFE_WORDS: WordRow<SafeLanguage>[] = [
     // Saving or deleting a variant holds a commit word ("Save as Variant...", "Delete Variant").
     means: "selection criteria and variants",
     words: {
-      en: ["selection", "selections", "multiple selection", "variant", "variants"],
-      de: ["selektion", "selektionen", "mehrfachselektion", "variante", "varianten"],
-      fr: ["sélection", "sélections", "sélection multiple", "variante", "variantes"],
-      es: ["selección", "selecciones", "selección múltiple", "variante", "variantes"],
+      en: ["selection", "selections", "multiple selection", "variant", "variants", "sel. criteria", "sel.criteria", "selection criteria", "dynamic selections", "free selections"],
+      de: ["selektion", "selektionen", "mehrfachselektion", "variante", "varianten", "selektionskriterien", "sel.-kriterien", "sel.kriterien", "dynamische selektionen", "freie abgrenzungen"],
+      fr: ["sélection", "sélections", "sélection multiple", "variante", "variantes", "critères de sélection", "sélections dynamiques"],
+      es: ["selección", "selecciones", "selección múltiple", "variante", "variantes", "criterios de selección", "selecciones dinámicas"],
+    },
+  },
+  {
+    // How a list looks: its layout (columns, order, sorting) in the "Change Layout" dialog, choosing or managing
+    // layouts. Only the view changes; "Save layout" and "Delete layout" hold commit words, which are checked first.
+    means: "list layout",
+    words: {
+      en: ["layout", "layouts", "change layout", "display variant", "column set"],
+      de: ["layout", "layouts", "anzeigevariante", "anzeigevarianten", "spaltenauswahl"],
+      fr: ["mise en forme", "mises en forme", "variante d'affichage"],
+      es: ["disposición", "disposiciones", "layout", "variante de visualización"],
     },
   },
   {
@@ -619,6 +630,16 @@ export function isGotoMenu(language: string | undefined | null, text: string | u
   return Object.values(GOTO_MENUS).some((names) => names.includes(t));
 }
 
+/**
+ * Is a menu one of the list's layout menus ("Settings > Layout", "Einstellungen > Layout")? Its entries
+ * ("Change...", "Choose...", "Manage...") change how the list looks; "Save..." and "Delete..." hold commit
+ * words, which the surfaces check first. Trusted only in a covered language.
+ */
+export function layoutMenu(language: string | undefined | null, ...parents: (string | undefined)[]): boolean {
+  if (!languageCovered(language)) return false;
+  return parents.some((p) => !commitWord(p) && safeWord(language, clean(p).replace(/&/g, "")) === "list layout");
+}
+
 // ---- function keys ------------------------------------------------------------------
 
 /** SAP virtual keys that save on every screen: 11 is Ctrl+S. */
@@ -650,13 +671,15 @@ export const COMMIT_CODES: ReadonlySet<string> = new Set([
  * Function codes that only move or show, compared with the whole code:
  * the standard codes of the system toolbar, and the standard functions of ALV
  * lists and grids (details, sort, filter, find, totals, print preview, views,
- * choosing a layout).
+ * choosing or changing a layout, not saving one).
  */
 export const SAFE_CODES: ReadonlySet<string> = new Set([
   ..."BACK EXIT CANC RW ABBR ENTR ENTE ENTER E ECAN P+ P++ P- P-- PICK".split(" "),
   ..."&F03 &F12 &F15 &IC1 &ETA &OUP &ODN &ILT &ILD &UMC &SUM &RNT_PREV &ALL &SAL &REFRESH %SC %SC+".split(" "),
   ..."&DETAIL &SORT_ASC &SORT_DSC &FIND &FIND_MORE &MB_FILTER &FILTER &DELETE_FILTER &MB_SUM &SUMC &MB_SUBTOT &SUBTOT".split(" "),
   ..."&PRINT_BACK_PREVIEW &MB_VIEW &VIEW_GRID &MB_VARIANT &COL0 &LOAD &INFO &MB_EXPORT".split(" "),
+  // Classic ALV lists: &OL0 Change Layout, &OAD Select Layout (the dialogs only change the view; Save Layout is &AVE).
+  ..."&OL0 &OAD".split(" "),
 ]);
 
 const bare = (code: string | undefined) => (code ?? "").trim().toUpperCase().replace(/^=/, "");

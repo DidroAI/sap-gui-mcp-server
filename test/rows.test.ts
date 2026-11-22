@@ -109,3 +109,57 @@ describe("onlyColumns on a table control (live 2026-11-20, VA03 items)", () => {
     expect(() => onlyColumns(page(), ["VBELN"])).toThrow("none of the columns VBELN is in this table: its columns are item=txtvbap-posnr");
   });
 });
+
+/**
+ * A classic list as Web GUI shows it on ECC FBL5N (2026-11-22): 3 title rows that stay, 40 rows below them,
+ * 22 on screen. Its scrollbar calls 22 rows a page at the top and 21 once the list has moved, while the same
+ * 22 are drawn; the reader's head then says "below 4 title rows" instead of 3.
+ */
+function fbl5nList(total = 40, drawn = 22, titles = 3): RowSource & { scrolls: number[] } {
+  let first = 0;
+  const scrolls: number[] = [];
+  return {
+    scrolls,
+    scrollTo: async (row) => {
+      scrolls.push(row);
+      first = Math.max(0, Math.min(row, total - drawn + 1));
+    },
+    block: async () => {
+      const visible = first === 0 ? drawn : drawn - 1;
+      const lines = Math.min(drawn, total - first);
+      const last = titles + lines - 1;
+      const head = `wnd[0]/usr  list  ${total} rows (visible ${visible}${first ? `, first ${first}` : ""}, below ${last + 1 - visible} title rows; scroll for the others)`;
+      const block = [
+        ...FRAME,
+        head,
+        ...Array.from({ length: titles }, (_, i) => `wnd[0]/usr/lbl[0,${i}]  label  Title ${i}`),
+        ...Array.from({ length: lines }, (_, i) => `wnd[0]/usr/lbl[0,${titles + i}]  label  Item ${first + i}`),
+      ].join("\n");
+      return { block, screen: block };
+    },
+  };
+}
+
+describe("readRows: a classic list whose page shrinks once it moves (live 2026-11-22, ECC FBL5N)", () => {
+  const items = (out: string) => [...out.matchAll(/^ {2}row (\d+): Item (\d+)/gm)].map((m) => [Number(m[1]), Number(m[2])]);
+  test("every row once, under its own number, across the page boundary", async () => {
+    const out = await readRows(fbl5nList(), "usr", 0, 100);
+    const got = items(out);
+    expect(got.length).toBe(40);
+    expect(got.every(([n, item]) => n === item)).toBe(true);
+    expect(out).toContain("  title 2: Title 2");
+  });
+  test("a range that starts below the top counts the title rows at the top first", async () => {
+    const src = fbl5nList();
+    const got = items(await readRows(src, "usr", 25, 39));
+    expect(src.scrolls[0]).toBe(25);
+    expect(src.scrolls[1]).toBe(0);
+    expect(got.map(([n]) => n)).toEqual(Array.from({ length: 15 }, (_, i) => 25 + i));
+    expect(got.every(([n, item]) => n === item)).toBe(true);
+  });
+  test("the boundary row that was lost: rows 21 to 23 of a list read from the top", async () => {
+    const got = items(await readRows(fbl5nList(60), "usr", 0, 59));
+    expect(got.map(([n]) => n)).toEqual(Array.from({ length: 60 }, (_, i) => i));
+    expect(got.every(([n, item]) => n === item)).toBe(true);
+  });
+});
