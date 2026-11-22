@@ -4,6 +4,50 @@ All notable changes to this project are listed here. The project follows
 [Semantic Versioning](https://semver.org); before 1.0, a minor version may
 change the tools or the view format.
 
+## Unreleased
+
+Preparing the first public release.
+
+### Documentation
+
+- A documentation site in `docs/` (VitePress): getting started, concepts,
+  guides per surface, reference, security and data handling. It loads
+  nothing from other sites. The same markdown ships in the npm package, so
+  agents can read it offline.
+- `CONTRIBUTING.md` describes the surface abstraction and how to add a
+  surface; `SECURITY.md` has a threat model and a data-handling statement.
+- `examples/`: MCP client configurations, prompts for common tasks, and a
+  synthetic recorded test to replay and export.
+
+### Install
+
+- A Claude Desktop extension (`.mcpb`), built with `bun run build:mcpb` and
+  attached to each release.
+- Install docs with copy-paste snippets and install links for Cursor,
+  VS Code, Windsurf and Codex.
+
+### Fixes
+
+- `sap-gui test` loads `sap.config.ts` and `*.sap.ts` as ES modules in a
+  project whose `package.json` says `"type": "commonjs"` (what `npm init`
+  writes). It used to fail with "Cannot use import statement outside a
+  module".
+- `init` creates a `.gitignore` in a git project that has none, so traces
+  and results, which hold screens of business data, are not committed.
+- zod 4.6.7 (GHSA-mrhx-c7xc-m3w5).
+
+### Project
+
+- CI runs on Linux, Windows and macOS with Node 22 and 24, checks what the
+  npm package holds, runs the built command on plain Node, sets up a fresh
+  project from the packed tarball (`init --yes`, `test --list`), and builds
+  the docs site.
+- CodeQL and Dependabot.
+- Releases are published from a tag only, by a workflow, with npm
+  provenance.
+- Issue templates for bugs, features and new surfaces or transactions, each
+  asking that business data be removed first.
+
 ## 0.1.0 (unreleased)
 
 The first public version.
@@ -22,8 +66,8 @@ The first public version.
 
 ### Tools
 
-- `sap_sessions`, `sap_use`, `sap_look`, `sap_act`, `sap_confirm`,
-  `sap_screenshot`, `sap_record`, `sap_replay`.
+- `sap_sessions`, `sap_use`, `sap_look`, `sap_act`, `sap_screenshot`,
+  `sap_record`, `sap_replay`.
 - One set of JSON actions on every surface: `set`, `press`, `key`,
   `select`, `check`, `combo`, `okcode`, `f4`, `focus`, `dblclick`, `tree`,
   `grid`, `toolbar`, `scroll` (and `click` on Fiori).
@@ -41,8 +85,9 @@ The first public version.
 
 ### Safety
 
-- Writes are off by default (`SAP_WRITE=off`); `confirm` holds them for
-  the user's yes, through MCP elicitation when the client supports it.
+- Writes are off by default (`SAP_WRITE=off`); `confirm` asks the user
+  for each one through MCP elicitation, and refuses it when the client
+  cannot ask.
 - Every action is classified as read, navigate or commit, failing closed.
 - Allow and block lists for systems, transactions and browser origins.
 - Never logs on, never types into password fields, never acts on a logon

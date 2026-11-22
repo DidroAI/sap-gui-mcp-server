@@ -40,15 +40,32 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./test": {
+      "types": "./dist/runner/index.d.ts",
+      "default": "./dist/runner/index.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {
-    "sap-gui-mcp-server": "dist/cli.js"
+    "sap-gui-mcp-server": "dist/cli.js",
+    "sap-gui": "dist/cli.js"
   },
   "files": [
     "dist",
     "!dist/**/*.map",
     "skills",
+    "docs/**/*.md",
+    "!docs/node_modules/**",
+    "!docs/launch-checklist.md",
+    "!docs/agent-surface-plan.md",
+    "!docs/cached-steps.md",
+    "!docs/code-tools.md",
+    "!docs/live-agents-2026-11-20.md",
+    "!docs/live-check-2026-11-20.md",
+    "!docs/phase1-summary.md",
+    "!docs/tool-review.md",
+    "!docs/live-writes-2026-11-21.md",
+    "!docs/node22-linux-2026-11-21.md",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
@@ -63,7 +80,10 @@
     "test": "bun test ./test",
     "start": "node dist/cli.js",
     "prepublishOnly": "bun run typecheck && bun run test && bun run build",
-    "test:bench": "cd bench && bun install --frozen-lockfile && node --test test/*.test.ts"
+    "test:bench": "cd bench && bun install --frozen-lockfile && node --test test/*.test.ts",
+    "docs:dev": "cd docs && bun install --frozen-lockfile && bun run dev",
+    "docs:build": "cd docs && bun install --frozen-lockfile && bun run build",
+    "build:mcpb": "node scripts/build-mcpb.mjs"
   },
   "publishConfig": {
     "access": "public"
@@ -71,7 +91,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
     "playwright-core": "1.65.0",
-    "zod": "4.5.4"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/bun": "1.4.4",

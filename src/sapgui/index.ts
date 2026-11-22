@@ -257,9 +257,11 @@ class SapguiDriver implements Driver {
       case "press":
         if (target.type !== "GuiButton") throw new ActionError(`${id} is a ${target.type}, not a button: use "select" for a tab or a menu entry, "set" for a field.`);
         return this.run({ do: doing, id }, `${doing} ${id}`, timeoutMs);
+      case "select":
+        if (action.row !== undefined) return this.selectRow(target, action, timeoutMs);
+        return this.run({ do: doing, id }, `${doing} ${id}`, timeoutMs);
       case "focus":
       case "f4":
-      case "select":
         return this.run({ do: doing, id }, `${doing} ${id}`, timeoutMs);
       case "check": {
         const value = action.value === undefined ? true : action.value === true || action.value === "true" || action.value === "x" || action.value === "X" || action.value === 1;
@@ -289,6 +291,11 @@ class SapguiDriver implements Driver {
         return this.run({ do: "tree", id, node: String(action.node), how, ...(action.col ? { col: action.col } : {}) }, `tree ${how} node ${String(action.node).trim()} in ${id}`, timeoutMs);
       }
       case "grid": {
+        // A table control is not an ALV grid: selecting its row goes by its row selector; anything else by the cell's id.
+        if (target.type === "GuiTableControl") {
+          if ((action.how ?? "double") === "select" && action.row !== undefined) return this.selectRow(target, { ...action, value: true }, timeoutMs);
+          throw new ActionError(`${id} is a table control, not a grid: select a row with {"do":"select","id":"${id}","row":N}, open a cell with dblclick on its cell id (<column id>[col,row] from the view).`);
+        }
         if (!Number.isInteger(action.row) || typeof action.col !== "string") throw new ActionError('grid needs "row" (number, from "row N:") and "col" (column id, e.g. "VBELN")');
         const how = action.how ?? "double";
         if (!["double", "select"].includes(how)) throw new ActionError('grid "how" is double or select');
@@ -302,6 +309,20 @@ class SapguiDriver implements Driver {
       default:
         throw new ActionError(`Unknown action "${doing}". SAP GUI takes: set, press, key, select, check, combo, okcode, f4, focus, dblclick, tree, grid, toolbar, scroll.`);
     }
+  }
+
+  /**
+   * "select" with "row": a row of a table control by its row selector (rows counted on screen, as the
+   * cell ids and Web GUI count them), or a grid row (counted in the whole grid); "value": false deselects.
+   */
+  private selectRow(target: Control, action: Action, timeoutMs: number): Promise<string> {
+    const row = action.row;
+    if (!Number.isInteger(row) || (row as number) < 0) throw new ActionError('"row" is a row number counted from 0.');
+    const on = !(action.value === false || /^(false|0|off|no|)$/i.test(String(action.value ?? "x")));
+    const table = target.type === "GuiTableControl";
+    if (!table && !(target.type === "GuiShell" && target.sub === "GridView"))
+      throw new ActionError(`${target.id} is a ${target.type}: "select" with "row" selects a row of a table control or a grid.`);
+    return this.run({ do: "selectrow", id: target.id, row, value: on, table }, `${on ? "selected" : "deselected"} row ${row} of ${target.id}`, timeoutMs);
   }
 
   private async run(action: Record<string, unknown>, note: string, timeoutMs = ACT_MS): Promise<string> {

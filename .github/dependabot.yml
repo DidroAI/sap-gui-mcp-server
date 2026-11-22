@@ -1,0 +1,32 @@
+# Dependabot version updates.
+# The root, docs/ and bench/ lock with bun.lock, so they use the "bun" ecosystem: the "npm"
+# ecosystem would update package.json without bun.lock. Dependabot supports bun.lock (bun >= 1.1.39)
+# for version updates; it does not open security-update PRs for bun yet, so these weekly
+# version updates are what keeps the lock files current.
+version: 2
+updates:
+  - package-ecosystem: bun
+    directories:
+      - /
+      - /docs
+      - /bench
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: deps
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        update-types: [minor, patch]

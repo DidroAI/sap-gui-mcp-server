@@ -11,11 +11,13 @@
  * The file is written after every change, so a recording survives a crash.
  */
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { tailHandle } from "../core/ids.js";
+import { codeOf } from "../sdk/code.js";
 import type { NormalizedAction } from "../core/action.js";
 import type { Driver, SessionInfo } from "../core/types.js";
 import { captureValue, evaluate } from "./checks.js";
-import { type Capture, type Check, FILE_SUFFIX, FORMAT, type Op, parametriseStep, parseTest, type SapTest, serializeTest, slug, type Step, type Subject, withVariable } from "./format.js";
+import { type Capture, type Check, duration, FILE_SUFFIX, FORMAT, type Op, parametriseStep, parseTest, type SapTest, serializeTest, slug, type Step, type Subject, withVariable } from "./format.js";
 import { detour } from "./replay.js";
 import { locate, type ParsedScreen, readSettled, refOf } from "./screen.js";
 
@@ -27,6 +29,12 @@ export interface RecorderOptions {
   /** "sap-gui-mcp-server 0.1.0", written into the file. */
   by: string;
   now?: () => Date;
+  /**
+   * Keep a trace in each step: the compact screen it led to, and with
+   * `screenshots` a PNG next to the file (`<name>.trace/step-N.png`). Off for
+   * recordings made to be replayed: the screens make the file large.
+   */
+  trace?: { screens: boolean; screenshots?: boolean };
 }
 
 type Env = Record<string, string | undefined>;
@@ -71,7 +79,8 @@ export function stepLine(s: Step, i: number): string {
     ...(s.capture ?? []).map((c) => `     capture \${${c.var}} from ${c.from}${c.id ? ` ${c.id}` : ""}${c.pattern ? ` /${c.pattern}/` : ""}`),
     ...(s.note ? [`     note: ${s.note}`] : []),
   ];
-  return [`${i + 1}. ${a}${t}${sc}${st}${s.risk === "commit" ? "  [writes]" : ""}`, ...more].join("\n");
+  const ms = s.ms !== undefined ? `  (${duration(s.ms)})` : "";
+  return [`${i + 1}. ${a}${t}${sc}${st}${s.risk === "commit" ? "  [writes]" : ""}${ms}`, ...more].join("\n");
 }
 
 /** What a finished recording probably still needs: values to make variables, documents to capture. */
@@ -106,11 +115,20 @@ export class Recorder {
   private path: string | undefined;
   /** Actions on other sessions that were not recorded. */
   private skipped = 0;
+  /** The `sap.step` block that runs now (sdk/session.ts): written into each step recorded meanwhile. */
+  group: string | undefined;
+  /** The screens read around the last action recorded: the SDK's verified mode (sdk/verify.ts) judges it on them instead of reading again. */
+  last: { before?: ParsedScreen | undefined; after?: ParsedScreen | undefined } | undefined;
 
   constructor(readonly options: RecorderOptions) {}
 
   get recording(): boolean {
     return !!this.test;
+  }
+
+  /** The recording that is on, as it is now. */
+  get current(): SapTest | undefined {
+    return this.test;
   }
 
   get file(): string | undefined {
@@ -198,13 +216,23 @@ export class Recorder {
     }
     // Recording must never break the action: a screen that cannot be read leaves gaps, not errors.
     const before = await screenOf(driver).catch(() => undefined);
+    const started = this.options.now?.() ?? new Date();
+    const t0 = performance.now();
     const note = await run();
+    const ms = Math.round(performance.now() - t0);
     const after = await screenOf(driver).catch(() => undefined);
+    this.last = { before, after };
     // "do" first: the file is read by people.
     const { do: verb, ...rest } = action;
     const step: Step = { action: { do: verb, ...rest } };
+    step.at = started.toISOString();
+    step.ms = ms;
     const found = before && action.id ? locate(before, action.id) : undefined;
-    if (found) step.target = { id: found.control.id, type: found.control.type, ...(found.control.label ? { label: found.control.label } : {}) };
+    if (found && before) {
+      const handle = tailHandle(before.controls.map((c) => c.id), found.control.id);
+      step.target = { id: found.control.id, type: found.control.type, ...(found.control.label ? { label: found.control.label } : {}), ...(handle ? { handle } : {}) };
+    }
+    if (this.group) step.group = this.group;
     if (risk) step.risk = risk;
     if (before) {
       step.on = refOf(before);
@@ -219,8 +247,22 @@ export class Recorder {
     if (after) step.after = { ...refOf(after), ...(after.status ? { status: after.status } : {}) };
     for (const [name, v] of Object.entries(test.variables)) parametriseStep(step, name, v.value);
     test.steps.push(step);
+    if (this.options.trace?.screens) await this.traceStep(driver, step, test.steps.length).catch(() => {});
     await this.save().catch(() => {});
     return note;
+  }
+
+  /** Adds what a trace keeps to a step: the SDK line, the compact screen, a screenshot. */
+  private async traceStep(driver: Driver, step: Step, n: number): Promise<void> {
+    if (step.action) step.code = codeOf(step.action as NormalizedAction);
+    step.screen = await driver.look({ compact: true });
+    if (!this.options.trace?.screenshots || !this.path) return;
+    const png = await driver.screenshot().catch(() => undefined);
+    if (!png) return;
+    const dir = `${this.path.replace(/\.saptest\.json$/, "")}.trace`;
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, `step-${n}.png`), png);
+    step.shot = `${basename(dir)}/step-${n}.png`;
   }
 
   /** The last step, or a new step without an action when nothing was recorded yet. */
@@ -244,6 +286,8 @@ export class Recorder {
       c.id = found.control.id;
       c.type = found.control.type;
       if (found.control.label) c.label = found.control.label;
+      const handle = tailHandle(screen.controls.map((x) => x.id), c.id);
+      if (handle) c.handle = handle;
       // "This field, as it is now."
       if (!given.length) c.value = found.control.value;
     } else if (!given.length) {
@@ -271,6 +315,8 @@ export class Recorder {
       if (!found) throw new Error(`No control ${input.id} on this screen.`);
       c.id = found.control.id;
       if (found.control.label) c.label = found.control.label;
+      const handle = tailHandle(screen.controls.map((x) => x.id), c.id);
+      if (handle) c.handle = handle;
     }
     const got = captureValue(screen, c);
     if ("error" in got) throw new Error(`Not recorded: ${got.error}.`);

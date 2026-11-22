@@ -90,6 +90,53 @@ export function sessionOf(tab: { id: string; title: string; url: string }, n: nu
   return s;
 }
 
+export const FIORI_LOGGED_OFF =
+  "This launchpad tab is not logged on to SAP any more (the logon expired or was closed): SAP answers its requests with a logon (HTTP 401), so the app waits for data that will not come. Nothing more can be done in this tab until the user logs on again (reload the tab); input that was not saved is lost. Tell the user; do not retry.";
+
+/**
+ * Is this tab still logged on to SAP? One request the launchpad itself makes at start, with the tab's cookies.
+ * It goes through Playwright's request API, not the page: SAP answers an expired logon with 401 and a Basic
+ * challenge, and in the page the browser holds that request for a password prompt nobody sees (live
+ * 2026-11-20: that is also why the app's own requests never came back). "expired": SAP or the identity
+ * provider answered with a logon (401, 403, a redirect elsewhere, a logon form); "unknown": no answer in 5 s,
+ * or the path is not there (another launchpad). Never claims more than it saw.
+ * The request names the tab's client (its URL's sap-client, else `client`): without it SAP takes the client from
+ * the sap-usercontext cookie, which is per host, not per port, so another SAP system on the same host can have
+ * set it to another client, where this logon does not exist (live 2026-11-21: ECC client 800 on localhost:8010
+ * made a logged-on S/4 tab on localhost:44300 read as expired).
+ */
+export async function logonState(page: Page, client?: string): Promise<"ok" | "expired" | "unknown"> {
+  let url: URL;
+  try {
+    url = new URL(page.url());
+  } catch {
+    return "unknown";
+  }
+  const origin = url.origin;
+  if (!/^https?:/.test(origin)) return "unknown";
+  const mandt = url.searchParams.get("sap-client") ?? client;
+  const q = /^\d{3}$/.test(mandt ?? "") ? `&sap-client=${mandt}` : "";
+  try {
+    const r = await page.context().request.get(`${origin}/sap/bc/ui2/start_up?shellType=FLP&depth=0${q}`, {
+      headers: { "X-Requested-With": "XMLHttpRequest" },
+      timeout: 5000,
+      maxRedirects: 0,
+      failOnStatusCode: false,
+      ignoreHTTPSErrors: true,
+    });
+    const status = r.status();
+    if (status === 401 || status === 403) return "expired";
+    const to = r.headers().location;
+    if (status >= 300 && status < 400 && to) return new URL(to, origin).origin !== origin || /logon|login|saml/i.test(to) ? "expired" : "unknown";
+    const type = r.headers()["content-type"] ?? "";
+    if (r.ok() && type.includes("json")) return "ok";
+    if (r.ok() && type.includes("html") && /<form[^>]*(logon|login)|name="(sap-user|j_username)"/i.test(await r.text())) return "expired";
+    return "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
 export interface FioriOptions {
   /** Use RecordReplay.waitForUI5 to know when the page is idle (default), or only UI5's busy state. */
   recordReplay: boolean;
@@ -174,6 +221,9 @@ export class FioriDriver implements Driver {
       if (!note.startsWith("frame changed") && this.page.frames().length === before) break;
     }
     this.idleAt = Date.now();
+    // A launchpad whose logon expired looks busy: its OData requests never come back (live 2026-11-20, an agent
+    // spent 5 minutes on it). When a wait ran out, SAP is asked once whether this tab is still logged on.
+    if (/^busy:|waitForUI5 timed out/.test(note) && (await logonState(this.page, this.info.client)) === "expired") throw new ActionError(FIORI_LOGGED_OFF);
     return note || "no UI5";
   }
 
@@ -202,7 +252,10 @@ export class FioriDriver implements Driver {
       if (parts.length === 1) throw new ActionError(`No control "${options.id}" on this Fiori screen (a control of a Web GUI app inside the launchpad is read with the whole screen). Take the id from sap_look: the text after # in the compact view.`);
       return `${parts.join("\n")}${options.rows ? '\n(Fiori reads the rows the page has loaded, not a range: "rows" was not used. For more rows: {"do":"scroll","id":"<the table>","how":"bottom"}, then look again.)' : ""}`;
     }
-    if (!ui5.length) parts.push("[SAPUI5 is not running in this tab: a logon page, or the app is still loading]");
+    if (!ui5.length) {
+      if ((await logonState(this.page, this.info.client)) === "expired") throw new ActionError(FIORI_LOGGED_OFF);
+      parts.push("[SAPUI5 is not running in this tab: a logon page, or the app is still loading]");
+    }
     for (const f of wf) {
       const r = await webguiLookInFrame(f, options.compact).catch((e: Error) => `[Web GUI frame error] ${e.message.split("\n")[0]}`);
       if (r) parts.push(`${WEBGUI_MARK} (SAP GUI for HTML inside the launchpad; its ids are SAP GUI scripting ids, its actions those of Web GUI)\n${r.replace(/\s+$/, "")}`);

@@ -274,6 +274,16 @@ export const SAFE_WORDS: WordRow<SafeLanguage>[] = [
     },
   },
   {
+    // A classic list wider than the window (SE16's 250 characters): its columns move sideways; nothing is sent but the view.
+    means: "list columns",
+    words: {
+      en: ["list width left", "list width right", "first column", "last column"],
+      de: ["listbreite links", "listbreite rechts", "erste spalte", "letzte spalte"],
+      fr: ["première colonne", "dernière colonne"],
+      es: ["primera columna", "última columna"],
+    },
+  },
+  {
     means: "sort",
     words: {
       en: ["sort", "ascending", "descending"],
@@ -451,6 +461,26 @@ export function displayTitle(language: string | undefined | null, title: string 
   DISPLAY_TITLE_RE.lastIndex = 0;
   CHANGE_TITLE_RE.lastIndex = 0;
   return DISPLAY_TITLE_RE.test(t) && !CHANGE_TITLE_RE.test(t) && !commitWord(t);
+}
+
+/**
+ * Does a button's text name something it only shows, whatever noun follows:
+ * "Display deletion log", "Show reversal document", "Löschprotokoll
+ * anzeigen"? The display verb opens it (at the start; German at the end), and
+ * no "and" joins a second verb ("Display and release"). There a commit word
+ * is the name of what is shown. Trusted only in a covered language, and used
+ * only on a screen that only displays (the surfaces' isDisplayScreen).
+ */
+const SHOW_FIRST_RE = /^(display|show|view|afficher|visualiser|visualizar|mostrar|ver)\s+\p{L}/iu;
+const SHOW_LAST_RE = /\s(anzeigen|ansehen)$/iu;
+const JOINED_RE = /(?<![\p{L}\p{N}])(and|und|et|y|e|&|\+|\/)(?![\p{L}\p{N}])/iu;
+export function showsOnly(language: string | undefined | null, text: string | undefined): boolean {
+  if (!languageCovered(language)) return false;
+  const t = clean(text)
+    .replace(/\([^()]*\)\s*$/, "")
+    .replace(/\.\.\.|…/g, "")
+    .trim();
+  return (SHOW_FIRST_RE.test(t) || SHOW_LAST_RE.test(t)) && !JOINED_RE.test(t) && !actWord(t);
 }
 
 /**

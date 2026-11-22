@@ -2,6 +2,10 @@ name: Feature request
 description: Something the server should do, or a screen it should read better
 labels: [enhancement]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        For a new front end, or a transaction or app the server cannot work in, use "New surface or transaction" instead. Leave real SAP data out.
   - type: textarea
     id: need
     attributes:
@@ -15,11 +19,13 @@ body:
       label: Surface
       multiple: true
       options:
-        - SAP GUI for Windows
+        - SAP GUI for Windows (scripting)
+        - SAP GUI for Windows, network reader (SAP_GUI_METHOD=diag)
         - Web GUI (SAP GUI for HTML)
         - Fiori
-        - Record and replay
-        - Command line (setup, doctor)
+        - Record and replay, or export
+        - Command line (setup, doctor, sessions)
+        - Documentation
         - Other
   - type: textarea
     id: idea
@@ -31,3 +37,10 @@ body:
     attributes:
       label: Effect on the write guard
       description: Could this let an action write to SAP? How should SAP_WRITE treat it?
+  - type: checkboxes
+    id: scrubbed
+    attributes:
+      label: Data
+      options:
+        - label: I removed business data, host names and personal data from what I pasted.
+          required: true
