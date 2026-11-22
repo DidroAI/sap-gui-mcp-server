@@ -382,6 +382,25 @@ system, client and user from the page, and `sap_sessions` shows each tab's
 origin. Chrome does not tell a tab's position, so tabs are named by their
 title. Closing the server never closes your browser.
 
+#### Use your everyday Chrome with the extension
+
+Instead of remote debugging, the server can reach your Chrome through a
+small extension: no `chrome://inspect` switch, your normal profile with
+its SSO, and the extension sees only the sites you allow.
+
+1. `npx -y sap-gui-mcp-server extension unpack` copies the extension to
+   `~/sap-gui-mcp-extension`. In Chrome, open `chrome://extensions`, turn
+   on *Developer mode*, click *Load unpacked* and pick that folder.
+2. `npx -y sap-gui-mcp-server extension pair` prints a pairing code. Open
+   the extension's popup, paste the code, and click *Allow this site* on
+   your SAP tab.
+3. Set `SAP_BROWSER=extension` in the server's environment.
+
+While the server works in a tab, Chrome shows "started debugging this
+browser". Clicking *Cancel* there stops the sharing until you click
+*Resume* in the popup. See [extension/README.md](extension/README.md) for
+permissions, IT deployment and limits.
+
 ## Tools
 
 | Tool | Does |
@@ -717,6 +736,8 @@ Every setting is an environment variable of the server process.
 | `SAP_DIAG_QUIET_MS` | `60` | how long the traffic must be quiet after SAP's answer before a `diag` action ends |
 | `SAP_DIAG_CAPTURE` | off | a folder where the `diag` method keeps the raw traffic, to debug the decoder. It holds everything SAP GUI sent and received, your logon included: keep it local and delete it after use (the file is created readable by its owner only) |
 | `SAP_CHROME_CDP` | the running Chrome, Chrome beta or Edge | a Chrome DevTools endpoint to attach to, e.g. `http://127.0.0.1:9333` |
+| `SAP_BROWSER` | remote debugging | `extension`: reach Chrome through the extension ([Use your everyday Chrome with the extension](#use-your-everyday-chrome-with-the-extension)) |
+| `SAP_EXTENSION_PORT` | first free of 47823–47830 | the local port where the extension connects |
 | `SAP_VIEW` | `diff` | `full`: every action answers with the whole screen |
 | `SAP_FIORI_WAIT` | full waits | `busy`: faster Fiori waits (busy indicators only, without UI5's RecordReplay) |
 | `SAP_RECORD_DIR` | `./sap-tests` | where recordings and exports are written |

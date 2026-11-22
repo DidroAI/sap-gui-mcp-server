@@ -7,10 +7,12 @@
  *   sap-gui-mcp-server doctor     checks what the server can reach on this machine
  *   sap-gui-mcp-server sessions   lists the SAP sessions it finds, then exits
  *   sap-gui-mcp-server test       runs *.sap.ts tests (src/runner)
+ *   sap-gui-mcp-server extension  unpacks and pairs the Chrome extension (src/cli/extension.ts)
  */
-import { disconnectChrome } from "./browser/chrome.js";
+import { disconnectChrome, extensionMode } from "./browser/chrome.js";
 import { AGENT_COMMANDS, AGENT_HELP, agentCommand, daemonRunning } from "./cli/agent.js";
 import { doctorReport } from "./cli/doctor.js";
+import { EXTENSION_HELP, extensionCommand } from "./cli/extension.js";
 import { init } from "./cli/init.js";
 import { setup } from "./cli/setup.js";
 import { installSkills, SKILL_TARGETS, type SkillTarget } from "./cli/skills.js";
@@ -37,6 +39,7 @@ Usage:
                                 (--global: ~/.claude/skills, ~/.codex/skills)
   sap-gui-mcp-server doctor     check SAP GUI scripting and Chrome access on this machine
   sap-gui-mcp-server sessions   list the SAP sessions found now
+${EXTENSION_HELP}
 ${RECORD_HELP}
 ${TRACE_HELP}
 ${TEST_HELP}
@@ -55,6 +58,7 @@ Environment:
                                         that allows remote debugging (chrome://inspect/#remote-debugging). A Chrome
                                         started with --remote-debugging-port is used only when named here; Chrome 136+
                                         opens that port only together with --user-data-dir.
+  SAP_BROWSER=extension                 reach Chrome through the sap-gui-mcp-server extension instead (see extension pair)
   SAP_VIEW=diff|full                    what an action answers with: only what changed when the screen is the same (default),
                                         or always the whole screen
   SAP_FIORI_WAIT=busy                   faster Fiori waits (busy indicators only, skips UI5 RecordReplay)
@@ -72,13 +76,15 @@ async function main(argv: string[]): Promise<number> {
   if (cmd === "init") return await initCommand(argv.slice(1));
   if (cmd === "install") return installCommand(argv.slice(1));
   if (cmd === "test") return testCommand(argv.slice(1));
+  if (cmd === "extension") return extensionCommand(argv.slice(1));
   const agent = { env: process.env, cwd: process.cwd(), out: (l: string) => console.log(l), err: (l: string) => console.error(l) };
   if (AGENT_COMMANDS.has(cmd)) return agentCommand(argv, agent);
   // With a daemon running, the agent CLI's list: the same numbers, and * on its active session.
   if (cmd === "sessions" && (await daemonRunning(agent))) return agentCommand(argv, agent);
   const surfaces = surfacesFromEnv();
   if (cmd === "doctor") {
-    if (surfaces.some((s) => s.name !== "sapgui")) console.error("Checking… (if Chrome asks whether to allow remote debugging, click Allow)\n");
+    if (surfaces.some((s) => s.name !== "sapgui"))
+      console.error(extensionMode(process.env) ? "Checking… (waiting up to 35 s for the sap-gui-mcp-server bridge extension in Chrome)\n" : "Checking… (if Chrome asks whether to allow remote debugging, click Allow)\n");
     const report = await doctorReport(surfaces, SERVER_VERSION);
     console.log(report.text);
     return report.ok ? 0 : 1;

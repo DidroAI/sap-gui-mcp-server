@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "properties": {
+    "allowedOrigins": {
+      "title": "Sites shared with sap-gui-mcp-server",
+      "description": "Chrome match patterns (for example \"https://*.s4hana.example.com/*\") of sites whose tabs the bridge may share with the local sap-gui-mcp-server, in addition to the sites the user allows in the popup. Users cannot remove these. Ports are ignored unless the pattern names one.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "port": {
+      "title": "Relay port",
+      "description": "The one 127.0.0.1 port to connect to (the server's SAP_EXTENSION_PORT). Unset: scan 47823-47830.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "pairingCode": {
+      "title": "Pairing code",
+      "description": "The code the managed servers are started with (SAP_EXTENSION_CODE), so users never pair by hand: 26 Crockford base32 characters (dashes optional). An invalid code is refused and the popup says so. When set it replaces the user's code and the popup cannot change it. Warning: everyone who can read this policy holds the code. On a multi-user host (Remote Desktop Services, Citrix), every user of the host can read it and could run a program that acts as the server for other users' browsers. Do not push a shared code there: let each user pair with their own code. Rotate it by changing the policy and the servers' SAP_EXTENSION_CODE together.",
+      "type": "string"
+    }
+  }
+}

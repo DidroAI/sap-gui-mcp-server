@@ -12,6 +12,9 @@
  *    only the WebSocket, and asks the user to allow each new connection: so
  *    we keep one connection.
  *
+ * With SAP_BROWSER=extension, neither: the server reaches Chrome through the
+ * sap-gui-mcp-server bridge extension and its local relay (src/browser/extension/).
+ *
  * Nothing else is tried. In particular the server does not attach to
  * 127.0.0.1:9222 on its own: a browser listening there may be another tool's
  * (a test runner's, another agent's), not the user's. A Chrome started with
@@ -221,10 +224,20 @@ async function open(env: Env, key: string): Promise<Connection> {
       });
       return c;
     } catch (e) {
-      errors.push(`${endpoint.from}: ${(e as Error).message.split("\n")[0]}`);
+      // The extension relay's CDP path is its secret: Playwright's errors repeat the URL.
+      errors.push(`${endpoint.from}: ${(e as Error).message.split("\n")[0]?.replace(/\/cdp\/[0-9a-f]+/g, "/cdp/…")}`);
       return undefined;
     }
   };
+  // >>> SAP_BROWSER=extension: the extension's relay is the endpoint (src/browser/extension/); nothing else is tried.
+  if (extensionMode(env)) {
+    const { extensionEndpoint } = await import("./extension/index.js");
+    const endpoint = await extensionEndpoint(env);
+    const c = await attach(endpoint);
+    if (c) return c;
+    throw new Error(`The sap-gui-mcp-server bridge extension is connected, but the server could not attach through it (${errors.join("; ")}).`);
+  }
+  // <<< SAP_BROWSER=extension
   // 1. The endpoint the user named; nothing else is tried then.
   const explicit = explicitEndpoint(env);
   if (explicit) {
@@ -244,8 +257,11 @@ async function open(env: Env, key: string): Promise<Connection> {
   );
 }
 
+/** SAP_BROWSER=extension: Chrome is reached through the sap-gui-mcp-server bridge extension (src/browser/extension/). */
+export const extensionMode = (env: Env): boolean => env.SAP_BROWSER?.trim().toLowerCase() === "extension";
+
 async function chrome(env: Env): Promise<Connection> {
-  const key = env.SAP_CHROME_CDP?.trim() ?? "";
+  const key = `${extensionMode(env) ? "extension|" : ""}${env.SAP_CHROME_CDP?.trim() ?? ""}`;
   if (connection?.key === key && connection.browser.isConnected()) return connection;
   if (connecting?.key === key) return connecting.promise;
   const mine = {
@@ -384,16 +400,30 @@ export async function disconnectChrome(): Promise<void> {
   connection = undefined;
   // On a browser reached with connectOverCDP, close() disconnects; it does not end the browser.
   if (c?.browser.isConnected()) await c.browser.close().catch(() => {});
+  // >>> SAP_BROWSER=extension: the relay's port is closed too, so the process can end.
+  if (c?.endpoint.from.includes("extension")) await (await import("./extension/index.js")).stopExtensionRelay().catch(() => {});
+  // <<< SAP_BROWSER=extension
 }
+
+/** Doctor gives an asleep extension worker one wake-up (Chrome's alarms fire every 30 s at most). */
+const EXTENSION_DOCTOR_WAIT_MS = 35_000;
 
 /** Setup checks: is there a Chrome we can attach to, which version, how many tabs; when not, the one step to take. */
 export async function chromeDoctor(env: Record<string, string | undefined>): Promise<DoctorCheck[]> {
   const check = "Chrome";
+  // >>> SAP_BROWSER=extension: is the extension installed, paired and connected; then the same checks as below.
+  if (extensionMode(env)) {
+    const { extensionDoctor } = await import("./extension/index.js");
+    const checks = await extensionDoctor(env, EXTENSION_DOCTOR_WAIT_MS);
+    if (!checks.every((x) => x.ok)) return checks;
+  }
+  // <<< SAP_BROWSER=extension
   let c: Connection;
   try {
     c = await chrome(env);
   } catch (e) {
     const message = (e as Error).message;
+    if (extensionMode(env)) return [{ ok: false, check, detail: message }];
     if (env.SAP_CHROME_CDP)
       return [{ ok: false, check, detail: message.split(/(?<=\.) /)[0] ?? message, fix: "Check that this Chrome runs with --remote-debugging-port and --user-data-dir, or unset SAP_CHROME_CDP to use your everyday Chrome." }];
     if (blockedFiles.length)
