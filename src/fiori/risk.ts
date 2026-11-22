@@ -76,6 +76,21 @@ const discardsDraft = (f: ControlFacts) => isButton(f) && !!f.dialog && ((/Popov
 /** A button of a question that says unsaved input will be lost ("Leave Page"), where nothing in the question offers to save: it writes nothing. */
 const leavesWithLoss = (f: ControlFacts) => isButton(f) && !!f.dialog && /Dialog$|MessageBox$/.test(f.dialog.type) && !commitText(`${f.text} ${f.dialog.title} ${f.dialog.text}`) && discardsInput(f.dialog.text);
 
+/**
+ * A dialog that only changes how a list or a filter bar looks: Adapt Filters, sort, group, columns,
+ * view settings. Known by the button that opened it (a filter, sort or personalization button by its id,
+ * in any language), or by a title that says so in a covered language and holds no commit word. Its field
+ * list is no question: "Release Status" among the filters does not make its OK a release.
+ */
+const P13N_TYPE = /\.p13n\.|P13n|ViewSettingsDialog$/;
+const personalizes = (f: ControlFacts, ctx: RuleContext) => {
+  const d = f.dialog;
+  if (!d || commitText(d.title)) return false;
+  if (P13N_TYPE.test(d.type) || ID_READ.test(d.openedBy ?? "")) return true;
+  const means = safeWord(ctx.language, d.title);
+  return means === "filter" || means === "sort" || means === "list layout";
+};
+
 export interface Rule {
   /** Short name, shown in tests and used in the reason. */
   name: string;
@@ -102,6 +117,7 @@ export const RULES: Rule[] = [
   { name: "leaves the page, unsaved input is lost", risk: "navigate", when: (f) => leavesWithLoss(f) },
   { name: "press handler that writes", risk: "commit", when: (f) => (isButton(f) || isPressable(f)) && (f.handlers ?? []).some((h) => HANDLER_COMMIT.test(h)) },
   { name: "text says it writes", risk: "commit", when: (f) => (isButton(f) || isPressable(f)) && !!commitText(f.text) },
+  { name: "agrees to a filter, sort or layout dialog", risk: "navigate", when: (f, ctx) => isButton(f) && agrees(f, ctx) && personalizes(f, ctx) },
   {
     name: "agrees to a dialog that writes",
     risk: "commit",
