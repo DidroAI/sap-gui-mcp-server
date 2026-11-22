@@ -292,7 +292,7 @@ export const SAFE_WORDS: WordRow<SafeLanguage>[] = [
       es: ["ordenar", "clasificar", "ascendente", "descendente"],
     },
   },
-  { means: "filter", words: { en: ["filter"], de: ["filter", "filtern"], fr: ["filtre", "filtrer"], es: ["filtro", "filtrar"] } },
+  { means: "filter", words: { en: ["filter", "filters"], de: ["filter", "filtern"], fr: ["filtre", "filtres", "filtrer"], es: ["filtro", "filtros", "filtrar"] } },
   {
     means: "print preview",
     words: { en: ["print preview"], de: ["druckvorschau", "druckansicht"], fr: ["aperçu avant impression"], es: ["presentación preliminar", "vista previa"] },
@@ -364,6 +364,16 @@ export const SAFE_WORDS: WordRow<SafeLanguage>[] = [
       de: ["neuer eintrag", "neue einträge"],
       fr: ["nouvelle entrée", "nouvelles entrées"],
       es: ["nueva entrada", "entradas nuevas"],
+    },
+  },
+  {
+    // Opening an existing object by its number (BP's "Open BP"): it is shown, and changed only after Save.
+    means: "open an object",
+    words: {
+      en: ["open bp", "open business partner"],
+      de: ["gp öffnen", "geschäftspartner öffnen"],
+      fr: ["ouvrir pa", "ouvrir partenaire"],
+      es: ["abrir ic", "abrir interlocutor comercial"],
     },
   },
   {
@@ -638,6 +648,16 @@ export function isGotoMenu(language: string | undefined | null, text: string | u
 export function layoutMenu(language: string | undefined | null, ...parents: (string | undefined)[]): boolean {
   if (!languageCovered(language)) return false;
   return parents.some((p) => !commitWord(p) && safeWord(language, clean(p).replace(/&/g, "")) === "list layout");
+}
+
+/**
+ * A button of a screen's body named, in its SAP field name, as the start of a search: BP's locator
+ * "Start" (btnBUS_LOCA_SRCH01-GO), "...-SEARCH", "..._FIND". The name is the same in every logon language.
+ * The surfaces still check the text first: a commit word or a word that acts (run, execute...) wins.
+ */
+const SEARCH_BUTTON_RE = /^wnd\[\d+\]\/usr\/(?:.*\/)?btn[^/]*(?:[-_](?:GO|SEARCH|SRCH|FIND|START_SEARCH))$/i;
+export function searchButton(id: string): boolean {
+  return SEARCH_BUTTON_RE.test(id);
 }
 
 // ---- function keys ------------------------------------------------------------------

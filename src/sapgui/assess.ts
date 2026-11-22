@@ -22,7 +22,7 @@
  * The tables are in core/words.ts, shared with the other surfaces.
  */
 import { ActionError, type Action, type Assessment } from "../core/types.js";
-import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayTitle, endsLogon, layoutMenu, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS, showsOnly } from "../core/words.js";
+import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayTitle, endsLogon, layoutMenu, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS, searchButton, showsOnly } from "../core/words.js";
 import type { Control, Screen } from "./facts.js";
 import { vkeyNumber } from "./keys.js";
 import { allControls } from "./resolve.js";
@@ -48,6 +48,8 @@ const INERT_TYPES = new Set([
 const BUTTON_TYPES = new Set(["GuiButton"]);
 
 const clean = (s: string | undefined) => (s ?? "").replace(/\s+/g, " ").trim();
+/** A search button's label without its key ("Start   (F8)") and without "Start" alone, which there only starts the search. */
+const searchLabel = (s: string | undefined) => clean(s).replace(/\([^()]*\)\s*$/, "").trim().replace(/^start$/i, "");
 const shown = (c: Control) => [c.text, c.tip].map(clean).find(Boolean) ?? c.id;
 const short = (s: string) => (s.length > 90 ? `${s.slice(0, 87)}...` : s);
 const commit = (reason: string): Assessment => ({ risk: "commit", reason });
@@ -180,6 +182,8 @@ function assessButton(screen: Screen, b: Control, how: string): Assessment {
     return endsLogon(question) ? closes(`"${shown(b)}" on the popup "${short(question)}"`) : commit(`"${shown(b)}" on the popup "${short(question)}"`);
   if (key !== undefined && SAFE_VKEYS.has(key)) return { risk: "navigate", reason: named };
   if (safeWord(screen.language, b.text, b.tip)) return { risk: "navigate", reason: named };
+  // A search button by its SAP name (BP's locator "Start", btnBUS_LOCA_SRCH01-GO), unless its text says it acts.
+  if (searchButton(b.id) && !actWord(...[b.text, b.tip].map(searchLabel))) return { risk: "navigate", reason: `${named} starts a search` };
   if (b.id.startsWith(`${screen.activeWindow}/`) && discardQuestion(screen)) return { risk: "navigate", reason: `${named} on a popup that asks whether to discard unsaved input` };
   if (displayButton(screen, b)) return { risk: "navigate", reason: `${named} on a screen that only displays` };
   const twin = mainTwin(screen, b);
