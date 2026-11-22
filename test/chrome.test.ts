@@ -86,7 +86,7 @@ describe("finding a running Chrome", () => {
     }
   });
   test("with nothing configured and no browser allowing it, the server attaches to nothing: port 9222 is not tried", async () => {
-    const e = await chromeTabs({ CHROME_CONFIG_HOME: "/nonexistent-sap-gui-mcp", XDG_CONFIG_HOME: "/nonexistent-sap-gui-mcp", HOME: "/nonexistent-home" }).catch((x: Error) => x.message);
+    const e = await chromeTabs({ SAP_BROWSER: "attach", CHROME_CONFIG_HOME: "/nonexistent-sap-gui-mcp", XDG_CONFIG_HOME: "/nonexistent-sap-gui-mcp", HOME: "/nonexistent-home" }).catch((x: Error) => x.message);
     // Whatever listens on 9222 on this machine, the answer is "no Chrome", with the steps to take.
     expect(e).toContain("No Chrome to attach to.");
     expect(e).toContain("SAP_CHROME_CDP");
