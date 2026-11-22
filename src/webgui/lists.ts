@@ -113,7 +113,8 @@ export async function entriesOf(session: WebGuiSession, sid: string): Promise<{ 
 
 /** The entry a dropdown shows now, read from its input: "" when it cannot be read. */
 async function comboShown(loc: Locator): Promise<string> {
-  return clean(await loc.inputValue().catch(() => ""));
+  // An input; in an S/4HANA table control a text box span (ct CB), whose text is the entry shown.
+  return clean(await loc.inputValue().catch(() => loc.innerText({ timeout: 2000 }).catch(() => "")));
 }
 
 /** The key of the entry a dropdown holds, as the server drew it (ECC: lsdata key 3; S/4HANA 2025: key 4, key 3 names the field): "" when it cannot be read. */
