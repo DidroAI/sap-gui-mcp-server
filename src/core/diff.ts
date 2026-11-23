@@ -5,7 +5,7 @@
  * screen is still the same one (same header line, same windows) and little
  * changed, the answer is the changed lines instead of the whole view:
  *
- *   CHANGED 2 of 64 lines (same screen; sap_look shows all of it):
+ *   CHANGED 2 of 64 lines on VA02 · "Change Sales Order: Overview" (same screen; sap_look shows all of it):
  *   ~ ctxtVBAK-VBELN  field  Order = "4969"  (edit)
  *   + sbar  status  S: Consider the subsequent documents
  *   - lblX  label  gone
@@ -134,9 +134,15 @@ export interface ViewDiff {
  * The changes from `prev` to `next`. `since` goes into the header line, for a
  * view that is not the one just before ("since this screen was last shown").
  */
-export function diffViews(prev: string, next: string, since = ""): ViewDiff {
+export function diffViews(prev: string, next: string, since = "", popupsClosed: string[] = []): ViewDiff {
   const total = next.split("\n").length;
-  if (prev === next) return { text: `NO CHANGE on the screen${since} (${total} lines; sap_look shows it).`, changed: 0 };
+  const at = whereLine(next);
+  const on = at ? ` on ${at}` : " on the screen";
+  // Popups that closed to lead back here are named: the next action lands on this screen, not on them.
+  const names = popupsClosed.map((w) => windowName(w).replace(/^wnd\[\d+\] /, "")).join(", ");
+  const back = names ? `, back from the popup ${names}` : since;
+  const from = names ? "since before it; " : "";
+  if (prev === next) return { text: `NO CHANGE${on}${back} (${from}${total} lines; sap_look shows it).`, changed: 0 };
   const before = new Map(blocks(prev).map((b) => [b.key, b]));
   const out: string[] = [];
   let changed = 0;
@@ -196,5 +202,22 @@ export function diffViews(prev: string, next: string, since = ""): ViewDiff {
       changed += 1 + b.rows.length;
     }
   const lines = foldFlips(foldFlips(out, closed, "closed for input (read-only now), values as before"), opened, "open for input again (edit), values as before").filter((l) => l !== GONE);
-  return { text: [`CHANGED ${changed} of ${total} lines${since} (same screen; sap_look shows all of it):`, ...lines].join("\n"), changed };
+  return { text: [`CHANGED ${changed} of ${total} lines${on}${back} (${from}same screen; sap_look shows all of it):`, ...lines].join("\n"), changed };
+}
+
+/** A window's id and title from its `WINDOW` line: `wnd[1] "Detailed Display"`. */
+export const windowName = (line: string): string => /^WINDOW (\S+) {2}(".*?")?/.exec(line)?.slice(1).filter(Boolean).join(" ") ?? line;
+
+/**
+ * Where the agent is, for the diff's first line: the transaction and the
+ * window in front (a popup by its id, which its controls start with), as
+ * `ZT01 · "Overview"` or `ZT01 · wnd[1] "Information"` (Astra's review,
+ * 2026-11-23: a bare "NO CHANGE" after a popup closed did not say where the
+ * next action lands). "" when the view names neither.
+ */
+export function whereLine(view: string): string {
+  const tx = /^TRANSACTION (\S+)/.exec(view)?.[1];
+  const front = windows(view).at(-1);
+  const win = front ? windowName(front).replace(/^wnd\[0\] /, "") : "";
+  return [...(tx ? [tx] : []), ...(win ? [win] : [])].join(" · ");
 }

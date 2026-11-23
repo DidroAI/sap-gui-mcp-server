@@ -93,7 +93,7 @@ describe("look", () => {
     surface.add({ id: "chrome:1", system: "XYZ" }, { view: SCREEN });
     await run(["look"]);
     const r = await run(["look", "--diff"]);
-    expect(r.lines[0]).toStartWith("NO CHANGE on the screen");
+    expect(r.lines[0]).toStartWith("NO CHANGE on ZT01");
   });
 });
 
@@ -151,7 +151,7 @@ describe("act", () => {
     surface.add({ id: "chrome:1", system: "XYZ" }, { view: SCREEN, onAct: (_a, s) => (s.view = SCREEN.replace("S: Ready", "E: Customer 4799 does not exist")) });
     await run(["look"]);
     const r = await run(["act", "key", "0"]);
-    expect(r.lines.slice(0, 3)).toEqual(["did key", "CHANGED 1 of 21 lines (same screen; sap_look shows all of it):", "~ sbar  status  E: Customer 4799 does not exist"]);
+    expect(r.lines.slice(0, 3)).toEqual(["did key", 'CHANGED 1 of 21 lines on ZT01 · "Synthetic Order: Overview" (same screen; sap_look shows all of it):', "~ sbar  status  E: Customer 4799 does not exist"]);
   });
   test("an action that cannot run prints the message on stderr and exits 1", async () => {
     const { surface, run } = setup();

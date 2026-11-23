@@ -48,7 +48,7 @@ only what changed:
 ```
 set wnd[0]/usr/ctxtVBAK-VKORG
 
-CHANGED 1 of 18 lines (same screen; sap_look shows all of it):
+CHANGED 1 of 18 lines on VA01 · "Create Sales Order" (same screen; sap_look shows all of it):
 ~ ctxtVBAK-VKORG  field  Sales Organization = "1000"  (edit)
 ```
 
@@ -559,7 +559,8 @@ A control whose rows changed for the most part (a list that was scrolled)
 is given whole. The whole screen is always sent on a new transaction, a
 new screen or a new popup, and when the changes are not much shorter than
 it. After a popup closes, the changes are counted from the view the agent
-got before the popup, and the header says so. `sap_look` always shows the
+got before the popup, and the header names the popup that closed. The header
+also says where the agent is: the transaction and the window in front. `sap_look` always shows the
 whole screen; `"full": true` on `sap_act` does so for one action, and
 `SAP_VIEW=full` for all of them.
 
