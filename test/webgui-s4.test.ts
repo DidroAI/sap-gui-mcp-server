@@ -311,7 +311,7 @@ describe.skipIf(!exe)("Web GUI reader: SAP GUI for HTML of S/4HANA 2025, in a br
     expect(await act({ do: "set", id: "crit1806", value: "1000002" })).toBe("set wnd[2]/shell/critcol/crit1806");
     expect(await page.locator("[id='NSHHI2_1-input']").inputValue()).toBe("1000002");
     expect(await act({ do: "press", id: "btnSEARCH" })).toBe("pressed wnd[2]/shell/btnSEARCH");
-    expect(await act({ do: "grid", id: G, row: 1, how: "select" })).toBe(`selected row 1 of ${G}`);
+    expect(await act({ do: "grid", id: G, row: 1, how: "select" })).toBe(`selected row 1 of ${G}\n(Done in the page: SAP gets it with the next Enter or key.)`);
     expect(await fullView()).toContain("  row 1 (selected): BETA LTD | 1000002");
     expect(await act({ do: "press", id: "btnCOPY" })).toBe(`pressed ${G}/tbar/btnCOPY`);
     expect(await pressed()).toEqual(["Go", "OK"]);
@@ -331,7 +331,7 @@ describe.skipIf(!exe)("Web GUI reader: SAP GUI for HTML of S/4HANA 2025, in a br
     // Web GUI's own entries under the menu bar are not listed.
     expect((await fullView()).some((l) => l.includes("About SAP GUI"))).toBe(false);
     // The Menu button is not clicked again (it would close the menu): the entry is clicked in the open menu.
-    expect(await act({ do: "select", id: "menu[1]/menu[0]" })).toBe("menu wnd[0]/mbar/menu[1]/menu[0]");
+    expect(await act({ do: "select", id: "menu[1]/menu[0]" })).toBe("menu wnd[0]/mbar/menu[1]/menu[0]\n(Done in the page: SAP gets it with the next Enter or key.)");
     expect(await pressed()).toEqual(["Status"]);
     expect(await page.evaluate(() => (window as unknown as { toggled?: number }).toggled)).toBe(1);
     // From a closed menu, the whole path.

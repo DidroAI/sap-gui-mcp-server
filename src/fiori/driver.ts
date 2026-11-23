@@ -18,7 +18,7 @@ import { type Action, ActionError, type Assessment, type Driver, type LookOption
 import { webguiActInFrame, webguiAssessInFrame, webguiLookInFrame } from "../webgui/index.js";
 import { LOGON_REFUSAL } from "../core/words.js";
 import { assessAction, intentOf, keyOf } from "./risk.js";
-import { type ControlRequest, type ControlResult, TARGET_ATTR, ui5Back, ui5Control, ui5Idle, ui5Info, type Ui5Info, ui5Logon, ui5Look, ui5Open } from "./ui5.js";
+import { type ControlRequest, type ControlResult, TARGET_ATTR, ui5Back, ui5Control, ui5Draft, ui5Idle, ui5Info, type Ui5Info, ui5Logon, ui5Look, ui5Open } from "./ui5.js";
 
 export const WEBGUI_MARK = "WEBGUI FRAME";
 const WEBGUI_URL = /\/sap\/bc\/gui\/sap\/its\//i;
@@ -47,6 +47,15 @@ export const isLaunchpadUrl = (url: string) => LAUNCHPAD_URL.test(url);
 const KEY_HELP = "Fiori keys: Enter, Space, Escape, Tab, Shift+Tab, F4, Delete, Backspace, ArrowDown, ArrowUp, ArrowLeft, ArrowRight, PageDown, PageUp, Home, End, Back, Control+S, Control+Enter (or SAP GUI's 0, 3, 4, 11, 12).";
 const unknownKey = (action: Action) => new ActionError(`Unknown key ${JSON.stringify(action.key ?? action.value ?? "")}. ${KEY_HELP}`);
 const OPEN_HELP = 'open takes the intent of a launchpad app, e.g. {"do":"open","app":"#SalesOrder-manage"} (parameters allowed: "#SalesOrder-display?SalesOrder=4711"); never a URL: the tab stays on its launchpad.';
+
+/** A control whose press leaves the page: the launchpad's back and home buttons. */
+const LEAVES_PAGE = /(?:^|[-:])(backBtn|homeBtn|shell-header-logo)$/;
+
+/** What an answer says after the agent left a draft (see ui5Draft): the draft stays, and so does its lock. */
+export function leftDraftNote(before: { title: string; hash: string } | null, after: { title: string; hash: string } | null): string {
+  if (!before || (after && after.hash === before.hash)) return "";
+  return `\nNOTE the page you left was a draft${before.title ? ` ("${before.title}")` : ""}: it stays on the server and keeps the document locked for other users. To remove it, open the document again and press "Discard Draft".`;
+}
 
 /** The launchpad's home page, as an intent. */
 export const HOME_INTENT = "#Shell-home";
@@ -332,13 +341,15 @@ export class FioriDriver implements Driver {
       .join("  ");
     const parts: string[] = [head];
     for (const f of ui5) {
-      const r = await f.evaluate(ui5Look, { compact: options.compact, ...(options.id ? { id: options.id } : {}) }).catch((e: Error) => `[frame error] ${e.message.split("\n")[0]}`);
+      const r = await f
+        .evaluate(ui5Look, { compact: options.compact, ...(options.id ? { id: options.id } : {}), ...(options.id && options.rows ? { rows: options.rows } : {}), ...(options.id && options.cols?.length ? { cols: options.cols } : {}) })
+        .catch((e: Error) => `[frame error] ${e.message.split("\n")[0]}`);
       if (r) parts.push(r);
     }
     if (options.id) {
       // One control: its lines only, also the part of it below the fold.
       if (parts.length === 1) throw new ActionError(`No control "${options.id}" on this Fiori screen (a control of a Web GUI app inside the launchpad is read with the whole screen). Take the id from sap_look: the text after # in the compact view.`);
-      return `${parts.join("\n")}${options.rows ? '\n(Fiori reads the rows the page has loaded, not a range: "rows" was not used. For more rows: {"do":"scroll","id":"<the table>","how":"bottom"}, then look again.)' : ""}`;
+      return parts.join("\n");
     }
     if (!ui5.length) {
       if ((await logonState(this.page, this.info.client)) === "expired") throw new ActionError(FIORI_LOGGED_OFF);
@@ -349,6 +360,11 @@ export class FioriDriver implements Driver {
       if (r) parts.push(`${WEBGUI_MARK} (SAP GUI for HTML inside the launchpad; its ids are SAP GUI scripting ids, its actions those of Web GUI)\n${r.replace(/\s+$/, "")}`);
     }
     return parts.join("\n");
+  }
+
+  /** The draft the page on screen is, if it is one (see ui5Draft); null when it is not or the page does not say. */
+  private async draft(): Promise<{ title: string; hash: string } | null> {
+    return within(this.page.mainFrame().evaluate(ui5Draft), 3000, null);
   }
 
   // ---- routing
@@ -451,6 +467,17 @@ export class FioriDriver implements Driver {
 
   async act(action: Action): Promise<string> {
     await this.refuseLogon();
+    // Leaving a draft (Back, the back button, another app) keeps it on the server: the answer says so.
+    const leaves = action.do === "open" || (action.do === "key" && keyOf(action)?.name === "back") || ((action.do === "press" || action.do === "click") && LEAVES_PAGE.test(String(action.id ?? "")));
+    if (leaves) {
+      const before = await this.draft();
+      const said = await this.act1(action);
+      return before ? `${said}${leftDraftNote(before, await this.draft())}` : said;
+    }
+    return this.act1(action);
+  }
+
+  private async act1(action: Action): Promise<string> {
     if (action.do === "open") return this.open(action);
     const { ui5, webgui: wf } = await this.frames();
     const frame = await this.toWebgui(action, ui5, wf);
@@ -512,7 +539,7 @@ export class FioriDriver implements Driver {
               if ((await target.count().catch(() => 1)) > 0) throw e;
               await this.page.keyboard.press(key);
             }
-          } else if (op === "dblclick") await target.dblclick({ timeout: 8000 });
+          } else if (op === "dblclick" && !r.single) await target.dblclick({ timeout: 8000 });
           else await target.click({ timeout: 8000 });
           break;
         case "TWOSTEP":

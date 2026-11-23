@@ -206,7 +206,7 @@ describe.skipIf(!exe)("Web GUI reader: control states as Web GUI draws them, in 
     expect(full).toContain("  row 0: Net value | ");
     expect(full).toContain("  row 1 (selected): Vendor | X");
     expect(full).toContain("wnd[0]/usr/cntlSORT/shell/tbar/btn&DETAIL  button  Details");
-    expect(await act({ do: "grid", id: "cntlSORT/shell", row: 0, how: "select" })).toBe("selected row 0 of wnd[0]/usr/cntlSORT/shell");
+    expect(await act({ do: "grid", id: "cntlSORT/shell", row: 0, how: "select" })).toBe("selected row 0 of wnd[0]/usr/cntlSORT/shell\n(Done in the page: SAP gets it with the next Enter or key.)");
     expect(await fullView()).toContain("  row 0 (selected): Net value | ");
   });
 

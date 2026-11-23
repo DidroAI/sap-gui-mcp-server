@@ -1,0 +1,83 @@
+FIORI  PurchaseOrder-manage  system S4H/300  user DEMO_USER
+PAGE 4500000509 (Standard PO) - Purchase Order (#PurchaseOrder-manage&/C_PurchaseOrderTP(PurchaseOrder='4500000509',DraftUUID=guid'00000000-0000-0000-0000-000000000000')
+ShellBarButton #shellbar:toggle-search "Open Search"
+ShellBarButton #shellbar:notifications "0 Notifications"
+ShellBarButton #shellbar:help "Help"
+Avatar #userActionsMenuHeaderButton tooltip="Profile of Benchmark Didro Bench"
+Button #sideMenuExpandCollapseBtn tooltip="Open Menu"
+Button #backBtn tooltip="Back"
+ShellAppTitle #shellAppTitle "Purchase Order" "Purchase Order" tooltip="Navigation menu"
+Title #ObjectPageDynamicHeaderTitle "4500000509"
+Text #__text432 "Standard PO"
+ObjectPageHeaderActionButton #edit "Edit" {ctx:/C_PurchaseOrderTP(PurchaseOrder='4500000509')}
+ObjectPageHeaderActionButton #sap.suite.ui.generic.template.ObjectPage.view.Details::C_PurchaseOrderTP--action::MM_PUR_PO_MAINT_V2_SRV.MM_PUR_PO_MAINT_V2_SRV_Entities::C_PurchaseOrderTPCopy_po "Copy"
+ObjectPageHeaderActionButton #NavToCommitments "Display Commitments"
+ObjectPageHeaderActionButton #NavToHeaderStatusDetails "Status Details"
+ObjectPageHeaderActionButton #changedoccomponent "Display Change Log"
+ObjectPageHeaderActionButton #OutputPrintPreview "Output Preview" (disabled)
+MenuButton #sap.suite.ui.generic.template.ObjectPage.view.Details::C_PurchaseOrderTP--template::Share tooltip="Share (Shift+Ctrl+S)"
+Title #PurchaseOrderStatus::Label "Status"
+smartfield.SmartField #PurchaseOrderStatus::Value "Status": "05"
+  Text #PurchaseOrderStatus::Value-text "Follow-On Documents"
+Title #PurchaseOrderDate::Label "Purchase Order Date"
+smartfield.SmartField #PurchaseOrderDate::Value "Purchase Order Date":
+  Text #PurchaseOrderDate::Value-text "10/21/2019"
+Title #PurchaseOrderNetAmount::Label "Net Value"
+smartfield.SmartField #PurchaseOrderNetAmount::Value "Net Value": "420.00"
+  Text #PurchaseOrderNetAmount::Value-text "420.00"
+  smartfield.SmartField #Value-sfDisp "USD"
+    Text #Value-sfDisp-text "United States Dollar (USD)"
+Button #objectPage-OPHeaderContent-collapseBtn tooltip="Collapse Header"
+ToggleButton #objectPage-OPHeaderContent-pinBtn tooltip="Pin Header" (not pressed)
+IconTabFilter #GeneralInformationCollectionFacet::Section-anchor "General Information" (selected)
+IconTabFilter #ItemsFacet::Section-anchor "Items"
+IconTabFilter #LimitItemsFacet::Section-anchor "Limit Items"
+IconTabFilter #DeliveryInvoiceCollectionFacet::Section-anchor "Delivery and Invoice"
+IconTabFilter #SupplierAddressCollectionFacet::Section-anchor "Supplier Contact Data"
+IconTabFilter #ComplianceCollectionFacet::Section-anchor "Product Compliance"
+IconTabFilter #ReuseNotesFacet::Section-anchor "Notes"
+IconTabFilter #ReuseOutputManagementFacet::Section-anchor "Output Management"
+IconTabFilter #ComponentSection-anchor "Attachments"
+ObjectPageSection #C_PurchaseOrderTP--GeneralInformationCollectionFacet::Section "General Information" (selected)
+  ObjectPageSubSection #C_PurchaseOrderTP--GeneralInformationCollectionFacet::SubSection "General Information"
+    Title #C_PurchaseOrderTP--GeneralInformationCollectionFacet::SubSection-headerTitle "General Information"
+    Title #__title39 "Basic Data"
+    smartfield.SmartField #PurchaseOrderType::Field "Purchasing Doc. Type": "NB"
+      Text #PurchaseOrderType::Field-text "Purchasing Doc. Type": "Standard PO (NB)"
+    smartfield.SmartField #Supplier::Field "Supplier": "17300001"
+      Text #Supplier::Field-text "Supplier": "Domestic US Supplier 1 (17300001)"
+    smartfield.SmartField #DocumentCurrency::Field "Currency": "USD"
+      Text #DocumentCurrency::Field-text "Currency": "United States Dollar (USD)"
+    smartfield.SmartField #Language::Field "Language Key": "EN"
+      Text #Language::Field-text "Language Key": "English (EN)"
+    Title #__title40 "Organization"
+    smartfield.SmartField #PurchasingGroup::Field "Purchasing Group": "001"
+      Text #PurchasingGroup::Field-text "Purchasing Group": "Group 001 (001)"
+    smartfield.SmartField #PurchasingOrganization::Field "Purchasing Organization": "1710"
+      Text #PurchasingOrganization::Field-text "Purchasing Organization": "Purch. Org. 1710 (1710)"
+    smartfield.SmartField #CompanyCode::Field "Company Code": "1710"
+      Text #CompanyCode::Field-text "Company Code": "Company Code 1710 (1710)"
+    Title #__title41 "Further Information"
+    smartfield.SmartField #CreatedByUser::Field "Created By": "S4H_MM"
+      Text #CreatedByUser::Field-text "Created By": "Franz Musterman (S4H_MM)"
+    smartfield.SmartField #PurchaseOrderDate::Field "Purchase Order Date":
+      Text #PurchaseOrderDate::Field-text "Purchase Order Date": "10/21/2019"
+    smartfield.SmartField #ObjPageApprovalStatusName "Approval Status":
+      Text #ObjPageApprovalStatusName-text "Approval Status": "–"
+    smartfield.SmartField #ObjPageApproverName "Approver Name":
+      Text #ObjPageApproverName-text "Approver Name": "–"
+ObjectPageSection #ItemsFacet::Section "Items"
+  ObjectPageSubSection #ItemsFacet::SubSection "Items"
+    smarttable.SmartTable #ItemsFacet::Table header="Items"
+      Table #ItemsFacet::gridTable "Items (1)": columns: Item | Item Category | Material | Short Text | Material Group | Plant | Order Quantity | Net Order Price | Price Unit | Net Order Value | Status (1 rows)
+        Title #ItemsFacet::Table-header "Items (1)"
+        Text #ItemsFacet::Table-variant-vm-text "Standard"
+        Button #ItemsFacet::Table-variant-vm-trigger "View Standard": tooltip="Select View"
+        Button #C_PurchaseOrderItemTPCopy_po_item "Copy" (disabled)
+        OverflowToolbarButton #ItemsFacet::Table-btnCopy "Copy to Clipboard" (disabled)
+        OverflowToolbarButton #ItemsFacet::Table-btnPersonalisation "Settings"
+        OverflowToolbarMenuButton #ItemsFacet::Table-btnExcelExport "Export"
+          SplitButton #ItemsFacet::Table-btnExcelExport-internalSplitBtn tooltip="Export Table"
+            Button #ItemsFacet::Table-btnExcelExport-internalSplitBtn-textButton icon=excel-attachment
+            Button #ItemsFacet::Table-btnExcelExport-internalSplitBtn-arrowButton tooltip="Open Menu"
+SCROLL shown 0-705 of 3102 px, more below: {"do":"scroll","how":"down"}

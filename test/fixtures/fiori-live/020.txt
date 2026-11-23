@@ -1,0 +1,73 @@
+FIORI  PurchaseOrder-manage  system S4H/300  user DEMO_USER
+PAGE 4500000509 (Standard PO) - Purchase Order (#PurchaseOrder-manage&/C_PurchaseOrderTP(PurchaseOrder='4500000509',DraftUUID=guid'00000000-0000-0000-0000-000000000000')
+ShellBarButton #shellbar:toggle-search "Open Search"
+ShellBarButton #shellbar:notifications "0 Notifications"
+ShellBarButton #shellbar:help "Help"
+Avatar #userActionsMenuHeaderButton tooltip="Profile of Benchmark Didro Bench"
+Button #sideMenuExpandCollapseBtn tooltip="Open Menu"
+Button #backBtn tooltip="Back"
+ShellAppTitle #shellAppTitle "Purchase Order" "Purchase Order" tooltip="Navigation menu"
+Title #ObjectPageDynamicHeaderTitle "4500000509"
+Text #__text432 "Standard PO"
+ObjectPageHeaderActionButton #edit "Edit" {ctx:/C_PurchaseOrderTP(PurchaseOrder='4500000509')}
+ObjectPageHeaderActionButton #sap.suite.ui.generic.template.ObjectPage.view.Details::C_PurchaseOrderTP--action::MM_PUR_PO_MAINT_V2_SRV.MM_PUR_PO_MAINT_V2_SRV_Entities::C_PurchaseOrderTPCopy_po "Copy"
+ObjectPageHeaderActionButton #NavToCommitments "Display Commitments"
+ObjectPageHeaderActionButton #NavToHeaderStatusDetails "Status Details"
+ObjectPageHeaderActionButton #changedoccomponent "Display Change Log"
+ObjectPageHeaderActionButton #OutputPrintPreview "Output Preview" (disabled)
+MenuButton #sap.suite.ui.generic.template.ObjectPage.view.Details::C_PurchaseOrderTP--template::Share tooltip="Share (Shift+Ctrl+S)"
+Button #ObjectPageHeader-expandBtn tooltip="Expand Header"
+IconTabFilter #GeneralInformationCollectionFacet::Section-anchor "General Information"
+IconTabFilter #ItemsFacet::Section-anchor "Items" (selected)
+IconTabFilter #LimitItemsFacet::Section-anchor "Limit Items"
+IconTabFilter #DeliveryInvoiceCollectionFacet::Section-anchor "Delivery and Invoice"
+IconTabFilter #SupplierAddressCollectionFacet::Section-anchor "Supplier Contact Data"
+IconTabFilter #ComplianceCollectionFacet::Section-anchor "Product Compliance"
+IconTabFilter #ReuseNotesFacet::Section-anchor "Notes"
+IconTabFilter #ReuseOutputManagementFacet::Section-anchor "Output Management"
+IconTabFilter #ComponentSection-anchor "Attachments"
+ObjectPageSection #C_PurchaseOrderTP--GeneralInformationCollectionFacet::Section "General Information"
+  ObjectPageSubSection #C_PurchaseOrderTP--GeneralInformationCollectionFacet::SubSection "General Information"
+    smartfield.SmartField #Supplier::Field "Supplier": "17300001"
+      Text #Supplier::Field-text "Supplier": "Domestic US Supplier 1 (17300001)"
+    smartfield.SmartField #Language::Field "Language Key": "EN"
+      Text #Language::Field-text "Language Key": "English (EN)"
+    smartfield.SmartField #PurchasingOrganization::Field "Purchasing Organization": "1710"
+      Text #PurchasingOrganization::Field-text "Purchasing Organization": "Purch. Org. 1710 (1710)"
+    smartfield.SmartField #CompanyCode::Field "Company Code": "1710"
+      Text #CompanyCode::Field-text "Company Code": "Company Code 1710 (1710)"
+    smartfield.SmartField #PurchaseOrderDate::Field "Purchase Order Date":
+      Text #PurchaseOrderDate::Field-text "Purchase Order Date": "10/21/2019"
+    smartfield.SmartField #ObjPageApprovalStatusName "Approval Status":
+      Text #ObjPageApprovalStatusName-text "Approval Status": "–"
+    smartfield.SmartField #ObjPageApproverName "Approver Name":
+      Text #ObjPageApproverName-text "Approver Name": "–"
+ObjectPageSection #ItemsFacet::Section "Items" (selected)
+  ObjectPageSubSection #ItemsFacet::SubSection "Items"
+    smarttable.SmartTable #ItemsFacet::Table header="Items"
+      Table #ItemsFacet::gridTable "Items (1)": columns: Item | Item Category | Material | Short Text | Material Group | Plant | Order Quantity | Net Order Price | Price Unit | Net Order Value | Status (1 rows)
+        Title #ItemsFacet::Table-header "Items (1)"
+        Text #ItemsFacet::Table-variant-vm-text "Standard"
+        Button #ItemsFacet::Table-variant-vm-trigger "View Standard": tooltip="Select View"
+        Button #C_PurchaseOrderItemTPCopy_po_item "Copy" (disabled)
+        OverflowToolbarButton #ItemsFacet::Table-btnCopy "Copy to Clipboard" (disabled)
+        OverflowToolbarButton #ItemsFacet::Table-btnPersonalisation "Settings"
+        OverflowToolbarMenuButton #ItemsFacet::Table-btnExcelExport "Export"
+          SplitButton #ItemsFacet::Table-btnExcelExport-internalSplitBtn tooltip="Export Table"
+            Button #ItemsFacet::Table-btnExcelExport-internalSplitBtn-textButton icon=excel-attachment
+            Button #ItemsFacet::Table-btnExcelExport-internalSplitBtn-arrowButton tooltip="Open Menu"
+        Row #ItemsFacet::gridTable-rows-row0 row: [ ] 10 | Standard | Service Material 01 (SM0001) | Service Material 01 | Non-Sto Mat. w. ID (YBMM01) | Plant 1 US (1710) | 20.000 H | 21.00 USD | 1.000 H | 420.00 USD |  {ctx:/C_PurchaseOrderItemTP(PurchaseOrder='4500000509',PurchaseOrderItem='00010')}
+ObjectPageSection #LimitItemsFacet::Section "Limit Items"
+  ObjectPageSubSection #LimitItemsFacet::SubSection "Limit Items"
+    smarttable.SmartTable #LimitItemsFacet::Table header="Limit Items"
+      Table #LimitItemsFacet::gridTable "Limit Items": columns: Item | Short Text | Expected Value | Overall Limit | Contract For Limit | Contract Item for Limit | Account Assignment Category | Product Type Group | Plant | Status (0 rows)
+        Title #LimitItemsFacet::Table-header "Limit Items"
+        Text #LimitItemsFacet::Table-variant-vm-text "Standard"
+        Button #LimitItemsFacet::Table-variant-vm-trigger "View Standard": tooltip="Select View"
+        OverflowToolbarButton #LimitItemsFacet::Table-btnCopy "Copy to Clipboard" (disabled)
+        OverflowToolbarButton #LimitItemsFacet::Table-btnPersonalisation "Settings"
+        OverflowToolbarMenuButton #LimitItemsFacet::Table-btnExcelExport "Export" (disabled)
+          SplitButton #LimitItemsFacet::Table-btnExcelExport-internalSplitBtn tooltip="Export Table" (disabled)
+            Button #LimitItemsFacet::Table-btnExcelExport-internalSplitBtn-textButton icon=excel-attachment
+            Button #LimitItemsFacet::Table-btnExcelExport-internalSplitBtn-arrowButton tooltip="Open Menu"
+SCROLL shown 494-1199 of 3193 px, more above and below: {"do":"scroll","how":"down"}

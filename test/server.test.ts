@@ -357,6 +357,50 @@ describe("session list", () => {
   });
 });
 
+describe("a session id that is gone", () => {
+  /** A server with a Fiori and a Web GUI surface. */
+  async function two() {
+    const fiori = new FakeSurface("fiori");
+    const webgui = new FakeSurface("webgui");
+    const { server } = createServer({ policy: policyFromEnv({}), surfaces: [fiori, webgui] });
+    const client = new Client({ name: "test", version: "0" }, { capabilities: {} });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(a), client.connect(b)]);
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const r = (await client.callTool({ name, arguments: args })) as { isError?: boolean; content: { type: string; text?: string }[] };
+      return { error: r.isError === true, text: r.content.map((c) => c.text ?? `<${c.type}>`).join("\n") };
+    };
+    return { fiori, webgui, call };
+  }
+  test("an old tab id goes to the only open session of its surface, with a line that says so", async () => {
+    const { fiori, webgui, call } = await two();
+    fiori.add({ id: "chrome:OLD", system: "S4H", transaction: "Shell-home" });
+    webgui.add({ id: "chrome:W1", system: "ABA", transaction: "VA03" });
+    expect((await call("sap_look", { session: "chrome:OLD" })).error).toBe(false);
+    // The tab was opened again: a new id.
+    fiori.sessions = [];
+    fiori.add({ id: "chrome:NEW", system: "S4H", transaction: "Shell-home" });
+    const look = await call("sap_look", { session: "chrome:OLD" });
+    expect(look.error).toBe(false);
+    expect(look.text.split("\n")[0]).toStartWith('(Session "chrome:OLD" is not open any more; using the only open fiori session');
+    expect(look.text).toContain("SCREEN Shell-home");
+    const act = await call("sap_act", { do: "set", id: "x", value: "1", session: "chrome:OLD" });
+    expect(act.error).toBe(false);
+    expect(fiori.acts()).toHaveLength(1);
+    expect(webgui.acts()).toHaveLength(0);
+  });
+  test("with two sessions of that surface open, it stays an error", async () => {
+    const { fiori, call } = await two();
+    fiori.add({ id: "chrome:OLD", system: "S4H" });
+    expect((await call("sap_look", { session: "chrome:OLD" })).error).toBe(false);
+    fiori.sessions = [];
+    fiori.add({ id: "chrome:A", system: "S4H" });
+    fiori.add({ id: "chrome:B", system: "S4H" });
+    const look = await call("sap_look", { session: "chrome:OLD" });
+    expect(look.error).toBe(true);
+  });
+});
+
 describe("one call at a time per session", () => {
   test("two actions sent together run one after the other, and the second says it waited", async () => {
     const { surface, call } = await setup();
@@ -546,11 +590,11 @@ describe("a sap_look right after sap_act", () => {
     const again = (await call("sap_look")).text;
     expect(again).not.toContain(UNCHANGED);
     expect(again).toContain("SCREEN 102");
-    // A batch's answer counts the same, and so does a look that asks only for the changes: the whole view all the same.
+    // A batch's answer counts the same. A look that asks only for the changes gets the changes: none (live 2026-11-23, #56).
     await call("sap_act", { actions: [{ do: "set", id: "ctxtVBAK-VBELN", value: "2" }] });
     const d = (await call("sap_look", { diff: true })).text;
-    expect(d).toStartWith(UNCHANGED);
-    expect(d).toContain("SCREEN 102");
+    expect(d).toStartWith("NO CHANGE");
+    expect(d).not.toContain("SCREEN 102");
   });
   test("a screen that changed since, or a look that asks for more, gets the screen", async () => {
     const { surface, call } = await setup();

@@ -251,15 +251,26 @@ const lineId = (l: string) => (l.split("  ", 1)[0] ?? "").replace(/\[\d+,\d+\]$/
 /**
  * Is the control `id` on the screen `view` shows (compact or full)? A line's
  * id is it, or ends with it after a "/"; a table cell counts by its column
- * (any row). A Fiori control (#id) counts where its id stands in a line.
+ * (any row). A Fiori control counts where its id stands in a line, as the
+ * compact view writes it ("#tail") or the full one ("id=<full id>"), sent
+ * with or without "#", as that tail or as a longer one (the driver finds a
+ * control by any tail of its id cut at "--" or "::"). Live 2026-11-23: a
+ * batch stopped after a tile press opened the app, though the next id
+ * ("SalesOrder-inner", sent without "#") was on it.
  */
 export function idOn(view: string, id: string): boolean {
   const want = id.trim().replace(/\[\d+,\d+\]$/, "");
   if (!want) return false;
+  const fiori = view.startsWith("FIORI");
+  const bare = want.replace(/^#/, "").replace(/^id=/, "");
   for (const l of view.split("\n")) {
     const got = lineId(l);
     if (got === want || got.endsWith(`/${want}`)) return true;
-    if (want.startsWith("#") && new RegExp(`(^|\\s)${want.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`).test(l)) return true;
+    if (!fiori && !want.startsWith("#")) continue;
+    for (const m of l.matchAll(/(?:^|\s)(?:#|id=)(\S+)/g)) {
+      const shown = m[1] ?? "";
+      if (shown === bare || shown.endsWith(`--${bare}`) || shown.endsWith(`::${bare}`) || bare.endsWith(`--${shown}`) || bare.endsWith(`::${shown}`)) return true;
+    }
   }
   return false;
 }
