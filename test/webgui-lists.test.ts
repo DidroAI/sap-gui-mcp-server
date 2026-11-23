@@ -101,11 +101,11 @@ describe.skipIf(!exe)("Web GUI reader: lists, dropdowns and handles, in a browse
     expect(c).toContain("btn[2]  button  Choose (F2)");
     const at = c.findIndex((l) => l.startsWith("usr  list  "));
     expect(c.slice(at, at + 5)).toEqual([
-      'usr  list  201 rows (visible 3, below 1 title rows; scroll for the others)  (rows numbered in the whole list below its 1 title row, as "rows" and scroll count them; a cell id counts rows on screen: usr/lbl[col,<cell row>], col in braces; rows without braces have their cells in columns 1,3,9; a checkbox is chk[col,<cell row>])',
+      'usr  list  201 rows (visible 3, below 1 title rows; scroll for the others)  (rows numbered in the whole list below its 1 title row: "rows" and "row" in actions take these numbers, e.g. {"do":"dblclick","id":"usr","row":N,"col":<col>}; a cell id counts rows on the screen: row N is usr/lbl[col,N+1] now, col in braces; rows without braces have their cells in columns 1,3,9; a checkbox is chk[col,...])',
       "  title 0: Type {3} | Name {9}",
-      "  row 0 (cell row 1): [ ] | T0 | Name 0",
-      "  row 1 (cell row 2): [x] | T1 | Name 1",
-      "  row 2 (cell row 3): [ ] | T2 | Name 2",
+      "  row 0: [ ] | T0 | Name 0",
+      "  row 1: [x] | T1 | Name 1",
+      "  row 2: [ ] | T2 | Name 2",
     ]);
   });
 
@@ -115,7 +115,7 @@ describe.skipIf(!exe)("Web GUI reader: lists, dropdowns and handles, in a browse
     expect(await webguiActInFrame(f, { do: "scroll", id: "usr", to: 50 })).toBe("scrolled wnd[0]/usr: rows 50 to 52 of 201");
     expect(await page.evaluate(() => (window as unknown as { scrolls: number[] }).scrolls)).toEqual([51]);
     const c = await compactView();
-    expect(c).toContain("  row 50 (cell row 1): [ ] | T50 | Name 50");
+    expect(c).toContain("  row 50: [ ] | T50 | Name 50");
     expect(c.find((l) => l.startsWith("usr  list  "))).toContain("201 rows (visible 3, first 50, below 1 title rows; scroll for the others)");
     expect(await webguiActInFrame(f, { do: "scroll", id: "usr", to: "next" })).toBe("scrolled wnd[0]/usr: rows 53 to 55 of 201");
     expect(await webguiActInFrame(f, { do: "scroll", id: "usr", to: "last" })).toBe("scrolled wnd[0]/usr: rows 198 to 200 of 201");
@@ -133,12 +133,30 @@ describe.skipIf(!exe)("Web GUI reader: lists, dropdowns and handles, in a browse
       "  row 11: [ ] {1} | T11 {3} | Name 11 {9}",
       "  row 12: [ ] {1} | T12 {3} | Name 12 {9}",
       "  row 13: [ ] {1} | T13 {3} | Name 13 {9}",
-      "  row 14 (cell row 1): [ ] {1} | T14 {3} | Name 14 {9}",
-      "  row 15 (cell row 2): [ ] {1} | T15 {3} | Name 15 {9}",
-      "  row 16 (cell row 3): [ ] {1} | T16 {3} | Name 16 {9}",
-      '  (rows 10 to 16 of 201; the control is now scrolled there. Rows are numbered in the whole list (line 0 is the first line below 1 title row), as "rows" and scroll count them; a cell id counts rows on screen: a row on screen now says its cell row (row 14 is lbl[col,1]), scroll to the others before acting on them.)',
+      "  row 14: [ ] {1} | T14 {3} | Name 14 {9}",
+      "  row 15: [ ] {1} | T15 {3} | Name 15 {9}",
+      "  row 16: [ ] {1} | T16 {3} | Name 16 {9}",
+      '  (rows 10 to 16 of 201; the control is now scrolled there. Rows are numbered in the whole list (line 0 is the first line below 1 title row): "rows" and "row" in actions take these numbers. A cell id counts rows on the screen: row 14 is lbl[col,1] now, col in braces. The screen showed rows up to 2: rows 3 to 9 are not in this read ("rows":"3-9" reads them).)',
     ]);
     await webguiActInFrame(page.mainFrame(), { do: "scroll", id: "usr", to: "first" });
+  });
+
+  test("an action on a list line takes its number in the list: the list is scrolled to it, the cell is acted on", async () => {
+    const f = page.mainFrame();
+    await webguiActInFrame(f, { do: "scroll", id: "usr", to: "first" });
+    await page.evaluate(() => {
+      document.addEventListener("dblclick", (e) => {
+        const ls = (e.target as Element).closest("[lsdata]")?.getAttribute("lsdata") ?? "";
+        (window as unknown as { dbl: string[] }).dbl = [...((window as unknown as { dbl?: string[] }).dbl ?? []), `${/SID:'([^']*)'/.exec(ls)?.[1]} ${(e.target as HTMLElement).innerText}`];
+      });
+    });
+    const dbl = () => page.evaluate(() => (window as unknown as { dbl?: string[] }).dbl ?? []);
+    // On the screen: row 1 is screen row 2.
+    expect(await webguiActInFrame(f, { do: "dblclick", id: "usr", row: 1, col: "9" })).toStartWith("double-clicked wnd[0]/usr/lbl[9,2] (row 1 of the list)");
+    // Off the screen: scrolled to, then the line's first text (no col).
+    expect(await webguiActInFrame(f, { do: "dblclick", id: "usr", row: 60 })).toStartWith("double-clicked wnd[0]/usr/lbl[3,1] (row 60 of the list) (scrolled to it)");
+    expect(await dbl()).toEqual(["wnd[0]/usr/lbl[9,2] Name 1", "wnd[0]/usr/lbl[3,1] T60"]);
+    await webguiActInFrame(f, { do: "scroll", id: "usr", to: "first" });
   });
 
   test("a dropdown shows its entry and the count; its entries come on request and nothing is chosen", async () => {

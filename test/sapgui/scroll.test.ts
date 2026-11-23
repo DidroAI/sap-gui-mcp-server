@@ -102,8 +102,8 @@ describe("sapgui: scrolling", () => {
     const d = await w.open();
     expect(await d.act({ do: "scroll", id: "tblZPROGTC_ITEMS", to: 30 })).toBe(`scrolled ${TABLE}: rows 30 to 31 of 60`);
     const view = await d.look({ compact: true });
-    expect(view).toContain('tblZPROGTC_ITEMS  table  rows 60 (visible 2, first 30)  (rows numbered in the whole table, as "rows" and scroll count them; a cell id counts rows on screen: <id>[col,<cell row>], e.g. txtZITM-POSNR[0,0] is row 30)');
-    expect(view).toContain("  row 30 (cell row 0): Item=310");
+    expect(view).toContain('tblZPROGTC_ITEMS  table  rows 60 (visible 2, first 30)  (rows numbered in the whole table: "row" in actions takes these numbers; a cell id counts rows on the screen: txtZITM-POSNR[0,0] is row 30)');
+    expect(view).toContain("  row 30: Item=310");
     expect(view).toContain("  columns: 0 Item=txtZITM-POSNR (read-only)");
     expect(view).not.toContain("  row 0: Item=310");
   });
@@ -146,11 +146,15 @@ describe("sapgui: a range of rows", () => {
       { do: "scroll", id: GRID, to: 90 },
     ]);
   });
-  test("rows of a table control are numbered in the whole table", async () => {
-    const d = await world().open();
+  test("rows of a table control are numbered in the whole table; the table goes back to where it was", async () => {
+    const w = world();
+    const d = await w.open();
     const out = (await d.look({ compact: true, id: "tblZPROGTC_ITEMS", rows: { from: 10, to: 13 } })).split("\n");
-    // Rows read on an earlier page are off the screen now: only those on it say their cell row.
-    expect(out.slice(3, 8)).toEqual(["  columns: 0 Item=txtZITM-POSNR (read-only)", "  row 10: Item=110", "  row 11: Item=120", "  row 12 (cell row 0): Item=130", "  row 13 (cell row 1): Item=140"]);
+    // One number per row, the one "row" in actions takes.
+    expect(out.slice(3, 8)).toEqual(["  columns: 0 Item=txtZITM-POSNR (read-only)", "  row 10: Item=110", "  row 11: Item=120", "  row 12: Item=130", "  row 13: Item=140"]);
+    // A read changes nothing on the screen: what "row N" names stays.
+    expect(w.acts().at(-1)).toEqual({ do: "scroll", id: TABLE, to: 0 });
+    expect(out.at(-1)).toContain("the table is scrolled back to row 0, as it was.");
   });
   test("one control alone: its lines, and nothing else of the screen", async () => {
     const d = await world().open();

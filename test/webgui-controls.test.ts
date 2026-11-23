@@ -191,7 +191,7 @@ describe.skipIf(!exe)("Web GUI reader: control states as Web GUI draws them, in 
     expect(await act({ do: "select", id: "tblZTC_ITEMS", row: 0 })).toBe("row 0 of wnd[0]/usr/tblZTC_ITEMS was already selected: nothing changed");
     expect(await act({ do: "check", id: "tblZTC_ITEMS", row: 1, value: false })).toBe("deselected row 1 of wnd[0]/usr/tblZTC_ITEMS");
     expect(await fullView()).toContain("wnd[0]/usr/tblZTC_ITEMS  table  rows 3 (visible 3); rows can be selected; selected rows 0; columns: Item | Material | Reason");
-    expect(await refusal(act({ do: "select", id: "tblZTC_ITEMS", row: 7 }))).toContain("row 7 is not on screen");
+    expect(await refusal(act({ do: "select", id: "tblZTC_ITEMS", row: 7 }))).toContain("row 7: wnd[0]/usr/tblZTC_ITEMS has 3 rows (0 to 2).");
   });
 
   test("one control by id: a table whose last cell is a dropdown is a table", async () => {
