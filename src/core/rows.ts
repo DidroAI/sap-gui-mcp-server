@@ -87,6 +87,13 @@ const MAX_PAGES = 60;
 export function onlyColumns(page: Page, cols: string[]): Page {
   const want = cols.map((c) => c.replace(/^ +| +$/g, "").toLowerCase()).filter(Boolean);
   if (!want.length) return page;
+  // The columns a missing name is close to (its words in a column's id or title), when there are some: ten
+  // "Length" columns say more than all seventy (Astra's review, 2026-11-23).
+  const near = (names: string[]) => {
+    const words = want.flatMap((w) => w.split(/[^a-z0-9]+/)).filter((w) => w.length > 1);
+    const close = names.filter((n) => words.some((w) => n.toLowerCase().includes(w)));
+    return close.length && close.length < names.length ? `the columns close to it are ${close.join(" | ")} (${close.length} of ${names.length})` : `its columns are ${names.join(" | ")}`;
+  };
   const split = (row: string) => {
     const m = /^( {2}row \d+(?: \((?:selected|total)\))*: )(.*)$/.exec(row);
     return m ? { prefix: m[1] ?? "", body: m[2] ?? "" } : undefined;
@@ -99,7 +106,7 @@ export function onlyColumns(page: Page, cols: string[]): Page {
       const [cid = "", title = ""] = n.split("=");
       return want.includes(cid.toLowerCase()) || want.includes(title.toLowerCase());
     });
-    if (!keep.length) throw new ActionError(`none of the columns ${cols.join(", ")} is in this grid: its columns are ${names.join(" | ")}.`);
+    if (!keep.length) throw new ActionError(`none of the columns ${cols.join(", ")} is in this grid: ${near(names)}.`);
     return {
       ...page,
       head: `${m[1]}${keep.map(({ n }) => n).join(" | ")}  (${keep.length} of ${names.length} columns)`,
@@ -127,7 +134,7 @@ export function onlyColumns(page: Page, cols: string[]): Page {
       return byId.some((b) => b.title === t && (i === undefined || Number(i) === b.index));
     };
     if (columns.length && !columns.some((c) => want.includes(c.title) || byId.includes(c)))
-      throw new ActionError(`none of the columns ${cols.join(", ")} is in this table: its columns are ${columns.map((c) => `${c.title}=${c.id}`).join(" | ")}.`);
+      throw new ActionError(`none of the columns ${cols.join(", ")} is in this table: ${near(columns.map((c) => `${c.title}=${c.id}`))}.`);
     return {
       ...page,
       rows: page.rows.map((r) => {
