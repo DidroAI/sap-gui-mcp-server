@@ -11,8 +11,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { actionText, normalizeAction, type NormalizedAction, VERBS } from "./core/action.js";
-import { MAX_BATCH, parseBatch, staleWrite, stopAfter, unseenWrite } from "./batch.js";
+import { createHash } from "node:crypto";
+import { actionText, normalizeAction, type NormalizedAction, STEP_VERBS } from "./core/action.js";
+import { isLook, MAX_BATCH, parseBatch, staleWrite, stopAfter, unseenWrite } from "./batch.js";
 import { commandFieldRefusal, decide, LEAVE_UNSAVED, leavesTransaction, type Policy, sessionRefusal, tcodeOf, tcodeRefusal } from "./core/guard.js";
 import { type Turn, SessionQueue, waitedLine } from "./core/queue.js";
 import { Registry } from "./core/registry.js";
@@ -50,8 +51,11 @@ function instructions(policy: Policy): string {
   return `Works in the SAP screens the user already has open, as that user: SAP GUI for Windows, SAP Web GUI and Fiori in Chrome (transactions such as VA01 or ME23N, ALV grids, popups). It never logs on.
 Start with sap_look, or directly with sap_act okcode /n<transaction> when the task names it. Each sap_act answer is the new screen: act again from it. Read the status bar after each call: SAP reports errors there.
 ${writeRule(policy)}
-Which tool: read a screen, a long list or a grid: sap_look. Type, press, Enter, open a transaction, answer a popup: sap_act ("actions": a whole screen in one call). Several sessions or systems: sap_sessions, sap_use. Charts and HTML areas: sap_screenshot. Record a flow as a test or automate it: sap_record, then sap_replay.`;
+Type, press, Enter, open a transaction, answer a popup: sap_act ("actions": a whole screen in one call). Several sessions or systems: sap_sessions. Record a flow as a test or to automate it: sap_record, then sap_replay.`;
 }
+
+/** sap_look's answer when the screen is the one the last sap_act answer ended on. */
+export const UNCHANGED = "Unchanged since your last sap_act (same screen): its answer is the screen. Call sap_look again for the whole view.";
 
 function text(t: string): CallToolResult {
   return { content: [{ type: "text", text: t }] };
@@ -167,16 +171,18 @@ const ELICIT_TIMEOUT_MS = 5 * 60_000;
 
 /**
  * The fields of one action, flat: sap_act takes them at the top level, and
- * each entry of "actions" takes them too. Plain types and no union of
+ * each entry of "actions" takes them too (its schema does not repeat them:
+ * tools/list is in every conversation). Plain types and no union of
  * objects, so the schema converts to OpenAI's strict mode; normalizeAction
- * checks the rest (a whole "row", a known "key", "to" of a scroll).
+ * checks the rest (a whole "row", a known "key", "to" of a scroll). "do"
+ * takes "look" too (STEP_VERBS): agents send it, and it is answered, not refused.
  */
 const scalar = z.union([z.string(), z.number(), z.boolean()]);
 const actionFields = {
-  do: z.enum(VERBS),
+  do: z.enum(STEP_VERBS),
   id: z.string().optional(),
   value: scalar.optional(),
-  key: z.union([z.number(), z.string()]).optional().describe('key: "Enter", "Back", "Execute", "Save", "Cancel", "Exit", "F4", "Shift+F3", or an SAP key number. combo: the entry\'s key or text'),
+  key: z.union([z.number(), z.string()]).optional(),
   // Whole numbers, checked by normalizeAction: .int() would put the safe-integer bounds into tools/list.
   row: z.number().optional(),
   col: z.string().optional(),
@@ -189,16 +195,14 @@ const actionFields = {
 };
 /**
  * What a step of "actions" adds to an action (batch.ts reads them). Loose, so
- * that batch.ts, not the schema, refuses a key it does not know, with the list
- * of the ones it does ("expect" has no "screeen"), and nothing runs.
+ * that batch.ts, not the schema, refuses a key or a "do" it does not know,
+ * with the list of the ones it does ("expect" has no "screeen"), and nothing runs.
  */
 const stepSchema = z
   .object({
-    ...actionFields,
-    expect: z
-      .object({ screen: z.union([z.string(), z.number()]).optional(), transaction: z.string().optional(), title: z.string().optional(), status: z.string().optional(), popup: z.boolean().optional() })
-      .passthrough()
-      .optional(),
+    // The action's own fields are those of sap_act (the description lists them); normalizeAction checks each step.
+    do: z.string(),
+    expect: z.object({}).passthrough().optional(),
     show: z.boolean().optional(),
     unseen: z.boolean().optional(),
   })
@@ -253,7 +257,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   const views = new Views(view);
   const recorder = new Recorder(record ?? recorderOptionsFromEnv(process.env, `${SERVER_NAME}-mcp-server ${SERVER_VERSION}`));
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, { instructions: instructions(policy) });
-  const session = z.string().optional().describe("from sap_sessions: number, id, system, transaction, or sapgui, webgui, fiori; default: the active one");
+  const session = z.string().optional().describe("number, id, system, transaction or sapgui|webgui|fiori; default: the active one");
   const queue = new SessionQueue();
   /** The data of an answer, when structured output is on; undefined (nothing added) when it is off. */
   const data = <T extends Record<string, unknown>>(make: () => T): T | undefined => (structured ? make() : undefined);
@@ -268,6 +272,39 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     list.push(action);
     if (list.length > MAX_HISTORY) list.splice(0, list.length - MAX_HISTORY);
     history.set(session, list);
+  }
+
+  /**
+   * The screen each session's last sap_act answer ended on, as a fingerprint
+   * of its compact view. A bare sap_look right after it, on the same screen,
+   * answers in one line (UNCHANGED): agents called it after most acts, for a
+   * screen they already had (169 of them in one benchmark).
+   */
+  const actShown = new Map<string, string>();
+  const fingerprint = (view: string) => createHash("sha1").update(view).digest("hex");
+
+  /**
+   * A session reference that matches no session, with exactly one session
+   * open: that one, and a line that says so. Agents guess a name for their
+   * first call ("sapgui" for a Web GUI tab); with one session there is no
+   * other it could mean. Otherwise the reference as it is.
+   */
+  async function lenient(ref: string | undefined): Promise<{ ref: string | undefined; note?: string }> {
+    if (!ref || registry.resolve(ref)) return { ref };
+    const { sessions } = await registry.discover().catch(() => ({ sessions: [] as SessionInfo[] }));
+    const only = sessions[0];
+    if (registry.resolve(ref) || sessions.length !== 1 || !only) return { ref };
+    return { ref: only.id, note: `(No session matches "${ref}"; using the only open one: ${only.surface} ${place(only)}.)` };
+  }
+
+  /** The tool's answer for `ref`, with the line `lenient` says first. */
+  async function leniently(raw: string | undefined, f: (ref: string | undefined) => Promise<CallToolResult>): Promise<CallToolResult> {
+    const { ref, note } = await lenient(raw);
+    const r = await f(ref);
+    const first = r.content[0];
+    if (!note) return r;
+    if (first?.type !== "text") return { ...r, content: [{ type: "text", text: note }, ...r.content] };
+    return { ...r, content: [{ ...first, text: `${note}\n${first.text}` }, ...r.content.slice(1)] };
   }
 
   /** The queue a call on `ref` waits in: the session's id, found without opening it. */
@@ -299,7 +336,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     {
       title: "List open SAP sessions",
       description:
-        "Lists the SAP sessions the user has open (SAP GUI windows; Web GUI and Fiori tabs in Chrome): number, system, client, user, transaction, title. * marks the active one. Call it when another tool says no session matches or a session is gone, or when the task names a system you are not on; with one session open, go straight to sap_look. An empty list: ask the user to open SAP and log on; this server never logs on.",
+        "The SAP sessions open (SAP GUI windows; Web GUI and Fiori tabs in Chrome); * marks the active one. Needed only with several sessions, or when a tool says none matches. None: ask the user to open SAP and log on; this server never logs on.",
       inputSchema: {},
       ...(structured ? { outputSchema: sessionsOutput } : {}),
       annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
@@ -319,19 +356,21 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     "sap_use",
     {
       title: "Switch the active SAP session",
-      description:
-        'Makes another session the active one and answers with its screen. Use it only to switch between several open sessions (two systems, or a second window opened with /o); every other tool also takes "session" for a single call.',
-      inputSchema: { session: z.string().describe("from sap_sessions: number, id, system, transaction, or sapgui, webgui, fiori") },
+      description: 'Makes another session the active one and answers with its screen. Only to switch between several sessions; every other tool also takes "session" for one call.',
+      inputSchema: { session: z.string().describe("number, id, system, transaction or sapgui|webgui|fiori") },
       // Read-only for SAP: it changes only which session this server's other tools use by default, then reads that session's screen.
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    ({ session: ref }) =>
+    ({ session: raw }) =>
       answer(() =>
-        serial(ref, "sap_use", async () => {
-          const { driver, info } = await registry.session(ref);
-          registry.active = info.id;
-          return text(views.present(info.id, await driver.look({ compact: true }), true));
-        }),
+        leniently(raw, (ref) =>
+          serial(ref, "sap_use", async () => {
+            const { driver, info } = await registry.session(ref);
+            registry.active = info.id;
+            actShown.delete(info.id);
+            return text(views.present(info.id, await driver.look({ compact: true }), true));
+          }),
+        ),
       ),
   );
 
@@ -339,24 +378,19 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     "sap_look",
     {
       title: "Look at the SAP screen",
-      description: `Reads the SAP screen as compact text (about 250 tokens): a header (transaction or Fiori app, program, screen, system), one line per control (id, type, label = "value", state), tables as rows, popups as their own WINDOW, the status bar last.
-Call it first, to get the ids sap_act needs. Do not call it after sap_act: that answer already is the new screen. Call it again only to read more than the view shows:
-- a long list or grid shows the rows on screen and the total: read others with id and rows (${MAX_ROWS} at most per call), and cols to keep the columns you need. Never conclude an entry is missing from the rows on screen.
-- every entry of a dropdown, a tree or a text: id. Menus: id "mbar". Toolbar buttons and ids the compact view leaves out: full.
-- after you lost track: sap_look (diff: only what changed since your last view).
-For charts or HTML areas the view marks opaque, use sap_screenshot.`,
+      description: `The SAP screen as compact text: header, one line per control (id, type, label = "value", state), tables as rows, popups as WINDOW, status bar last. Call it first, for the ids; after sap_act it is rarely needed (that answer is the new screen). Again only to read more: a grid or list shows the rows on screen and the total, read others with id and rows (${MAX_ROWS} at most), never conclude an entry is missing from the rows on screen; a dropdown, tree or text whole: id; menus: id "mbar"; toolbar buttons and hidden ids: full. Charts: sap_screenshot.`,
       inputSchema: {
         session,
-        full: z.boolean().optional().describe("every id, column, toolbar button and its key (larger)"),
+        full: z.boolean().optional().describe("every id and toolbar button (larger)"),
         diff: z.boolean().optional().describe("only what changed since your last view"),
-        id: z.string().optional().describe("one control, whole: every dropdown entry, every row read of a grid, table, tree or list"),
-        rows: z.string().optional().describe('with id: rows counted from 0, e.g. "120-180" (scrolls there)'),
-        cols: z.string().optional().describe(`with id, a grid or table control: only these columns, by id or title, e.g. "VBELN,NETWR"; without rows, the first ${COLS_ONLY_ROWS.to + 1} rows`),
+        id: z.string().optional().describe("one control whole: dropdown, grid, table, tree, list"),
+        rows: z.string().optional().describe('with id: rows from 0, e.g. "120-180"'),
+        cols: z.string().optional().describe('with id: columns by id or title, e.g. "VBELN,NETWR"'),
       },
       annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     },
-    ({ session: ref, full, diff, id, rows, cols }) =>
-      answer(() => serial(ref, "sap_look", () => look(ref, full, diff, id, rows, cols))).then(confirmNotice),
+    ({ session: raw, full, diff, id, rows, cols }) =>
+      answer(() => leniently(raw, (ref) => serial(ref, "sap_look", () => look(ref, full, diff, id, rows, cols)))).then(confirmNotice),
   );
 
   async function look(ref: string | undefined, full: boolean | undefined, diff: boolean | undefined, id: string | undefined, rows: string | undefined, cols: string | undefined): Promise<CallToolResult> {
@@ -370,13 +404,30 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
           // One control is not the screen: what the agent holds of the screen stays as it is.
           return text(await driver.look(options));
         }
+        // What the last sap_act answer ended on, if nothing came between: asked once.
+        const acted = actShown.get(info.id);
+        actShown.delete(info.id);
         if (full) {
           const whole = await driver.look({ compact: false });
           // The full view holds everything the compact one does: later changes are counted from here.
           views.remember(info.id, await driver.look({ compact: true }));
           return text(whole);
         }
-        return text(views.present(info.id, await driver.look({ compact: true }), !diff));
+        const view = await driver.look({ compact: true });
+        if (acted !== undefined && acted === fingerprint(view)) return text(UNCHANGED);
+        return text(views.present(info.id, view, !diff));
+  }
+
+  /** The screen as it is, whole, after `head`: the answer to "actions":[] and to {"do":"look"} in sap_act. */
+  async function current(ref: string | undefined, head: string): Promise<CallToolResult> {
+    return serial(ref, "sap_look", async () => {
+      const { driver, info } = await registry.session(ref);
+      const v = await driver.look({ compact: true });
+      actShown.delete(info.id);
+      const shown = withStatus(views.present(info.id, v, true), v);
+      const top = statusTop(shown, v);
+      return withData(text(`${head}${top ? `\n${top}` : ""}\n\n${shown}`), data((): ActOutput => ({ ran: 0, total: 0, ...screenOf(v) })));
+    });
   }
 
   /** Can the client ask the user (MCP elicitation, form mode)? Under SAP_WRITE=confirm, a write runs only after it did. */
@@ -443,8 +494,9 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
     const acted = Date.now();
     // The line that repeats this action in a script: last in the note block. Kept for a draft test when the action ran where it should.
     const line = codeLine() ? `\ncode: ${codeOf(action)}` : "";
-    const ok = (t: string, v: string) => {
+    const ok = (t: string, v: string, on = session) => {
       remember(session, action);
+      actShown.set(on, fingerprint(v));
       return withData(text(t), data(() => ranOn(v)));
     };
     const note = (screen: () => Promise<string>) =>
@@ -456,7 +508,7 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
           registry.active = fresh.id;
           const nd = await registry.driver(fresh.id);
           const { v, n } = await note(() => nd.look({ compact: true }));
-          return ok(`${n}\nA new session opened (${fresh.where}); it is now the active one. The previous session is still open (sap_sessions lists both).${line}\n\n${views.present(fresh.id, v, true)}`, v);
+          return ok(`${n}\nA new session opened (${fresh.where}); it is now the active one. The previous session is still open (sap_sessions lists both).${line}\n\n${views.present(fresh.id, v, true)}`, v, fresh.id);
         }
         await new Promise((r) => setTimeout(r, 500));
       }
@@ -625,14 +677,15 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
    */
   async function runBatch(ref: string | undefined, input: unknown, whole = false): Promise<CallToolResult> {
     const steps = parseBatch(input);
-    const total = steps.length;
+    const total = Array.isArray(input) ? input.length : steps.length;
+    if (!steps.length) return current(ref, total ? "No action to run: this is the screen." : 'No actions sent ("actions" is empty): this is the screen.');
     // What can be refused without a screen is refused before anything runs.
     for (const [i, s] of steps.entries()) {
       const no =
         commandFieldRefusal(s.action) ??
         tcodeRefusal(policy, tcodeOf(s.action)) ??
         (s.action.do === "okcode" && /^\/o\S/i.test(String(s.action.value)) ? `"${String(s.action.value)}" opens a new session: send it on its own, not in "actions"` : undefined);
-      if (no) return fail(`Refused: action ${i + 1} of ${total}: ${no}\nNothing ran.`);
+      if (no) return fail(`Refused: action ${steps[i]?.n ?? i + 1} of ${total}: ${no}\nNothing ran.`);
     }
     const rest = (from: number) => (from > total ? "" : from === total ? ` Action ${total} did not run.` : ` Actions ${from} to ${total} did not run.`);
     type Held = { info: SessionInfo; assessment: Assessment; confirm: string; action: NormalizedAction };
@@ -651,7 +704,8 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
       let start: ParsedScreen | undefined;
       let view: string | undefined;
       for (const [i, s] of steps.entries()) {
-        const n = i + 1;
+        const n = s.n;
+        const last = i === steps.length - 1;
         const what = `action ${n} (${actionText(s.action)})`;
         let j: Awaited<ReturnType<typeof judge>>;
         try {
@@ -705,7 +759,7 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
         }
         ran = n;
         remember(id, s.action);
-        lines.push(`${n}. ${said}`);
+        lines.push(`${n}. ${said}${s.note ? ` ${s.note}` : ""}`);
         codes.push(codeOf(s.action));
         // A menu entry, a favourite or a tree node can open a transaction no okcode named.
         const info = await driver.refresh().catch(() => undefined);
@@ -718,16 +772,20 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
         view = await settled(driver);
         const after = parseScreen(view);
         const stop = stopAfter(s.action, before, after, s.expect);
-        if (stop && n < total) {
+        if (stop && !last) {
           end = { why: stop.why, text: `after action ${n}, ${stop.text}`, error: false, next: n + 1 };
           break;
         }
         // Nothing follows the last action: only what it said it expects is worth a line.
         if (stop?.why === "expect") note = `Action ${n}: ${stop.text}.`;
-        if (s.show && n < total) lines.push(`--- the screen after action ${n}\n${views.present(id, view, whole)}\n---`);
+        if (s.show && !last) lines.push(`--- the screen after action ${n}\n${views.present(id, view, whole)}\n---`);
         before = after;
       }
-      const head = end ? `Ran ${ran} of ${total} actions. Stopped: ${end.text.replace(/[.\s]+$/, "")}.${rest(end.next)}` : `Ran ${total} action${total === 1 ? "" : "s"}.`;
+      // All ran: the actions run (a look is none), and the Enters left out after an okcode.
+      const skipped = steps.filter((s) => s.note).length;
+      const head = end
+        ? `Ran ${ran} of ${total} actions. Stopped: ${end.text.replace(/[.\s]+$/, "")}.${rest(end.next)}`
+        : `Ran ${steps.length} action${steps.length === 1 ? "" : "s"}${skipped ? `; ${skipped} Enter skipped` : ""}.`;
       const body = [head, ...(note ? [note] : []), ...lines, ...(codeLine() && codes.length ? [`code:\n${codes.join("\n")}`] : [])].join("\n");
       const stopped = end ? { why: end.why, text: end.text } : undefined;
       if (box.held) {
@@ -743,6 +801,7 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
         try {
           const v = view ?? (await settled(driver));
           seen = v;
+          actShown.set(id, fingerprint(v));
           const shown = withStatus(views.present(id, v, whole), v);
           const top = statusTop(shown, v);
           screen = `${top ? `\n${top}` : ""}\n\n${shown}`;
@@ -767,28 +826,26 @@ For charts or HTML areas the view marks opaque, use sap_screenshot.`,
     "sap_act",
     {
       title: "Act on the SAP screen",
-      description: `Acts on the SAP screen: type into fields, press buttons and keys, open a transaction, answer a popup, open a grid row. Ids come from the latest view; the last part is enough ("ctxtVBAK-AUART"). Answers with the result, so act again from the answer instead of calling sap_look.
-Read the answer in this order: (1) a "STATUS E/W/A" line: E means the step did not go through, correct the field it names; W: Enter accepts it; an S status says it worked (document numbers are there). (2) a new "WINDOW wnd[1]": a popup; answer it before anything else. (3) the screen: whole when it is another one; on the same screen only what changed: "~" changed line, "+" new, "-" gone, "=" unchanged, for context.
-How SAP works: set only types. Fill every field of the screen, then send one Enter (key 0); SAP then checks the input and fills dependent fields. Do not guess codes: f4 on the field lists the valid ones.
-do, with its fields:
-  set  id, value. A field; a grid or table cell: add row, col; in a text editor "\\n" is a line break
-  key  key: a name, "Enter", "Back", "Execute" (F8), "Save", "Cancel" (F12), "Exit", "F4", "Shift+F3", or SAP's number (0 Enter, 3 Back, 8 Execute)
-  press  id. A button ("click" too); btn[N] is function key N
-  okcode  value: "/nVA03" starts a transaction (unsaved input is lost), "/oVA03" opens it in a new session. Commands go here only: the command field cannot be typed into
-  select  id. Tab, radio button, menu entry, list item; with row: a table or grid row (value false deselects)
-  check  id, value true or false
-  combo  id, key (the entry's key or text). Without key: lists the entries
-  f4  id. Value help; pick from the popup with grid or dblclick
-  focus  id. Puts the cursor on a control, as a click into it would
-  dblclick  id. A list entry or a label
-  grid  id, row, col, how double|select|cell. Any row of the total; select without row: the column
-  tree  id, node, how double|select|expand|collapse
-  toolbar  id, button
-  scroll  id, to: a row from 0, "next", "prev", "first", "last"; a table control's columns "left", "right"
-  open  app "#SalesOrder-manage". Fiori launchpad only, never a URL
-timeout: the seconds a step may take (SAP GUI; default 180).
-actions: [...] in place of one action, up to ${MAX_BATCH}: one screen's worth, its fields then the key that sends them, answered once ("Ran k of n", then the screen). It ends at the first surprise: a failure or refusal, a write waiting for a yes, a popup, an E, W or A status, another screen (an okcode "/n<tcode>" first goes on into that transaction). Per step, expect lets it go on through what you know comes: {"screen":"4001"}, {"popup":true}, {"status":"W"}; show:true adds the screen after that step; a write on a screen the batch reached after you sent it does not run unless its step says unseen:true.
-Failures say what to do: an id from an earlier screen answers with the screen you are on, an ambiguous id with the candidates. Do not repeat a failed action unchanged.
+      description: `Acts on the SAP screen; answers with the new screen, on the same screen only the changes ("~" changed line, "+" new, "-" gone, "=" unchanged), so sap_look after it is rarely needed. Ids from the latest view; the last part is enough.
+"STATUS E": the step did not go through, correct the field it names; W: Enter accepts it; S: done (document numbers). A new "WINDOW wnd[1]" is a popup: answer it before anything else.
+set only types: fill every field, then one Enter (key 0). Codes: f4 on the field lists them.
+do and its fields:
+set id, value; a table cell: id (the table), row, col; "\\n" breaks lines in a text editor
+key key: Enter, Back, Execute, Save, Cancel, Exit, F1-F24, Shift+F3, or SAP's number
+press id (click too); btn[N] is function key N
+okcode value: "/nVA03" starts a transaction, "/oVA03" in a new session; it submits on its own (no Enter after it); the command field cannot be typed into
+select id (tab, radio, menu entry, list item); with row: a table row (value false: deselect)
+check id, value true|false
+combo id, key (entry key or text; without: lists them)
+f4, focus, dblclick id
+grid id, row, col, how double|select|cell
+tree id, node, how double|select|expand|collapse
+toolbar id, button
+scroll id, to: a row from 0, next, prev, first, last, left, right
+open app "#SalesOrder-manage" (Fiori launchpad)
+timeout: seconds per step (default 180).
+actions: [...] up to ${MAX_BATCH} in one call, a screen's fields then its key: [{"do":"set","id":"ctxtVBAK-AUART","value":"OR"},{"do":"key","key":0}]. Stops at the first surprise (failure, refusal, a write awaiting yes, popup, E/W/A status, another screen; an okcode "/n<tcode>" goes on into it). Per step: expect {"screen":"4001"}|{"popup":true}|{"status":"W"} goes on through it; show:true adds the screen after it; unseen:true lets a write run on a screen first reached in the batch.
+Do not repeat a failed action unchanged.
 ${writeRule(policy)}`,
       // Loose: "action":{...}, the older shape of one action, still works (clients and recordings that send it), and so do "timing" and other keys an action passes on.
       inputSchema: z
@@ -806,31 +863,39 @@ ${writeRule(policy)}`,
     },
     (input) =>
       answer(async () => {
-        const { actions, action, session: ref, full } = input as { actions?: unknown; action?: unknown; session?: string; full?: boolean };
-        // The action's fields at the top level, as the schema lists them; anything but the call's own keys goes with them.
-        const flat = Object.fromEntries(Object.entries(input).filter(([k, v]) => !CALL_KEYS.has(k) && v !== undefined));
-        const one = Object.keys(flat).length > 0;
-        if (actions !== undefined && (one || action !== undefined)) return fail('Send one action ("do" and its fields) or "actions", not both.');
-        if (one && action !== undefined) return fail('Send the action\'s fields ("do", "id", ...) at the top level, not also inside "action".');
-        if (actions !== undefined) return withAnyData(await runBatch(ref, actions, full === true), actions);
-        return withAnyData(await run(ref, one ? flat : action, full === true));
+        const { actions, action, session: raw, full } = input as { actions?: unknown; action?: unknown; session?: string; full?: boolean };
+        return leniently(raw, (ref) => act(ref, input, actions, action, full));
       }).then(confirmNotice),
   );
+
+  /** sap_act, once the session reference is settled. */
+  async function act(ref: string | undefined, input: Record<string, unknown>, actions: unknown, action: unknown, full: boolean | undefined): Promise<CallToolResult> {
+    // The action's fields at the top level, as the schema lists them; anything but the call's own keys goes with them.
+    const flat = Object.fromEntries(Object.entries(input).filter(([k, v]) => !CALL_KEYS.has(k) && v !== undefined));
+    const one = Object.keys(flat).length > 0;
+    if (actions !== undefined && (one || action !== undefined)) return fail('Send one action ("do" and its fields) or "actions", not both.');
+    if (one && action !== undefined) return fail('Send the action\'s fields ("do", "id", ...) at the top level, not also inside "action".');
+    if (actions !== undefined) return withAnyData(await runBatch(ref, actions, full === true), actions);
+    // {"do":"look"}: not an action; the screen.
+    if (isLook(one ? flat : action)) return withAnyData(await current(ref, "look is not an action: this is the screen."));
+    return withAnyData(await run(ref, one ? flat : action, full === true));
+  }
 
   server.registerTool(
     "sap_screenshot",
     {
       title: "Screenshot of the SAP session",
-      description:
-        "A PNG of the session's window or tab. Use it only for what sap_look cannot give as text (charts, HTML panels, an area the view marks opaque) or when the user asks for a picture: an image costs several times a text view. Never use it to find ids.",
+      description: "A PNG of the session's window or tab, only for what sap_look cannot give as text (charts, areas the view marks opaque) or when the user asks for a picture: it costs several text views. Never to find ids.",
       inputSchema: { session },
       annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     },
-    ({ session: ref }) =>
-      answer(async () => {
-        const png = await (await registry.driver(ref)).screenshot();
-        return { content: [{ type: "image", data: png.toString("base64"), mimeType: "image/png" }] };
-      }),
+    ({ session: raw }) =>
+      answer(() =>
+        leniently(raw, async (ref) => {
+          const png = await (await registry.driver(ref)).screenshot();
+          return { content: [{ type: "image", data: png.toString("base64"), mimeType: "image/png" }] };
+        }),
+      ),
   );
 
   registerRecordTools(server, registry, policy, recorder, serial, (id) => history.get(id) ?? [], structured);

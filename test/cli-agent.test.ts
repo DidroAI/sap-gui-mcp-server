@@ -98,30 +98,56 @@ describe("look", () => {
 });
 
 describe("act", () => {
-  test("prints the note, the screen's first line and the file; the same screen again is a diff", async () => {
+  test("prints the whole answer, as sap_act gives it: the note, then the lines that changed; and the file", async () => {
     const { surface, run, read, screens } = setup();
     surface.add({ id: "chrome:1", system: "XYZ", transaction: "ZT01" }, { view: SCREEN, onAct: (a, s) => a.do === "set" && (s.view = SCREEN.replace('Customer = "4711"', `Customer = "${a.value}"`)) });
     await run(["look"]);
     const r = await run(["act", '{"do":"set","id":"ctxtZHDR-CUST","value":"4712"}']);
     expect(r.code).toBe(0);
     expect(r.lines[0]).toBe("did set");
-    // Where the screen is (no SDK line: no recording is on).
-    expect(r.lines[1]).toStartWith("CHANGED 1 of");
+    expect(r.lines[1]).toBe("");
+    expect(r.lines[2]).toStartWith("CHANGED 1 of");
+    // The changed line itself, not only its count: no look or file read is needed to see it.
+    expect(r.lines).toContain('~ ctxtZHDR-CUST  field  Customer = "4712"  (edit)');
     expect(r.lines.at(-1)).toBe("screen: .sap-gui/screens/2-act.txt");
-    expect(read(pathOf(r.out))).toContain('~ ctxtZHDR-CUST  field  Customer = "4712"  (edit)');
+    expect(r.lines.slice(0, -1).join("\n")).toBe(read(pathOf(r.out)));
     expect(screens()).toEqual(["1-look.txt", "2-act.txt"]);
   });
-  test("shorthand: act set <id> <value>, act key 0", async () => {
+  test("a look right after it, on the same screen, says so and names the act's file", async () => {
+    const { surface, run } = setup();
+    surface.add({ id: "chrome:1", system: "XYZ", transaction: "ZT01" }, { view: SCREEN });
+    await run(["act", "set", "ctxtZHDR-CUST", "4711"]);
+    const r = await run(["look"]);
+    expect(r.code).toBe(0);
+    expect(r.lines).toEqual(["Unchanged since your last sap_act (same screen): its answer is the screen. Call sap_look again for the whole view.", "screen: .sap-gui/screens/1-act.txt"]);
+    expect((await run(["look"])).lines[0]).toStartWith("TRANSACTION ZT01");
+  });
+  test("screen lines are cut, notes and reasons never", async () => {
+    const { surface, run } = setup();
+    const long = "x".repeat(400);
+    surface.add({ id: "chrome:1", system: "XYZ" }, { view: `${SCREEN}\nlblLONG  label  ${long}`, failAct: new ActionError(`No control ctxt${long} on this screen.`) });
+    await run(["look"]);
+    const r = await run(["act", "press", `ctxt${long}`]);
+    expect(r.code).toBe(1);
+    expect(r.err.split("\n")[0]).toBe(`No control ctxt${long} on this screen.`);
+    const ok = setup();
+    ok.surface.add({ id: "chrome:1", system: "XYZ" }, { view: `${SCREEN}\nlblLONG  label  ${long}` });
+    const a = await ok.run(["act", "set", "ctxtZHDR-CUST", "1"]);
+    const shown = a.lines.find((l) => l.startsWith("lblLONG"));
+    expect(shown?.length).toBe(240);
+    expect(shown).toEndWith("…");
+  });
+  test("okcode <cmd> and open <intent> are commands too: the act shorthand", async () => {
     const { surface, run } = setup();
     surface.add({ id: "chrome:1", system: "XYZ" }, { view: SCREEN });
-    await run(["act", "set", "ctxtZHDR-CUST", "4711"]);
-    await run(["act", "key", "0"]);
-    expect(surface.acts()).toEqual([
-      { do: "set", id: "ctxtZHDR-CUST", value: "4711" },
-      { do: "key", key: 0 },
-    ]);
+    expect((await run(["okcode", "/nZT02"])).code).toBe(0);
+    expect(surface.acts()).toEqual([{ do: "okcode", value: "/nZT02" }]);
+    // open reaches sap_act, which says where it works (this fake session is a Web GUI tab).
+    expect((await run(["open", "#SalesOrder-manage"])).err).toContain("open works in a Fiori launchpad tab only");
+    expect((await run(["okcode"])).code).toBe(2);
+    expect((await run(["open", "a", "b"])).code).toBe(2);
   });
-  test("act '[...]' sends the actions as one batch; the summary keeps the Ran k of n line", async () => {
+  test("act '[...]' sends the actions as one batch; the answer starts with the Ran k of n line", async () => {
     const { surface, run } = setup();
     surface.add({ id: "chrome:1", system: "XYZ" }, { view: SCREEN });
     await run(["look"]);
@@ -142,16 +168,16 @@ describe("act", () => {
     await run(["look"]);
     const r = await run(["act", "key", "0"]);
     expect(r.code).toBe(0);
-    expect(r.lines.slice(0, 3)).toEqual(["did key", "STATUS E: Customer 4799 does not exist  (error: correct the input it names, then Enter)", error.split("\n")[0]!]);
-    // The status bar is said once.
-    expect(r.lines.filter((l) => l.includes("4799"))).toHaveLength(1);
+    expect(r.lines.slice(0, 4)).toEqual(["did key", "STATUS E: Customer 4799 does not exist  (error: correct the input it names, then Enter)", "", error.split("\n")[0]!]);
+    // A new screen is printed whole, as sap_act answers it.
+    expect(r.lines.slice(3, -1).join("\n")).toBe(error);
   });
   test("on the same screen, the changed status bar line is printed", async () => {
     const { surface, run } = setup();
     surface.add({ id: "chrome:1", system: "XYZ" }, { view: SCREEN, onAct: (_a, s) => (s.view = SCREEN.replace("S: Ready", "E: Customer 4799 does not exist")) });
     await run(["look"]);
     const r = await run(["act", "key", "0"]);
-    expect(r.lines.slice(0, 3)).toEqual(["did key", 'CHANGED 1 of 21 lines on ZT01 · "Synthetic Order: Overview" (same screen; sap_look shows all of it):', "~ sbar  status  E: Customer 4799 does not exist"]);
+    expect(r.lines.slice(0, 4)).toEqual(["did key", "", 'CHANGED 1 of 21 lines on ZT01 · "Synthetic Order: Overview" (same screen; sap_look shows all of it):', "~ sbar  status  E: Customer 4799 does not exist"]);
   });
   test("an action that cannot run prints the message on stderr and exits 1", async () => {
     const { surface, run } = setup();

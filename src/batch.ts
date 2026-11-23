@@ -21,7 +21,7 @@
  *
  * This file is the part without a session: reading the batch, and the rules.
  */
-import { type NormalizedAction, normalizeAction } from "./core/action.js";
+import { LOOK, type NormalizedAction, normalizeAction } from "./core/action.js";
 import { okcodeKind } from "./core/guard.js";
 import { ActionError } from "./core/types.js";
 import { type ParsedScreen, stillWorking } from "./record/screen.js";
@@ -43,7 +43,11 @@ export interface Expect {
 }
 
 export interface BatchStep {
+  /** The action's number in the list the agent sent, from 1 (a step that is not run leaves a gap). */
+  n: number;
   action: NormalizedAction;
+  /** Said after the step's own line in the answer: the action after it did not run, and why. */
+  note?: string;
   expect?: Expect;
   /** The answer shows the screen after this step too, not only the last one. */
   show: boolean;
@@ -85,30 +89,69 @@ function parseExpect(raw: unknown): Expect | undefined {
 function opens(action: NormalizedAction): Expect | undefined {
   if (action.do !== "okcode" || typeof action.value !== "string" || !/^\/[nN*]/.test(action.value.trim())) return undefined;
   const k = okcodeKind(action.value);
-  return k.kind === "transaction" ? { transaction: k.tcode } : undefined;
+  // "/nPurchaseOrder-manage" is a Fiori app's intent (the Fiori surface opens it), not a transaction a header would name.
+  return k.kind === "transaction" && !/[-#]/.test(k.tcode) ? { transaction: k.tcode } : undefined;
 }
+
+/** What the answer says in place of an Enter that came right after an okcode. */
+export const SKIPPED_ENTER = "(skipped Enter: okcode already submits)";
+
+/** `{"do":"look"}`: not an action; agents send it for the screen after the step before it. */
+export function isLook(raw: unknown): boolean {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
+  const d = (raw as { do?: unknown }).do;
+  return typeof d === "string" && d.trim().toLowerCase() === LOOK;
+}
+
+/** A key 0 or Enter with nothing else said about it. */
+const bareEnter = (s: BatchStep) => s.action.do === "key" && (s.action.key === 0 || s.action.key === "Enter") && !s.expect && !s.show && !s.unseen;
 
 /**
  * The steps of a batch, each action normalised as `sap_act` normalises one.
  * Any step that is not a valid action refuses the whole batch: nothing runs.
+ * An empty list is no steps: the server answers with the screen.
+ *
+ * Two habits of agents are taken as meant rather than refused:
+ * - `{"do":"look"}` asks for the screen after the step before it (`show`);
+ * - a bare Enter right after an okcode does not run: the okcode already
+ *   submitted. Live, 110 batches sent both; 42 then hit an error status, and
+ *   once the extra Enter went past VF01's first screen and billed the wrong
+ *   document. The okcode's line says it was skipped.
  */
 export function parseBatch(input: unknown): BatchStep[] {
-  if (!Array.isArray(input) || input.length === 0) throw new ActionError('"actions" is a list of actions, e.g. [{"do":"set","id":"ctxtVBAK-AUART","value":"OR"},{"do":"key","key":0}].');
+  if (!Array.isArray(input)) throw new ActionError('"actions" is a list of actions, e.g. [{"do":"set","id":"ctxtVBAK-AUART","value":"OR"},{"do":"key","key":0}].');
   if (input.length > MAX_BATCH) throw new ActionError(`"actions" takes ${MAX_BATCH} actions at most (got ${input.length}): send the actions of one screen, then go on from the answer.`);
-  return input.map((raw, i) => {
+  const steps: BatchStep[] = [];
+  for (const [i, raw] of input.entries()) {
+    const n = i + 1;
+    if (isLook(raw)) {
+      const prev = steps.at(-1);
+      if (prev) prev.show = true;
+      continue;
+    }
+    let step: BatchStep;
     try {
-      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { action: normalizeAction(raw), show: false, unseen: false };
-      const { expect, show, unseen, ...rest } = raw as Record<string, unknown>;
-      if (show !== undefined && show !== null && typeof show !== "boolean") throw new ActionError('"show" is true or false.');
-      if (unseen !== undefined && unseen !== null && typeof unseen !== "boolean") throw new ActionError('"unseen" is true or false.');
-      const action = normalizeAction(rest);
-      const e = parseExpect(expect) ?? opens(action);
-      return { action, ...(e ? { expect: e } : {}), show: show === true, unseen: unseen === true };
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) step = { n, action: normalizeAction(raw), show: false, unseen: false };
+      else {
+        const { expect, show, unseen, ...rest } = raw as Record<string, unknown>;
+        if (show !== undefined && show !== null && typeof show !== "boolean") throw new ActionError('"show" is true or false.');
+        if (unseen !== undefined && unseen !== null && typeof unseen !== "boolean") throw new ActionError('"unseen" is true or false.');
+        const action = normalizeAction(rest);
+        const e = parseExpect(expect) ?? opens(action);
+        step = { n, action, ...(e ? { expect: e } : {}), show: show === true, unseen: unseen === true };
+      }
     } catch (e) {
-      if (e instanceof ActionError) throw new ActionError(`Action ${i + 1} of ${input.length}: ${e.message}\nNothing ran.`);
+      if (e instanceof ActionError) throw new ActionError(`Action ${n} of ${input.length}: ${e.message}\nNothing ran.`);
       throw e;
     }
-  });
+    const prev = steps.at(-1);
+    if (prev && prev.n === n - 1 && prev.action.do === "okcode" && bareEnter(step)) {
+      prev.note = SKIPPED_ENTER;
+      continue;
+    }
+    steps.push(step);
+  }
+  return steps;
 }
 
 /** Why a batch ends after a step. */

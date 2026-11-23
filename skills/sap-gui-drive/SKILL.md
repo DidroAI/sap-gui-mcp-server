@@ -24,10 +24,12 @@ do by hand, under their authorisations.
    (`{"screen":"4001"}`, `{"popup":true}`, `{"status":"W"}`) lets it go on
    through what you know comes. A write on a screen the batch reached after
    you sent it does not run unless its step says `"unseen": true`: read that
-   screen first unless you are sure of it.
+   screen first unless you are sure of it. An `okcode` submits on its own:
+   send no Enter after it (a batch skips one that comes right after).
 3. Each answer is the new screen: read it before the next step instead of
-   calling `sap_look` again. On the same screen it holds only what changed
-   (`~` changed, `+` new, `-` gone, `=` context).
+   calling `sap_look` again (a `sap_look` right after it, on the same screen,
+   only answers "Unchanged since your last sap_act"). On the same screen it
+   holds only what changed (`~` changed, `+` new, `-` gone, `=` context).
 4. Read the **status bar** first (`STATUS E: ...`, or `sbar  status` in the
    view; toasts and popovers in Fiori). `E`: the step did not go through,
    correct the field it names. `W`: Enter accepts it. `S`: done, document
@@ -43,13 +45,17 @@ do by hand, under their authorisations.
   from the list rather than inventing a value.
 - **Transactions:** `{"do":"okcode","value":"/nVA03"}` leaves the current
   transaction and starts another (unsaved input is lost);
-  `/oVA03` opens it in a new session (SAP GUI).
+  `/oVA03` opens it in a new session (SAP GUI). In a Fiori tab, open an app
+  with `{"do":"open","app":"#PurchaseOrder-manage"}`; an okcode with an
+  intent (`/nPurchaseOrder-manage`, `#X-y`) does the same, and `/n` goes to
+  the launchpad's home page.
 - **Popups** are their own windows (`wnd[1]`, `wnd[2]`) above the screen.
   Answer them before anything else: the screen below does not react while
   a popup is open.
 - **Lists:** ALV grids show rows with a column header once; open an entry
   with `{"do":"grid","id":...,"row":N,"col":"<column>","how":"double"}`.
   Trees: `{"do":"tree","id":...,"node":"<key>","how":"double"}`.
+  A cell of an input table or grid: `{"do":"set","id":<table>,"row":N,"col":"<column>","value":...}`.
 - **Long lists** show the rows on screen and the total. Move them with
   `{"do":"scroll","id":...,"to":N}` (or `"next"`, `"prev"`, `"first"`,
   `"last"`); read a range with `sap_look` and `"id"`, `"rows": "100-150"`.
