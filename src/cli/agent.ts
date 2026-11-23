@@ -455,9 +455,9 @@ function present(call: Call, result: CallToolResult, ctx: AgentContext): number 
     ctx.out(text);
     return error ? 1 : 0;
   }
-  // A look on the screen the last act answered with: that answer's file is the screen.
+  // A look on the screen the last act answered with: that answer's file is the screen (the view that follows the line is not printed again).
   if (!error && call.tool === "sap_look" && text.startsWith(UNCHANGED_HEAD)) {
-    ctx.out(text);
+    ctx.out(text.split("\n", 1)[0] ?? "");
     const last = lastAct(screensDir(ctx));
     if (last) ctx.out(`screen: ${shown(last, ctx.cwd)}`);
     return 0;

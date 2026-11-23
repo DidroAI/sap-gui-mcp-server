@@ -176,7 +176,7 @@ describe.skipIf(!exe)("the menu bar, in a browser", () => {
     await page.evaluate(() => document.querySelectorAll(".lsMnu--root xmp").forEach((x) => x.remove()));
     await act(session, { do: "key", key: "Escape" });
     const view = (await webguiLookInFrame(page.mainFrame(), true)) ?? "";
-    expect(view).toContain('mbar  menubar  Order {menu[0]}, Goto {menu[1]}  (every entry and its path: look id "mbar")');
+    expect(view).toContain('mbar  menubar  Order {menu[0]}, Goto {menu[1]}  (its menus and their entries: look id "mbar"; one menu whole: id "menu[N]")');
     expect(await act(session, { do: "select", id: `${M}/menu[0]` })).toContain("opened");
     // While the menu is open its rows are the "menu" lines: no second line for the menu bar.
     expect((await webguiLookInFrame(page.mainFrame(), true)) ?? "").not.toContain("menubar");

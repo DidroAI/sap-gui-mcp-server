@@ -9,13 +9,16 @@
  *
  * - a popup opened (it asks something the agent has not read);
  * - the status bar shows an error, a warning or a termination;
- * - the screen is another one (transaction, program or screen number);
+ * - the screen is another one (transaction, program or screen number), and
+ *   the next action is not sure to belong there (`goesOnAfter` in server.ts:
+ *   it goes on when the next action's id is on the new screen and it does
+ *   not write);
  * - the step's `expect` is not met;
  * - SAP is still working on the step.
  *
  * A step says what it knows will happen with `expect`, and the batch goes on
  * through it: `{"screen":"4001"}` (also `transaction`, `title`),
- * `{"popup":true}`, `{"status":"W"}`. The server ends the batch too when an
+ * `{"popup":true}`, `{"status":"W"}`; `{"screen":"*"}` is any screen. The server ends the batch too when an
  * action fails, is refused or waits for the user's yes (server.ts): each
  * action of a batch has its own guard decision, as if it were sent alone.
  *
@@ -87,11 +90,16 @@ function parseExpect(raw: unknown): Expect | undefined {
  * run unless its step says "unseen" (`unseenWrite`).
  */
 function opens(action: NormalizedAction): Expect | undefined {
+  // A Fiori app opened by its intent: whatever page it shows is the one asked for.
+  if (action.do === "open") return { screen: ANY };
   if (action.do !== "okcode" || typeof action.value !== "string" || !/^\/[nN*]/.test(action.value.trim())) return undefined;
   const k = okcodeKind(action.value);
   // "/nPurchaseOrder-manage" is a Fiori app's intent (the Fiori surface opens it), not a transaction a header would name.
   return k.kind === "transaction" && !/[-#]/.test(k.tcode) ? { transaction: k.tcode } : undefined;
 }
+
+/** `expect` "*": any screen, transaction or title. */
+export const ANY = "*";
 
 /** What the answer says in place of an Enter that came right after an okcode. */
 export const SKIPPED_ENTER = "(skipped Enter: okcode already submits)";
@@ -209,13 +217,51 @@ export function stopAfter(action: NormalizedAction, before: ParsedScreen, after:
   if (!named && !(opened && expect?.popup === true) && moved(before, after)) return { why: "screen", text: `the screen changed: it is now ${where(after)}` };
   if (!expect) return undefined;
   const unmet: string[] = [];
-  if (expect.screen !== undefined && number(expect.screen) !== number(after.screen)) unmet.push(`screen ${expect.screen} (it is ${after.screen ?? "unknown"})`);
-  if (expect.transaction !== undefined && !same(expect.transaction, after.transaction)) unmet.push(`transaction ${expect.transaction} (it is ${after.transaction ?? "unknown"})`);
-  if (expect.title !== undefined && !(after.title ?? "").toLowerCase().includes(expect.title.toLowerCase())) unmet.push(`a title with "${expect.title}" (it is "${after.title ?? ""}")`);
+  if (expect.screen !== undefined && expect.screen !== ANY && number(expect.screen) !== number(after.screen)) unmet.push(`screen ${expect.screen} (it is ${after.screen ?? "unknown"})`);
+  if (expect.transaction !== undefined && expect.transaction !== ANY && !same(expect.transaction, after.transaction)) unmet.push(`transaction ${expect.transaction} (it is ${after.transaction ?? "unknown"})`);
+  if (expect.title !== undefined && expect.title !== ANY && !(after.title ?? "").toLowerCase().includes(expect.title.toLowerCase())) unmet.push(`a title with "${expect.title}" (it is "${after.title ?? ""}")`);
   if (expect.status !== undefined && !statusMet(after, expect.status)) unmet.push(`status ${expect.status} (${st ? `it is ${st.type ? `${st.type}: ` : ""}${st.text}` : "the status bar is empty"})`);
   if (expect.popup === true && !opened) unmet.push("a popup (none opened)");
   if (expect.popup === false && top) unmet.push(`no popup ("${top.title}" is open)`);
   return unmet.length ? { why: "expect", text: `expected ${unmet.join(", ")}` } : undefined;
+}
+
+/** A container segment that names no control on its own: a control's shell and its container. */
+const GENERIC = /^(shell|shellcont)(\[\d+\])?$/;
+
+/**
+ * An action's note with each id of a control in a window's user area cut to
+ * its last part, as the compact view names it: "set wnd[0]/usr/tabsTAXI/
+ * tabpT\01/ssubBODY:SAPMV45A:4400/.../ctxtRV45A-MABNR[1,0]" is "set
+ * ctxtRV45A-MABNR[1,0]" (ME21N: 7 such lines of 200 characters in one batch).
+ * A shell keeps the control it belongs to: "cntlGRID1/shell".
+ */
+export function shortNote(note: string): string {
+  return note.replace(/\bwnd\[\d+\]\/usr\/((?:[^\s/"]+\/)*[^\s/"]+)/g, (_m, path: string) => {
+    const segs = path.split("/");
+    let at = segs.length - 1;
+    while (at > 0 && GENERIC.test(segs[at] ?? "")) at--;
+    return segs.slice(at).join("/").replace(/\/shellcont\//g, "/");
+  });
+}
+
+/** The id of a line of a view: what stands before its first two spaces, without a cell's [col,row]. */
+const lineId = (l: string) => (l.split("  ", 1)[0] ?? "").replace(/\[\d+,\d+\]$/, "");
+
+/**
+ * Is the control `id` on the screen `view` shows (compact or full)? A line's
+ * id is it, or ends with it after a "/"; a table cell counts by its column
+ * (any row). A Fiori control (#id) counts where its id stands in a line.
+ */
+export function idOn(view: string, id: string): boolean {
+  const want = id.trim().replace(/\[\d+,\d+\]$/, "");
+  if (!want) return false;
+  for (const l of view.split("\n")) {
+    const got = lineId(l);
+    if (got === want || got.endsWith(`/${want}`)) return true;
+    if (want.startsWith("#") && new RegExp(`(^|\\s)${want.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`).test(l)) return true;
+  }
+  return false;
 }
 
 /**

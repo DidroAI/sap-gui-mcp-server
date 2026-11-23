@@ -19,6 +19,8 @@ export interface FakeSession {
   actMs?: number;
   /** What `timing` answers. */
   timing?: string;
+  /** The user's notation the driver reads from the settings; none: the driver has no `notation`. */
+  notation?: { sign?: "," | "."; spaced?: boolean; date?: string };
 }
 
 export class FakeSurface implements Surface {
@@ -78,6 +80,7 @@ export class FakeSurface implements Surface {
         return `did ${a.do}`;
       },
       ...(s.timing ? { timing: () => s.timing } : {}),
+      ...(s.notation ? { notation: async () => s.notation } : {}),
       screenshot: async () => {
         log.push({ op: "screenshot" });
         return Buffer.from("png");

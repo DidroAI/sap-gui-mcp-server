@@ -70,7 +70,7 @@ const EXPECTED = [
   "wnd[0]/usr/cntlHTML/shellcont/shell/html[3]  button  Approve all",
   "wnd[0]/usr/cntlHTML/shellcont/shell/html[4]  link  Show details",
   "wnd[0]/sbar  status  E: Order type ZZ is not defined",
-  'wnd[0]/mbar  menubar  Order {menu[0]}, Edit {menu[1]}  (every entry and its path: look id "mbar")',
+  'wnd[0]/mbar  menubar  Order {menu[0]}, Edit {menu[1]}  (its menus and their entries: look id "mbar"; one menu whole: id "menu[N]")',
   'WINDOW wnd[1]  "Exit Order Processing"',
   "wnd[1]/usr/txtSPOP-TEXTLINE1  label  Do you wish to save your data first?",
   "wnd[1]/usr/btnSPOP-OPTION1  button  Yes",
@@ -128,7 +128,7 @@ describe.skipIf(!exe)("Web GUI reader in a browser", () => {
     expect(lines).not.toContain("tabpT\\02  tab  Shipping");
     // Buttons of the screen behind cannot be pressed while the popup is open: the full view has them.
     expect(lines.some((l) => l.includes("Save"))).toBe(false);
-    expect(lines).toContain("  (10 more lines behind the popup: buttons, menus, empty fields, list rows; sap_look full=true shows them)");
+    expect(lines).toContain("  (10 more lines behind the popup: buttons, menus, read-only and empty fields, list rows; sap_look full=true shows them)");
     expect(lines.length).toBeLessThan(EXPECTED.length);
   });
 

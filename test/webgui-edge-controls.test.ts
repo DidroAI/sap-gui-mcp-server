@@ -261,7 +261,12 @@ describe.skipIf(!exe)("Web GUI reader: edge cases of round 3, in a browser", () 
     expect(await page.evaluate(() => (window as unknown as { greyClicked?: number; menuOpened?: number }).greyClicked ?? (window as unknown as { menuOpened?: number }).menuOpened)).toBeUndefined();
     const menus = (await menuLines(new WebGuiSession(f))).split("\n");
     expect(menus).toContain("    Open (SHIFT+F5)  {menu[0]/menu[0]}");
-    expect(menus).toContain("    More Functions...  {menu[0]/menu[7]}  (greyed out: SAP does not offer it on this screen)");
+    expect(menus).toContain("    More Functions...  {menu[0]/menu[7]}  (greyed)");
+    expect(menus[0]).toContain("(greyed): SAP does not offer it on this screen");
+    // One menu alone: that menu and every entry below it.
+    const one = (await menuLines(new WebGuiSession(f), "menu[0]")).split("\n");
+    expect(one[0]).toStartWith("menu[0]  menu  ");
+    expect(one).toContain("  Open (SHIFT+F5)  {menu[0]/menu[0]}");
     expect(await webguiActInFrame(f, { do: "press", id: "btnZGO" })).toContain("pressed wnd[0]/usr/btnZGO");
   }, 30_000);
 
