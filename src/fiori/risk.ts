@@ -19,8 +19,8 @@
  * the server at once. That is not counted as a commit; activating the draft
  * (Save, Create) is.
  */
-import type { Action, Assessment, Risk } from "../core/types.js";
-import { commitWord, discardsInput, endsLogon, safeWord } from "../core/words.js";
+import { ActionError, type Action, type Assessment, type Risk } from "../core/types.js";
+import { commitWord, discardsInput, endsLogon, removesViewCriterion, safeWord } from "../core/words.js";
 import type { ControlFacts } from "./ui5.js";
 
 /** What the rules know beyond the control: the page's language ("en-US"), for the safe words. */
@@ -68,6 +68,8 @@ const safeText = (f: ControlFacts, ctx: RuleContext) => !!safeWord(ctx.language,
 /** "OK" (the same in every language) or "Continue": the button only agrees with what the dialog says. */
 const agrees = (f: ControlFacts, ctx: RuleContext) => /^ok$/i.test(f.text.trim()) || safeWord(ctx.language, f.text) === "enter";
 const isLink = (f: ControlFacts) => /Link$|ObjectIdentifier$/.test(f.type);
+/** A table or a list as a whole: a press on it lands on one of its rows, which opens that row's object. */
+const TABLE_LIKE = /\.(Table|List|Tree|TreeTable|AnalyticalTable|GridList|SmartTable)$/;
 /**
  * The button of the popover that the Cancel or Discard action of a draft opened (it asks "Discard all
  * changes?" and holds that one button; what opened it decides, in any language), or "Discard" in a popup.
@@ -116,7 +118,10 @@ export const RULES: Rule[] = [
   { name: "discards a draft", risk: "navigate", when: (f) => discardsDraft(f) },
   { name: "leaves the page, unsaved input is lost", risk: "navigate", when: (f) => leavesWithLoss(f) },
   { name: "press handler that writes", risk: "commit", when: (f) => (isButton(f) || isPressable(f)) && (f.handlers ?? []).some((h) => HANDLER_COMMIT.test(h)) },
+  // "Remove Condition" in a value help's conditions, a filter bar or a sort dialog: the condition leaves the filter, nothing is deleted.
+  { name: "removes a filter condition", risk: "read", when: (f, ctx) => isButton(f) && (!!f.inValueHelp || !!f.inFilterBar || personalizes(f, ctx)) && removesViewCriterion(ctx.language, f.text) },
   { name: "text says it writes", risk: "commit", when: (f) => (isButton(f) || isPressable(f)) && !!commitText(f.text) },
+  { name: "table or list: a press opens one of its rows", risk: "navigate", when: (f) => TABLE_LIKE.test(f.type) && !isButton(f) },
   { name: "agrees to a filter, sort or layout dialog", risk: "navigate", when: (f, ctx) => isButton(f) && agrees(f, ctx) && personalizes(f, ctx) },
   {
     name: "agrees to a dialog that writes",
@@ -202,8 +207,24 @@ export interface KeyContext extends RuleContext {
 }
 
 /**
+ * The answer for an id the screen does not have, as the driver gives it when an action cannot find its
+ * control. A whole line pasted from sap_look ("navpopover.SmartLink #__link0-__clone1") is named with the
+ * id it holds; a text with spaces is told apart from an id.
+ */
+export function noControl(id: string): ActionError {
+  const want = id.trim();
+  const pasted = /^[\w.$:-]+\s+#(\S+)$/.exec(want)?.[1];
+  const hint = pasted
+    ? ` "${want}" is a line of sap_look, type and id: the id is the text after #, "${pasted}".`
+    : /\s/.test(want)
+      ? " An id has no spaces: it is the text after # on the control's line, not the text the control shows."
+      : "";
+  return new ActionError(`No control "${want}" on this screen.${hint} Take the id from sap_look (the text after # in the compact view); the screen may have changed.`);
+}
+
+/**
  * One action, from the facts of its control (undefined when the id is not on
- * the screen: the action will fail, nothing is written).
+ * the screen: the action fails here with "No control", before any risk is judged).
  */
 export function assessAction(action: Action, facts: ControlFacts | undefined, ctx: KeyContext = {}): Assessment {
   const d = action.do === "fill" ? "set" : action.do === "double" ? "dblclick" : action.do;
@@ -235,8 +256,11 @@ export function assessAction(action: Action, facts: ControlFacts | undefined, ct
     return { risk: "navigate", reason: `open ${app.slice(0, 80)}` };
   }
   if (d === "okcode" || d === "tree" || d === "grid" || d === "toolbar") return { risk: "read", reason: `"${d}" needs a Web GUI screen` };
-  // An id the screen does not have: the action fails in the page, where the control is looked up again.
-  if (!facts) return d === "press" || d === "click" || d === "select" || d === "dblclick" ? { risk: "commit", reason: `no control "${action.id ?? ""}" on the screen the server read, so what it does is unknown` } : { risk: "read", reason: `no control "${action.id ?? ""}" on the screen` };
+  // An id the screen does not have: said as such, before any risk is judged. Nothing runs, so nothing can be written.
+  if (!facts) {
+    if (typeof action.id === "string" && action.id.trim()) throw noControl(action.id);
+    return d === "press" || d === "click" || d === "select" || d === "dblclick" ? { risk: "commit", reason: `${d} without a control, so what it does is unknown` } : { risk: "read", reason: "no control" };
+  }
   if (d === "set" || d === "combo" || d === "check") {
     // A toggle button is a button; a field that is a button (an action select) too.
     if (d === "check" && isButton(facts)) return assessControl(facts, ctx);

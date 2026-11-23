@@ -163,9 +163,10 @@ describe("fiori actions", () => {
     // The language decides for the focused button too.
     expect(assessAction({ do: "key", key: "Enter" }, undefined, { language: "ja", focused: button("Close") }).risk).toBe("commit");
   });
-  test("pressing an id the screen does not have cannot be ruled safe", () => {
-    for (const d of ["press", "click", "select", "dblclick"]) expect(assessAction({ do: d, id: "ghost" }, undefined, EN).risk).toBe("commit");
-    expect(assessAction({ do: "set", id: "ghost", value: "1" }, undefined, EN).risk).toBe("read");
+  test("an id the screen does not have fails as no such control, before any risk is judged", () => {
+    for (const d of ["press", "click", "select", "dblclick", "set"]) expect(() => assessAction({ do: d, id: "ghost", value: "1" }, undefined, EN)).toThrow('No control "ghost" on this screen');
+    // Without an id there is no control to name: a press still cannot be ruled safe.
+    expect(assessAction({ do: "press" }, undefined, EN).risk).toBe("commit");
   });
   test("check on a toggle button is a press of that button", () => {
     expect(assessAction({ do: "check", id: "x" }, { type: "sap.m.ToggleButton", id: "t", text: "Block" }, EN).risk).toBe("commit");
