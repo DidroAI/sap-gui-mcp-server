@@ -174,7 +174,7 @@ export function unknownEffect(assessment: Assessment): boolean {
 }
 
 /** What the server does with an assessed action under the policy. */
-export function decide(policy: Policy, action: Action, assessment: Assessment): Verdict {
+export function decide(policy: Policy, action: Action, assessment: Assessment, again = false): Verdict {
   const field = commandFieldRefusal(action);
   if (field) return { run: false, refused: field };
   const refusal = tcodeRefusal(policy, tcodeOf(action));
@@ -198,6 +198,10 @@ export function decide(policy: Policy, action: Action, assessment: Assessment): 
       run: false,
       refused: `nothing was sent: ${assessment.reason}, and with writes off only what the server can judge runs. Look at the screen again (sap_look) and use the id of the button, link or row you mean as it shows it, or a key that has a button there; navigation and display functions it can read run with writes off. Only the user can allow writes (SAP_WRITE=confirm or on).`,
     };
+  // The second refusal in a session says the rule in one line: the agent has read the whole text once
+  // (600 characters on every refusal, live 2026-11-23).
+  if (again)
+    return { run: false, refused: `this action may write to SAP (${assessment.reason}) and writes are off. As before: tell the user, leave without saving ({"do":"okcode","value":"/n"}), do not look for another way.` };
   return {
     run: false,
     refused: `this action may write to SAP (${assessment.reason}) and writes are off. Tell the user what you would have saved; do not look for another way. ${LEAVE_UNSAVED} Only the user can allow writes (SAP_WRITE=confirm or on).`,

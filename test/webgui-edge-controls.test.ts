@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { compact } from "../src/core/compact.js";
 import { webguiActInFrame, webguiLookInFrame } from "../src/webgui/index.js";
-import { coveredBy, view } from "../src/webgui/reader.js";
+import { coveredBy, plainTimeout, view } from "../src/webgui/reader.js";
 import { menuLines } from "../src/webgui/screen.js";
 import { WebGuiSession } from "../src/webgui/session.js";
 
@@ -276,6 +276,9 @@ describe.skipIf(!exe)("Web GUI reader: edge cases of round 3, in a browser", () 
     expect(await page.evaluate(() => (window as unknown as { neighbour?: number }).neighbour)).toBeUndefined();
     expect(await page.locator("#LC1 img").getAttribute("class")).toBe("urCImgOn");
     // What Playwright saw over a control that is covered whole is named.
+    // Playwright's own words never reach the answer.
+    expect(plainTimeout("locator.click: Timeout 10000ms exceeded.")).toBe("The click on the control did not go through within 10 s.");
+    expect(plainTimeout("no such control")).toBe("no such control");
     expect(coveredBy('  - <div id="urPopupWindowBlockLayer" class="x"></div> intercepts pointer events')).toStartWith("A popup window covers this control");
     expect(coveredBy('  - <tr ct="POMNI" id="wnd[0]/mbar/menu[0]">…</tr> intercepts pointer events')).toStartWith("An open menu covers this control");
     expect(coveredBy(`  - <div ct="ALI" data-ls="{1:{SID:'wnd[1]/usr/lbl[3,9]',Type:'ABAPLISTIMAGE'}}"></div> intercepts pointer events`)).toContain("Another control of the screen is drawn over it (wnd[1]/usr/lbl[3,9])");

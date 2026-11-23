@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { commitCode, commitWord, discardsInput, endsLogon, isGotoMenu, isLogonScreen, languageCode, languageCovered, okcodeKind, safeCode, safeWord } from "../src/core/words.js";
+import { commitCode, commitWord, discardsInput, endsLogon, isGotoMenu, isoDateAs, isLogonScreen, languageCode, languageCovered, okcodeKind, safeCode, safeWord } from "../src/core/words.js";
 
 describe("words: commit", () => {
   test("verbs that write, in seven languages", () => {
@@ -163,5 +163,17 @@ describe("words: what a popup or a menu is about", () => {
     for (const t of ["Org. Levels (F6)", "Organizational Levels...", "Other Material", "Check Screen Data", "Check consistency of entry", "Multiple selection", "Get Variant...", "New entry (F5)"])
       expect([t, !!safeWord("EN", t)]).toEqual([t, true]);
     for (const t of ["Check In", "Check out original", "Save as Variant...", "Delete Variant", "Create Variant"]) expect([t, safeWord("EN", t)]).toEqual([t, undefined]);
+  });
+});
+
+describe("isoDateAs: an ISO date in the user's date format", () => {
+  test("each of SAP's formats; no ISO date, no format, or ISO itself: undefined", () => {
+    expect(isoDateAs("2026-11-20", "DD.MM.YYYY")).toBe("20.11.2026");
+    expect(isoDateAs("2026-11-20", "MM/DD/YYYY")).toBe("11/20/2026");
+    expect(isoDateAs("2026-11-20", "MM-DD-YYYY")).toBe("11-20-2026");
+    expect(isoDateAs("2026-11-20", "YYYY.MM.DD")).toBe("2026.11.20");
+    expect(isoDateAs("2026-11-20", "YYYY-MM-DD")).toBeUndefined();
+    expect(isoDateAs("20.11.2026", "DD.MM.YYYY")).toBeUndefined();
+    expect(isoDateAs("2026-11-20", undefined)).toBeUndefined();
   });
 });

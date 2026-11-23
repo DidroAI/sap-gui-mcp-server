@@ -127,7 +127,8 @@ describe.skipIf(!exe)("Web GUI reader: lists, dropdowns and handles, in a browse
   test("a range of rows is read by scrolling; title rows stay apart", async () => {
     const out = (await look({ compact: true, id: "usr", rows: { from: 10, to: 16 } })).split("\n");
     expect(out.slice(2)).toEqual([
-      "usr  list  201 rows (visible 3, first 14, below 1 title rows; scroll for the others)  (cell ids: usr/lbl[col,row], col in braces; a checkbox is chk[col,row])",
+      "usr  list  201 rows (visible 3, below 1 title rows; scroll for the others)  (cell ids: usr/lbl[col,row], col in braces; a checkbox is chk[col,row])",
+      '  (The screen showed rows up to 2: rows 3 to 9 are not in this read ("rows":"3-9" reads them).)',
       "  title 0: Type {3} | Name {9}",
       "  row 10: [ ] {1} | T10 {3} | Name 10 {9}",
       "  row 11: [ ] {1} | T11 {3} | Name 11 {9}",
@@ -136,7 +137,8 @@ describe.skipIf(!exe)("Web GUI reader: lists, dropdowns and handles, in a browse
       "  row 14: [ ] {1} | T14 {3} | Name 14 {9}",
       "  row 15: [ ] {1} | T15 {3} | Name 15 {9}",
       "  row 16: [ ] {1} | T16 {3} | Name 16 {9}",
-      '  (rows 10 to 16 of 201; the control is now scrolled there. Rows are numbered in the whole list (line 0 is the first line below 1 title row): "rows" and "row" in actions take these numbers. A cell id counts rows on the screen: row 14 is lbl[col,1] now, col in braces. The screen showed rows up to 2: rows 3 to 9 are not in this read ("rows":"3-9" reads them).)',
+      // The list is back where the screen had it (it was left at row 14).
+      '  (rows 10 to 16 of 201; the list is scrolled back to line 0, as it was. Rows are numbered in the whole list (line 0 is the first line below 1 title row): "rows" and "row" in actions take these numbers. A cell id counts rows on the screen: row 0 is lbl[col,1] now, col in braces.)',
     ]);
     await webguiActInFrame(page.mainFrame(), { do: "scroll", id: "usr", to: "first" });
   });
@@ -157,6 +159,24 @@ describe.skipIf(!exe)("Web GUI reader: lists, dropdowns and handles, in a browse
     expect(await webguiActInFrame(f, { do: "dblclick", id: "usr", row: 60 })).toStartWith("double-clicked wnd[0]/usr/lbl[3,1] (row 60 of the list) (scrolled to it)");
     expect(await dbl()).toEqual(["wnd[0]/usr/lbl[9,2] Name 1", "wnd[0]/usr/lbl[3,1] T60"]);
     await webguiActInFrame(f, { do: "scroll", id: "usr", to: "first" });
+  });
+
+  test("select and check on a list line by its number are judged as that line, not as the list; focus takes the row", async () => {
+    const f = page.mainFrame();
+    await webguiActInFrame(f, { do: "scroll", id: "usr", to: "first" });
+    expect((await webguiAssessInFrame(f, { do: "select", id: "usr", row: 1 })).risk).toBe("navigate");
+    expect((await webguiAssessInFrame(f, { do: "check", id: "usr", row: 2, col: "1", value: true })).risk).toBe("navigate");
+    expect((await webguiAssessInFrame(f, { do: "focus", id: "usr", row: 2, col: "9" })).risk).toBe("read");
+    // Without a row the list itself is pressed: what that does is unknown.
+    expect((await webguiAssessInFrame(f, { do: "press", id: "usr" })).risk).toBe("commit");
+    // A list checkbox ticks in the page, as in Web GUI.
+    await page.evaluate(() =>
+      document.addEventListener("click", (e) => (e.target as Element).closest(".lsCheckBox")?.classList.toggle("lsCheckBox--checked")),
+    );
+    expect(await webguiActInFrame(f, { do: "check", id: "usr", row: 2, value: true })).toContain("(row 2 of the list)");
+    expect(await webguiActInFrame(f, { do: "focus", id: "usr", row: 0, col: "9" })).toContain("wnd[0]/usr/lbl[9,1] (row 0 of the list)");
+    // A row on a control without rows is refused, not dropped.
+    expect(await refusal(webguiActInFrame(f, { do: "focus", id: "cmbZHDR-BLOCK", row: 3 }))).toContain('"row" and "col" take effect only on a list, table or grid');
   });
 
   test("a dropdown shows its entry and the count; its entries come on request and nothing is chosen", async () => {

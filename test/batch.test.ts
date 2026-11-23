@@ -109,6 +109,16 @@ describe("sap_act with actions: several actions, one answer", () => {
     expect(dos(sap)).toEqual(["okcode", "set", "key 0"]);
   });
 
+  test("a popup a step opened does not end the batch when the next action is a control of that popup and does not write", async () => {
+    const { sap, call, batch } = await setup();
+    sap.popupsFor.set("5000", [{ title: "Information", text: "Order is blocked for delivery" }]);
+    await call("sap_act", { action: { do: "okcode", value: "/nZA03" } });
+    const r = await batch([{ do: "set", id: "ctxtZORD-VBELN", value: "5000" }, ENTER, { do: "press", id: "wnd[1]/tbar[0]/btn[0]" }, { do: "select", id: "tabpT\\02" }]);
+    expect(r.text.split("\n")[0]).toBe("Ran 4 actions.");
+    expect(r.text).toContain('(a popup opened ("Information"))');
+    expect(sap.tab).toBe("T\\02");
+  });
+
   test('"expect":{"popup":true} goes on through a popup the agent knows comes', async () => {
     const { sap, call, batch } = await setup();
     sap.popupsFor.set("5000", [{ title: "Information", text: "Order is blocked for delivery" }]);

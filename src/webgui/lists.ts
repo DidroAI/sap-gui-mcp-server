@@ -4,7 +4,7 @@
  */
 import type { Locator } from "playwright-core";
 import { ActionError } from "../core/types.js";
-import { clean, evalLs, locate } from "./controls.js";
+import { clean, entryList, evalLs, locate } from "./controls.js";
 import { comboEntries, type MarkedControl, markSelector, type Scrolled, scrollControl } from "./page.js";
 import { freshView, kindIn, look } from "./screen.js";
 import type { WebGuiSession } from "./session.js";
@@ -127,7 +127,17 @@ export async function selectRow(session: WebGuiSession, sid: string, row: number
   const now = await evalLs(session, markSelector, target).catch(() => "");
   if (typeof now !== "string" && now.selected !== on)
     throw new ActionError(`row ${row} of ${sid} is still ${now.selected ? "selected" : "not selected"}: the click on its row selector did not change it. Look at the screen.`);
-  return `${on ? "selected" : "deselected"} row ${row} of ${sid}${scrolled}`;
+  // Selecting a row adds it to the rows already selected, as a click on a row selector does in SAP: said, so
+  // a function on "the selected row" is not run on more rows than meant (live 2026-11-23: rows 0 and 1 both selected).
+  const others = on ? othersSelected(await look(session).catch(() => ""), sid, row) : [];
+  const also = others.length ? ` (row${others.length === 1 ? "" : "s"} ${others.join(",")} ${others.length === 1 ? "is" : "are"} selected too: {"do":"select","id":"${sid}","row":N,"value":false} clears one)` : "";
+  return `${on ? "selected" : "deselected"} row ${row} of ${sid}${scrolled}${also}`;
+}
+
+/** The rows of table `sid` the view names as selected, other than `row`. */
+export function othersSelected(view: string, sid: string, row: number): number[] {
+  const line = view.split("\n").find((l) => l.startsWith(`${sid}  `)) ?? "";
+  return (/; selected rows ([\d,]+)/.exec(line)?.[1] ?? "").split(",").filter(Boolean).map(Number).filter((n) => n !== row);
 }
 
 /** The visible entries of an open list, as key and text. */
@@ -205,11 +215,12 @@ export async function chooseEntry(session: WebGuiSession, c: MarkedControl, loc:
   const keys = entries.map((e) => e.key.toLowerCase());
   let idx = keys.indexOf(want);
   if (idx < 0) idx = texts.findIndex((t) => t === want || t.startsWith(`${want} `));
-  if (idx < 0 && want) idx = texts.findIndex((t) => t.includes(want));
+  // A part of a text only when one entry has it: the first of several was a guess.
+  if (idx < 0 && want && texts.filter((t) => t.includes(want)).length === 1) idx = texts.findIndex((t) => t.includes(want));
   if (idx < 0) {
     // Escape closes the open list; with no list open it would be Cancel (F12).
     if (entries.length > 0) await page.keyboard.press("Escape");
-    throw new ActionError(entries.length ? `no entry "${clean(String(wanted ?? ""))}" in ${c.sid}: ${entries.map((e) => `${e.key}:${e.text}`).join(", ")}` : `the list of ${c.sid} did not open, so nothing was chosen. Look at the screen.`);
+    throw new ActionError(entries.length ? `no entry "${clean(String(wanted ?? ""))}" in ${c.sid}: ${entryList(entries)}` : `the list of ${c.sid} did not open, so nothing was chosen. Look at the screen.`);
   }
   const chosen = clean(await items.nth(idx).innerText());
   const key = (await items.nth(idx).getAttribute("data-itemkey")) ?? "";

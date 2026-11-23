@@ -434,6 +434,10 @@ export class WebGuiSession {
   slow = false;
   /** Did the last `waitRoundtrip` see a request that carries a function leave for SAP? */
   started = false;
+  /** The long hints of the compact view already given on this screen (screen.ts `hintsOnce`), and the screen. */
+  hints: { screen: string; seen: Set<string> } = { screen: "", seen: new Set() };
+  /** The user's date format ("DD.MM.YYYY"), from the dates the screens read so far showed. */
+  dateFormat: string | undefined;
   /** The last full view read, for the step that follows it (assess, then act). */
   view: { at: number; text: string } | undefined;
   /** What the agent typed into the transaction since its last success message (see unsaved.ts). */
@@ -821,11 +825,47 @@ export class WebGuiSession {
       typed = await ok.inputValue().catch(() => command);
     }
     if (typed.trim().toLowerCase() !== command.trim().toLowerCase()) {
-      await ok.fill("").catch(() => {});
-      throw new ActionError(`The command field took "${typed}" instead of "${command}", so nothing was sent. Look at the screen and try again.`);
+      // No typed key reaches the page (live 2026-11-23: a freshly logged-on ECC tab took no keydown at all, in
+      // front and focused; setting the value worked, a reload cured it). The command is set in the field and
+      // its Enter sent through the page instead.
+      if (await this.okCodeByPage(command)) return;
+      // Emptied in the page: an empty fill is a Delete key, which such a tab does not take either.
+      await ok.evaluate((el) => ((el as HTMLInputElement).value = "")).catch(() => {});
+      throw new ActionError(
+        `The command field took "${typed}" instead of "${command}", so nothing was sent: the tab takes no keyboard input. Ask the user to reload it (no logon needed: SAP keeps the session), then send the command again.`,
+      );
     }
     // A command always sends a request: waited for also when the browser is slow to hand Enter on.
     await this.roundtrip(() => ok.press("Enter"), 5000);
+  }
+
+  /**
+   * The command set as the field's value and its Enter dispatched in the
+   * page, for a tab that takes no typed keys. True when a round trip
+   * started; the field is left as it was otherwise.
+   */
+  async okCodeByPage(command: string): Promise<boolean> {
+    const ok = this.frame.locator("#ToolbarOkCode");
+    await this.frame.evaluate(() => window.focus()).catch(() => {});
+    await ok.fill(command).catch(() => {});
+    const value = await ok.inputValue().catch(() => "");
+    if (value.trim().toLowerCase() !== command.trim().toLowerCase()) return false;
+    await this.roundtrip(
+      () =>
+        ok
+          .evaluate((el) => {
+            (el as HTMLElement).focus();
+            for (const type of ["keydown", "keypress", "keyup"]) {
+              const e = new KeyboardEvent(type, { key: "Enter", code: "Enter", bubbles: true, cancelable: true, keyCode: 13, which: 13, charCode: type === "keypress" ? 13 : 0 } as KeyboardEventInit);
+              // Older handlers read keyCode / which, which some engines leave 0 on an event made in the page.
+              for (const k of ["keyCode", "which"]) if ((e as unknown as Record<string, number>)[k] !== 13) Object.defineProperty(e, k, { get: () => 13 });
+              el.dispatchEvent(e);
+            }
+          })
+          .catch(() => {}),
+      3000,
+    );
+    return this.started;
   }
 
   /**

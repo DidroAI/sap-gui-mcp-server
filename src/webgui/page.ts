@@ -1024,13 +1024,39 @@ export function extractClientPopups(): ClientPopup[] {
     // ECC, then the popup of S/4HANA 2025 (ct="PW_standards": a header with a heading, a content section).
     const title = clean(el.querySelector(".urPWTitleText,[id$='-header-title-txt'],[role='heading']")?.textContent);
     const body = el.querySelector<HTMLElement>(".urPWContent,.lsPWNewContentSection");
-    const buttons = Array.from(el.querySelectorAll<HTMLElement>("[ct='B'],button,[role='button']"))
+    // ECC draws its buttons as Lightspeed buttons without ct (the session timeout listed none, live 2026-11-23).
+    const buttons = Array.from(new Set(el.querySelectorAll<HTMLElement>("[ct='B'],button,[role='button'],.urBtnStd,.urBtnEmph,.lsButton,[class*='urBtn']")))
+      .filter((b) => !b.parentElement?.closest("[ct='B'],button,[role='button'],.urBtnStd,.urBtnEmph,.lsButton,[class*='urBtn']"))
       .map((b) => clean(b.textContent))
       .filter((t) => t.length > 0);
     const text = clean(body?.innerText);
     out.push({ id: el.id, title, text, buttons });
   }
   return out;
+}
+
+/**
+ * Clicks button `n` of Web GUI's own dialogs, counted as extractClientPopups
+ * lists them (the view names them browser/btn[n]). Answers its text, or ""
+ * when there is no such button.
+ */
+export function clickClientButton(n: number): string {
+  const clean = (t: string | null | undefined) => (t ?? "").replace(/\s+/g, " ").replace(/^ | $/g, "");
+  const sel = "[ct='B'],button,[role='button'],.urBtnStd,.urBtnEmph,.lsButton,[class*='urBtn']";
+  let i = 0;
+  for (const el of Array.from(document.querySelectorAll<HTMLElement>("div[ct^='PW']"))) {
+    const st = getComputedStyle(el);
+    if (st.display === "none" || st.visibility === "hidden" || el.offsetWidth === 0) continue;
+    if (el.querySelector("[lsdata*='wnd[']")) continue;
+    const buttons = Array.from(new Set(el.querySelectorAll<HTMLElement>(sel))).filter((b) => !b.parentElement?.closest(sel) && clean(b.textContent).length > 0);
+    for (const b of buttons) {
+      if (i++ !== n) continue;
+      const text = clean(b.textContent);
+      b.click();
+      return text;
+    }
+  }
+  return "";
 }
 
 /**

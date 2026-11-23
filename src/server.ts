@@ -13,7 +13,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { actionText, normalizeAction, type NormalizedAction, STEP_VERBS } from "./core/action.js";
-import { type BatchStep, idOn, isLook, MAX_BATCH, parseBatch, shortNote, staleWrite, stopAfter, unseenWrite } from "./batch.js";
+import { type BatchStep, idOn, isLook, MAX_BATCH, parseBatch, popupPart, shortNote, staleWrite, stopAfter, unseenWrite } from "./batch.js";
 import { dateFormatOf, type Notation, notationIn, withNumbers } from "./core/notation.js";
 import { commandFieldRefusal, decide, LEAVE_UNSAVED, leavesTransaction, type Policy, sessionRefusal, tcodeOf, tcodeRefusal } from "./core/guard.js";
 import { type Turn, SessionQueue, waitedLine } from "./core/queue.js";
@@ -608,6 +608,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   }
 
   /** The session as it is now, and what the guard says about this action on it. */
+  /** Sessions that had a write refused: the next refusal is one line (core/guard.ts `decide`). */
+  const writeRefused = new Set<string>();
   async function judge(ref: string | undefined, action: NormalizedAction) {
     const { driver, info } = await registry.session(ref);
     // The transaction the session is in counts too, however it was opened.
@@ -618,7 +620,9 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     if (action.do === "open" && info.surface !== "fiori")
       throw new ActionError('open works in a Fiori launchpad tab only (sap_sessions lists the tabs). On an SAP GUI or Web GUI screen, open a transaction with {"do":"okcode","value":"/n<transaction>"}.');
     const assessment = await driver.assess(action);
-    return { driver, info, assessment, verdict: decide(policy, action, assessment) };
+    const verdict = decide(policy, action, assessment, writeRefused.has(info.id));
+    if (!verdict.run && "refused" in verdict && verdict.refused.startsWith("this action may write")) writeRefused.add(info.id);
+    return { driver, info, assessment, verdict };
   }
 
   /** Runs a held action if the session and the action's assessment are still what the user was shown. */
@@ -738,13 +742,16 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
    * open name no control and go on when they do not write. A step without an
    * id (a key) means the screen it was sent for: the batch ends there.
    */
-  async function goesOnAfter(d: Driver, session: string, next: BatchStep, view: string): Promise<boolean> {
+  async function goesOnAfter(d: Driver, session: string, next: BatchStep, view: string, inPopup = false): Promise<boolean> {
     const a = next.action;
     const id = typeof a.id === "string" ? a.id : undefined;
+    // Through a popup a step opened: only an action on a control of that popup goes on.
+    const part = (v: string) => (inPopup ? popupPart(v) : v);
+    if (inPopup && !id) return false;
     if (!id && a.do !== "okcode" && a.do !== "open") return false;
-    if (id && !idOn(view, id)) {
+    if (id && !idOn(part(view), id)) {
       const full = await d.look({ compact: false }).catch(() => "");
-      if (!idOn(full, id)) return false;
+      if (!idOn(part(full), id)) return false;
     }
     try {
       const j = await judge(session, a);
@@ -874,7 +881,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
         const next = steps[i + 1];
         if (stop && !last) {
           // Another screen the agent expected (Enter on an initial screen, Back, a popup answered): the next action shows where it means to be.
-          if (stop.why === "screen" && next && (await goesOnAfter(driver, id, next, view))) {
+          if ((stop.why === "screen" || stop.why === "popup") && next && (await goesOnAfter(driver, id, next, view, stop.why === "popup"))) {
             lines[lines.length - 1] += ` (${stop.text})`;
           } else {
             end = { why: stop.why, text: `after action ${n}, ${stop.text}`, error: false, next: n + 1 };

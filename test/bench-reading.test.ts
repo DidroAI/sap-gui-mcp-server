@@ -152,12 +152,23 @@ describe("4. a dropdown entry is chosen by its exact key, the blank one included
   test("a key, key:text, key text, or a whole text", () => {
     for (const w of ["91", "91:Customer Request", "91 Customer Request", "customer request", "91:"]) expect(entryFor(sid, LIFSK, w)).toEqual({ key: "91", text: "Customer Request", blank: false });
   });
-  test("no part of a text is matched: ':' chose 97 (DEA: Check Form 222)", () => {
-    for (const w of ["DEA:", "DEA", "9", "Customer", "Check Form"]) {
+  test("no part of a text that is not whole words is matched: ':' chose 97 (DEA: Check Form 222)", () => {
+    for (const w of ["9", "Cust", "Form 22"]) {
       const r = entryFor(sid, LIFSK, w);
       expect(typeof r).toBe("string");
       expect(r as string).toStartWith(`no entry "${w}" in ${sid}: give an entry's key exactly ("" for the blank entry, which clears the field). Its entries (key:text): 44:'Pre-production', 03:Bottleneck material, 91:Customer Request`);
     }
+    // Whole words of one text choose it; of several, the answer names their keys.
+    expect(entryFor(sid, LIFSK, "Customer")).toEqual({ key: "91", text: "Customer Request", blank: false });
+    expect(entryFor(sid, LIFSK, "check form")).toEqual({ key: "97", text: "DEA: Check Form 222", blank: false });
+    for (const w of ["DEA:", "DEA"]) expect(entryFor(sid, LIFSK, w)).toStartWith(`"${w}" is ambiguous in ${sid}: 97, 98 (each with "${w}" in its text: DEA: Check Form 222, DEA: Qty Tolerance)`);
+  });
+  test("a text two entries share is ambiguous, with their keys; a long list is cut (ME21N order types, live 2026-11-23: 5.3 KB)", () => {
+    const types = [...Array.from({ length: 37 }, (_, i) => ({ key: `Z${i}`, text: `Type ${i}` })), { key: "AR", text: "Standard PO" }, { key: "NB", text: "Standard PO" }];
+    expect(entryFor(sid, types, "Standard PO")).toBe(`"Standard PO" is ambiguous in ${sid}: AR, NB (each "Standard PO"). Give the key of the entry you mean.`);
+    const none = entryFor(sid, types, "Rush order") as string;
+    expect(none).toEndWith("Z14:Type 14 and 24 more (a combo with no key lists them all)");
+    expect(none.length).toBeLessThan(400);
   });
   test("a dropdown without a blank entry cannot be cleared: said", () => {
     expect(entryFor(sid, LIFSK.slice(0, 2), "")).toBe(`${sid} has no blank entry, so it cannot be cleared: choose one of its entries (key:text): 44:'Pre-production', 03:Bottleneck material`);
