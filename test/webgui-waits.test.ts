@@ -12,6 +12,7 @@ import { chromium, type Browser, type Page } from "playwright-core";
 import { ActionError } from "../src/core/types.js";
 import { STILL_WORKING, webguiView } from "../src/webgui/index.js";
 import { act, nothingSent, vkey } from "../src/webgui/reader.js";
+import { inPageOutcome } from "../src/webgui/keys.js";
 import { extractEnded, WebGuiSession } from "../src/webgui/session.js";
 
 const exe = process.env.SAP_TEST_CHROME;
@@ -389,3 +390,22 @@ class DOMParserStandIn {
     }
   }
 }
+
+describe("an action SAP did not get, once the page is read again (Astra's review, 2026-11-23)", () => {
+  const HEAD = "TRANSACTION ZT01  PROGRAM ZPROG  SCREEN 100  SYSTEM XYZ (100) host";
+  const MAIN = ['WINDOW wnd[0]  "Synthetic"', 'wnd[0]/usr/ctxtZF-VBELN  field  Delivery = ""  (edit)'];
+  const FILLED = ['WINDOW wnd[0]  "Synthetic"', 'wnd[0]/usr/ctxtZF-VBELN  field  Delivery = "80000001"  (edit)'];
+  const HITS = ['WINDOW wnd[1]  "Delivery (1)  1 Entry found"', "wnd[1]/usr/cntlGRID  grid  1 rows"];
+  test("a value help that closed and filled its field: done in the page, not 'nothing was sent'", () => {
+    const out = inPageOutcome([HEAD, ...MAIN, ...HITS].join("\n"), [HEAD, ...FILLED].join("\n"));
+    expect(out).toBe("(Done in the page: the popup closed. SAP gets what it set with the next Enter or key.)");
+  });
+  test("a page that changed with no popup closed", () => {
+    expect(inPageOutcome([HEAD, ...MAIN].join("\n"), [HEAD, ...FILLED].join("\n"))).toBe("(Done in the page: SAP gets it with the next Enter or key.)");
+  });
+  test("a page that did not change keeps 'nothing was sent'", () => {
+    const v = [HEAD, ...MAIN].join("\n");
+    expect(inPageOutcome(v, v)).toBeUndefined();
+    expect(inPageOutcome(v, "")).toBeUndefined();
+  });
+});
