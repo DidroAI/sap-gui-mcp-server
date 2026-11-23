@@ -294,6 +294,16 @@ export const SAFE_WORDS: WordRow<SafeLanguage>[] = [
   },
   { means: "filter", words: { en: ["filter", "filters"], de: ["filter", "filtern"], fr: ["filtre", "filtres", "filtrer"], es: ["filtro", "filtros", "filtrar"] } },
   {
+    // A list's totals and subtotals (ALV "Total (Ctrl+F6)", "Subtotals..."): they are computed for the view, nothing is posted.
+    means: "totals",
+    words: {
+      en: ["total", "totals", "subtotal", "subtotals"],
+      de: ["summe", "summen", "summieren", "zwischensumme", "zwischensummen"],
+      fr: ["total", "totaux", "sous-total", "sous-totaux"],
+      es: ["total", "totales", "subtotal", "subtotales", "totalizar"],
+    },
+  },
+  {
     means: "print preview",
     words: { en: ["print preview"], de: ["druckvorschau", "druckansicht"], fr: ["aperçu avant impression"], es: ["presentación preliminar", "vista previa"] },
   },
@@ -482,6 +492,65 @@ export function displayTitle(language: string | undefined | null, title: string 
   DISPLAY_TITLE_RE.lastIndex = 0;
   CHANGE_TITLE_RE.lastIndex = 0;
   return DISPLAY_TITLE_RE.test(t) && !CHANGE_TITLE_RE.test(t) && !commitWord(t);
+}
+
+/**
+ * Transactions that open an object to display it, in every logon language: their screens are display
+ * screens whatever the title says (ME23N titles a purchase order "Standard PO 4500000061 Created by ...").
+ * Some can switch to change mode in place (ME23N, BP is not listed for that reason): the surfaces still
+ * require that Save is not on offer, which is what changes when they do.
+ */
+export const DISPLAY_TCODES: ReadonlySet<string> = new Set(
+  [
+    ..."XD03 XK03 FD03 FK03 VD03 MK03 MM03 VA03 VA13 VA23 VA33 VA43 VL03N VF03 VK13".split(" "),
+    ..."ME23N ME33K ME33L ME53N ME13 ME03 MB03 MIR4 MMBE".split(" "),
+    ..."FB03 FS03 FSS0 KS03 KA03 CS03 CA03 CR03 CO03 IW33 IW23 IE03 IL03 QA03 MSC3N SE16".split(" "),
+  ],
+);
+
+/** Is this a transaction that only displays objects (DISPLAY_TCODES)? */
+export function displayTransaction(tcode: string | undefined): boolean {
+  return DISPLAY_TCODES.has((tcode ?? "").trim().split(/\s+/)[0]?.toUpperCase() ?? "");
+}
+
+/**
+ * Does the main window say it displays an object: its title (displayTitle), or a display transaction
+ * (DISPLAY_TCODES) whose title does not say it changes or writes. Only in a covered language, where the
+ * surfaces can also tell a function that acts (actWord). Save not being on offer is the surfaces' check.
+ */
+export function displayScreen(language: string | undefined | null, title: string | undefined, tcode: string | undefined): boolean {
+  if (displayTitle(language, title)) return true;
+  if (!languageCovered(language) || !displayTransaction(tcode)) return false;
+  CHANGE_TITLE_RE.lastIndex = 0;
+  return !CHANGE_TITLE_RE.test(clean(title)) && !commitWord(title);
+}
+
+/**
+ * A button of a filter, sort or condition dialog that takes a criterion out of the view: "Remove filter
+ * criterion (F6)" (ALV's Filter dialog), "Delete Sort Criterion", Fiori's "Remove Condition" in a value
+ * help. "Remove" is a commit word, but here it only changes which rows the list shows. The text must mean
+ * deleting and nothing else (commitWord), name a criterion, and name no function that acts. The surfaces
+ * use it only inside such a dialog, never on a screen's own toolbar (where "Remove Condition" can delete
+ * a pricing condition of an order).
+ */
+const VIEW_CRITERION_RE = wholeWords([
+  ..."filter|filters|filter criterion|filter criteria|sort criterion|sort criteria|sorting|condition|conditions|criterion|criteria".split("|"),
+  ..."filterkriterium|filterkriterien|sortierkriterium|sortierkriterien|sortierung|bedingung|bedingungen|kriterium|kriterien".split("|"),
+  ..."filtre|filtres|critère|critères|critère de tri|condition|conditions".split("|"),
+  ..."filtro|filtros|criterio|criterios|criterio de clasificación|condición|condiciones".split("|"),
+]);
+export function removesViewCriterion(language: string | undefined | null, text: string | undefined): boolean {
+  if (!languageCovered(language)) return false;
+  const t = clean(text).replace(/\([^()]*\)\s*$/, "");
+  VIEW_CRITERION_RE.lastIndex = 0;
+  return commitWord(t) === "delete" && VIEW_CRITERION_RE.test(t) && !actWord(t);
+}
+
+/** Is a popup's title that of a dialog that only changes how a list looks: filter, sort, layout (not saving one)? */
+export function viewDialog(language: string | undefined | null, title: string | undefined): boolean {
+  if (commitWord(title)) return false;
+  const means = safeWord(language, title);
+  return means === "filter" || means === "sort" || means === "list layout";
 }
 
 /**
