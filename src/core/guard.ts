@@ -164,6 +164,15 @@ export type Verdict =
   | { run: false; refused: string }
   | { run: false; confirm: string };
 
+/**
+ * A commit only because the server cannot tell what the action does, not because anything says it writes:
+ * the surfaces word it "so what it does is unknown" (a key with no button, a menu entry or an id the
+ * server could not read).
+ */
+export function unknownEffect(assessment: Assessment): boolean {
+  return assessment.risk === "commit" && !assessment.closes && /so what it does is unknown/.test(assessment.reason);
+}
+
 /** What the server does with an assessed action under the policy. */
 export function decide(policy: Policy, action: Action, assessment: Assessment): Verdict {
   const field = commandFieldRefusal(action);
@@ -182,6 +191,13 @@ export function decide(policy: Policy, action: Action, assessment: Assessment): 
   if (assessment.risk !== "commit") return { run: true };
   if (policy.write === "on") return { run: true };
   if (policy.write === "confirm") return { run: false, confirm: assessment.reason };
+  // The server could not tell what the action does (a key with no button, an id the view does not show):
+  // no write was meant, and one the server can read may well run. Said so, not as a write to give up on.
+  if (unknownEffect(assessment))
+    return {
+      run: false,
+      refused: `nothing was sent: ${assessment.reason}, and with writes off only what the server can judge runs. Look at the screen again (sap_look) and use the id of the button, link or row you mean as it shows it, or a key that has a button there; navigation and display functions it can read run with writes off. Only the user can allow writes (SAP_WRITE=confirm or on).`,
+    };
   return {
     run: false,
     refused: `this action may write to SAP (${assessment.reason}) and writes are off. Tell the user what you would have saved; do not look for another way. ${LEAVE_UNSAVED} Only the user can allow writes (SAP_WRITE=confirm or on).`,
