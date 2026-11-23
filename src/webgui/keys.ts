@@ -53,5 +53,21 @@ export function nothingSent(a: Action): string | undefined {
   return "Nothing was sent to SAP for this action: what changed (if anything) changed only in the page.";
 }
 
+/**
+ * What an action that sent SAP nothing says once the page is read again:
+ * the page changed (a value help closed and filled its field, live
+ * 2026-11-23 on an F4 hit list), so the step is done there and SAP gets it
+ * with the next Enter; or the page is as it was. "Nothing was sent to SAP"
+ * after a pick that worked made a success sound like a failure.
+ */
+export function inPageOutcome(before: string, now: string): string | undefined {
+  const body = (v: string) => v.split("\n").slice(1).join("\n");
+  if (!before || !now || body(before) === body(now)) return undefined;
+  const popups = (v: string) => (v.match(/^WINDOW wnd\[[1-9]\d*\]/gm) ?? []).length;
+  return popups(now) < popups(before)
+    ? "(Done in the page: the popup closed. SAP gets what it set with the next Enter or key.)"
+    : "(Done in the page: SAP gets it with the next Enter or key.)";
+}
+
 /** "x", "true", "1", "on", "yes" turn a checkbox or a row selection on; no value at all does too. */
 export const wantsOn = (value: unknown): boolean => value === undefined || /^(x|true|1|on|yes)$/i.test(String(value));

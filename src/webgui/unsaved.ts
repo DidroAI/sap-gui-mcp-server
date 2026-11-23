@@ -28,12 +28,18 @@ export class Unsaved {
    * checkbox, chose a dropdown entry); `view` is the screen it was set on.
    * It counts where SAP can save: the system toolbar of the main window has
    * Save (btn[11]). A display transaction and the initial screen that asks
-   * for a document number have none, so nothing typed there can be lost. On
-   * a report's selection screen that button saves a variant, and what is
-   * typed are selection criteria, not data.
+   * for a document number have none, or show it greyed out, so nothing typed
+   * there can be lost. On a report's selection screen that button saves a
+   * variant, and what is typed are selection criteria, not data; so on any
+   * screen with Execute (F8) in its application toolbar.
    */
   typed(view: string): void {
-    if (!/^wnd\[0\]\/tbar\[0\]\/btn\[11\] {2}button/m.test(view)) return;
+    const save = /^wnd\[0\]\/tbar\[0\]\/btn\[11\] {2}button.*$/m.exec(view)?.[0];
+    // Save greyed out: nothing on this screen can be saved.
+    if (!save || /\(greyed out/.test(save)) return;
+    // A screen that runs a search or a report (Execute, F8, in the application toolbar: SE16N's table and its
+    // maximum number of hits): what is typed are criteria, not data (Astra's review, 2026-11-23).
+    if (/^wnd\[0\]\/tbar\[1\]\/btn\[8\] {2}button {2}[^\n]*\(F8\)/m.test(view)) return;
     if (/%_APP_%-/.test(view) || /^TRANSACTION .* {2}SCREEN 1000(?: |$)/m.test(view)) return;
     this.inputs++;
   }
