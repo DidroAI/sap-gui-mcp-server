@@ -276,7 +276,23 @@ function sharedColumns(list: List): string | undefined {
     count.set(sig, (count.get(sig) ?? 0) + 1);
   }
   const [sig, n] = [...count].sort((a, b) => b[1] - a[1])[0] ?? ["", 0];
-  return n >= 3 && n * 10 >= list.lines.size * 4 && sig.includes(",") ? sig : undefined;
+  if (!(n >= 3 && n * 10 >= list.lines.size * 4 && sig.includes(","))) return undefined;
+  // A column of the heading that no line of the signature fills (FBL5N open items: "Clearing" {42}, live
+  // 2026-11-23): taken in, so those lines print an empty cell there and their values stay under their titles.
+  const cols = sig.split(",").map(Number);
+  const firstRow = Math.min(...[...list.lines].filter(([, c]) => c.map((x) => x.c).join(",") === sig).map(([r]) => r));
+  // The heading: the line above the first such line that has the most of their columns.
+  let best: number[] = [];
+  let most = 2;
+  for (const [r, cells] of list.lines) {
+    if (r >= firstRow) continue;
+    const at = cells.map((x) => x.c);
+    const shared = at.filter((c) => cols.includes(c)).length;
+    if (shared < most || shared * 2 < at.length) continue;
+    most = shared;
+    best = at.filter((c) => !cols.includes(c));
+  }
+  return best.length && best.length <= 3 ? [...cols, ...best].sort((a, b) => a - b).join(",") : sig;
 }
 
 /**

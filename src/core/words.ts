@@ -944,3 +944,19 @@ export function okcodeKind(value: string | undefined): Okcode {
   if (commitCode(u)) return { kind: "commit" };
   return { kind: "unknown", code: bare(u) };
 }
+
+/**
+ * An ISO date ("2026-11-20") in the user's date format ("DD.MM.YYYY",
+ * "MM/DD/YYYY", "YYYY.MM.DD" ...): SAP takes a date only as the user's
+ * settings write it (ECC ME21N refused "2026-11-20", live 2026-11-23).
+ * Undefined when the value is no ISO date or the format is not one of SAP's.
+ */
+export function isoDateAs(value: string, format: string | undefined): string | undefined {
+  const m = /^\s*(\d{4})-(\d{2})-(\d{2})\s*$/.exec(value);
+  if (!m || !format || format === "YYYY-MM-DD") return undefined;
+  const [, y = "", mo = "", d = ""] = m;
+  const f = /^(DD|MM|YYYY)([./-])(DD|MM|YYYY)\2(DD|MM|YYYY)$/.exec(format);
+  if (!f || new Set([f[1], f[3], f[4]]).size !== 3) return undefined;
+  const part = (p: string | undefined) => (p === "YYYY" ? y : p === "MM" ? mo : d);
+  return [part(f[1]), part(f[3]), part(f[4])].join(f[2] ?? ".");
+}

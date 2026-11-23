@@ -5,6 +5,7 @@
  * take "cols"; an empty list cell keeps its place; a cell printed twice is
  * printed once; a cell of a table control is found by row and column.
  */
+import { hintsOnce } from "../src/webgui/screen.js";
 import { describe, expect, test } from "bun:test";
 import { compact } from "../src/core/compact.js";
 import { readRows, type RowSource } from "../src/core/rows.js";
@@ -83,7 +84,12 @@ describe("P3. classic lists: list rows only, skipped rows said, cols, empty cell
     const before = listView(webME2L, 0);
     const out = await readRows(listSource(webME2L), "usr", 20, 46, undefined, { block: before, screen: before });
     expect(rowLines(out)[0] ?? "").toStartWith("  row 20: ");
-    expect(out.split("\n").at(-1)).toContain('The screen showed rows up to 15: rows 16 to 19 are not in this read ("rows":"16-19" reads them).');
+    // Said near the top, right under the list's line, not after the rows (live 2026-11-23: last line of 3.4 KB).
+    const lines = out.split("\n");
+    expect(lines[lines.findIndex((l) => l.startsWith("usr  list")) + 1]).toBe('  (The screen showed rows up to 15: rows 16 to 19 are not in this read ("rows":"16-19" reads them).)');
+    // The list goes back to where the screen had it; the header lines above the heading are not repeated.
+    expect(lines.at(-1)).toContain("the list is scrolled back to line 0, as it was.");
+    expect(lines.filter((l) => l.startsWith("  title ")).length).toBe(1);
     // Read on from where the screen ends: nothing to say.
     const next = await readRows(listSource(webME2L), "usr", 16, 30, undefined, { block: before, screen: before });
     expect(next).not.toContain("not in this read");
@@ -121,6 +127,14 @@ describe("P3. classic lists: list rows only, skipped rows said, cols, empty cell
     const lines = compact(full).split("\n");
     expect(lines).toContain('  row 0: [ ] | icon "Open" | RV | 12.07.2012 | 12.07.2012 | 01.08.2012 | 708,00 | EUR | 1400000061');
     expect(lines).toContain('  row 3: [ ] | icon "Open" | RV | 12.07.2012 | 12.07.2012 |  | 708,00 | EUR | 1400000064');
+  });
+  test("no item cleared: the heading's empty column still holds its place (FBL5N live 2026-11-23: 708,00 under Clearing)", () => {
+    const item = (r: number) => [`wnd[0]/usr/chk[1,${r}]  checkbox  [ ] `, `wnd[0]/usr/lbl[6,${r}]  label  icon "Open"`, `wnd[0]/usr/lbl[11,${r}]  label  RV`, `wnd[0]/usr/lbl[20,${r}]  label  12.07.2012`, `wnd[0]/usr/lbl[31,${r}]  label  12.07.2012`, `wnd[0]/usr/lbl[53,${r}]  label  708,00`, `wnd[0]/usr/lbl[72,${r}]  label  EUR`, `wnd[0]/usr/lbl[78,${r}]  label  14000000${60 + r}`];
+    const head = [6, 11, 20, 31, 42, 53, 72, 78].map((c, i) => `wnd[0]/usr/lbl[${c},0]  label  ${["Stat", "Type", "Doc. Date", "Net due dt", "Clearing", "Amt in loc.cur.", "LCurr", "DocumentNo"][i]}`);
+    const full = ["TRANSACTION FBL5N  PROGRAM SAPMSSY0  SCREEN 120", 'WINDOW wnd[0]  "Customer Line Item Display"', "wnd[0]/usr  list  4 rows (visible 4, below 1 title rows; scroll for the others)", ...head, ...item(1), ...item(2), ...item(3), ...item(4)].join("\n");
+    const lines = compact(full).split("\n");
+    expect(lines.find((l) => l.startsWith("usr  list"))).toContain("rows without braces have their cells in columns 1,6,11,20,31,42,53,72,78");
+    expect(lines).toContain('  row 0: [ ] | icon "Open" | RV | 12.07.2012 | 12.07.2012 |  | 708,00 | EUR | 1400000061');
   });
 });
 
@@ -183,5 +197,24 @@ describe("P10. a grid column by its title in actions, as sap_look's cols takes i
     expect(gridColumnId(full, G, "vbeln")).toBe("VBELN");
     expect(gridColumnId(full, G, "NOPE")).toBe("NOPE");
     expect(gridColumnId(full, G, undefined)).toBeUndefined();
+  });
+});
+
+describe("long hints once per visit to a screen (live 2026-11-23: 480 and 700 characters on every answer)", () => {
+  test("a list's row hint, then its short form; a table's columns, then 'as listed before'; another screen, all again", () => {
+    const cols = Array.from({ length: 12 }, (_, i) => `Column number ${i}`).join(" | ");
+    const view = (screen: string) =>
+      [
+        `TRANSACTION FBL5N  PROGRAM SAPMSSY0  SCREEN ${screen}`,
+        'WINDOW wnd[0]  "Customer Line Item Display"',
+        'usr  list  40 rows (visible 16, below 17 title rows; scroll for the others)  (rows numbered in the whole list below its 17 title rows: "rows" and "row" in actions take these numbers, e.g. {"do":"dblclick","id":"usr","row":N,"col":<col>}; a cell id counts rows on the screen: row N is usr/lbl[col,N+17] now, col in braces; rows without braces have their cells in columns 1,6,11; a checkbox is chk[col,...])',
+        `tblX  table  rows 2 (visible 2); columns: ${cols}  (cell id: <id>[col,row], e.g. ctxtA[0,0])`,
+      ].join("\n");
+    const memory = { screen: "", seen: new Set<string>() };
+    expect(hintsOnce(view("120"), memory)).toBe(view("120"));
+    const again = hintsOnce(view("120"), memory).split("\n");
+    expect(again[2]).toBe("usr  list  40 rows (visible 16, below 17 title rows; scroll for the others)  (rows numbered in the whole list; row N is usr/lbl[col,N+17]; cells in columns 1,6,11; as explained before)");
+    expect(again[3]).toBe("tblX  table  rows 2 (visible 2); columns: as listed before  (cell id: <id>[col,row], e.g. ctxtA[0,0])");
+    expect(hintsOnce(view("100"), memory)).toBe(view("100"));
   });
 });

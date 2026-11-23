@@ -7,7 +7,8 @@
  * are the ids of the screen it saw. So after each action the server reads the
  * screen and ends the batch, before the next action, when
  *
- * - a popup opened (it asks something the agent has not read);
+ * - a popup opened (it asks something the agent has not read), unless the
+ *   next action's id is in that popup and it does not write (`goesOnAfter`);
  * - the status bar shows an error, a warning or a termination;
  * - the screen is another one (transaction, program or screen number), and
  *   the next action is not sure to belong there (`goesOnAfter` in server.ts:
@@ -262,6 +263,21 @@ export function idOn(view: string, id: string): boolean {
     if (want.startsWith("#") && new RegExp(`(^|\\s)${want.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`).test(l)) return true;
   }
   return false;
+}
+
+/**
+ * The lines of the popup in front (from the last `WINDOW wnd[N]` line, N > 0),
+ * "" when no popup is open: where the next action of a batch must be for the
+ * batch to go on through a popup the step before opened (ME23N "Other
+ * Document" then the document number in its popup, live 2026-11-23).
+ */
+export function popupPart(view: string): string {
+  const lines = view.split("\n");
+  let at = -1;
+  lines.forEach((l, i) => {
+    if (/^WINDOW wnd\[[1-9]\d*\]/.test(l)) at = i;
+  });
+  return at < 0 ? "" : lines.slice(at).join("\n");
 }
 
 /**

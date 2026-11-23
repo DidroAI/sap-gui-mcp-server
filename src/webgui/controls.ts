@@ -129,10 +129,33 @@ export async function clickForRoundtrip(session: WebGuiSession, sid: string, sur
       if (attempt === 0) throw noControlAct(sid);
       return;
     }
-    await session.roundtrip(() => marked(session).click(), sure ? SURE_START_MS : 1200);
+    // A field's list of earlier entries (S/4: input history) opens a moment after typing and covers the
+    // controls below it: the click waited 10 s and failed (live 2026-11-23, ME23N "Select Document"). Closed first.
+    await closeList(session);
+    try {
+      await session.roundtrip(() => marked(session).click(), sure ? SURE_START_MS : 1200);
+    } catch (e) {
+      // It opened after the look: closed, and the click made once more.
+      if (attempt > 0 || !listCovers(e) || !(await closeList(session))) throw e;
+      continue;
+    }
     if (session.started || !session.slow) return;
     await session.closeSuggestions();
   }
+}
+
+/** Did a click fail on an open list (a dropdown's, or a field's earlier entries) over the control? */
+const listCovers = (e: unknown): boolean => {
+  const log = e instanceof Error ? e.message : String(e);
+  return /<[^\n]*(role="listbox"|lsListbox|ct="LIB)[^\n]*> intercepts pointer events/.test(log);
+};
+
+/** Closes an open list over the screen with Escape, which the list takes (SAP gets nothing). True when one was open and closed. */
+export async function closeList(session: WebGuiSession): Promise<boolean> {
+  if ((await session.frame.evaluate(openOverlay).catch(() => "")) !== "list") return false;
+  await session.pressKey("Escape").catch(() => {});
+  await session.page.waitForTimeout(150);
+  return (await session.frame.evaluate(openOverlay).catch(() => "")) !== "list";
 }
 
 /** The window a control id is in: 0 for the main window, 1 and up for popups. */
@@ -347,29 +370,52 @@ export async function pressOverflow(session: WebGuiSession, c: MarkedControl): P
 /** Text as the answers show it: white space folded, no space at either end. */
 export const clean = (t: string | null | undefined): string => (t ?? "").replace(/\s+/g, " ").replace(/^ | $/g, "");
 
+/** How many entries of a dropdown a refusal lists; the rest are counted (ME21N's order types: 39 entries, 5.3 KB). */
+export const ENTRIES_LISTED = 15;
+
+/** Entries as "key:text", the first `ENTRIES_LISTED` of them and a count of the others. */
+export function entryList(entries: { key: string; text: string }[], max = ENTRIES_LISTED): string {
+  const shown = entries.slice(0, max).map((e) => `${clean(e.key)}:${clean(e.text)}`).join(", ");
+  const more = entries.length - max;
+  return more > 0 ? `${shown} and ${more} more (a combo with no key lists them all)` : shown;
+}
+
 /**
- * The entry of a dropdown an agent means by `wanted`, exactly: a key ("91"),
- * a key and its text as the entries are listed ("91:Customer Request") or
- * shown ("91 Customer Request"), or a whole text ("Customer Request"), in
- * any case. "" (or " ", or ":" as the list writes the blank entry) is the
- * blank entry, which clears the field. Nothing else is guessed: a part of a
- * text (":" in "DEA: Check Form 222") once chose a wrong entry. Answers the
- * refusal, with the entries, when no entry is meant exactly.
+ * The entry of a dropdown an agent means by `wanted`: a key ("91"), a key
+ * and its text as the entries are listed ("91:Customer Request") or shown
+ * ("91 Customer Request"), a whole text ("Customer Request"), in any case;
+ * else whole words of one entry's text ("Customer"), when no other entry has
+ * them. "" (or " ", or ":" as the list writes the blank entry) is the blank
+ * entry, which clears the field. A text that two entries share is refused as
+ * ambiguous with their keys (ME21N: AR and NB are both "Standard PO"); a
+ * part of a text that is not whole words is never matched (":" in "DEA:
+ * Check Form 222" once chose a wrong entry). Answers the refusal, with the
+ * entries, when no entry is meant.
  */
 export function entryFor(sid: string, entries: { key: string; text: string }[], wanted: unknown): { key: string; text: string; blank: boolean } | string {
   const w = clean(String(wanted ?? ""));
   const low = (t: string) => clean(t).toLowerCase();
-  const list = entries.map((e) => `${clean(e.key)}:${clean(e.text)}`).join(", ");
   if (w === "" || w === ":") {
     const blank = entries.find((e) => !clean(e.key) && !clean(e.text)) ?? entries.find((e) => !clean(e.key));
-    return blank ? { ...blank, blank: true } : `${sid} has no blank entry, so it cannot be cleared: choose one of its entries (key:text): ${list}`;
+    return blank ? { ...blank, blank: true } : `${sid} has no blank entry, so it cannot be cleared: choose one of its entries (key:text): ${entryList(entries)}`;
   }
   const one = (hits: { key: string; text: string }[]) => (hits.length === 1 ? hits[0] : undefined);
   const byKey = one(entries.filter((e) => clean(e.key) && low(e.key) === w.toLowerCase()));
   const pair = /^([^:\s]*)\s*[: ]\s*(.*)$/.exec(w);
   const byPair = pair ? one(entries.filter((e) => low(e.key) === (pair[1] ?? "").toLowerCase() && (!pair[2] || low(e.text) === (pair[2] ?? "").toLowerCase()))) : undefined;
-  const byText = one(entries.filter((e) => clean(e.text) && low(e.text) === w.toLowerCase()));
+  const texts = entries.filter((e) => clean(e.text) && low(e.text) === w.toLowerCase());
+  const byText = one(texts);
   const hit = byKey ?? byPair ?? byText;
   if (hit) return { ...hit, blank: !clean(hit.key) && !clean(hit.text) };
-  return `no entry "${w}" in ${sid}: give an entry's key exactly ("" for the blank entry, which clears the field). Its entries (key:text): ${list}`;
+  const ambiguous = (hits: { key: string; text: string }[], how: string) =>
+    `"${w}" is ambiguous in ${sid}: ${hits.map((e) => clean(e.key)).join(", ")} (${how}). Give the key of the entry you mean.`;
+  if (texts.length > 1) return ambiguous(texts, `each "${clean(texts[0]?.text)}"`);
+  // Whole words of a text, at least three characters with a letter: "Customer" for "Customer Request".
+  if (w.length >= 3 && /\p{L}/u.test(w)) {
+    const words = new RegExp(`(^|[^\\p{L}\\p{N}])${w.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^\\p{L}\\p{N}])`, "u");
+    const parts = entries.filter((e) => words.test(low(e.text)));
+    if (parts.length === 1 && parts[0]) return { ...parts[0], blank: false };
+    if (parts.length > 1 && parts.length <= ENTRIES_LISTED) return ambiguous(parts, `each with "${w}" in its text: ${parts.map((e) => clean(e.text)).join(", ")}`);
+  }
+  return `no entry "${w}" in ${sid}: give an entry's key exactly ("" for the blank entry, which clears the field). Its entries (key:text): ${entryList(entries)}`;
 }

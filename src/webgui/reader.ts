@@ -22,18 +22,18 @@
  */
 import { compact, controlBlock } from "../core/compact.js";
 import { menuSid, shortIds } from "../core/ids.js";
-import { notationNote } from "../core/notation.js";
+import { dateFormatOf, notationNote } from "../core/notation.js";
 import { readRows } from "../core/rows.js";
 import { ActionError, type Action, type Assessment, type LookOptions } from "../core/types.js";
-import { LOGON_REFUSAL, okcodeKind } from "../core/words.js";
+import { isoDateAs, LOGON_REFUSAL, okcodeKind } from "../core/words.js";
 import { assessAction, popupButton, questionRefusal } from "./assess.js";
-import { checkedNow, clean, clickForRoundtrip, entryFor, clickListLine, clickMenuRow, MenuGone, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlAct, noControlLook, openTextCell, pressOverflow, setCalendar, setRefusal, setTokenField, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
+import { checkedNow, clean, clickForRoundtrip, closeList, entryFor, clickListLine, clickMenuRow, MenuGone, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlAct, noControlLook, openTextCell, pressOverflow, setCalendar, setRefusal, setTokenField, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
 import { collectFiles, watchFiles } from "./files.js";
 import { GAVE_UP, gaveUpOn, NO_CANCEL, stillRunning } from "./running.js";
 import { inPageOutcome, LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
 import { chooseEntry, entriesOf, gridColumnId, listCellId, listScreenRow, markScrolled, notOnScreen, scrollTo, selectRow, tableCellId, tableScreenRow } from "./lists.js";
 import { behindPopup, closedByMessage, popupName, terminationIn, topPopup, transactionOf } from "./popups.js";
-import { extractFacts, extractMenus, markControl, markRow, markSelector, markWindowClose, menuRowOpen, openOverlay, submenuOpen, scrollControl, searchHelps, topWindowOpen } from "./page.js";
+import { clickClientButton, extractFacts, extractMenus, markControl, markRow, markSelector, markWindowClose, menuRowOpen, openOverlay, submenuOpen, scrollControl, searchHelps, topWindowOpen } from "./page.js";
 import { checkBeforeAct, focusOf, freshView, guardFacts, isDropdown, kindIn, LOGGED_OFF, loggedOff, look, lookRead, menuLines, readViewer, resolveIn, type ScreenRead, scrollables, VIEWER_TEXT_WHOLE, viewerFrames } from "./screen.js";
 import { IDLE_TIMEOUT_MS, LEAVE_MS, MAX_IDLE_TIMEOUT_MS, noTiming, timingText, type WebGuiSession } from "./session.js";
 
@@ -210,6 +210,8 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
   // A type-ahead list left open by the field typed into before covers what is below it.
   // Escape closes it itself, and only it (see the "key" action).
   if (a.do !== "set" && !isEscape(a)) await session.closeSuggestions().catch(() => {});
+  // A list that Tab left open (S/4's input history) would take the key itself: Enter would pick an earlier entry.
+  if (a.do === "key" && !isEscape(a)) await closeList(session).catch(() => false);
   try {
     // The id as the screen holds it now: a handle becomes its full id, one that names several controls is refused.
     const named = a.id !== undefined && String(a.id).trim() && !isMenuPath(String(a.id));
@@ -283,6 +285,21 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
   }
 }
 
+/**
+ * The user's date format when `sid` is a date field (its value is a date, or
+ * its name or label says date), else undefined. The format is the one the
+ * screens read so far showed (session.dateFormat), or this screen's.
+ */
+async function dateField(session: WebGuiSession, sid: string): Promise<string | undefined> {
+  const view = await freshView(session).catch(() => "");
+  const format = session.dateFormat ?? dateFormatOf(view);
+  if (!format) return undefined;
+  const line = view.split("\n").find((l) => l.startsWith(`${sid}  `)) ?? "";
+  const value = /= "([^"]*)"/.exec(line)?.[1] ?? "";
+  const dated = /\d/.test(value) && dateFormatOf(`"${value}"`) !== undefined;
+  return dated || /DAT|DATE|DATUM/i.test(sid.split("/").at(-1) ?? "") || /\bdate\b|datum|\bdt\b/i.test(line.split("  ")[2] ?? "") ? format : undefined;
+}
+
 /** An action in a few words, for a message about it: `key 8`, `press wnd[0]/tbar[1]/btn[8]`, `okcode /nVA05`. */
 function actionLabel(a: Action): string {
   const arg = a.do === "key" ? (a.key ?? a.value) : a.do === "okcode" ? a.value : a.id;
@@ -318,9 +335,17 @@ const isMenuPath = (id: string) => menuSid(id) !== undefined;
 function tidy(e: unknown): Error {
   if (e instanceof ActionError) return e;
   const message = e instanceof Error ? e.message : String(e);
-  const first = message.split("\n")[0] ?? message;
+  const first = plainTimeout(message.split("\n")[0] ?? message);
   if (message.includes("intercepts pointer events")) return new ActionError(`${first} ${coveredBy(message)}`);
   return new ActionError(first);
+}
+
+/** Playwright's "locator.click: Timeout 10000ms exceeded." in the words of the answer: nothing of the tool's insides. */
+export function plainTimeout(line: string): string {
+  const m = /^(?:locator|page|frame|elementHandle)\.(\w+): Timeout (\d+)ms exceeded\.?/.exec(line);
+  if (!m) return line;
+  const what = m[1] === "click" || m[1] === "dblclick" ? "The click on the control" : m[1] === "fill" || m[1] === "pressSequentially" || m[1] === "type" ? "Typing into the control" : "The action on the control";
+  return `${what} did not go through within ${Math.round(Number(m[2]) / 1000)} s.`;
 }
 
 /**
@@ -341,6 +366,14 @@ export function coveredBy(log: string): string {
 async function run(session: WebGuiSession, a: Action): Promise<string> {
   const page = session.page;
   const id = String(a.id ?? "");
+  const client = /^browser\/btn\[(\d+)\]$/.exec(id.trim());
+  if (client && (a.do === "press" || a.do === "click")) {
+    const text = await session.frame.evaluate(clickClientButton, Number(client[1])).catch(() => "");
+    if (!text) throw new ActionError(`No button ${id} on this screen: Web GUI's dialog is gone or has fewer buttons. Look at the screen.`);
+    await session.page.waitForLoadState("domcontentloaded").catch(() => {});
+    await session.page.waitForTimeout(300);
+    return `pressed ${id} "${text}" (a button of Web GUI's own dialog${/reload|neu laden|aktualis/i.test(text) ? ": the page is loaded again, and shows the logon page when the SAP session has ended" : ""})`;
+  }
   const onRow = await rowCellAction(session, a);
   if (onRow !== undefined) return onRow;
   switch (a.do) {
@@ -581,8 +614,12 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       const refusal = setRefusal(c);
       if (refusal) throw new ActionError(refusal);
       if (c.readonly) throw new ActionError(await closedText(session, `${c.sid} is read-only`));
+      // An ISO date into a date field: typed as the user's settings write dates, which is all SAP takes.
+      const iso = c.type !== "GuiTextEdit" && /^\s*\d{4}-\d{2}-\d{2}\s*$/.test(String(a.value ?? "")) ? await dateField(session, c.sid) : undefined;
+      const typed = iso ? (isoDateAs(String(a.value), iso) ?? String(a.value)) : String(a.value ?? "");
       // A text editor has lines; every other field has one.
-      const said = await typeInto(session, c.drawnAsText ? await openTextCell(session, c, loc) : loc, String(a.value ?? ""), c.type === "GuiTextEdit" || c.tag === "TEXTAREA");
+      const said = await typeInto(session, c.drawnAsText ? await openTextCell(session, c, loc) : loc, typed, c.type === "GuiTextEdit" || c.tag === "TEXTAREA");
+      if (typed !== String(a.value ?? "")) return `set ${c.sid}${said} (the date as "${typed}", the user's format ${iso})`;
       // A number typed in the other decimal notation than the screen's: SAP would read another number, or none.
       const notation = notationNote(String(a.value ?? ""), await freshView(session).catch(() => ""));
       return `set ${c.sid}${said}${notation ? ` (${notation})` : ""}`;
@@ -827,6 +864,10 @@ async function rowCellAction(session: WebGuiSession, a: Action): Promise<string 
   const id = String(a.id ?? "");
   if (a.row === undefined || a.row === null || !id || a.node !== undefined || !/^(set|check|focus|f4|dblclick|grid|select|press)$/.test(a.do)) return undefined;
   const kind = kindIn(await freshView(session), id);
+  // "row" on a control that has no rows was dropped without a word (live: focus id usr row 6 on a document
+  // screen answered "focus wnd[0]/usr"): the agent took the cursor for being on that line.
+  if (kind !== "table" && kind !== "list" && kind !== "grid" && kind !== "tree" && (a.do === "focus" || /(^|\/)usr$/.test(id)))
+    throw new ActionError(`${id} is ${kind ? `a ${kind}` : "no list"} on this screen: "row" and "col" take effect only on a list, table or grid. Nothing was done; look at the screen for the control that holds the rows.`);
   if (kind !== "table" && kind !== "list") return undefined;
   const row = Number(a.row);
   const how = a.how ?? "double";
