@@ -22,7 +22,7 @@
  * The tables are in core/words.ts, shared with the other surfaces.
  */
 import { ActionError, type Action, type Assessment } from "../core/types.js";
-import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayScreen, endsLogon, layoutMenu, MENU_PROGRAMS, okcodeKind, removesViewCriterion, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS, searchButton, showsOnly, viewDialog } from "../core/words.js";
+import { actWord, CLOSES_SESSIONS, commitCode, commitWord, deletesLines, discardsInput, displayScreen, draftDocument, draftEdit, itemViewButton, endsLogon, layoutMenu, MENU_PROGRAMS, okcodeKind, removesViewCriterion, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS, searchButton, showsOnly, viewDialog } from "../core/words.js";
 import type { Control, Screen } from "./facts.js";
 import { vkeyNumber } from "./keys.js";
 import { allControls } from "./resolve.js";
@@ -167,6 +167,30 @@ function button(screen: Screen, windowId: string, n: number): Control | undefine
   return w?.controls.find((c) => c.type === "GuiButton" && new RegExp(`^${windowId.replace(/[[\]]/g, "\\$&")}/tbar\\[[01]\\]/btn\\[${n}\\]$`).test(c.id));
 }
 
+/** A control's SAP name: the id's last part without its type prefix and cell index (`.../btnBT_PEIN` -> BT_PEIN). */
+const sapName = (id: string) =>
+  id
+    .slice(id.lastIndexOf("/") + 1)
+    .replace(/^[a-z]+/, "")
+    .replace(/\[[\d,]+\]$/, "");
+
+/** A new document that was never saved, as Web GUI's rule (webgui/assess.ts draftScreen, core/words.ts draftDocument). */
+function draftScreen(screen: Screen): boolean {
+  const main = screen.windows.find((w) => w.id === "wnd[0]");
+  if (!main) return false;
+  const numbers = new Map(main.controls.filter((c) => c.type === "GuiTextField" || c.type === "GuiCTextField").map((c) => [sapName(c.id), clean(c.text)]));
+  return draftDocument(screen.language, main.title, screen.transaction, numbers);
+}
+
+/** A popup's title and text lines, as one text. */
+function popupText(screen: Screen, id: string): string {
+  const w = screen.windows.find((x) => x.id === id);
+  return w ? [w.title, ...w.controls.filter((c) => c.type === "GuiLabel" || c.type === "GuiTextField").map((c) => clean(c.text))].join(" ") : "";
+}
+
+/** A button in the body of the main window, with no popup over it. */
+const bodyButton = (screen: Screen, b: Control) => screen.activeWindow === "wnd[0]" && /^wnd\[0\]\/usr\//.test(b.id) && !b.id.includes("/shell");
+
 function assessButton(screen: Screen, b: Control, how: string): Assessment {
   const named = `${how}"${shown(b)}"`;
   const key = buttonKey(b.id) ?? tooltipKey(b);
@@ -180,12 +204,20 @@ function assessButton(screen: Screen, b: Control, how: string): Assessment {
   // "Remove filter criterion (F6)" in ALV's Filter dialog: the criterion leaves the list's view, nothing is deleted in SAP.
   if (win !== "wnd[0]" && viewDialog(screen.language, screen.windows.find((w) => w.id === win)?.title) && [b.text, b.tip].some((t) => removesViewCriterion(screen.language, t)))
     return { risk: "navigate", reason: `${named} takes a criterion out of the list's view` };
+  // A line edit of a new document that was never saved (delete, add, copy or block an item): in memory only (draftScreen).
+  if (bodyButton(screen, b) && draftEdit(clean(b.text) || clean(b.tip)) && (!clean(b.tip) || draftEdit(clean(b.tip))) && draftScreen(screen))
+    return { risk: "navigate", reason: `${named} changes only the new document, which is not saved yet` };
   if (commitWord(b.text, b.tip)) return commit(named);
   const question = commitQuestion(screen);
+  // "Delete the item?" on the first popup over a new, unsaved document (deletesLines).
+  if (question && screen.activeWindow === "wnd[1]" && b.id.startsWith("wnd[1]/") && !declines(screen, b) && deletesLines(screen.language, popupText(screen, "wnd[1]")) && draftScreen(screen))
+    return { risk: "navigate", reason: `"${shown(b)}" on the popup "${short(question)}" deletes a line of the new document, which is not saved yet` };
   if (question && b.id.startsWith(`${screen.activeWindow}/`) && !declines(screen, b))
     return endsLogon(question) ? closes(`"${shown(b)}" on the popup "${short(question)}"`) : commit(`"${shown(b)}" on the popup "${short(question)}"`);
   if (key !== undefined && SAFE_VKEYS.has(key)) return { risk: "navigate", reason: named };
   if (safeWord(screen.language, b.text, b.tip)) return { risk: "navigate", reason: named };
+  // An item button of a sales or purchasing document that moves to another view of it (ITEM_VIEW_BUTTONS).
+  if (bodyButton(screen, b) && itemViewButton(screen.program, sapName(b.id), `${clean(b.text)} ${clean(b.tip)}`)) return { risk: "navigate", reason: `${named} moves to another view of the document` };
   // A search button by its SAP name (BP's locator "Start", btnBUS_LOCA_SRCH01-GO), unless its text says it acts.
   if (searchButton(b.id) && !actWord(...[b.text, b.tip].map(searchLabel))) return { risk: "navigate", reason: `${named} starts a search` };
   if (b.id.startsWith(`${screen.activeWindow}/`) && discardQuestion(screen)) return { risk: "navigate", reason: `${named} on a popup that asks whether to discard unsaved input` };
