@@ -7,6 +7,10 @@
  * holds an amount ("1.250,00"). So when an agent types a value that reads
  * differently in the other notation, the answer says which one the screen
  * uses. A screen without such a number says nothing, and neither does this.
+ *
+ * Reading has the same trap ("1.000" is a thousand with a decimal comma, one
+ * with a point; "312,000" is 312 with a comma): the compact view says the
+ * notation once, under its header (`numbersLine`).
  */
 
 /** "1.250,00", "0,00", "1 250,5-": groups of three with a point or a space, a comma, one or two decimals. */
@@ -14,12 +18,18 @@ const DECIMAL_COMMA = /^-?\d{1,3}(?:[. ]?\d{3})*,\d{1,2}-?$/;
 /** "1,250.00", "0.00". */
 const DECIMAL_POINT = /^-?\d{1,3}(?:[, ]?\d{3})*\.\d{1,2}-?$/;
 
-/** The values a view shows: what stands in quotes, and the cells of rows. */
+/** The values a view shows: what stands in quotes, and the cells of rows (a list's cells without their column in braces). */
 function valuesOf(view: string): string[] {
   const out: string[] = [];
   for (const line of view.split("\n")) {
     if (/^\s+row \d+/.test(line)) {
-      for (const cell of line.replace(/^\s+row \d+[^:]*: /, "").split(/ \| |; /)) out.push(cell.replace(/^[^=|]*=/, "").replace(/^ +| +$/g, ""));
+      for (const cell of line.replace(/^\s+row \d+[^:]*: /, "").split(/ \| |; /))
+        out.push(
+          cell
+            .replace(/^[^=|]*=/, "")
+            .replace(/ \{\d+\}$/, "")
+            .replace(/^ +| +$/g, ""),
+        );
       continue;
     }
     const q = /= "([^"]*)"/.exec(line);
@@ -64,4 +74,15 @@ export function notationNote(value: string, view: string): string | undefined {
     ? `"${v}" is read as ${digits}`
     : `"${v}" is not a number in that notation (${v.split(shown.sign).join("").replace(other, shown.sign)} is)`;
   return `numbers on this screen have ${name}, e.g. "${shown.example}": if this field is a number, ${reads}`;
+}
+
+/**
+ * The line under the header of the compact view that says how numbers are
+ * written: "NUMBERS 1.234,56  (decimal comma: ...)". `example` (a number of
+ * the screen) tells a grouping by spaces ("1 234,56") from one by points.
+ */
+export function numbersLine(sign: "," | ".", example?: string): string {
+  if (sign === ".") return 'NUMBERS 1,234.56  (decimal point: "1,000" is one thousand, "1.000" is one)';
+  const spaced = example !== undefined && /\d \d{3}/.test(example);
+  return `NUMBERS ${spaced ? "1 234,56" : "1.234,56"}  (decimal comma: "1.000" is one thousand, "1,000" is one, "312,000" is 312)`;
 }

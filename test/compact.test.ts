@@ -97,17 +97,24 @@ describe("compact", () => {
     expect(compact(t).split("\n")).toEqual([
       "tblT  table  rows 6 (visible 7); rows can be selected  (cell id: <id>[col,row], e.g. tblT/<id>[0,0])",
       "  columns: 0 Item, 1 Amount",
-      "  (no row is filled: every row on screen is blank and takes no input. The rows its line counts are SAP's blank lines.)",
+      '  (no cell of this table is in the view: its rows on screen are blank lines, or the table is outside the part of the page that is drawn. sap_look with id "tblT" reads it on its own.)',
       "txtZ-TOTAL  label  0",
     ]);
     // A table with a cell line, filled or empty, has its rows in the view: no such note.
     const filled = ["wnd[0]/usr/tblT  table  rows 6 (visible 7); columns: Item", 'wnd[0]/usr/tblT/txtZX-A[0,0]  field  Item = ""  (edit)'].join("\n");
-    expect(compact(filled)).not.toContain("no row is filled");
+    expect(compact(filled)).not.toContain("no cell of this table");
   });
 
-  test("a table control that is scrolled says which row its row 0 is", () => {
-    const t = ['wnd[0]/usr/tblT  table  rows 171 (visible 13, first 60); columns: A', 'wnd[0]/usr/tblT/txtZX-A[0,0]  field  A = "1"  (edit)'].join("\n");
-    expect(compact(t).split("\n")[0]).toBe("tblT  table  rows 171 (visible 13, first 60)  (cell id: <id>[col,row], e.g. txtZX-A[0,0]; row 0 here is row 60 of the table)");
+  test("a table control that is scrolled numbers its rows in the whole table, each with its cell row", () => {
+    const t = ['wnd[0]/usr/tblT  table  rows 171 (visible 13, first 60); columns: A', 'wnd[0]/usr/tblT/txtZX-A[0,0]  field  A = "1"  (edit)', 'wnd[0]/usr/tblT/txtZX-A[0,1]  field  A = ""  (edit)', 'wnd[0]/usr/tblT/txtZX-A[0,2]  field  A = ""  (edit)'].join("\n");
+    expect(compact(t).split("\n")).toEqual([
+      'tblT  table  rows 171 (visible 13, first 60)  (rows numbered in the whole table, as "rows" and scroll count them; a cell id counts rows on screen: <id>[col,<cell row>], e.g. txtZX-A[0,0] is row 60)',
+      "  columns: 0 A=txtZX-A",
+      "  row 60 (cell row 0): A=1",
+      "  rows 61 to 62 (cell rows 1 to 2): (empty)",
+    ]);
+    // For core/rows.ts: the screen rows alone, as before.
+    expect(compact(t, { screenRows: true }).split("\n")[0]).toBe("tblT  table  rows 171 (visible 13, first 60)  (cell id: <id>[col,row], e.g. txtZX-A[0,0]; row 0 here is row 60 of the table)");
   });
 
   test("a table control: selected rows marked, empty rows in a run on one line, columns scrolled out named", () => {
@@ -232,11 +239,11 @@ describe("compact: classic lists", () => {
       "wnd[0]/usr/lbl[3,4]  label  CC",
     ].join("\n");
     expect(compact(webgui).split("\n").slice(2)).toEqual([
-      "usr  list  201 rows (visible 34, first 34, below 2 title rows; scroll for the others)  (cell ids: usr/lbl[col,row], col in braces; rows without braces have their cells in columns 1,3; a checkbox is chk[col,row])",
-      '  row 0: Entries {0} | "3" {20}',
-      "  row 2: [ ] | AA",
-      "  row 3: [x] | BB",
-      "  row 4: [ ] | CC",
+      'usr  list  201 rows (visible 34, first 34, below 2 title rows; scroll for the others)  (rows numbered in the whole list below its 2 title rows, as "rows" and scroll count them; a cell id counts rows on screen: usr/lbl[col,<cell row>], col in braces; rows without braces have their cells in columns 1,3; a checkbox is chk[col,<cell row>])',
+      '  title 0: Entries {0} | "3" {20}',
+      "  row 34 (cell row 2): [ ] | AA",
+      "  row 35 (cell row 3): [x] | BB",
+      "  row 36 (cell row 4): [ ] | CC",
     ]);
     // One list alone, whole.
     expect(controlBlock(webgui, "wnd[0]/usr")?.split("\n").length).toBe(11);
