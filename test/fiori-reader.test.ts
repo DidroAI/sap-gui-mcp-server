@@ -63,8 +63,14 @@ describe("ui5Look", () => {
     expect(lines.some((l) => l.includes("Name-label"))).toBe(false);
     expect(lines.some((l) => l.startsWith("Page "))).toBe(false);
   });
-  test("compact: an id tail shared with another control grows until it is unique", () => {
+  test("compact: an id tail shared with another control on screen grows until it is unique", () => {
+    // The other "table::Add" is not rendered: the short tail names the one on screen (ui5Control finds it first).
+    expect(ui5Look({ compact: true })).toContain('Button #Add "Add"');
+    const a = new FakeControl({ type: "sap.m.Button", id: "app.demo::List--table::Add", isA: ["sap.m.Button"], props: { text: "Add" } });
+    const b = new FakeControl({ type: "sap.m.Button", id: "app.demo::Other--table::Add", isA: ["sap.m.Button"], props: { text: "Add" } });
+    installPage([a, b]);
     expect(ui5Look({ compact: true })).toContain('Button #List--table::Add "Add"');
+    expect(ui5Control({ handle: "Add", op: "facts" }).facts?.id).toBe("app.demo::List--table::Add");
   });
   test("a password is never written out", () => {
     for (const compact of [true, false]) {

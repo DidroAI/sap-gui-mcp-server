@@ -12,9 +12,12 @@
  * Actions, on ids from the view (the compact view's `#tail`, or a full UI5 id):
  *
  *   {"do":"set","id":"…","value":"…"}      type into an input, then Tab ("enter": true ends with Enter; search fields always do)
- *   {"do":"press","id":"…"}                click a button, link, row or tile ("click" is the same)
+ *   {"do":"press","id":"…"}                click a button, link, row or tile ("click" is the same); a grid-table row
+ *                                          opens through its row action's navigation arrow when it has one
  *   {"do":"select","id":"…"}               tab, list item (its selection box where it has one), segmented button,
- *                                          radio button, object-page section, grid-table row (its row selector)
+ *                                          radio button, grid-table row (its row selector), object-page section
+ *                                          by its id, its tab's id or its title (the view's SECTIONS line), through
+ *                                          the layout's API: also a tab that sits in the overflow
  *   {"do":"check","id":"…","value":true}   checkbox, switch, toggle button, selectable row; without value: toggle
  *   {"do":"combo","id":"…","key":"…"}      entry of sap.m.Select, ComboBox or MultiComboBox by key or text, through the
  *                                          control's API; other dropdowns in two steps (open, pick the option).

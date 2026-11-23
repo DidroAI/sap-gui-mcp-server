@@ -17,12 +17,15 @@ const TABLE: [string, ControlFacts, "read" | "navigate" | "commit", string][] = 
   ["V4 footer Save in another language", button("Sauvegarder", { id: `${V4}FooterBar::StandardAction::Save`, inFooter: true }), "commit", "standard action that writes (id)"],
   ["V4 table Create", button("Create", { id: `${V4}table::Items::LineItem::StandardAction::Create` }), "commit", "standard action that writes (id)"],
   ["V4 table Delete", button("Delete", { id: `${V4}table::Items::LineItem::StandardAction::Delete` }), "commit", "standard action that writes (id)"],
-  ["V4 header Edit", button("Edit", { id: `${V4}StandardAction::Edit`, buttonType: "Emphasized" }), "navigate", "standard action that does not write (id)"],
+  ["V4 header Edit", button("Edit", { id: `${V4}StandardAction::Edit`, buttonType: "Emphasized" }), "commit", "creates a draft on the server, which locks the document (id)"],
   ["V4 footer Cancel", button("Cancel", { id: `${V4}FooterBar::StandardAction::Cancel`, inFooter: true }), "navigate", "standard action that does not write (id)"],
   ["V4 bound action", button("Set to Booked", { id: `${V4}DataFieldForAction::com.app.SetBooked` }), "commit", "back-end action (id)"],
   ["V2 activate", button("Save", { id: `${V2}activate`, buttonType: "Emphasized", inFooter: true }), "commit", "standard action that writes (id)"],
   ["V2 function import", button("Release Block", { id: `${V2}action::C_Order_Entities::ReleaseBlock` }), "commit", "back-end action (id)"],
-  ["V2 edit", button("Edit", { id: `${V2}edit`, buttonType: "Emphasized" }), "navigate", "standard action that does not write (id)"],
+  ["V2 edit", button("Edit", { id: `${V2}edit`, buttonType: "Emphasized" }), "commit", "creates a draft on the server, which locks the document (id)"],
+  ["V2 object page header Edit (S/4 PO item)", { type: "sap.uxap.ObjectPageHeaderActionButton", id: "po.manage::sap.suite.ui.generic.template.ObjectPage.view.Details::C_PurchaseOrderItemTP--edit", text: "Edit" }, "commit", "creates a draft on the server, which locks the document (id)"],
+  ["V2 Discard Draft", button("Discard Draft", { id: `${V2}discard` }), "navigate", "standard action that does not write (id)"],
+  ["V4 Discard", button("Discard Draft", { id: `${V4}FooterBar::StandardAction::Discard` }), "navigate", "standard action that does not write (id)"],
   ["list report Go", button("Go", { id: `${V2}listReportFilter-btnGo`, buttonType: "Emphasized", inFilterBar: true }), "read", "value help, filter or search (id)"],
   ["V4 filter bar Go", button("Go", { id: `${V4}FilterBar-btnSearch`, buttonType: "Emphasized" }), "read", "value help, filter or search (id)"],
   ["adapt filters", button("Adapt Filters (1)", { id: `${V2}listReportFilter-btnFilters` }), "read", "value help, filter or search (id)"],
@@ -178,6 +181,14 @@ describe("fiori actions", () => {
     const a = assessAction({ do: "press", id: "Save" }, save);
     expect(decide(policyFromEnv({}), { do: "press", id: "Save" }, a)).toMatchObject({ run: false, refused: expect.stringContaining("writes are off") });
     expect(decide(policyFromEnv({ SAP_WRITE: "confirm" }), { do: "press", id: "Save" }, a)).toMatchObject({ run: false, confirm: expect.stringContaining("Save") });
+  });
+  test("Edit creates a draft: refused with writes off, asked in confirm mode; Discard Draft runs (live 2026-11-23, #32)", () => {
+    const edit: ControlFacts = { type: "sap.uxap.ObjectPageHeaderActionButton", id: "po::sap.suite.ui.generic.template.ObjectPage.view.Details::C_PurchaseOrderItemTP--edit", text: "Edit" };
+    const a = assessAction({ do: "press", id: "C_PurchaseOrderItemTP--edit" }, edit, EN);
+    expect(decide(policyFromEnv({}), { do: "press", id: "C_PurchaseOrderItemTP--edit" }, a)).toMatchObject({ run: false, refused: expect.stringContaining("creates a draft") });
+    expect(decide(policyFromEnv({ SAP_WRITE: "confirm" }), { do: "press", id: "C_PurchaseOrderItemTP--edit" }, a)).toMatchObject({ run: false, confirm: expect.stringContaining("draft") });
+    const discard = assessAction({ do: "press", id: "discard" }, button("Discard Draft", { id: `${V2}discard` }), EN);
+    expect(decide(policyFromEnv({}), { do: "press", id: "discard" }, discard).run).toBe(true);
   });
 });
 

@@ -332,10 +332,46 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     return { ref: only.id, note: `(No session matches "${ref}"; using the only open one: ${only.surface} ${place(only)}.)` };
   }
 
+  /** How many times the user was asked to confirm an action (see leniently). */
+  let asks = 0;
+  /** Says that a session is gone: its id names no open session, or its tab closed. */
+  const GONE_SESSION = /No open SAP session matches|is no longer open/;
+
+  /**
+   * A session id that stopped naming an open session ("chrome:<old id>": the tab was closed or opened again),
+   * after the call failed on it: the only open session of the same surface, and a line that says so. Nothing
+   * ran on the gone session, so the call runs again on that one. Undefined when there is no such single session.
+   */
+  async function replacedBy(raw: string | undefined, message: string): Promise<{ ref: string; note: string } | undefined> {
+    // Only an answer where nothing ran: a batch that ran actions before the session went says "Ran n of m".
+    if (!raw || !GONE_SESSION.test(message.slice(0, 400)) || /^Ran \d+ of \d+/m.test(message)) return undefined;
+    const only = await registry.replacement(raw).catch(() => undefined);
+    return only ? { ref: only.id, note: `(Session "${raw}" is not open any more; using the only open ${only.surface} session: ${place(only)}.)` } : undefined;
+  }
+
   /** The tool's answer for `ref`, with the line `lenient` says first. */
   async function leniently(raw: string | undefined, f: (ref: string | undefined) => Promise<CallToolResult>): Promise<CallToolResult> {
-    const { ref, note } = await lenient(raw);
-    const r = await f(ref);
+    let { ref, note } = await lenient(raw);
+    let r: CallToolResult;
+    // A user who was asked to confirm an action on that session confirmed it there, nowhere else: no other session then.
+    const asked = asks;
+    const replaced = (name: string | undefined, message: string) => (asks === asked ? replacedBy(name, message) : Promise.resolve(undefined));
+    try {
+      r = await f(ref);
+    } catch (e) {
+      const alt = ref === raw ? await replaced(raw, (e as Error).message) : undefined;
+      if (!alt) throw e;
+      ({ ref, note } = alt);
+      r = await f(ref);
+    }
+    if (r.isError && ref === raw) {
+      const first = r.content[0];
+      const alt = await replaced(raw, first?.type === "text" ? first.text : "");
+      if (alt) {
+        ({ ref, note } = alt);
+        r = await f(ref);
+      }
+    }
     const first = r.content[0];
     if (!note) return r;
     if (first?.type !== "text") return { ...r, content: [{ type: "text", text: note }, ...r.content] };
@@ -452,7 +488,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
           return text(await said(driver, info.id, c, whole));
         }
         const view = await driver.look({ compact: true });
-        if (acted !== undefined && acted === fingerprint(view)) return text(await said(driver, info.id, view, `${UNCHANGED}\n${views.present(info.id, view, true)}`));
+        // Asked for the changes ("diff"): those, also right after an action (live 2026-11-23: the whole 8 KB view came back).
+        if (acted !== undefined && acted === fingerprint(view)) return text(await said(driver, info.id, view, diff ? views.present(info.id, view, false) : `${UNCHANGED}\n${views.present(info.id, view, true)}`));
         return text(await said(driver, info.id, view, views.present(info.id, view, !diff)));
   }
 
@@ -660,6 +697,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
 
   /** An action the guard holds for the user's yes: the client asks the user (MCP elicitation); it runs on a yes, if the screen is still what the user was shown. */
   async function confirmHeld(held: { info: SessionInfo; assessment: Assessment; confirm: string }, action: NormalizedAction, whole: boolean): Promise<CallToolResult> {
+    asks++;
     const { info, assessment, confirm } = held;
     const shown = shownOf(info, action, assessment);
     const what = `${confirm}, on ${place(info)}`;

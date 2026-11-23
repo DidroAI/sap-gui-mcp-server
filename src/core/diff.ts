@@ -23,6 +23,14 @@
 /** The id of a control line: everything before the first two spaces. */
 const keyOf = (line: string): string => line.split("  ", 1)[0] ?? line;
 
+/**
+ * A Fiori view (src/fiori): a `FIORI` header, a `PAGE title (hash)` line, then one line per control, nested
+ * by indentation, each with its `#id`; popups are `POPUP` lines. Its lines are keyed by that id (a line
+ * without one by its first word), each line on its own: the indentation is nesting, not the rows of a grid.
+ */
+export const isFioriView = (view: string): boolean => view.startsWith("FIORI");
+const fioriKey = (line: string): string => /(?:^|\s)#(\S+)/.exec(line)?.[0].trim() ?? line.trim().split(/\s/, 1)[0] ?? line;
+
 interface Block {
   key: string;
   head: string;
@@ -32,8 +40,16 @@ interface Block {
 function blocks(view: string): Block[] {
   const out: Block[] = [];
   const seen = new Map<string, number>();
+  const fiori = isFioriView(view);
   for (const line of view.split("\n")) {
     const last = out[out.length - 1];
+    if (fiori) {
+      const k = fioriKey(line);
+      const n = seen.get(k) ?? 0;
+      seen.set(k, n + 1);
+      out.push({ key: n ? `${k}#${n}` : k, head: line, rows: [] });
+      continue;
+    }
     if (line.startsWith(" ") && last) {
       last.rows.push(line);
       continue;
@@ -60,16 +76,16 @@ function contextHead(head: string): string {
   return / {2}(grid|tree) {2}/.test(head) ? head.replace(/; columns: .*$/, "; columns as before") : head;
 }
 
-/** The lines that say where the agent is: the header and the windows. */
+/** The lines that say where the agent is: the header and the windows (a Fiori view: its page and popups). */
 function frame(view: string): string {
-  return view
-    .split("\n")
-    .filter((l, i) => i === 0 || l.startsWith("WINDOW "))
-    .join("\n");
+  return [view.split("\n", 1)[0] ?? "", ...windows(view)].join("\n");
 }
 
-/** The `WINDOW` lines of a view. */
-const windows = (view: string): string[] => view.split("\n").filter((l) => l.startsWith("WINDOW "));
+/** The `WINDOW` lines of a view; of a Fiori view, its `PAGE` line and its `POPUP` lines (each a window over the page). */
+const windows = (view: string): string[] => {
+  const fiori = isFioriView(view);
+  return view.split("\n").filter((l) => l.startsWith("WINDOW ") || (fiori && (l.startsWith("PAGE ") || l.startsWith("POPUP "))));
+};
 
 /** Is `over` the screen of `view` with popups above it: the same main window, and more windows? */
 export function popupOver(over: string, view: string): boolean {
@@ -201,12 +217,31 @@ export function diffViews(prev: string, next: string, since = "", popupsClosed: 
       out.push(`- ${b.head}`);
       changed += 1 + b.rows.length;
     }
-  const lines = foldFlips(foldFlips(out, closed, "closed for input (read-only now), values as before"), opened, "open for input again (edit), values as before").filter((l) => l !== GONE);
+  let lines = foldFlips(foldFlips(out, closed, "closed for input (read-only now), values as before"), opened, "open for input again (edit), values as before").filter((l) => l !== GONE);
+  if (isFioriView(next)) lines = foldGone(lines);
   return { text: [`CHANGED ${changed} of ${total} lines${on}${back} (${from}same screen; sap_look shows all of it):`, ...lines].join("\n"), changed };
 }
 
+/** From this many lines on, the lines of a Fiori view that are gone share one line of the diff. */
+const GONE_FROM = 4;
+
+/**
+ * A Fiori view holds what the viewport shows: a section tab or a scroll takes many lines out of it, and
+ * each would be repeated whole after "-" (live 2026-11-23: the diff of a section tab was longer than the
+ * view). They become one line, in place of the first, that counts them and names a few by their ids.
+ */
+function foldGone(lines: string[]): string[] {
+  const gone = lines.filter((l) => l.startsWith("- "));
+  if (gone.length < GONE_FROM) return lines;
+  const ids = gone.map((l) => /#\S+/.exec(l)?.[0]).filter((x): x is string => !!x);
+  const line = `- ${gone.length} lines left the view (scrolled away or closed)${ids.length ? `: ${ids.slice(0, 3).join(", ")}${ids.length > 3 ? ", ..." : ""}` : ""}`;
+  const first = lines.indexOf(gone[0] as string);
+  return lines.flatMap((l, i) => (i === first ? [line] : l.startsWith("- ") ? [] : [l]));
+}
+
 /** A window's id and title from its `WINDOW` line: `wnd[1] "Detailed Display"`. */
-export const windowName = (line: string): string => /^WINDOW (\S+) {2}(".*?")?/.exec(line)?.slice(1).filter(Boolean).join(" ") ?? line;
+export const windowName = (line: string): string =>
+  line.startsWith("POPUP ") ? (/ ("[^"]*")/.exec(line)?.[1] ?? /#\S+/.exec(line)?.[0] ?? line) : (/^WINDOW (\S+) {2}(".*?")?/.exec(line)?.slice(1).filter(Boolean).join(" ") ?? line);
 
 /**
  * Where the agent is, for the diff's first line: the transaction and the
@@ -216,6 +251,13 @@ export const windowName = (line: string): string => /^WINDOW (\S+) {2}(".*?")?/.
  * next action lands). "" when the view names neither.
  */
 export function whereLine(view: string): string {
+  if (isFioriView(view)) {
+    // The page by its title, a popup in front by its title.
+    const page = /^PAGE (.*?)(?: \(#.*)?$/m.exec(view)?.[1] ?? "";
+    const pop = windows(view).filter((l) => l.startsWith("POPUP ")).at(-1);
+    const popTitle = pop ? (/ "([^"]*)"/.exec(pop)?.[1] ?? /#(\S+)/.exec(pop)?.[1] ?? "") : "";
+    return [page ? `"${page}"` : "", popTitle ? `popup "${popTitle}"` : ""].filter(Boolean).join(" · ");
+  }
   const tx = /^TRANSACTION (\S+)/.exec(view)?.[1];
   const front = windows(view).at(-1);
   const win = front ? windowName(front).replace(/^wnd\[0\] /, "") : "";

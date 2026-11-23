@@ -9,7 +9,7 @@
  *
  * The table fails closed: a button, a menu entry or anything else with a
  * press handler is a commit unless a row says it is safe. Safe by id are the
- * standard actions that do not write (Edit, Cancel, Go, value help, sort,
+ * standard actions that do not write (Cancel, Discard, Go, value help, sort,
  * filter...). Safe by text are the words of core/words.ts (Back, Cancel,
  * Display, Find, Refresh, Next, Sort, Filter, Go...), and only when the
  * page's language is one that table covers; in any other language a button
@@ -17,7 +17,11 @@
  *
  * Draft apps: typing into a field of a draft-enabled app saves the draft on
  * the server at once. That is not counted as a commit; activating the draft
- * (Save, Create) is.
+ * (Save, Create) is, and so is what creates a draft: Edit (and Create, Copy)
+ * stores a draft on the server and locks the document for other users (live
+ * 2026-11-23: Edit with writes off left a draft of a purchase order behind).
+ * With writes off nothing could be saved from it anyway. Discard Draft and
+ * Cancel delete a draft or leave it: they stay allowed.
  */
 import { ActionError, type Action, type Assessment, type Risk } from "../core/types.js";
 import { commitWord, discardsInput, endsLogon, removesViewCriterion, safeWord } from "../core/words.js";
@@ -36,7 +40,9 @@ const ICON_SAFE = /^(search|filter|sort|sort-ascending|sort-descending|refresh|n
 
 /** Standard actions of SAP Fiori elements by id: OData V4 (`fe::…StandardAction::Save`) and V2 (`--save`, `--activate`). */
 const ID_COMMIT = /::StandardAction::(Save|Create|Delete|CreateDocument|MassEdit|Paste|Insert)\b|(?:--|::)(save|activate|delete|deleteEntry|addEntry|copy|copyButton|saveAsDraft|saveAndNew|saveAndNext|activateAndNew)$/i;
-const ID_SAFE = /::StandardAction::(Edit|Cancel|Discard|SwitchToActiveObject|SwitchToDraftObject|SwitchDraftAndActiveObject|FullScreen|EnterFullScreen|ExitFullScreen|Close|Share)\b|(?:--|::)(edit|discard|cancel|close|back|fullScreen|closeColumn|exitFullScreen|share)$/i;
+const ID_SAFE = /::StandardAction::(Cancel|Discard|SwitchToActiveObject|SwitchToDraftObject|SwitchDraftAndActiveObject|FullScreen|EnterFullScreen|ExitFullScreen|Close|Share)\b|(?:--|::)(discard|cancel|close|back|fullScreen|closeColumn|exitFullScreen|share)$/i;
+/** Standard actions that create a draft on the server (and lock the document): Edit, by id (V4 and V2). */
+const ID_DRAFT = /::StandardAction::Edit\b|(?:--|::)edit$/i;
 /** A back-end action behind a button: an OData action or function import (`DataFieldForAction`, `--action::…`). */
 const ID_ACTION = /DataFieldForAction::|(?:--|::)action::/i;
 const ID_READ = /-btnGo$|-btnSearch$|::FilterBar-btnSearch$|-btn(Filters|Clear|Restore|ShowHide|AdaptFilters)$|::AdaptFilters$|-vhi$|-valueHelp|::StandardAction::(Sort|Filter|Group|Personalization|Export|ExportToExcel|ShowDetails|HideDetails)\b|-(btnPersonalisation|settings|btnExcelExport|btnFullScreen|header-expandBtn|expandBtn|collapseBtn|pinBtn|overflowButton)$|-searchField/i;
@@ -107,6 +113,7 @@ export interface Rule {
 export const RULES: Rule[] = [
   { name: "standard action that writes (id)", risk: "commit", when: (f) => ID_COMMIT.test(f.id) },
   { name: "back-end action (id)", risk: "commit", when: (f) => ID_ACTION.test(f.id) },
+  { name: "creates a draft on the server, which locks the document (id)", risk: "commit", when: (f) => ID_DRAFT.test(f.id) },
   { name: "value help, filter or search (id)", risk: "read", when: (f) => ID_READ.test(f.id) },
   { name: "standard action that does not write (id)", risk: "navigate", when: (f) => ID_SAFE.test(f.id) },
   { name: "message list", risk: "read", when: (f) => MESSAGES.test(f.type) || ID_MESSAGES.test(f.id) },

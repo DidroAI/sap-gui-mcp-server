@@ -1,0 +1,87 @@
+FIORI  SalesOrder-manageV2  system S4H/300  user DEMO_USER
+PAGE Manage Sales Orders - Version 2 (#SalesOrder-manageV2&/)
+ShellBarButton #shellbar:toggle-search "Open Search"
+ShellBarButton #shellbar:notifications "0 Notifications"
+ShellBarButton #shellbar:help "Help"
+Avatar #userActionsMenuHeaderButton tooltip="Profile of Benchmark Didro Bench"
+Button #sideMenuExpandCollapseBtn tooltip="Open Menu"
+Button #backBtn tooltip="Back"
+ShellAppTitle #shellAppTitle "Manage Sales Orders - Version 2" "Manage Sales Orders - Version 2" tooltip="Navigation menu"
+Title #PageVariantManagement-vm-text "Standard"
+Text #PageVariantManagement-vm-modified "*"
+Button #PageVariantManagement-vm-trigger "Modified view Standard.": tooltip="Select View"
+OverflowToolbarMenuButton #__button171 "Share"
+SearchField #BasicSearchField-inner placeholder="Search"
+field.FieldMultiInput #SalesOrder-inner "Sales Order":
+  Tokenizer #__tokenizer27 "Sales Order":
+field.FieldMultiInput #SoldToParty-inner "Sold-to Party":
+  Tokenizer #__tokenizer29 "Sold-to Party":
+field.FieldMultiInput #PurchaseOrderByCustomer-inner "Customer Reference":
+  Tokenizer #__tokenizer28 "Customer Reference":
+DynamicDateRange #RequestedDeliveryDate-inner "Requested Delivery Date":
+field.FieldMultiInput #OverallSDProcessStatus-inner "Overall Status":
+  Tokenizer #__tokenizer30 "Overall Status":
+DynamicDateRange #SalesOrderDate-inner "Document Date":
+field.FieldMultiInput #SalesOrganizationForFilter-inner "Sales Organization":
+  Tokenizer #__tokenizer31 "Sales Organization":
+    Token #SalesOrganizationForFilter-inner-token-__tokenizer31-0 "Sales Organization": "Dom. Sales Org US (1710)"
+Button #SalesOrderManage-btnSearch "Go"
+Button #SalesOrderManage-btnAdapt "Adapt Filters (1)"
+Button #__header77-collapseBtn tooltip="Collapse Header"
+ToggleButton #__header77-pinBtn tooltip="Pin Header" (not pressed)
+Table #LineItem header="Sales Orders"
+  Table #LineItem-innerTable "Sales Orders (7,090)": columns: Sales Order | Sold-to Party | Customer Reference | Overall Status | Requested Delivery Date | Net Value | Document Date (7090 rows)
+    Title #LineItem-title "Sales Orders (7,090)"
+    Button #com.sap.gateway.srvd.c_salesordermanage_sd.v0001.SalesOrderManageType "Create"
+    MenuButton #BillingBlock "Billing Block"
+    MenuButton #DeliveryBlock "Delivery Block"
+    MenuButton #CreateWithReferenceMenu "Create with Reference"
+    OverflowToolbarButton #LineItem-copy "Copy to Clipboard" (disabled)
+    OverflowToolbarButton #LineItem-settings "Settings"
+    OverflowToolbarMenuButton #LineItem-export "Export"
+      SplitButton #LineItem-export-internalSplitBtn tooltip="Export Table"
+        Button #LineItem-export-internalSplitBtn-textButton icon=excel-attachment
+        Button #LineItem-export-internalSplitBtn-arrowButton tooltip="Open Menu"
+    ToggleButton #LineItem-toolbar-overflowButton tooltip="Additional Options" (not pressed)
+    CheckBox #LineItem-innerTable-sa tooltip="Select All" [ ] unchecked
+    ColumnListItem #LineItem-innerTableRow-__clone1835 row: [ ] 7708 | Domestic US Customer 2 (17100002) | BTOYMC71 | Open | 11/23/2026 | 35.10 USD | 11/23/2026  (press a row to open it; a link in a row has its own action) {ctx:/SalesOrderManage('7708')}
+      Link #__identifier7-__clone1828-__clone1835-link "7708"
+      Link #__link49-__clone1829-__clone1835 "Domestic US Customer 2 (17100002)"
+      Link #overallStatusLink-__clone1831-__clone1835 "Open"
+    Label #__label174-__clone1865 "Document Date"
+    Text #__text1026-__clone1834-__clone1835 "11/23/2026"
+    ColumnListItem #LineItem-innerTableRow-__clone1836 row: [ ] 7707 | Domestic US Customer 2 (17100002) | BTOYM831 | Completed | 11/23/2026 | 35.10 USD | 11/23/2026 {ctx:/SalesOrderManage('7707')}
+      Link #__identifier7-__clone1828-__clone1836-link "7707"
+      Link #__link49-__clone1829-__clone1836 "Domestic US Customer 2 (17100002)"
+      Link #overallStatusLink-__clone1831-__clone1836 "Completed"
+    Label #__label174-__clone1866 "Document Date"
+    Text #__text1026-__clone1834-__clone1836 "11/23/2026"
+    ColumnListItem #LineItem-innerTableRow-__clone1837 row: [ ] 7706 | Domestic US Customer 2 (17100002) | BTOYM381 | Completed | 11/23/2026 | 35.10 USD | 11/23/2026 {ctx:/SalesOrderManage('7706')}
+      Link #__identifier7-__clone1828-__clone1837-link "7706"
+      Link #__link49-__clone1829-__clone1837 "Domestic US Customer 2 (17100002)"
+      Link #overallStatusLink-__clone1831-__clone1837 "Completed"
+    Label #__label174-__clone1867 "Document Date"
+    Text #__text1026-__clone1834-__clone1837 "11/23/2026"
+    ColumnListItem #LineItem-innerTableRow-__clone1838 row: [ ] 7705 | Domestic US Customer 2 (17100002) | BTOYK5S1 | Completed | 11/23/2026 | 35.10 USD | 11/23/2026 {ctx:/SalesOrderManage('7705')}
+      Link #__identifier7-__clone1828-__clone1838-link "7705"
+      Link #__link49-__clone1829-__clone1838 "Domestic US Customer 2 (17100002)"
+      Link #overallStatusLink-__clone1831-__clone1838 "Completed"
+    Label #__label174-__clone1868 "Document Date"
+    Text #__text1026-__clone1834-__clone1838 "11/23/2026"
+    ColumnListItem #LineItem-innerTableRow-__clone1839 row: [ ] 7704 | Domestic US Customer 2 (17100002) | BTOYJWX1 | Completed | 11/23/2026 | 35.10 USD | 11/23/2026 {ctx:/SalesOrderManage('7704')}
+      Link #__identifier7-__clone1828-__clone1839-link "7704"
+      Link #__link49-__clone1829-__clone1839 "Domestic US Customer 2 (17100002)"
+      Link #overallStatusLink-__clone1831-__clone1839 "Completed"
+    Label #__label174-__clone1869 "Document Date"
+    Text #__text1026-__clone1834-__clone1839 "11/23/2026"
+    ColumnListItem #LineItem-innerTableRow-__clone1840 row: [ ] 7703 | Domestic US Customer 2 (17100002) | BTOYIFA1 | Completed | 11/23/2026 | 35.10 USD | 11/23/2026 {ctx:/SalesOrderManage('7703')}
+      Link #__identifier7-__clone1828-__clone1840-link "7703"
+      Link #__link49-__clone1829-__clone1840 "Domestic US Customer 2 (17100002)"
+      Link #overallStatusLink-__clone1831-__clone1840 "Completed"
+    Label #__label174-__clone1870 "Document Date"
+    Text #__text1026-__clone1834-__clone1840 "11/23/2026"
+    ColumnListItem #LineItem-innerTableRow-__clone1841 row: [ ] 7702 | Domestic US Customer 2 (17100002) | BTOYIC41 | Completed | 11/23/2026 | 35.10 USD | 11/23/2026 {ctx:/SalesOrderManage('7702')}
+      Link #__identifier7-__clone1828-__clone1841-link "7702"
+      Link #__link49-__clone1829-__clone1841 "Domestic US Customer 2 (17100002)"
+      Link #overallStatusLink-__clone1831-__clone1841 "Completed"
+SCROLL shown 0-705 of 2125 px, more below: {"do":"scroll","how":"down"}

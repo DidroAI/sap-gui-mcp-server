@@ -33,6 +33,8 @@ export class Registry {
   private last: SessionInfo[] = [];
   private lastErrors: string[] = [];
   private lastHint: string | undefined;
+  /** The surface of every session id seen since the server started: a session that closed is still known by it. */
+  private surfaces_ = new Map<string, SurfaceName>();
   active: string | undefined;
 
   constructor(
@@ -64,6 +66,7 @@ export class Registry {
     const errors = [...failed].map(([message, names]) => `${names.join(", ")}: ${message}`);
     const failures = [...failed.values()].reduce((n, names) => n + names.length, 0);
     const sessions = found.filter((s) => systemAllowed(this.policy, s));
+    for (const s of sessions) this.surfaces_.set(s.id.toLowerCase(), s.surface);
     this.last = sessions;
     this.lastErrors = errors;
     this.lastHint = sessions.length || found.length ? undefined : this.surfaces.map((s) => s.whenEmpty?.()).find(Boolean);
@@ -94,6 +97,23 @@ export class Registry {
       return of.find((s) => s.id === this.active) ?? of[0];
     }
     return this.last.find((s) => [s.system, s.transaction, s.title, s.where].some((x) => x?.toLowerCase().includes(r)));
+  }
+
+  /**
+   * A session id that names no open session any more (its tab closed or was opened again under another id,
+   * "chrome:<old id>"), when exactly one session of its surface is open now: that one. Undefined otherwise,
+   * also for a reference that is not a session id. Discovers first.
+   */
+  async replacement(ref: string): Promise<SessionInfo | undefined> {
+    const r = ref.trim().toLowerCase();
+    if (!r) return undefined;
+    await this.discover().catch(() => undefined);
+    if (this.resolve(ref)) return undefined;
+    const surface = this.surfaces_.get(r) ?? (SURFACE_NAMES.includes(r.split(":", 1)[0] ?? "") ? (r.split(":", 1)[0] as SurfaceName) : undefined);
+    const chrome = r.startsWith("chrome:");
+    if (!surface && !chrome) return undefined;
+    const same = this.last.filter((s) => (surface ? s.surface === surface : s.id.toLowerCase().startsWith("chrome:")));
+    return same.length === 1 ? same[0] : undefined;
   }
 
   private find(ref: string | undefined): SessionInfo | undefined {

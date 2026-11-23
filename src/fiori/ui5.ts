@@ -31,6 +31,10 @@ export interface Ui5LookOptions {
   compact: boolean;
   /** Only this control and what is inside it (an id of the view), whole: also the part below the fold. */
   id?: string;
+  /** With id, on a table or list: these rows of the ones the page has loaded (from 0), one line each. */
+  rows?: { from: number; to: number };
+  /** With id, on a table: only these columns, by title (or the tail of the column's id). */
+  cols?: string[];
 }
 
 export function ui5Look(opts: Ui5LookOptions): string {
@@ -123,6 +127,23 @@ export function ui5Look(opts: Ui5LookOptions): string {
         secret = true;
       }
       if (secret) o.value = "***";
+    }
+    // A formatted text (an error's "View Details") holds its text as HTML: the text without the tags.
+    if (isA(c, "sap.m.FormattedText")) {
+      const html = String(c.getHtmlText?.() ?? "");
+      const plain = norm(
+        html
+          .replace(/<(br|\/p|\/li|\/div|\/h\d)\b[^>]*>/gi, " ")
+          .replace(/<li\b[^>]*>/gi, " - ")
+          .replace(/<[^>]*>/g, "")
+          .replace(/&nbsp;/g, " ")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;|&apos;/g, "'")
+          .replace(/&amp;/g, "&"),
+      );
+      if (plain) o.text = plain.length > 2000 ? `${plain.slice(0, 2000)} ...` : plain;
     }
     // An empty Text with an empty indicator shows "–" on screen.
     if (o.text === undefined && all.text && c.getEmptyIndicatorMode?.() && c.getEmptyIndicatorMode() !== "Off" && !norm(c.getText?.())) o.text = "–";
@@ -245,9 +266,11 @@ export function ui5Look(opts: Ui5LookOptions): string {
 
   // ---- walk the visible controls in document order
   let doms = Array.from(document.querySelectorAll("[data-sap-ui]"));
+  /** With id: the control read alone. */
+  let root: C = null;
   if (opts.id) {
     const h = opts.id.replace(/^#/, "").replace(/^id=/, "");
-    let root: C = allControls.find((x) => x.getId() === h);
+    root = allControls.find((x) => x.getId() === h);
     if (!root) {
       const hits = allControls.filter((x) => {
         const id: string = x.getId();
@@ -262,18 +285,39 @@ export function ui5Look(opts: Ui5LookOptions): string {
   const shown = new Map<Element, number>(); // emitted DOM element -> depth
   const shownField = new Set<Element>();
   const lines: string[] = [];
-  // Compact id: the shortest tail of the id (cut at "--" or "::") that no other control's id ends with.
-  const tailCount = new Map<string, number>();
+  // Compact id: the shortest tail of the id (cut at "--" or "::") that no other control's id ends with, or
+  // that only this control of those on screen ends with: a page the app keeps behind the one shown (a list
+  // report behind its object page) has the same action ids, and the id is found among the controls on screen
+  // first (ui5Control). Live 2026-11-23: "Copy" was named by its 150-character id for that reason.
+  const tailOwners = new Map<string, C[]>();
   const tails = (id: string): string[] => {
     const parts = id.split(/(--|::)/);
     const out: string[] = [];
     for (let k = parts.length - 1; k >= 2; k -= 2) out.push(parts.slice(k).join(""));
     return out;
   };
-  if (opts.compact) for (const c of allControls) for (const t of tails(c.getId?.() ?? "")) tailCount.set(t, (tailCount.get(t) ?? 0) + 1);
+  if (opts.compact)
+    for (const c of allControls)
+      for (const t of tails(c.getId?.() ?? "")) {
+        const owners = tailOwners.get(t);
+        if (owners) owners.push(c);
+        else tailOwners.set(t, [c]);
+      }
+  const onScreen = (x: C) => {
+    try {
+      return x.getDomRef?.()?.getBoundingClientRect?.().width > 0;
+    } catch {
+      return false;
+    }
+  };
   const handleOf = (id: string) => {
     if (!opts.compact) return id;
-    for (const t of tails(id)) if (tailCount.get(t) === 1) return t;
+    for (const t of tails(id)) {
+      const owners = tailOwners.get(t) ?? [];
+      if (owners.length === 1) return t;
+      const shownOwners = owners.filter(onScreen);
+      if (shownOwners.length === 1 && shownOwners[0].getId() === id) return t;
+    }
     return id;
   };
   /** Text a person sees in an element: no screen-reader-only text, no icon glyphs. */
@@ -289,22 +333,59 @@ export function ui5Look(opts: Ui5LookOptions): string {
     return norm(out.join(" "));
   };
   // Only table rows are written as one line; other list items (cards, business partners) keep their children.
-  const insideRow = (el: Element) => !!el.parentElement?.closest(".sapMListTblRow, .sapUiTableTr, .sapUiTableRow");
+  // The pop-in of a responsive table row (the cells that do not fit, as label and text) is part of the row's line.
+  const insideRow = (el: Element) => !!el.parentElement?.closest(".sapMListTblRow, .sapMListTblSubRow, .sapUiTableTr, .sapUiTableRow");
+  /** What a cell shows: an input's value, else its shown text, else the control's own text. */
+  const cellText = (x: C): string => {
+    const d = x?.getDomRef?.();
+    if (!d) return "";
+    const inp = d.matches?.("input") ? d : d.querySelector?.("input");
+    if (inp && (inp as HTMLInputElement).type === "password") return (inp as HTMLInputElement).value ? "***" : "";
+    if (inp) return norm((inp as HTMLInputElement).value);
+    const shownCell = shownText(d);
+    if (shownCell) return shownCell;
+    for (const k of ["getText", "getTitle", "getValue", "getNumber"]) {
+      try {
+        const v = x[k]?.();
+        if (typeof v === "string" && norm(v)) return norm(v);
+      } catch {
+        /* next */
+      }
+    }
+    return "";
+  };
+  /**
+   * The cells of a table row, one per column the header shows: a responsive table's row holds a cell for
+   * each column, also for one that is hidden (live 2026-11-23: 11 cells under 10 titles, every value shifted).
+   */
+  const rowCells = (c: C): C[] | null => {
+    if (isA(c, "sap.m.ColumnListItem")) {
+      const cols: C[] = c.getParent?.()?.getColumns?.() ?? [];
+      return (c.getCells?.() ?? []).filter((_x: C, i: number) => !cols[i] || cols[i].getVisible?.() !== false);
+    }
+    if (isA(c, "sap.ui.table.Row")) return c.getCells?.() ?? [];
+    return null;
+  };
   const rowLine = (c: C): string | null => {
     // A table row: its cells' shown text, in column order.
-    let cells: C[] = [];
-    if (isA(c, "sap.m.ColumnListItem")) cells = c.getCells?.() ?? [];
-    else if (isA(c, "sap.ui.table.Row")) cells = c.getCells?.() ?? [];
-    else return null;
-    const txt = cells.map((x: C) => {
-      const d = x?.getDomRef?.();
-      if (!d) return "";
-      const inp = d.matches?.("input") ? d : d.querySelector?.("input");
-      if (inp && (inp as HTMLInputElement).type === "password") return (inp as HTMLInputElement).value ? "***" : "";
-      return inp ? norm((inp as HTMLInputElement).value) : shownText(d);
-    });
+    const cells = rowCells(c);
+    if (!cells) return null;
+    const txt = cells.map(cellText);
     if (txt.every((t) => !t)) return null;
     return txt.join(" | ");
+  };
+  /**
+   * The navigation entry of a grid-table row's row action (the "Details" arrow at the row's end): pressing
+   * the row itself only ticks it (live 2026-11-23). Null when the row has none.
+   */
+  const rowNavigation = (row: C): C | null => {
+    try {
+      const ra: C = row.getAggregation?.("_rowAction") ?? row.getRowAction?.() ?? allControls.find((x) => isA(x, "sap.ui.table.RowAction") && x.getParent?.() === row);
+      const items: C[] = (ra?.getItems?.() ?? []).filter((i: C) => i.getVisible?.() !== false);
+      return items.find((i: C) => i.getType?.() === "Navigation") ?? null;
+    } catch {
+      return null;
+    }
   };
   /**
    * Is this grid-table row selected? A table with a selection plugin (every
@@ -392,6 +473,41 @@ export function ui5Look(opts: Ui5LookOptions): string {
   let lastContext = "";
   /** Tables whose first row already says what a press on a row does. */
   const hinted = new Set<unknown>();
+  /** Smart fields written as one line (display mode): what is inside them is on that line. */
+  const oneLiners = new Set<Element>();
+  const inOneLiner = (el: Element) => {
+    for (let p = el.parentElement; p; p = p.parentElement) if (oneLiners.has(p)) return true;
+    return false;
+  };
+  /** Object pages whose sections were said on one line. */
+  const sectionsSaid = new Set<unknown>();
+  /** The object page layout an anchor-bar entry (a section's tab) belongs to, or null. */
+  const anchorLayout = (c: C): C => {
+    if (!/-anchBar-|AnchorBar/.test(`${c.getId()} ${typeName(c.getParent?.() ?? c)}`)) return null;
+    let p: C = c.getParent?.();
+    for (let i = 0; p && i < 6 && !isA(p, "sap.uxap.ObjectPageLayout"); i++) p = p.getParent?.();
+    return p && isA(p, "sap.uxap.ObjectPageLayout") ? p : null;
+  };
+  /** All sections of an object page in one line, the selected one marked: entries in the overflow ("+6") too. */
+  const sectionsLine = (opl: C): string => {
+    const bar: C = opl.getAggregation?.("_anchorBar");
+    const entries: C[] = bar?.getItems?.() ?? bar?.getContent?.() ?? [];
+    const selected: string = opl.getSelectedSection?.() ?? "";
+    const titles: string[] = [];
+    for (const e of entries) {
+      const key = e.getKey?.() ?? e.data?.("sectionId") ?? "";
+      const t = norm(e.getText?.() ?? "");
+      if (!t || /-anchBar-overflow$/.test(e.getId?.() ?? "")) continue;
+      titles.push(key && key === selected ? `${t} (selected)` : t);
+    }
+    if (!titles.length)
+      for (const sec of opl.getSections?.() ?? []) {
+        if (sec.getVisible?.() === false) continue;
+        const t = norm(sec.getTitle?.() ?? "");
+        if (t) titles.push(sec.getId() === selected ? `${t} (selected)` : t);
+      }
+    return titles.length ? `SECTIONS ${titles.join(" | ")}  (select one by its title: {"do":"select","id":"${titles.find((t) => !t.endsWith("(selected)")) ?? titles[0]}"})` : "";
+  };
   /** One control's line. A control that throws while it is read costs its own line only, never the view. */
   const readControl = (el: Element): void => {
       if (!visible(el)) return;
@@ -425,10 +541,13 @@ export function ui5Look(opts: Ui5LookOptions): string {
       const hasContent = Object.keys(pr).length > 0 || st.length > 0;
       const popup = isPopup(c);
       const row = rowLine(c);
+      /** A smart field shown as one line: what it shows. */
+      let smartValue: string | undefined;
       const isTable = isA(c, "sap.m.Table") || isA(c, "sap.ui.table.Table") || isA(c, "sap.m.List");
       const inter = interactive(c);
       if (opts.compact) {
-        // Inside a table row only inputs and states carry what the row line does not.
+        // Inside a table row only inputs and states carry what the row line does not. A link in a row (its
+        // own action: a popover, a fact sheet) has a line when the row is read alone (sap_look with its id).
         if (
           insideRow(el) &&
           !row &&
@@ -436,9 +555,29 @@ export function ui5Look(opts: Ui5LookOptions): string {
           !isA(c, "sap.m.CheckBox") &&
           !isA(c, "sap.m.Switch") &&
           !isA(c, "sap.m.Button") &&
-          !isA(c, "sap.m.Link")
+          !(whole && isA(c, "sap.m.Link"))
         )
           return;
+        // A smart field in display mode is one line: what it shows (text, key, amount and unit). Its parts are on
+        // it (live 2026-11-23: two lines per field, four per amount). A link inside it has a line in a read of the field alone.
+        if (inOneLiner(el) && !(whole && isA(c, "sap.m.Link"))) return;
+        if (/\.smartfield\.SmartField$/.test(t)) {
+          // In edit mode its input is the line (the label goes with it); the wrapper adds nothing.
+          if (el.querySelector?.("input, textarea")) return;
+          oneLiners.add(el);
+          smartValue = shownText(el) || (pr.value !== undefined ? String(pr.value) : undefined);
+        }
+        // An object page's section tabs: one line with all of them (also those behind "+6"), where the first stood.
+        const opl = isA(c, "sap.m.IconTabFilter") || isA(c, "sap.m.Button") || isA(c, "sap.m.MenuButton") ? anchorLayout(c) : null;
+        if (opl) {
+          if (sectionsSaid.has(opl)) return;
+          sectionsSaid.add(opl);
+          const line = sectionsLine(opl);
+          if (line) {
+            lines.push(`${"  ".repeat(Math.min(depth, 6))}${line}`);
+            return;
+          }
+        }
         if (labelIds.has(c.getId())) return; // printed on its field's line
         if (/-(selectMulti|selectSingle|imgNav|imgDel)$/.test(c.getId())) return; // part of the row line
       // A launchpad tile is one line: the tile's, with its header and subheader. Not its wrapper, not its texts again.
@@ -470,6 +609,10 @@ export function ui5Look(opts: Ui5LookOptions): string {
       bits.push(opts.compact ? `#${h}` : `id=${c.getId()}`);
       if (lab) bits.push(`"${lab}":`);
       const shownProps = { ...pr };
+      if (smartValue !== undefined) {
+        delete shownProps.text;
+        shownProps.value = smartValue;
+      }
       // A tooltip that repeats the text ("Open details for X") or is a long description adds nothing.
       if (opts.compact && shownProps.tooltip) {
         const tip = String(shownProps.tooltip);
@@ -519,21 +662,29 @@ export function ui5Look(opts: Ui5LookOptions): string {
         const grid = isA(c, "sap.ui.table.Row") ? gridRowSelected(tbl, c) : undefined;
         const picked = c.getSelected?.() ?? grid;
         const sel = picked ? "[x] " : grid === false || tbl?.getMode?.()?.includes?.("Multi") ? "[ ] " : "";
-        // What a press on a row does, said on the first such row of each table.
-      let hint = "";
-      if (/Navigation|Active/.test(c.getType?.() ?? "") && !hinted.has(tbl)) {
-        hinted.add(tbl);
-        hint = "  (press a row to open it; a link in a row has its own action)";
-      }
-      bits.push(`row: ${sel}${row}${hint}`);
+        // What a press on a row does, said on the first such row of each table. A row of a list that selects
+        // (a settings dialog's) is ticked by a press, not opened. A grid-table row opens through its row action.
+        let hint = "";
+        const type = String(c.getType?.() ?? "");
+        const opens = type === "Navigation" || (type === "Active" && !/Select/.test(String(tbl?.getMode?.() ?? ""))) || (isA(c, "sap.ui.table.Row") && !!rowNavigation(c));
+        if (opens && !hinted.has(tbl)) {
+          hinted.add(tbl);
+          hint = isA(c, "sap.ui.table.Row")
+            ? "  (press a row to open it; select ticks it)"
+            : whole
+              ? "  (press a row to open it; a link in a row has its own action)"
+              : "  (press a row to open it; its links: sap_look with the row's id)";
+        }
+        bits.push(`row: ${sel}${row}${hint}`);
       }
       if (popup) bits.unshift("POPUP");
       const b = binding(c);
-      if (b && (!opts.compact || row || isA(c, "sap.m.InputBase") || /ObjectPage/.test(t))) {
       // Compact: the context only, without the key parts every active document shares (no draft id, "active").
+      // A binding path alone ("{value:fi1t3rM0d31>/Supplier/value}") says nothing the line does not.
+      const ctxOnly = /\bctx:\S.*$/.exec(b)?.[0];
+      if (b && (!opts.compact || ((row || isA(c, "sap.m.InputBase") || /ObjectPage/.test(t)) && ctxOnly))) {
       const shownBinding = opts.compact
-        ? b
-            .replace(/^.*\bctx:/, "ctx:")
+        ? String(ctxOnly)
             .replace(/,?DraftUUID=(guid')?00000000-0000-0000-0000-000000000000'?/g, "")
             .replace(/,?IsActiveEntity=true/g, "")
             .replace(/\(,/g, "(")
@@ -544,6 +695,73 @@ export function ui5Look(opts: Ui5LookOptions): string {
     }
       lines.push(`${"  ".repeat(Math.min(depth, opts.compact ? 6 : 40))}${bits.join(" ")}`);
   };
+  /**
+   * A table or list read alone with rows or columns: one line per row of those the page has loaded, the
+   * columns asked for (by title), the notes first. Live 2026-11-23: rows and cols were ignored, 16.6 KB
+   * for 8 rows of 2 columns, and the note that said so came last.
+   */
+  const readTable = (ctl: C): string | null => {
+    let t: C = ctl;
+    for (let i = 0; i < 3 && t && !t.getItems && !t.getRows; i++) t = t.getTable?.() ?? t._oTable;
+    if (!t || (!t.getItems && !t.getRows)) return null;
+    const grid = isA(t, "sap.ui.table.Table");
+    const responsive = isA(t, "sap.m.Table");
+    const notes: string[] = [];
+    // The columns: their titles, and which cells of a row they are.
+    let titles: string[] = [];
+    if (responsive || grid) {
+      const all: C[] = (t.getColumns?.() ?? []).filter((x: C) => x.getVisible?.() !== false);
+      titles = all.map((x: C) => norm(responsive ? (x.getHeader?.()?.getText?.() ?? x.getHeader?.()?.getDomRef?.()?.innerText ?? "") : (x.getLabel?.()?.getText?.() ?? x.getMultiLabels?.()?.[0]?.getText?.() ?? "")));
+    }
+    let keep = titles.map((_x, i) => i);
+    if (opts.cols?.length) {
+      if (!titles.length) notes.push(`NOTE ${short(typeName(t))} #${handleOf(t.getId())} has no columns: "cols" was not used.`);
+      else {
+        const want = opts.cols.map((x) => norm(x).toLowerCase()).filter(Boolean);
+        const colIds: string[] = (t.getColumns?.() ?? []).filter((x: C) => x.getVisible?.() !== false).map((x: C) => String(x.getId?.() ?? "").toLowerCase());
+        const hit = (w: string) => titles.findIndex((x, i) => x.toLowerCase() === w || colIds[i]?.endsWith(`-${w}`) || colIds[i]?.endsWith(`::${w}`) || colIds[i]?.endsWith(`--${w}`));
+        const found = want.map(hit);
+        const missing = want.filter((_w, i) => (found[i] ?? -1) < 0);
+        if (missing.length) notes.push(`NOTE no column ${missing.map((m) => `"${m}"`).join(", ")}; the columns are: ${titles.join(" | ")}.`);
+        const picked = found.filter((i): i is number => i >= 0);
+        if (picked.length) keep = picked;
+      }
+    }
+    const total = t.getBinding?.("items")?.getLength?.() ?? t.getBinding?.("rows")?.getLength?.();
+    // The rows the page holds: every loaded item of a list or responsive table; the rows a grid table draws.
+    type R = { n: number; c: C };
+    let held: R[] = [];
+    if (typeof t.getItems === "function") held = (t.getItems() as C[]).filter((x) => !isA(x, "sap.m.GroupHeaderListItem")).map((c, n) => ({ n, c }));
+    else held = (t.getRows() as C[]).filter((r) => !!r.getBindingContext?.()).map((c) => ({ n: Number(c.getIndex?.() ?? 0), c }));
+    const from = opts.rows?.from ?? 0;
+    const to = opts.rows?.to ?? from + 49;
+    const inRange = held.filter((r) => r.n >= from && r.n <= to);
+    const first = held[0]?.n ?? 0;
+    const last = held.length ? (held[held.length - 1]?.n ?? 0) : -1;
+    if (opts.rows && (to > last || from < first)) {
+      const more = total != null && total > last + 1;
+      if (grid) notes.push(`NOTE rows ${from}-${to}: the table shows rows ${first}-${last}${total != null ? ` of ${total}` : ""}; only the rows on screen can be read. Scroll the table there ({"do":"scroll","id":"${handleOf(t.getId())}","how":"down"}), then read again.`);
+      else
+        notes.push(
+          `NOTE rows ${from}-${to}: the page has loaded rows 0-${last}${total != null ? ` of ${total}` : ""}${more ? `; to load more, scroll to the end of the list ({"do":"scroll","id":"${handleOf(t.getId())}","how":"bottom"}) or press its "More" button, then read again` : ""}.`,
+        );
+    }
+    const head = `${short(typeName(t))} #${handleOf(t.getId())}${titles.length ? ` columns: ${keep.map((i) => titles[i]).join(" | ")}` : ""} (${total != null ? `${total} rows, ` : ""}${held.length} loaded${inRange.length ? `; rows ${inRange[0]?.n}-${inRange[inRange.length - 1]?.n} here` : ""})`;
+    const out = [...notes, head];
+    for (const r of inRange) {
+      const cells = rowCells(r.c);
+      const dom: Element | null = r.c.getDomRef?.() ?? null;
+      const txt = cells ? keep.map((i) => cellText(cells[i])).join(" | ") : dom ? shownText(dom) || norm(r.c.getTitle?.() ?? r.c.getText?.() ?? "") : "";
+      out.push(`  row ${r.n} #${handleOf(r.c.getId())}: ${txt}`);
+    }
+    if (!inRange.length) out.push("  (no row of these is loaded)");
+    const title = norm(document.title);
+    return `PAGE ${title}\n${out.join("\n")}`;
+  };
+  if (root && (opts.rows || opts.cols?.length)) {
+    const table = readTable(root);
+    if (table !== null) return table;
+  }
   for (const el of doms) {
     try {
       readControl(el);
@@ -602,7 +820,23 @@ export function ui5Look(opts: Ui5LookOptions): string {
   // The launchpad's state keys change on every filter edit and say nothing: left out, so the line stays the same.
   // Two of them can stand side by side (?sap-iapp-state--history=..&sap-iapp-state=..): each is taken out with the "&" after it.
   const hash = location.hash.replace(/(?<=[?&])sap-[ix]app-state(--history)?=[^&/]*&?/g, "").replace(/[?&]$/, "");
-  return `PAGE ${title} (${hash.slice(0, 120)})\n${lines.join("\n")}`;
+  // A draft: the server holds it, and it locks the document. Said on every view of the page (live 2026-11-23:
+  // an Edit left a draft behind and nothing said it was there).
+  let draft = "";
+  if (!opts.id) {
+    const decoded = (() => {
+      try {
+        return decodeURIComponent(location.hash);
+      } catch {
+        return location.hash;
+      }
+    })();
+    const byHash = /IsActiveEntity=false/i.test(decoded) || /DraftUUID=guid'(?!0{8}-0{4}-0{4}-0{4}-0{12}')[0-9a-f-]{36}'/i.test(decoded);
+    const discard = allControls.find((x) => /(?:--|::)discard$|::StandardAction::Discard$/i.test(String(x.getId?.() ?? "")) && onScreen(x) && x.getVisible?.() !== false);
+    if (byHash || discard)
+      draft = `DRAFT this page is a draft, kept on the server: it locks the document for other users. Leaving the page keeps it; ${discard ? `"Discard Draft" (#${handleOf(discard.getId())}) deletes it` : "Discard Draft on the document's page deletes it"}, Save activates it.\n`;
+  }
+  return `PAGE ${title} (${hash.slice(0, 120)})\n${draft}${lines.join("\n")}`;
 }
 
 /** What the risk rule needs to know about a control (see risk.ts). */
@@ -655,6 +889,8 @@ export interface ControlResult {
   enter?: boolean;
   /** With facts: the logon language of the page (`sap.ui.getCore().getConfiguration().getLanguage()`), e.g. "en-US". */
   language?: string;
+  /** dblclick: the marked element opens what the control opens with one click (a row's navigation arrow): click it once. */
+  single?: boolean;
 }
 
 export function ui5Control(a: ControlRequest): ControlResult {
@@ -821,6 +1057,40 @@ export function ui5Control(a: ControlRequest): ControlResult {
     setTimeout(() => found.removeAttribute(ATTR), 10_000);
     return { status: "TARGET", note: `shell bar button "${tip}"` };
   }
+  const shownNow = (x: C) => {
+    try {
+      return x?.getDomRef?.()?.getBoundingClientRect?.().width > 0;
+    } catch {
+      return false;
+    }
+  };
+  /** The object page layout a control sits in. */
+  const layoutOf = (x: C): C => {
+    let p: C = x;
+    for (let i = 0; p && i < 12 && !isA(p, "sap.uxap.ObjectPageLayout"); i++) p = p.getParent?.();
+    return p && isA(p, "sap.uxap.ObjectPageLayout") ? p : null;
+  };
+  /** The section an anchor-bar entry (a section's tab, also one behind "+6") stands for, or null. */
+  const sectionOfAnchor = (x: C): C => {
+    if (!x || !(isA(x, "sap.m.IconTabFilter") || isA(x, "sap.m.Button") || isA(x, "sap.m.MenuButton"))) return null;
+    const key = x.getKey?.() ?? x.data?.("sectionId") ?? "";
+    const sec = key ? byId(String(key)) : null;
+    return sec && isA(sec, "sap.uxap.ObjectPageSectionBase") ? sec : null;
+  };
+  /** An object-page section by its title as the SECTIONS line names it (on a page on screen first). */
+  const sectionByTitle = (title: string): C => {
+    const want = norm(title).replace(/\s*\(selected\)$/, "");
+    if (!want) return null;
+    const secs = all.filter((x) => isA(x, "sap.uxap.ObjectPageSection") && x.getVisible?.() !== false);
+    const named = secs.filter((x) => {
+      if (norm(x.getTitle?.()) === want) return true;
+      // A section's tab can show another title (its only subsection's).
+      const bar = layoutOf(x)?.getAggregation?.("_anchorBar");
+      const entry = (bar?.getItems?.() ?? []).find((e: C) => (e.getKey?.() ?? "") === x.getId());
+      return !!entry && norm(entry.getText?.()) === want;
+    });
+    return named.find((x) => shownNow(layoutOf(x))) ?? named[0] ?? null;
+  };
   let c: C = null;
   if (!h) c = controlOf(document.activeElement);
   else {
@@ -830,9 +1100,10 @@ export function ui5Control(a: ControlRequest): ControlResult {
         const id: string = x.getId();
         return id.endsWith(`--${h}`) || id.endsWith(`::${h}`);
       });
-      const vis = hits.filter((x) => x.getDomRef?.()?.getBoundingClientRect?.().width > 0);
+      const vis = hits.filter(shownNow);
       c = (vis.length ? vis : hits)[0];
     }
+    if (!c && (a.op === "facts" || a.op === "select" || a.op === "click")) c = sectionByTitle(h);
   }
   if (a.op === "facts") {
     const dd = dialogDefault();
@@ -900,7 +1171,21 @@ export function ui5Control(a: ControlRequest): ControlResult {
   }
 
   if (!c) return { status: "NOTFOUND", note: h };
-  const what = `${name(c)} ${c.getId()}`;
+  /** The control as the compact view names it: its short type and its shortest tail that finds it again (answers of a batch echo it). */
+  const shortId = (x: C): string => {
+    const id: string = x.getId();
+    const parts = id.split(/(--|::)/);
+    for (let k = parts.length - 1; k >= 2; k -= 2) {
+      const tail = parts.slice(k).join("");
+      const owners = all.filter((y) => {
+        const yid: string = y.getId();
+        return yid === tail || yid.endsWith(`--${tail}`) || yid.endsWith(`::${tail}`);
+      });
+      if (owners.length === 1 || (owners.filter(shownNow).length === 1 && shownNow(x))) return tail;
+    }
+    return id;
+  };
+  const what = `${name(c).replace(/^sap\.(m|f|ui\.core|uxap|ui\.comp|ui\.mdc|ui\.table)\./, "")} #${shortId(c)}`;
   if (prop(c, "enabled") === false) return { status: "DISABLED", note: `${what} is disabled` };
 
   // ---- dropdown entry through the control's API
@@ -940,15 +1225,23 @@ export function ui5Control(a: ControlRequest): ControlResult {
     return { status: "DONE", note: `chose "${text(it.getText())}" in ${what}` };
   }
 
-  // ---- the anchor-bar entry of an object-page section
-  const anchorOf = (sec: C): Element | null => {
-    let opl: C = sec;
-    while (opl && !isA(opl, "sap.uxap.ObjectPageLayout")) opl = opl.getParent?.();
-    const bar = opl?.getAggregation?.("_anchorBar");
-    const entries: C[] = bar?.getItems?.() ?? bar?.getContent?.() ?? [];
-    const e = entries.find((x: C) => x.getKey?.() === sec.getId() || x.data?.("sectionId") === sec.getId());
-    return e?.getDomRef?.() ?? null;
-  };
+  // ---- an object-page section: through the layout's API, by the section, its tab or its title. A click on
+  // the tab missed once the tab had moved into the overflow ("+6"): live 2026-11-23, "covered, hidden or not ready".
+  const section = isA(c, "sap.uxap.ObjectPageSectionBase") ? c : a.op === "select" || a.op === "click" ? sectionOfAnchor(c) : null;
+  if (section && (a.op === "select" || a.op === "click")) {
+    const opl = layoutOf(section);
+    if (!opl?.scrollToSection) return { status: "NOTFIT", note: `${what} is not on an object page` };
+    // A subsection: its section is the tab.
+    const top: C = isA(section, "sap.uxap.ObjectPageSection") ? section : (section.getParent?.() ?? section);
+    try {
+      if (isA(top, "sap.uxap.ObjectPageSection")) opl.setSelectedSection?.(top);
+    } catch {
+      /* the scroll below selects it in anchor mode */
+    }
+    opl.scrollToSection(section.getId(), 0);
+    const title = text(section.getTitle?.()) || text(top.getTitle?.());
+    return { status: "DONE", note: `section "${title}" of the object page` };
+  }
 
   if (a.op === "fill") {
     // A password is never typed by this server.
@@ -1045,22 +1338,69 @@ export function ui5Control(a: ControlRequest): ControlResult {
   } else if (a.op === "select" && isA(c, "sap.m.ListItemBase")) {
     // A list item's own selection control, where the list has one; else the item.
     dom = c.getModeControl?.()?.getDomRef?.() ?? null;
-  } else if (isA(c, "sap.uxap.ObjectPageSectionBase")) {
-    dom = anchorOf(c);
-    if (!dom) {
-      let opl: C = c;
-      while (opl && !isA(opl, "sap.uxap.ObjectPageLayout")) opl = opl.getParent?.();
-      if (!opl?.scrollToSection) return { status: "NOTFIT", note: `${what} has no anchor` };
-      opl.scrollToSection(c.getId());
-      return { status: "DONE", note: `scrolled to section "${text(c.getTitle?.())}"` };
-    }
   } else if (isA(c, "sap.m.SegmentedButtonItem")) dom = c.getDomRef?.() ?? c.oButton?.getDomRef?.() ?? null;
+  // A grid-table row opens through its row action's navigation arrow ("Details"): a press on the row only
+  // ticks it (live 2026-11-23). select still ticks it; dblclick opens it once.
+  if ((a.op === "click" || a.op === "dblclick") && isA(c, "sap.ui.table.Row")) {
+    let nav: C = null;
+    let ra: C = null;
+    try {
+      ra = c.getAggregation?.("_rowAction") ?? c.getRowAction?.() ?? all.find((x) => isA(x, "sap.ui.table.RowAction") && x.getParent?.() === c);
+      const items: C[] = (ra?.getItems?.() ?? []).filter((i: C) => i.getVisible?.() !== false);
+      const k = items.findIndex((i: C) => i.getType?.() === "Navigation");
+      if (k >= 0) {
+        nav = items[k];
+        const raDom: Element | null = ra.getDomRef?.() ?? null;
+        const icons = Array.from(raDom?.querySelectorAll?.(".sapUiTableActionIcon, [data-sap-ui]") ?? []).filter((e) => byId((e as Element).id) && isA(byId((e as Element).id), "sap.ui.core.Icon"));
+        const icon = (document.getElementById(`${ra.getId()}-icon${k}`) as Element | null) ?? (icons[k] as Element | undefined) ?? null;
+        if (icon && icon.getBoundingClientRect().width > 0) {
+          const r = mark(icon, `${what}: its navigation ("${text(nav.getText?.() ?? nav.getTooltip_AsString?.() ?? "") || "Details"}")`);
+          if (a.op === "dblclick") r.single = true;
+          return r;
+        }
+      }
+    } catch {
+      nav = null;
+    }
+    if (nav) {
+      // The arrow is not drawn (its column is scrolled away): the row action's own event, as its press fires it.
+      nav.firePress?.({ item: nav, row: c });
+      return { status: "DONE", note: `${what}: its navigation ("${text(nav.getText?.() ?? "") || "Details"}")` };
+    }
+  }
   // Pressing a table row: a place in it that is the row's own. Without one, Enter on the row presses it.
   if (!dom && a.op === "click" && (isA(c, "sap.m.ColumnListItem") || isA(c, "sap.ui.table.Row"))) {
     dom = quietCell(c);
     if (!dom && isA(c, "sap.m.ColumnListItem") && /Navigation|Active|Detail/.test(c.getType?.() ?? "")) return mark(c.getDomRef?.(), what, "FOCUSENTER");
   }
   return mark(dom ?? c.getDomRef?.(), what);
+}
+
+/**
+ * Is the page on screen a draft, kept on the server (its address says so, or it shows a "Discard Draft"
+ * button)? Its title and address when it is, else null. Runs in the page: self-contained.
+ */
+export function ui5Draft(): { title: string; hash: string } | null {
+  const w = window as C;
+  let decoded = location.hash;
+  try {
+    decoded = decodeURIComponent(location.hash);
+  } catch {
+    /* as it is */
+  }
+  let draft = /IsActiveEntity=false/i.test(decoded) || /DraftUUID=guid'(?!0{8}-0{4}-0{4}-0{4}-0{12}')[0-9a-f-]{36}'/i.test(decoded);
+  const sap = w.sap;
+  if (!draft && sap?.ui?.getCore) {
+    try {
+      const El = sap.ui.require?.("sap/ui/core/Element") ?? sap.ui.core?.Element;
+      const reg = El?.registry ?? sap.ui.getCore().mElements;
+      const all: C[] = reg?.all ? Object.values(reg.all()) : Object.values(reg ?? {});
+      draft = all.some((x) => /(?:--|::)discard$|::StandardAction::Discard$/i.test(String(x.getId?.() ?? "")) && x.getVisible?.() !== false && x.getDomRef?.()?.getBoundingClientRect?.().width > 0);
+    } catch {
+      /* no answer: not known to be a draft */
+    }
+  }
+  return draft ? { title: String(document.title ?? ""), hash: location.hash } : null;
 }
 
 export interface IdleOptions {

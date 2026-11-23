@@ -1,0 +1,109 @@
+FIORI  SalesOrder-manageV2  system S4H/300  user DEMO_USER
+PAGE Manage Sales Orders - Version 2 (#SalesOrder-manageV2&/)
+ShellBarButton #shellbar:toggle-search "Open Search"
+ShellBarButton #shellbar:notifications "0 Notifications"
+ShellBarButton #shellbar:help "Help"
+Avatar #userActionsMenuHeaderButton tooltip="Profile of Benchmark Didro Bench"
+Button #sideMenuExpandCollapseBtn tooltip="Open Menu"
+Button #backBtn tooltip="Back"
+ShellAppTitle #shellAppTitle "Manage Sales Orders - Version 2" "Manage Sales Orders - Version 2" tooltip="Navigation menu"
+Title #PageVariantManagement-vm-text "Standard"
+Text #PageVariantManagement-vm-modified "*"
+Button #PageVariantManagement-vm-trigger "Modified view Standard.": tooltip="Select View"
+OverflowToolbarMenuButton #__button171 "Share"
+Text #__text1016 "1 filter active: Sales Organization"
+Button #DynamicPageTitle-expandBtn tooltip="Expand Header"
+Table #LineItem header="Sales Orders"
+  Table #LineItem-innerTable "Sales Orders (7,090)": columns: Sales Order | Sold-to Party | Customer Reference | Overall Status | Requested Delivery Date | Net Value | Document Date (7090 rows)
+    Title #LineItem-title "Sales Orders (7,090)"
+    Button #com.sap.gateway.srvd.c_salesordermanage_sd.v0001.SalesOrderManageType "Create"
+    MenuButton #BillingBlock "Billing Block"
+    MenuButton #DeliveryBlock "Delivery Block"
+    MenuButton #CreateWithReferenceMenu "Create with Reference"
+    OverflowToolbarButton #LineItem-copy "Copy to Clipboard" (disabled)
+    OverflowToolbarButton #LineItem-settings "Settings"
+    OverflowToolbarMenuButton #LineItem-export "Export"
+      SplitButton #LineItem-export-internalSplitBtn tooltip="Export Table"
+        Button #LineItem-export-internalSplitBtn-textButton icon=excel-attachment
+        Button #LineItem-export-internalSplitBtn-arrowButton tooltip="Open Menu"
+    ToggleButton #LineItem-toolbar-overflowButton tooltip="Additional Options" (not pressed)
+    CheckBox #LineItem-innerTable-sa tooltip="Select All" [ ] unchecked
+    ColumnListItem #LineItem-innerTableRow-__clone1852 row: [ ] 7691 | Domestic US Customer 2 (17100002) | BTOYAE61 | Completed | 11/23/2026 | 35.10 USD | 11/23/2026  (press a row to open it; a link in a row has its own action) {ctx:/SalesOrderManage('7691')}
+      Link #__identifier7-__clone1828-__clone1852-link "7691"
+      Link #__link49-__clone1829-__clone1852 "Domestic US Customer 2 (17100002)"
+      Link #overallStatusLink-__clone1831-__clone1852 "Completed"
+    Label #__label174-__clone1882 "Document Date"
+    Text #__text1026-__clone1834-__clone1852 "11/23/2026"
+    ColumnListItem #LineItem-innerTableRow-__clone1853 row: [ ] 7690 | Domestic US Customer 1 (17100001) | BTOY83F1 | In Process | 11/23/2026 | 48.50 USD | 11/23/2026 {ctx:/SalesOrderManage('7690')}
+      Link #__identifier7-__clone1828-__clone1853-link "7690"
+      Link #__link49-__clone1829-__clone1853 "Domestic US Customer 1 (17100001)"
+      Link #overallStatusLink-__clone1831-__clone1853 "In Process"
+    Label #__label174-__clone1883 "Document Date"
+    Text #__text1026-__clone1834-__clone1853 "11/23/2026"
+    ColumnListItem #LineItem-innerTableRow-__clone1854 row: [ ] 7689 | Domestic US Customer 1 (17100001) | BTOY8011 | In Process | 11/23/2026 | 48.50 USD | 11/23/2026 {ctx:/SalesOrderManage('7689')}
+      Link #__identifier7-__clone1828-__clone1854-link "7689"
+      Link #__link49-__clone1829-__clone1854 "Domestic US Customer 1 (17100001)"
+      Link #overallStatusLink-__clone1831-__clone1854 "In Process"
+    Label #__label174-__clone1884 "Document Date"
+    Text #__text1026-__clone1834-__clone1854 "11/23/2026"
+    ColumnListItem #LineItem-innerTableRow-__clone1855 row: [ ] 7688 | Domestic US Customer 1 (17100001) | BTOY7UI1 | In Process | 11/23/2026 | 48.50 USD | 11/23/2026 {ctx:/SalesOrderManage('7688')}
+      Link #__identifier7-__clone1828-__clone1855-link "7688"
+      Link #__link49-__clone1829-__clone1855 "Domestic US Customer 1 (17100001)"
+      Link #overallStatusLink-__clone1831-__clone1855 "In Process"
+    Label #__label174-__clone1885 "Document Date"
+    Text #__text1026-__clone1834-__clone1855 "11/23/2026"
+    ColumnListItem #LineItem-innerTableRow-__clone1856 row: [ ] 7687 | Domestic US Customer 1 (17100001) | BTOY7S51 | In Process | 11/23/2026 | 48.50 USD | 11/23/2026 {ctx:/SalesOrderManage('7687')}
+      Link #__identifier7-__clone1828-__clone1856-link "7687"
+      Link #__link49-__clone1829-__clone1856 "Domestic US Customer 1 (17100001)"
+      Link #overallStatusLink-__clone1831-__clone1856 "In Process"
+    Label #__label174-__clone1886 "Document Date"
+    Text #__text1026-__clone1834-__clone1856 "11/23/2026"
+    ColumnListItem #LineItem-innerTableRow-__clone1857 row: [ ] 7686 | Domestic US Customer 1 (17100001) | BTOY7PJ1 | In Process | 12/21/2026 | 48.50 USD | 11/23/2026 {ctx:/SalesOrderManage('7686')}
+      Link #__identifier7-__clone1828-__clone1857-link "7686"
+      Link #__link49-__clone1829-__clone1857 "Domestic US Customer 1 (17100001)"
+      Link #overallStatusLink-__clone1831-__clone1857 "In Process"
+    Label #__label174-__clone1887 "Document Date"
+    Text #__text1026-__clone1834-__clone1857 "11/23/2026"
+    ColumnListItem #LineItem-innerTableRow-__clone1858 row: [ ] 7685 | Domestic US Customer 2 (17100002) | BTOY6VH1 | Completed | 11/23/2026 | 35.10 USD | 11/23/2026 {ctx:/SalesOrderManage('7685')}
+      Link #__identifier7-__clone1828-__clone1858-link "7685"
+      Link #__link49-__clone1829-__clone1858 "Domestic US Customer 2 (17100002)"
+      Link #overallStatusLink-__clone1831-__clone1858 "Completed"
+    Label #__label174-__clone1888 "Document Date"
+    Text #__text1026-__clone1834-__clone1858 "11/23/2026"
+    ColumnListItem #LineItem-innerTableRow-__clone1859 row: [ ] 7684 | Domestic US Customer 2 (17100002) | BTOY66M1 | Completed | 11/23/2026 | 35.10 USD | 11/23/2026 {ctx:/SalesOrderManage('7684')}
+      Link #__identifier7-__clone1828-__clone1859-link "7684"
+      Link #__link49-__clone1829-__clone1859 "Domestic US Customer 2 (17100002)"
+      Link #overallStatusLink-__clone1831-__clone1859 "Completed"
+    Label #__label174-__clone1889 "Document Date"
+    Text #__text1026-__clone1834-__clone1859 "11/23/2026"
+    ColumnListItem #LineItem-innerTableRow-__clone1860 row: [ ] 7683 | Domestic US Customer 2 (17100002) | BTOY6551 | Completed | 11/23/2026 | 35.10 USD | 11/23/2026 {ctx:/SalesOrderManage('7683')}
+      Link #__identifier7-__clone1828-__clone1860-link "7683"
+      Link #__link49-__clone1829-__clone1860 "Domestic US Customer 2 (17100002)"
+      Link #overallStatusLink-__clone1831-__clone1860 "Completed"
+    Label #__label174-__clone1890 "Document Date"
+    Text #__text1026-__clone1834-__clone1860 "11/23/2026"
+    ColumnListItem #LineItem-innerTableRow-__clone1861 row: [ ] 7682 | Domestic US Customer 1 (17100001) | BTOY5O81 | In Process | 11/23/2026 | 48.50 USD | 11/23/2026 {ctx:/SalesOrderManage('7682')}
+      Link #__identifier7-__clone1828-__clone1861-link "7682"
+      Link #__link49-__clone1829-__clone1861 "Domestic US Customer 1 (17100001)"
+      Link #overallStatusLink-__clone1831-__clone1861 "In Process"
+    Label #__label174-__clone1891 "Document Date"
+    Text #__text1026-__clone1834-__clone1861 "11/23/2026"
+    ColumnListItem #LineItem-innerTableRow-__clone1862 row: [ ] 7681 | Domestic US Customer 2 (17100002) | FXO02-TOUX45-0185 | Open | 11/21/2026 | 87.75 USD | 11/21/2026 {ctx:/SalesOrderManage('7681')}
+      Link #__identifier7-__clone1828-__clone1862-link "7681"
+      Link #__link49-__clone1829-__clone1862 "Domestic US Customer 2 (17100002)"
+      Link #overallStatusLink-__clone1831-__clone1862 "Open"
+    Label #__label174-__clone1892 "Document Date"
+    Text #__text1026-__clone1834-__clone1862 "11/21/2026"
+    ColumnListItem #LineItem-innerTableRow-__clone1863 row: [ ] 7680 | Domestic US Customer 2 (17100002) | FXO02-TOUX45-0184 | Open | 11/21/2026 | 52.65 USD | 11/21/2026 {ctx:/SalesOrderManage('7680')}
+      Link #__identifier7-__clone1828-__clone1863-link "7680"
+      Link #__link49-__clone1829-__clone1863 "Domestic US Customer 2 (17100002)"
+      Link #overallStatusLink-__clone1831-__clone1863 "Open"
+    Label #__label174-__clone1893 "Document Date"
+    Text #__text1026-__clone1834-__clone1863 "11/21/2026"
+    ColumnListItem #LineItem-innerTableRow-__clone1864 row: [ ] 7679 | Domestic US Customer 2 (17100002) | FXO02-TOUX45-0183 | Open | 11/21/2026 | 87.75 USD | 11/21/2026 {ctx:/SalesOrderManage('7679')}
+      Link #__identifier7-__clone1828-__clone1864-link "7679"
+      Link #__link49-__clone1829-__clone1864 "Domestic US Customer 2 (17100002)"
+      Link #overallStatusLink-__clone1831-__clone1864 "Open"
+    Label #__label174-__clone1894 "Document Date"
+    Text #__text1026-__clone1834-__clone1864 "11/21/2026"
+SCROLL shown 1420-2125 of 3945 px, more above and below: {"do":"scroll","how":"down"}

@@ -1,0 +1,58 @@
+FIORI  SalesOrder-manageV2  system S4H/300  user DEMO_USER
+PAGE Manage Sales Orders - Version 2 (#SalesOrder-manageV2&/)
+POPUP Popover #__link3-__clone98-__clone105-popover-popover
+  Link #__link24 "24" (goes to #SalesOrder-displayFactSheet?OverallSDProcessStatus=C&PurchaseOrderByCustomer=45)
+  Text #__text285 "Sales Order"
+  Link #__link25 "Sales Orders - Actuals" (goes to #SalesOrder-analyzeActualsCDSQ?OverallSDProcessStatus=C&PurchaseOrderByCustomer=)
+  Button #idSectionPersonalizationButton "More Links"
+ShellBarButton #shellbar:toggle-search "Open Search"
+ShellBarButton #shellbar:notifications "0 Notifications"
+ShellBarButton #shellbar:help "Help"
+Avatar #userActionsMenuHeaderButton tooltip="Profile of Benchmark Didro Bench"
+Button #sideMenuExpandCollapseBtn tooltip="Open Menu"
+Button #backBtn tooltip="Back"
+ShellAppTitle #shellAppTitle "Manage Sales Orders - Version 2" "Manage Sales Orders - Version 2" tooltip="Navigation menu"
+Title #PageVariantManagement-vm-text "Standard"
+Text #PageVariantManagement-vm-modified "*"
+Button #PageVariantManagement-vm-trigger "Modified view Standard.": tooltip="Select View"
+OverflowToolbarMenuButton #__button18 "Share"
+SearchField #BasicSearchField-inner placeholder="Search"
+field.FieldMultiInput #SalesOrder-inner "Sales Order":
+  Tokenizer #__tokenizer6 "Sales Order":
+    Token #SalesOrder-inner-token-__clone165-__tokenizer6-0 "Sales Order": "=24"
+field.FieldMultiInput #SoldToParty-inner "Sold-to Party":
+  Tokenizer #__tokenizer8 "Sold-to Party":
+field.FieldMultiInput #PurchaseOrderByCustomer-inner "Customer Reference":
+  Tokenizer #__tokenizer7 "Customer Reference":
+DynamicDateRange #RequestedDeliveryDate-inner "Requested Delivery Date":
+field.FieldMultiInput #OverallSDProcessStatus-inner "Overall Status":
+  Tokenizer #__tokenizer9 "Overall Status":
+DynamicDateRange #SalesOrderDate-inner "Document Date":
+field.FieldMultiInput #SalesOrganizationForFilter-inner "Sales Organization":
+  Tokenizer #__tokenizer10 "Sales Organization":
+    Token #SalesOrganizationForFilter-inner-token-__tokenizer10-0 "Sales Organization": "Dom. Sales Org US (1710)"
+Button #SalesOrderManage-btnSearch "Go"
+Button #SalesOrderManage-btnAdapt "Adapt Filters (2)"
+Button #__header2-collapseBtn tooltip="Collapse Header"
+ToggleButton #__header2-pinBtn tooltip="Pin Header" (not pressed)
+Table #SalesOrderManage::LineItem header="Sales Orders"
+  Table #SalesOrderManage::LineItem-innerTable "Sales Orders (1)": columns: Sales Order | Sold-to Party | Customer Reference | Overall Status | Requested Delivery Date | Net Value | Document Date (1 rows)
+    Title #SalesOrderManage::LineItem-title "Sales Orders (1)"
+    Button #Collection::com.sap.gateway.srvd.c_salesordermanage_sd.v0001.SalesOrderManageType "Create"
+    MenuButton #SalesOrderManage::LineItem::CustomAction::BillingBlock "Billing Block"
+    MenuButton #LineItem::CustomAction::DeliveryBlock "Delivery Block"
+    MenuButton #CreateWithReferenceMenu "Create with Reference"
+    OverflowToolbarButton #SalesOrderManage::LineItem-copy "Copy to Clipboard" (disabled)
+    OverflowToolbarButton #SalesOrderManage::LineItem-settings "Settings"
+    OverflowToolbarMenuButton #SalesOrderManage::LineItem-export "Export"
+      SplitButton #SalesOrderManage::LineItem-export-internalSplitBtn tooltip="Export Table"
+        Button #SalesOrderManage::LineItem-export-internalSplitBtn-textButton icon=excel-attachment
+        Button #SalesOrderManage::LineItem-export-internalSplitBtn-arrowButton tooltip="Open Menu"
+    ToggleButton #SalesOrderManage::LineItem-toolbar-overflowButton tooltip="Additional Options" (not pressed)
+    CheckBox #LineItem-innerTable-sa tooltip="Select All" [ ] unchecked
+    ColumnListItem #LineItem-innerTableRow-__clone105 row: [ ] 24 | Eastside Bikes (USCU_S03) | 4500044999 | Completed | 10/09/2017 | 3,990.00 USD | 10/08/2017  (press a row to open it; a link in a row has its own action) {ctx:/SalesOrderManage('24')}
+      Link #__identifier1-__clone98-__clone105-link "24"
+      Link #__link5-__clone99-__clone105 "Eastside Bikes (USCU_S03)"
+      Link #overallStatusLink-__clone101-__clone105 "Completed"
+    Label #__label29-__clone212 "Document Date"
+    Text #__text126-__clone104-__clone105 "10/08/2017"
