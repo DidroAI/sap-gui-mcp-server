@@ -9,6 +9,7 @@ import { ActionError } from "../core/types.js";
 import { LOGON_PROGRAM, LOGON_REFUSAL } from "../core/words.js";
 import type { FocusFacts } from "./assess.js";
 import { evalLs } from "./controls.js";
+import { buttonLine } from "./labels.js";
 import { type ClientPopup, extractClientPopups, extractFacts, extractLook, extractMenus, extractViewer, extractViewerIds, type FocusedControl, focusedControl, type LookResult, type MenuEntry, normalizeLsdata, type PageFacts, viewerFocus } from "./page.js";
 import { endedText, extractEnded, type WebGuiSession } from "./session.js";
 
@@ -317,7 +318,9 @@ async function read(session: WebGuiSession, ended: boolean): Promise<ScreenRead>
   const viewers = hasViewer ? await framesOf(f, s.viewers).catch(() => []) : [];
   for (const w of r.windows) {
     out.push(`WINDOW ${w.id}  "${w.title}"`);
-    for (const l of w.lines) {
+    for (const raw of w.lines) {
+      // S/4HANA's button names carry screen-reader noise and "((Ctrl+F2))": cleaned once, here (labels.ts).
+      const l = buttonLine(raw);
       out.push(l);
       if (l.endsWith("  html-viewer")) {
         const v = viewers.find((x) => l.startsWith(`${x.sid}  `));

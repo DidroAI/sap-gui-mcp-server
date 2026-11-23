@@ -525,6 +525,112 @@ export function displayScreen(language: string | undefined | null, title: string
   return !CHANGE_TITLE_RE.test(clean(title)) && !commitWord(title);
 }
 
+// ---- documents being created, before their first save --------------------------------
+
+/**
+ * Create transactions that keep the whole document in memory until Save (or
+ * Hold / Park): ME21N and ME51N (program SAPLMEGUI), VA01, VA11 and VA21
+ * (SAPMV45A). Each names the fields that hold the document's number once it
+ * has one: a number there means the document exists in the database (ME21N's
+ * "Other Purchase Order" opens a saved order in the same transaction).
+ */
+export const DRAFT_TCODES: ReadonlyMap<string, readonly string[]> = new Map([
+  ["ME21N", ["MEPO_TOPLINE-EBELN"]],
+  ["ME51N", ["MEREQ_TOPLINE-BANFN_EXT", "MEREQ_TOPLINE-BANFN"]],
+  ["VA01", ["VBAK-VBELN"]],
+  ["VA11", ["VBAK-VBELN"]],
+  ["VA21", ["VBAK-VBELN"]],
+]);
+
+const CREATE_TITLE_RE = wholeWords(["create", "anlegen", "hinzufügen", "créer", "crear"]);
+
+/**
+ * Is the main window that of a new document, not yet saved? The transaction
+ * is a DRAFT_TCODES one; its title names creating ("Create Purchase Order",
+ * "Create Standard Order: Overview", "Terminauftrag anlegen: Übersicht") and
+ * neither displaying nor changing (after "Other Purchase Order" ME21N titles
+ * the order "Standard PO 4500000061 Change"); and none of the number fields
+ * the caller read (`numbers`: field name -> value) holds a number. Only in a
+ * covered language, where the title can be read.
+ */
+export function draftDocument(language: string | undefined | null, title: string | undefined, tcode: string | undefined, numbers: ReadonlyMap<string, string>): boolean {
+  if (!languageCovered(language)) return false;
+  const fields = DRAFT_TCODES.get((tcode ?? "").trim().toUpperCase());
+  if (!fields) return false;
+  const t = clean(title);
+  CREATE_TITLE_RE.lastIndex = 0;
+  DISPLAY_TITLE_RE.lastIndex = 0;
+  CHANGE_TITLE_RE.lastIndex = 0;
+  if (!CREATE_TITLE_RE.test(t) || DISPLAY_TITLE_RE.test(t) || CHANGE_TITLE_RE.test(t)) return false;
+  return fields.every((f) => !(numbers.get(f) ?? "").trim());
+}
+
+/**
+ * What an item button of a new, unsaved document must mean to write nothing:
+ * deleting, adding or copying a line, or setting a line's block flag (by
+ * commitWord, or a copy word). A button whose text names none of these is
+ * judged as anywhere else. The document lives only in the session's memory until Save, so
+ * these change that memory and nothing else ("Copy Item" too: copying is an
+ * act word elsewhere, here it adds a line); leaving the transaction throws it
+ * all away. Anything else a commit word names stays a write: save, post, park
+ * or hold, release, send, approve, confirm... (the surfaces keep the toolbar's
+ * Save, Hold and Park out of the rule by place as well).
+ */
+const DRAFT_EDITS: ReadonlySet<string> = new Set(["delete", "create", "lock or unlock"]);
+/** "Copy" acts beyond the screen elsewhere (actWord); copying a line of an unsaved document only adds a line to it. */
+const COPY_RE = /(?<![\p{L}\p{N}])(copy|copies|kopieren|kopiert|copier|copie|copiar|copia)(?![\p{L}\p{N}])/giu;
+export function draftEdit(text: string): boolean {
+  const t = clean(text);
+  const means = commitWord(t);
+  COPY_RE.lastIndex = 0;
+  const copies = COPY_RE.test(t);
+  COPY_RE.lastIndex = 0;
+  // Only what the text names as a line edit: a function the server does not know stays unknown, also here.
+  if (means === undefined ? !copies : !DRAFT_EDITS.has(means)) return false;
+  return !actWord(t.replace(COPY_RE, " "));
+}
+
+/**
+ * A popup's question that asks only whether to delete lines of the document
+ * ("Do you really want to delete the item?", "Position löschen?"): its
+ * meaning is deleting (commitWord) and it names an item, a line or a schedule
+ * line. Over a new, unsaved document (draftDocument) the answer changes only
+ * that document. A question about anything else (a template, a variant, a
+ * layout: objects that are saved on their own) is not this.
+ */
+const LINE_RE = wholeWords([
+  ..."item|items|line|lines|line item|line items|schedule line|schedule lines".split("|"),
+  ..."position|positionen|zeile|zeilen|einteilung|einteilungen".split("|"),
+  ..."poste|postes|ligne|lignes|échéance|échéances".split("|"),
+  ..."posición|posiciones|línea|líneas|reparto|repartos".split("|"),
+]);
+export function deletesLines(language: string | undefined | null, question: string | undefined): boolean {
+  if (!languageCovered(language)) return false;
+  const t = clean(question);
+  LINE_RE.lastIndex = 0;
+  return commitWord(t) === "delete" && LINE_RE.test(t) && !actWord(t);
+}
+
+/**
+ * Buttons of the sales document and purchasing document screens that only
+ * move to another view of the document or of its items, or select lines, by
+ * program and SAP name (the id's last part without its type prefix: btnBT_PEIN
+ * -> BT_PEIN). They write nothing in create, change or display mode. Taken
+ * from live screens (2026-11-23): VA01/VA03 item buttons (Item conditions,
+ * Schedule lines for item, Position) and ME21N's item area (Choose PO Item,
+ * select, sort, filter, collapse, previous and next item, document flow).
+ */
+export const ITEM_VIEW_BUTTONS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ["SAPMV45A", new Set(["BT_PKON", "BT_PEIN", "BT_POPO"])],
+  ["SAPLMEGUI", new Set(["DETAIL", "SELECT_ALL", "DESELECT_ALL", "SELECTBLOCK", "SORTUP", "SORTDOWN", "EDITFILTER", "UNDOFILTER", "DYN_4000-BUTTON", "%#AUTOTEXT001", "%#AUTOTEXT002", "EXT_DOC_FLOW"])],
+]);
+
+/** Is this button (its program and SAP name) one of ITEM_VIEW_BUTTONS, and does its text say nothing that writes or acts? */
+export function itemViewButton(program: string | undefined, name: string, text: string): boolean {
+  const names = ITEM_VIEW_BUTTONS.get((program ?? "").trim().toUpperCase());
+  return !!names?.has(name) && !commitWord(text) && !actWord(text);
+}
+
 /**
  * A button of a filter, sort or condition dialog that takes a criterion out of the view: "Remove filter
  * criterion (F6)" (ALV's Filter dialog), "Delete Sort Criterion", Fiori's "Remove Condition" in a value
