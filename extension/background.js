@@ -1,4 +1,4 @@
-// SAP systems for sap-gui-mcp-server: MV3 service worker.
+// Agent Connector for SAP Systems (sap-gui-mcp-server's Chrome extension): MV3 service worker.
 //
 // Keeps the user's SAP systems (name, address, client, language, user) and
 // their saved passwords, and logs on to them by filling SAP's logon page
@@ -548,6 +548,11 @@ async function attachTab(tabId) {
   const p = chrome.debugger
     .attach({ tabId }, "1.3")
     .then(async () => {
+      // Held back while this attach was on its way (a logon page, a logon): not the server's.
+      if (privateTabs.has(tabId)) {
+        await chrome.debugger.detach({ tabId }).catch(() => {});
+        throw new Error("the tab is held back");
+      }
       forgetTabState(tabId);
       attached.add(tabId);
       persistAttached();
@@ -762,6 +767,7 @@ function takeExtraInfo(tabId, key) {
 
 // Form fields that hold a password, as SAP's and other logon forms name them.
 const PASSWORD_FIELD = /(^|[&\s"'])(sap-password\w*|sap-system-login-password\w*|j_password|password|passwd|pwd)=/i;
+const PASSWORD_JSON = /"(sap-password\w*|password|passwd|pwd|j_password)"\s*:/i;
 
 function postBody(req) {
   if (!req) return "";
@@ -785,7 +791,7 @@ function carriesPassword(req) {
   try {
     decoded = decodeURIComponent(body.replace(/\+/g, " "));
   } catch {}
-  return PASSWORD_FIELD.test(body) || PASSWORD_FIELD.test(decoded) || /name="(sap-password|password|j_password)"/i.test(body);
+  return PASSWORD_FIELD.test(body) || PASSWORD_FIELD.test(decoded) || PASSWORD_JSON.test(body) || /name="(sap-password|password|j_password)"/i.test(body);
 }
 
 function withoutBody(p) {
@@ -809,7 +815,8 @@ function filterNetworkEvent(tabId, sid, method, p) {
     const url = method === "Network.webSocketCreated" ? p.url : p.request && p.request.url;
     const before = m.get(key);
     // A form that sends a password (SAP's logon page resent by a reload or the history): its body stays here.
-    const secret = method === "Network.requestWillBeSent" && carriesPassword(p.request);
+    // A page's own post (a form, a reload of one) whose body Chrome left out cannot be checked: it stays here too.
+    const secret = method === "Network.requestWillBeSent" && (carriesPassword(p.request) || (p.request && p.request.hasPostData && !postBody(p.request)));
     if (secret) p = withoutBody(p);
     const ok = rememberRequest(tabId, key, url, secret);
     const held = takeExtraInfo(tabId, key);
@@ -860,6 +867,11 @@ async function checkCdp(m, tabId) {
   }
   if (sid !== undefined && !children.get(tabId)?.has(sid)) throw rpcError(`session ${sid} is not a shared child of tab ${tabId}`);
   switch (method) {
+    case "Network.enable":
+      // Bodies come inline, so that the extension can see a password in them (a client asking for none
+      // would get "hasPostData" without the body, and could then fetch it with getRequestPostData).
+      m.params = { ...params, maxPostDataSize: 65536 };
+      break;
     case "Page.disable":
     case "Network.disable":
       // The extension relies on these events to see a tab leave the shared sites.
@@ -915,6 +927,13 @@ async function handleRequest(m) {
         if (!attached.has(tabId)) attachedTargets.delete(tabId);
         throw rpcError(`cannot attach to tab ${tabId}: ${e.message || e}`);
       }
+      // A tab that already shows a password field when the server first takes it (the user opened SAP's
+      // logon page themselves): held back like one that loads such a page later.
+      const st = await probe(tabId);
+      if (PASSWORD_KINDS.includes(st.kind)) {
+        replaceForUser(tabId);
+        throw rpcError(`tab ${tabId} shows a logon page: the user logs on in a new tab first (it is shared once SAP shows the system)`);
+      }
       return { tab };
     }
     case "detach": {
@@ -925,7 +944,7 @@ async function handleRequest(m) {
       return { systems: await systemsForServer() };
     case "logon":
       // The answer says who is logged on where, or why not: never the password.
-      return await logonSystem(m.system, { by: "server" });
+      return await logonSystem(m.system, { by: "server", otherLogons: m.otherLogons === "keep" ? "keep" : null });
     case "cdp": {
       const tabId = requireTabId(m);
       if (!allowedCache.has(tabId) || scope.paused) throw rpcError(`tab ${tabId} is not shared with sap-gui-mcp-server`);
@@ -939,7 +958,7 @@ async function handleRequest(m) {
         if (attached.has(tabId)) leaveOrigin(tabId);
         throw rpcError(`tab ${tabId} is not shared with sap-gui-mcp-server (it left the shared sites)`);
       }
-      if (!attached.has(tabId)) throw rpcError(`tab ${tabId} is not attached`);
+      if (!attached.has(tabId) || privateTabs.has(tabId)) throw rpcError(`tab ${tabId} is not attached`);
       const target = sessionTarget(tabId, m.sessionId);
       noteAgentTab(tabId, m.method);
       try {
@@ -1013,7 +1032,7 @@ function forward(tabId, sid, method, params) {
 
 chrome.debugger.onEvent.addListener((source, method, params) => {
   const tabId = source.tabId;
-  if (!attached.has(tabId)) return;
+  if (!attached.has(tabId) || privateTabs.has(tabId)) return;
   params = params || {};
   const sid = source.sessionId;
   const kids = kidsOf(tabId);
@@ -1036,6 +1055,10 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
     }
     if (method === "Page.frameNavigated" && dest) child.url = dest;
   }
+
+  // A shared tab that loads a page with a password field (SAP's logon page after a timeout, a sign-in
+  // page): held back before the user can type there.
+  if (!sid && method === "Page.loadEventFired") setTimeout(() => checkPasswordPage(tabId), 800);
 
   switch (method) {
     case "Target.attachedToTarget":
@@ -1276,9 +1299,9 @@ function onRelayMessage(data) {
   }
   if (!m || m.type === "pong") return;
   if (!Number.isInteger(m.id)) return;
-  handleRequest(m).then(
+  privateRestored.then(() => handleRequest(m)).then(
     (result) => send({ id: m.id, result }),
-    (e) => send({ id: m.id, error: { message: (e && e.message) || String(e), code: typeof e?.code === "number" ? e.code : -32000 } }),
+    (e) => send({ id: m.id, error: { message: (e && e.message) || String(e), code: typeof e?.code === "number" ? e.code : -32000, ...(typeof e?.reason === "string" ? { reason: e.reason } : {}) } }),
   );
 }
 
@@ -1463,6 +1486,8 @@ async function systemsForServer() {
     language: x.language || "",
     user: x.user || "",
     logon: x.sso ? "sso" : x.passwordIn ? "password" : "manual",
+    // What SAP answered to the last logon, while it stands (a refused password, a lock): never its password.
+    ...(x.logonIssue ? { issue: { reason: x.logonIssue.reason, at: new Date(x.logonIssue.at).toISOString() } } : {}),
     open: targets.some((t) => t.type === "page" && tabOfSystem(x, t.url) && !privateTabs.has(t.tabId)),
   }));
 }
@@ -1522,20 +1547,32 @@ async function pairWithHelper() {
 
 // ---------------------------------------------------------------- passwords
 
+// Passwords live only in the computer's keychain, through the helper: never in the Chrome profile, where
+// they would sit unencrypted on disk. Without a keychain no password is saved (the user logs on in the tab).
 async function savePassword(sys, password) {
-  const h = await helperInfo();
-  if (h.ok && h.keychain) {
-    const r = await native({ cmd: "secret.set", id: sys.id, value: password, label: sys.name });
-    if (r && r.ok) {
-      await forgetProfilePassword(sys.id);
-      return "keychain";
-    }
+  const h = await helperInfo(true);
+  if (!h.ok) throw new Error("To save a password, install the helper first: in a terminal, run npx -y sap-gui-mcp-server extension install, then restart Chrome. Or leave the password empty and log on in the tab.");
+  if (!h.keychain) throw new Error("This computer has no keychain the helper can use, so the password is not saved. Leave it empty and log on in the tab.");
+  const r = await native({ cmd: "secret.set", id: sys.id, value: password, label: sys.name });
+  if (!r || !r.ok) throw new Error(`The keychain did not take the password${r && r.error ? `: ${r.error}` : ""}.`);
+  await forgetProfilePassword(sys.id);
+  return "keychain";
+}
+
+// Version 0.2 kept passwords in the profile when there was no helper: they move to the keychain once there is.
+async function migrateProfilePasswords() {
+  const { secrets } = await chrome.storage.local.get("secrets");
+  if (!secrets || !Object.keys(secrets).length) return;
+  const h = await helperInfo(true);
+  if (!h.ok || !h.keychain) return;
+  const list = await getSystems();
+  for (const sys of list) {
+    if (sys.passwordIn !== "profile" || typeof secrets[sys.id] !== "string") continue;
+    const r = await native({ cmd: "secret.set", id: sys.id, value: secrets[sys.id], label: sys.name });
+    if (r && r.ok) sys.passwordIn = "keychain";
   }
-  // No keychain: this Chrome profile's local storage (never sync storage).
-  const { secrets = {} } = await chrome.storage.local.get("secrets");
-  secrets[sys.id] = password;
-  await chrome.storage.local.set({ secrets });
-  return "profile";
+  await putSystems(list);
+  for (const sys of list) if (sys.passwordIn === "keychain") await forgetProfilePassword(sys.id);
 }
 
 async function readPassword(sys) {
@@ -1563,38 +1600,241 @@ async function forgetPassword(sys) {
   if (sys.passwordIn === "keychain") await native({ cmd: "secret.delete", id: sys.id });
 }
 
+// ---------------------------------------------------------------- pages with a password field
+
+// A tab that shows a password field (SAP's logon page, its new-password form, an identity provider's
+// sign-in page) is never shared with the server: the user may type a password there, and a script the
+// server ran in the page could read it. Such a tab is held back (private), watched with the extension's
+// own debugger, and shared again once the field is gone. Held tabs survive a worker restart.
+const PASSWORD_KINDS = ["logon", "password_form", "password_change"];
+const guards = new Set();
+
+function persistPrivate() {
+  chrome.storage.session.set({ privateTabs: [...privateTabs] }).catch(() => {});
+}
+
+async function guardTab(tabId, { attachedOwn = false, fresh = false } = {}) {
+  if (guards.has(tabId)) return;
+  guards.add(tabId);
+  privateTabs.add(tabId);
+  persistPrivate();
+  // Detaches the server first (tabRemoved "logon"): the extension's own attachment follows.
+  if (!attachedOwn) await scheduleRecompute();
+  try {
+    if (!attachedOwn) {
+      if (attached.has(tabId)) await detachTab(tabId);
+      await chrome.debugger.attach({ tabId }, "1.3").catch(() => {});
+    }
+    // A service worker of the origin never sees what the user sends from here.
+    await chrome.debugger.sendCommand({ tabId }, "Network.enable").catch(() => {});
+    await chrome.debugger.sendCommand({ tabId }, "Network.setBypassServiceWorker", { bypass: true }).catch(() => {});
+    if (fresh) {
+      // The page was shared: a script the server left in it would outlive the detach. A fresh load has none.
+      const t = await chrome.tabs.get(tabId).catch(() => null);
+      if (t && t.url) await chrome.debugger.sendCommand({ tabId }, "Page.navigate", { url: t.url }).catch(() => {});
+    }
+    for (;;) {
+      await sleep(1500);
+      if (!(await chrome.tabs.get(tabId).catch(() => null))) return; // closed
+      if (logonTabs.has(tabId)) continue; // a logon runs in it
+      await chrome.debugger.attach({ tabId }, "1.3").catch(() => {}); // after a worker restart, or a detach
+      const st = await probe(tabId);
+      if (st.unreadable || st.kind === "loading" || PASSWORD_KINDS.includes(st.kind)) continue;
+      break;
+    }
+    await evalIn(tabId, CLEAR_PASSWORDS).catch(() => {});
+    await chrome.debugger.detach({ tabId }).catch(() => {});
+  } finally {
+    guards.delete(tabId);
+    if (!logonTabs.has(tabId)) {
+      privateTabs.delete(tabId);
+      persistPrivate();
+      invalidateTargets();
+      await scheduleRecompute();
+    }
+  }
+}
+
+// After a shared tab loaded a page: does it show a password field? Then the user logs on elsewhere.
+async function checkPasswordPage(tabId) {
+  if (!attached.has(tabId) || privateTabs.has(tabId)) return;
+  const st = await probe(tabId);
+  if (PASSWORD_KINDS.includes(st.kind)) await replaceForUser(tabId);
+}
+
+// A tab the server had (or could reach) that shows a password field: a script the server left in it, or
+// a window of the same origin holding it, could read what the user types. So the user does not type there:
+// the tab is emptied, and the same address opens in a new tab the server never had, held back until the
+// user is through (guardTab).
+async function replaceForUser(tabId) {
+  const t = await chrome.tabs.get(tabId).catch(() => null);
+  if (!t || !t.url || privateTabs.has(tabId)) return;
+  privateTabs.add(tabId);
+  persistPrivate();
+  await scheduleRecompute();
+  if (attached.has(tabId)) await detachTab(tabId);
+  await chrome.debugger.attach({ tabId }, "1.3").catch(() => {});
+  await chrome.debugger.sendCommand({ tabId }, "Page.navigate", { url: "about:blank" }).catch(() => {});
+  await chrome.debugger.detach({ tabId }).catch(() => {});
+  privateTabs.delete(tabId);
+  persistPrivate();
+  const tab = await chrome.tabs.create({ url: "about:blank", active: true, windowId: t.windowId, index: t.index + 1 }).catch(() => null);
+  if (!tab) return;
+  privateTabs.add(tab.id);
+  persistPrivate();
+  try {
+    await chrome.debugger.attach({ tabId: tab.id }, "1.3");
+    await chrome.debugger.sendCommand({ tabId: tab.id }, "Network.enable").catch(() => {});
+    await chrome.debugger.sendCommand({ tabId: tab.id }, "Network.setBypassServiceWorker", { bypass: true }).catch(() => {});
+    await chrome.debugger.sendCommand({ tabId: tab.id }, "Page.navigate", { url: t.url });
+  } catch {}
+  guardTab(tab.id, { attachedOwn: true });
+  await chrome.tabs.remove(tabId).catch(() => {});
+}
+
+// Tabs held back by an earlier worker: held again before anything is shared.
+async function restorePrivate() {
+  const { privateTabs: stored = [] } = await chrome.storage.session.get("privateTabs");
+  for (const tabId of stored) if (Number.isInteger(tabId)) guardTab(tabId, { attachedOwn: false });
+}
+
 // ---------------------------------------------------------------- logging on
 
 const LOGON_TIMEOUT_MS = 60000;
+// On a single sign-on system, or one that sends the browser to an identity provider: how long the
+// provider's page may stay before the user is asked to sign in there.
+const IDP_WAIT_MS = 20000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Runs in the page: what SAP shows. Never returns a field's value.
+// Why a logon stopped. The relay's error carries it as `reason`; the popup shows it in the system's row.
+//   not_registered, paused, password_unreadable: before anything is opened;
+//   wrong_password, user_locked, refused: SAP's logon page answered with this message;
+//   password_change: SAP asks for a new password; multiple_logon: SAP asks about the user's other logons;
+//   identity_provider: an identity provider waits for the user; sap_error: SAP answered with its error page; page_changed: SAP's logon page has no field
+//   the extension knows; timeout: SAP did not answer in time.
+// An error with `held` repeats an earlier answer of SAP that stands (heldIssue): nothing was opened or typed.
+function logonError(reason, message, extra = {}) {
+  const e = rpcError(message);
+  e.reason = reason;
+  Object.assign(e, extra);
+  return e;
+}
+
+// What SAP's message on its logon page means. English and German, the two languages of SAP's own texts.
+function refusalOf(message) {
+  const m = String(message || "");
+  if (/\block|gesperrt|too many failed|zu viele/i.test(m)) return "user_locked";
+  if (/(password|kennwort).{0,40}(expired|abgelaufen|no longer valid|nicht mehr gültig)|(change|ändern).{0,20}(password|kennwort)/i.test(m)) return "password_change";
+  if (/(password|kennwort|name|user|benutzer).{0,60}(incorrect|not correct|wrong|invalid|falsch|nicht korrekt|ungültig)/i.test(m)) return "wrong_password";
+  return "refused";
+}
+
+// The agent's next step, per reason: it says what to tell the user; never "give me the password".
+function agentText(reason, sys, sapMessage = "", extra = {}) {
+  const who = sys ? `${sys.user || "the user"} on ${sys.name}` : "";
+  const said = sapMessage ? ` SAP says: "${sapMessage}".` : "";
+  switch (reason) {
+    case "paused":
+      return "Sharing is paused in the extension. Ask the user to click Resume Sharing in the extension's popup (the Agent Connector icon in Chrome's toolbar), then call sap_logon again.";
+    case "password_unreadable":
+      return `The saved password of ${sys.name} could not be read${sys.passwordIn === "keychain" ? " from the keychain" : ""}. Ask the user to open the extension's popup, edit ${sys.name} and save its password again.`;
+    case "wrong_password":
+      return `SAP refused the user name or password for ${who}.${said} The extension will not try this password again, so that the user is not locked. Ask the user to update the password of ${sys.name} in the extension's popup (Edit), or to log on in the tab themselves. Do not ask for the password.`;
+    case "user_locked":
+      return `SAP says ${sys.user || "the user"} is locked on ${sys.name}.${said} Ask the user to have it unlocked (their SAP administrator, transaction SU01), then to click Log On in the extension's popup. Do not retry.`;
+    case "password_change":
+      return `SAP asks ${who} for a new password. Ask the user to change it in the tab that is now in front, then to save the new password in the extension's popup (Edit ${sys.name}). Do not retry before that.`;
+    case "multiple_logon":
+      return `${sys.user || "The user"} is already logged on to ${sys.name} elsewhere, and SAP asks whether to end those other logons. Ask the user what they want: they can answer in the tab that is now in front, or tell you to keep the other logons; then call sap_logon again with otherLogons: "keep". Never end the user's other logons yourself.`;
+    case "identity_provider":
+      return `${sys.name} sends the browser to ${extra.host || "an identity provider"} to sign in, which the extension does not do. Ask the user to sign in in the tab that is now in front, then call sap_sessions.`;
+    case "page_changed":
+      return `The logon page of ${sys.name} has no ${extra.field || "field"} the extension knows, so it did not log on. Ask the user to log on in the tab that is now in front, then call sap_sessions.`;
+    case "sap_error":
+      return /dialog user/i.test(sapMessage)
+        ? `SAP answered with an error page for ${who}: "${sapMessage}". The saved user is not a dialog user (it may be meant for RFC or background work), so it cannot log on in a browser. Ask the user to save a dialog user for ${sys.name} in the extension's popup (Edit).`
+        : `SAP answered with an error page for ${who}.${said} Tell the user what SAP said; the tab stays open.`;
+    case "timeout":
+      return `${sys.name} did not show SAP within ${Math.round(LOGON_TIMEOUT_MS / 1000)} s (the tab stays open). Check with the user that the system is reachable from this computer (VPN, address), then call sap_logon again.`;
+    case "refused":
+      return `SAP did not log ${sys.user || "the user"} on to ${sys.name}.${said} Tell the user what SAP said; do not retry with the same settings.`;
+    default:
+      return sapMessage || "The logon stopped.";
+  }
+}
+
+// An earlier answer of SAP that stands until the user acts: a refused password until a new one is saved,
+// a locked user until the user clicks Log On again. The server never gets past it; the popup only past a lock.
+function heldIssue(sys, by) {
+  const i = sys.logonIssue;
+  if (!i) return null;
+  if (i.reason === "wrong_password") return i;
+  if (i.reason === "user_locked" && by === "server") return i;
+  return null;
+}
+
+async function setIssue(id, issue) {
+  const list = await getSystems();
+  const sys = list.find((x) => x.id === id);
+  if (!sys) return;
+  if (issue) sys.logonIssue = { reason: issue.reason, message: String(issue.message || "").slice(0, 300), at: Date.now() };
+  else if (sys.logonIssue) delete sys.logonIssue;
+  else return;
+  await putSystems(list);
+}
+
+// Runs in the page: what it shows. Never returns a field's value.
 const PROBE = `(() => {
   const vis = (e) => !!e && !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
   const q = (s) => [...document.querySelectorAll(s)].filter(vis);
   const text = (e) => (e.innerText || e.textContent || "").replace(/\\s+/g, " ").trim();
   const loaded = document.readyState === "complete";
-  const user = q('input[name="sap-user"], input#sap-user, input[name="j_username"]')[0];
+  const host = location.hostname;
+  const mark = document.documentElement.hasAttribute("data-sap-gui-mcp-submitted");
+  const user = q('input[name="sap-user"], input#sap-user, input[name="j_username"], #USERNAME_FIELD-inner')[0];
   const pw = q('input[name="sap-password"], input#sap-password, input[type="password"]');
-  const newPw = q('input[name*="passwordnew" i], input[name*="password-new" i], input[name*="newpassword" i], input[id*="passwordnew" i]');
-  const message = (() => {
-    for (const e of q('[role="alert"], .urMsgBarTxt, [id*="MESSAGE" i], [id*="ERROR" i], [class*="error" i], [class*="Message" i], .sapMMsgStrip')) {
-      const t = text(e);
-      if (t && t.length < 400 && !/^(user|password|client|language)$/i.test(t)) return t;
-    }
-    return "";
-  })();
+  const newPw = q('input[name*="passwordnew" i], input[name*="password-new" i], input[name*="newpassword" i], input[id*="passwordnew" i], input[id*="NEW_PASSWORD" i]');
+  // SAP's error, never its warnings: Web GUI warns about plain HTTP on every logon page.
+  let message = "";
+  for (const e of q('.lsMessageBar--typeError, #LOGIN_ERROR_BLOCK, [id^="LOGIN_MESSAGE"], .urMsgBarErr, .sapMMsgStripError, [role="alert"]')) {
+    const t = text(e.querySelector('[id$="-txt"]') || e);
+    if (t && t.length < 400) { message = t; break; }
+  }
   const body = text(document.body || document.documentElement).slice(0, 4000);
-  if (newPw.length || pw.length > 1 && /new password|neues kennwort|change.*password|kennwort.*ändern/i.test(body)) return { kind: "password_change", message };
+  if (newPw.length || (pw.length > 1 && /new password|neues kennwort|change.*password|kennwort.*ändern/i.test(body))) return { kind: "password_change", host, mark, message };
   const radios = q('input[type="radio"]');
-  if (radios.length && /already logged on|bereits angemeldet|multiple logon|mehrfachanmeldung/i.test(body)) return { kind: "multi", message: "" };
-  if (user && pw.length) return { kind: "logon", loaded, message, client: !!q('input[name="sap-client"]:not([readonly])')[0] };
-  if (!loaded) return { kind: "loading" };
-  const app = !!document.querySelector("#ToolbarOkCode, #shell-header, #shell-hdr, #canvas, .sapUshellShellHead, [id^=M0]") || !!(window.sap && window.sap.ushell && window.sap.ushell.Container);
-  return { kind: app ? "app" : "page", title: document.title };
+  if (document.querySelector("#SESSION_QUERY_CONTINUE_BUTTON") || (radios.length && /already logged on|bereits angemeldet|multiple logon|mehrfachanmeldung/i.test(body))) return { kind: "multi", host, mark };
+  if (user && pw.length) return { kind: "logon", host, mark, loaded, message, client: !!q('input[name="sap-client"]:not([readonly])')[0] };
+  if (pw.length) return { kind: "password_form", host, mark, loaded };
+  if (!loaded) return { kind: "loading", host, mark };
+  // SAP's error page ("500 Internal Server Error", then why: "Log on with a dialog user").
+  const h1 = document.querySelector("h1");
+  const head = h1 ? text(h1) : "";
+  if (/^[45]\d\d\b/.test(head) || /application server error/i.test(document.title)) {
+    const why = body.replace(head, "").replace(/Server time:.*$/i, "").replace(/©.*$/, "").trim().slice(0, 200);
+    return { kind: "sap_error", host, mark, message: why || head };
+  }
+  // This runs in an isolated world: the page's own scripts are not visible, only its document.
+  const app = !!document.querySelector("#ToolbarOkCode, #shell-header, #shell-hdr, [id^='shell-header'], .sapUshellShellHead, .sapUshellShellHeader, .sapUshellShell, #shellLayout, [id^=M0], #webguiPage0");
+  return { kind: app ? "app" : "page", host, mark, title: document.title };
 })()`;
 
-// SAP asks whether to end the user's other logons: keep them, always.
+// Who is logged on, where the launchpad says it; else the address's client. Runs in the page's own world
+// (the launchpad's API lives there), so only ever used to pick an open tab, never to decide where to type.
+const SESSION = `(() => {
+  let session = { user: "", client: new URLSearchParams(location.search).get("sap-client") || "" };
+  try {
+    const c = window.sap && window.sap.ushell && window.sap.ushell.Container;
+    if (c) {
+      const u = c.getUser && c.getUser();
+      const s = c.getLogonSystem && c.getLogonSystem();
+      session = { user: u && u.getId ? String(u.getId()).toUpperCase() : "", client: (s && s.getClient && String(s.getClient())) || session.client };
+    }
+  } catch {}
+  return session;
+})()`;
+
+// SAP asks whether to end the user's other logons, and the user said to keep them.
 const KEEP_OTHER_LOGONS = `(() => {
   const vis = (e) => !!e && !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
   const label = (r) => ((r.labels && r.labels[0] && r.labels[0].innerText) || (r.closest("label,tr,div") || {}).innerText || "").replace(/\\s+/g, " ");
@@ -1616,25 +1856,60 @@ const CLEAR_PASSWORDS = `(() => {
   return true;
 })()`;
 
-const FOCUS = (selector) => `(() => {
+// Focuses a field of the system's own page, in the top frame, and says whether the keys will go there.
+// The logon page's fields are emptied if it is left (the back/forward cache keeps no password).
+const CLEAR_PASSWORDS_ON_LEAVE = `(addEventListener("pagehide", () => { for (const e of document.querySelectorAll('input[type="password"]')) e.value = ""; }, { capture: true }), true)`;
+
+const FOCUS = (selector, host, https) => `(() => {
+  if (location.hostname !== ${JSON.stringify(host)} || window.top !== window) return false;
+  if (${https ? "true" : "false"} && location.protocol !== "https:") return false;
   const e = [...document.querySelectorAll(${JSON.stringify(selector)})].find((x) => x.offsetWidth || x.offsetHeight);
   if (!e) return false;
   e.removeAttribute("readonly");
   e.focus();
   e.select && e.select();
-  return document.activeElement === e;
+  return document.activeElement === e && document.hasFocus();
+})()`;
+
+// The logon language: the launchpad's list, or Web GUI's hidden field (its list only shows it).
+const SET_LANGUAGE = (lang) => `(() => {
+  const want = ${JSON.stringify(lang)}.toUpperCase();
+  const sel = document.querySelector('#LANGUAGE_SELECT, select[name="sap-language"]');
+  if (sel) {
+    const o = [...sel.options].find((x) => x.value.toUpperCase() === want || x.text.toUpperCase().startsWith(want + " "));
+    if (!o) return false;
+    sel.value = o.value;
+    sel.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  }
+  const hidden = document.querySelector('input[name="sap-language"]');
+  if (hidden) { hidden.value = want; return true; }
+  return false;
 })()`;
 
 const SUBMIT = `(() => {
+  document.documentElement.setAttribute("data-sap-gui-mcp-submitted", "");
   const vis = (e) => !!e && !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
-  const b = document.querySelector("#LOGON_BUTTON") || [...document.querySelectorAll('button[type="submit"], input[type="submit"], #LOGIN_LINK, [role="button"]')].filter(vis).find((x) => /log ?on|log ?in|anmelden|sign in/i.test(x.innerText || x.value || x.title || ""));
+  const b = document.querySelector("#LOGON_BUTTON, #LOGIN_LINK") || [...document.querySelectorAll('button[type="submit"], input[type="submit"], [role="button"]')].filter(vis).find((x) => /log ?on|log ?in|anmelden|sign in/i.test(x.innerText || x.value || x.title || ""));
   if (b) { b.click(); return "button"; }
   const f = (document.querySelector('input[name="sap-password"]') || {}).form;
   if (f) { f.requestSubmit ? f.requestSubmit() : f.submit(); return "form"; }
   return "";
 })()`;
 
+// Runs a script of the extension in the tab's top frame, in an isolated world: it sees the page's document
+// but not the page's scripts, which therefore cannot change what it does (patch focus(), querySelector...).
 async function evalIn(tabId, expression) {
+  const tree = await chrome.debugger.sendCommand({ tabId }, "Page.getFrameTree");
+  const frameId = tree && tree.frameTree && tree.frameTree.frame && tree.frameTree.frame.id;
+  const world = await chrome.debugger.sendCommand({ tabId }, "Page.createIsolatedWorld", { frameId, worldName: "sap-gui-mcp", grantUniveralAccess: false });
+  const r = await chrome.debugger.sendCommand({ tabId }, "Runtime.evaluate", { expression, contextId: world.executionContextId, returnByValue: true, awaitPromise: false });
+  if (r && r.exceptionDetails) throw new Error("script failed");
+  return r && r.result ? r.result.value : undefined;
+}
+
+// The same in the page's own world: only for reading what the page's scripts know (SESSION).
+async function evalInPage(tabId, expression) {
   const r = await chrome.debugger.sendCommand({ tabId }, "Runtime.evaluate", { expression, returnByValue: true, awaitPromise: false });
   if (r && r.exceptionDetails) throw new Error("script failed");
   return r && r.result ? r.result.value : undefined;
@@ -1644,52 +1919,83 @@ async function probe(tabId) {
   try {
     return (await evalIn(tabId, PROBE)) || { kind: "loading" };
   } catch {
-    return { kind: "loading" }; // between two documents
+    return { kind: "loading", unreadable: true }; // between two documents, or not attached
   }
 }
 
-async function typeInto(tabId, selector, value) {
-  if (!(await evalIn(tabId, FOCUS(selector)))) return false;
+// Types into a field of the system's page: only after the extension's own script focused it there.
+async function typeInto(tabId, selector, value, host, https = false) {
+  if (!(await evalIn(tabId, FOCUS(selector, host, https)))) return false;
   await chrome.debugger.sendCommand({ tabId }, "Input.insertText", { text: value });
   return true;
 }
 
-// Waits until the page is one of `kinds` (or the time is up): the last probe.
-async function waitFor(tabId, kinds, ms) {
+// Probes the tab every half second until `pick` returns a state, or the time is up ({ kind: "timeout" }).
+async function watch(tabId, ms, pick) {
   const end = Date.now() + ms;
   let last = { kind: "loading" };
-  let steadyPage = 0;
   while (Date.now() < end) {
     last = await probe(tabId);
-    if (kinds.includes(last.kind)) return last;
-    // A page that is neither SAP's logon page nor a known SAP screen, three times in a row: take it as it is.
-    steadyPage = last.kind === "page" ? steadyPage + 1 : 0;
-    if (steadyPage >= 3 && kinds.includes("app")) return last;
+    const r = pick(last);
+    if (r) return r;
     await sleep(500);
   }
-  return last;
+  return { ...last, kind: "timeout", was: last.kind };
 }
+
+// Does a logged-on page fit the system: its client and user, where SAP shows them?
+function sameSession(sys, s) {
+  if (!s) return true;
+  if (sys.client && s.client && s.client !== sys.client) return false;
+  if (sys.user && s.user && s.user !== sys.user.toUpperCase()) return false;
+  return true;
+}
+
+const LOGON_SELECTORS = {
+  user: 'input[name="sap-user"], input#sap-user, input[name="j_username"], #USERNAME_FIELD-inner',
+  password: 'input[name="sap-password"], input#sap-password, input[type="password"]',
+  client: 'input[name="sap-client"], #CLIENT_FIELD-inner',
+};
 
 const logons = new Map(); // system id -> running logon promise
 
 // Opens a system and logs on to it. by: "server" (the relay asked) or "user" (the popup).
-async function logonSystem(ref, { by }) {
+// otherLogons: "keep" when the user said to keep their other logons (SAP's multiple logon question).
+async function logonSystem(ref, { by, otherLogons = null }) {
   const list = await getSystems();
   const sys = findSystem(list, ref);
   if (!sys) {
     const names = list.map((x) => x.name);
-    throw rpcError(names.length ? `No system "${ref}" in the extension. Registered: ${names.join(", ")}.` : "No SAP system is registered in the extension yet: the user adds them in the extension's popup.");
+    throw logonError(
+      "not_registered",
+      names.length
+        ? `No system named "${ref}" is registered in the extension. Registered: ${names.join(", ")}. If the user means another system, ask them to open it in Chrome and click Add This SAP Page in the extension's popup. Never ask the user for a password.`
+        : "No SAP system is registered in the extension yet. Ask the user to open their SAP system in Chrome and click Add This SAP Page in the extension's popup. Never ask the user for a password.",
+    );
   }
+  if (by === "server" && (await getConfig()).paused) throw logonError("paused", agentText("paused", sys));
   if (logons.has(sys.id)) return logons.get(sys.id);
-  const p = doLogon(sys, by).finally(() => logons.delete(sys.id));
+  const p = doLogon(sys, by, otherLogons).finally(() => logons.delete(sys.id));
   logons.set(sys.id, p);
   return p;
 }
 
-async function doLogon(sys, by) {
-  const r = await doLogonSteps(sys, by);
+async function doLogon(sys, by, otherLogons) {
+  let r;
+  try {
+    r = await doLogonSteps(sys, by, otherLogons);
+  } catch (e) {
+    // What SAP answered stays on the system's row until the user acts on it.
+    if (e && !e.held && ["wrong_password", "user_locked", "password_change", "multiple_logon", "identity_provider", "page_changed", "sap_error", "timeout", "refused"].includes(e.reason)) await setIssue(sys.id, { reason: e.reason, message: e.sapMessage || "" });
+    if (Number.isInteger(e && e.tabId)) await focusTab(e.tabId);
+    throw e;
+  }
+  // A refused password or a lock stays until that password works again; anything else is over.
+  const kept = sys.logonIssue && ["wrong_password", "user_locked"].includes(sys.logonIssue.reason) && r.state !== "logged_on";
+  if (!kept) await setIssue(sys.id, null);
   // The agent asked for this system: the popup names it as where the agent works.
   if (by === "server" && Number.isInteger(r.tabId)) noteAgentTab(r.tabId);
+  if (Number.isInteger(r.tabId)) await focusTab(r.tabId);
   // The server names Chrome tabs by their target id ("chrome:<targetId>" sessions).
   try {
     const t = (await chrome.debugger.getTargets()).find((x) => x.tabId === r.tabId && x.type === "page");
@@ -1698,77 +2004,164 @@ async function doLogon(sys, by) {
   return r;
 }
 
-async function doLogonSteps(sys, by) {
+// Tabs a logon runs in right now (the guard leaves them to it).
+const logonTabs = new Set();
+
+async function doLogonSteps(sys, by, otherLogons) {
   const base = { system: sys.name, client: sys.client || "", user: sys.user || "" };
-  // A shared tab of this system that shows SAP already: nothing to do.
+  const host = new URL(sys.url).hostname;
+  // A page of the system that SAP shows logged on: the launchpad or Easy Access; any page for an "other" system.
+  const isApp = (s) => s.host === host && (s.kind === "app" || (s.kind === "page" && (sys.kind || kindOf(sys.url)) === "other"));
+  let password = null;
+  // Nothing SAP says goes to the agent, the popup or storage with the password in it.
+  const scrub = (m) => {
+    let t = String(m || "");
+    if (password) {
+      for (const form of new Set([password, encodeURIComponent(password), password.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)])) {
+        t = t.replace(new RegExp(form.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "***");
+      }
+    }
+    return t.slice(0, 200);
+  };
+  const fail = (reason, extra = {}) => {
+    if (extra.sapMessage) extra.sapMessage = scrub(extra.sapMessage);
+    return logonError(reason, agentText(reason, sys, extra.sapMessage, extra), extra);
+  };
+
+  // 1. A tab of this system that SAP shows logged on (same client and user) is the answer. A tab at SAP's
+  //    question about other logons is answered there when the user said so. Nothing is ever typed into a
+  //    tab the server had: a page it ran scripts in could read the field.
   const targets = await chrome.debugger.getTargets();
   const candidates = targets.filter((t) => t.type === "page" && typeof t.tabId === "number" && tabOfSystem(sys, t.url) && !privateTabs.has(t.tabId));
-  let reuse = null;
+  let multiTab = null;
   for (const t of candidates) {
-    const state = await withOwnDebugger(t.tabId, () => probe(t.tabId)).catch(() => ({ kind: "loading" }));
-    if (state.kind === "app" || state.kind === "page") {
-      if (by === "user") await focusTab(t.tabId);
-      return { ...base, state: "already", tabId: t.tabId, title: t.title };
-    }
-    if (state.kind === "logon" && !reuse) reuse = t.tabId;
+    const seen = await withOwnDebugger(t.tabId, async () => {
+      const st = await probe(t.tabId);
+      return isApp(st) ? { ...st, session: await evalInPage(t.tabId, SESSION).catch(() => null) } : st;
+    }).catch(() => ({ kind: "loading" }));
+    if (isApp(seen) && sameSession(sys, seen.session)) return { ...base, state: "already", tabId: t.tabId, title: t.title };
+    if (!multiTab && seen.kind === "multi" && seen.host === host) multiTab = t.tabId;
   }
-  const password = sys.sso ? null : await readPassword(sys);
-  if (!password && !sys.sso && sys.passwordIn) throw rpcError(`The saved password of ${sys.name} could not be read${sys.passwordIn === "keychain" ? " from the keychain" : ""}. The user can save it again in the extension's popup.`);
-  // From here the tab is the extension's alone until the logon page is gone.
-  let tabId = reuse;
+
+  // 2. Nothing is typed again after SAP refused it.
+  const held = heldIssue(sys, by);
+  if (held) throw logonError(held.reason, agentText(held.reason, sys, held.message), { held: true, sapMessage: held.message });
+
+  password = sys.sso ? null : await readPassword(sys);
+  if (!password && !sys.sso && sys.passwordIn) throw fail("password_unreadable");
+
+  // 3. A new tab, private from its first moment (no opener, no page the server saw), or the question's tab.
+  let tabId = multiTab;
   if (tabId !== null) {
+    if (otherLogons !== "keep") throw fail("multiple_logon", { tabId });
     privateTabs.add(tabId);
     await scheduleRecompute();
-    await chrome.tabs.update(tabId, by === "user" ? { active: true } : {}).catch(() => {});
   } else {
-    const tab = await chrome.tabs.create({ url: "about:blank", active: by === "user" || !candidates.length });
+    const tab = await chrome.tabs.create({ url: "about:blank", active: true });
     tabId = tab.id;
     privateTabs.add(tabId);
   }
+  logonTabs.add(tabId);
+  persistPrivate();
   let ownAttach = false;
   try {
     await chrome.debugger.attach({ tabId }, "1.3");
     ownAttach = true;
     await chrome.debugger.sendCommand({ tabId }, "Page.enable").catch(() => {});
-    if (reuse === null) await chrome.debugger.sendCommand({ tabId }, "Page.navigate", { url: startUrl(sys) });
-    let state = await waitFor(tabId, ["logon", "app", "password_change", "multi"], LOGON_TIMEOUT_MS / 2);
-    if (state.kind === "app" || state.kind === "page") return { ...base, state: sys.sso ? "sso" : "already", tabId };
+    let state;
+    if (multiTab !== null) state = { kind: "multi", host };
+    else {
+      // A service worker of the origin (one a shared page could have registered) never serves the logon page.
+      await chrome.debugger.sendCommand({ tabId }, "Network.enable").catch(() => {});
+      await chrome.debugger.sendCommand({ tabId }, "Network.setBypassServiceWorker", { bypass: true }).catch(() => {});
+      await chrome.debugger.sendCommand({ tabId }, "Page.navigate", { url: startUrl(sys) });
+      await sleep(300);
+      state = await arrive(tabId, host, isApp);
+    }
+    if (state.kind === "timeout") throw fail("timeout", { tabId });
+    if (state.kind === "sap_error") throw fail("sap_error", { tabId, sapMessage: state.message });
+    if (state.kind === "identity_provider") {
+      if (sys.sso || !password) return { ...base, state: "needs_user", reason: "identity_provider", tabId, message: agentText("identity_provider", sys, "", state) };
+      throw fail("identity_provider", { tabId, host: state.host });
+    }
+    if (isApp(state)) return { ...base, state: sys.sso ? "sso" : "already", tabId };
+
     if (state.kind === "logon") {
       if (!password) {
-        // SSO that still shows the logon page, or no password saved: the user types it in the tab.
-        return { ...base, state: "needs_user", tabId, message: "SAP shows its logon page and no password is saved: the user logs on in that tab." };
+        // No password saved, or single sign-on that still shows the logon page: the user types it in the tab.
+        return { ...base, state: "needs_user", reason: sys.sso ? "sso_logon_page" : "no_password", tabId, message: "SAP shows its logon page and no password is saved: ask the user to log on in the tab that is now in front, then call sap_sessions." };
       }
-      if (!state.loaded) state = await waitFor(tabId, ["logon"], 5000);
+      // SAP's own logon page, on the system's own host, fully loaded: nowhere else is anything typed.
+      if (!state.loaded) state = await watch(tabId, 5000, (s) => (s.kind === "logon" && s.loaded && s.host === host ? s : null));
+      if (state.kind !== "logon" || state.host !== host) throw fail("page_changed", { tabId, field: "logon form" });
       // Web GUI swaps its logon fields once its scripts run: let it settle.
       await sleep(800);
-      if (sys.client && state.client) await typeInto(tabId, 'input[name="sap-client"]', sys.client);
-      if (sys.user && !(await typeInto(tabId, 'input[name="sap-user"], input#sap-user, input[name="j_username"]', sys.user))) throw rpcError("The user field of SAP's logon page was not found.");
-      if (!(await typeInto(tabId, 'input[name="sap-password"], input#sap-password, input[type="password"]', password))) throw rpcError("The password field of SAP's logon page was not found.");
-      await evalIn(tabId, `addEventListener("pagehide", () => { for (const e of document.querySelectorAll('input[type="password"]')) e.value = ""; }, { capture: true }), true`);
+      // A system registered with https is never typed into over http (a downgrade on the way).
+      const https = new URL(sys.url).protocol === "https:";
+      if (sys.client && state.client) await typeInto(tabId, LOGON_SELECTORS.client, sys.client, host, https);
+      if (sys.language) await evalIn(tabId, SET_LANGUAGE(sys.language)).catch(() => false);
+      if (sys.user && !(await typeInto(tabId, LOGON_SELECTORS.user, sys.user, host, https))) throw fail("page_changed", { tabId, field: "user field" });
+      if (!(await typeInto(tabId, LOGON_SELECTORS.password, password, host, https))) throw fail("page_changed", { tabId, field: "password field" });
+      await evalIn(tabId, CLEAR_PASSWORDS_ON_LEAVE);
+      const before = state.message || "";
+      // Once, and only once: a refusal is reported, never tried again.
       if (!(await evalIn(tabId, SUBMIT))) await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
-      // The logon page reloads with SAP's message when it refuses: wait for a new document first.
-      await sleep(1500);
-      state = await waitFor(tabId, ["app", "multi", "password_change", "logon"], LOGON_TIMEOUT_MS);
-      if (state.kind === "multi") {
-        if (!(await evalIn(tabId, KEEP_OTHER_LOGONS))) throw rpcError(`${sys.user || "The user"} is logged on to ${sys.name} already, and SAP asks whether to end the other logons: the extension does not choose that. The user answers in the tab.`);
-        await sleep(1500);
-        state = await waitFor(tabId, ["app", "password_change", "logon"], LOGON_TIMEOUT_MS);
-      }
+      // SAP answers with a new page, or with a new message on this one.
+      state = await watch(tabId, LOGON_TIMEOUT_MS, (s) => {
+        if (isApp(s) || s.kind === "multi" || s.kind === "password_change" || s.kind === "sap_error") return s;
+        if (s.kind === "logon" && s.loaded && (!s.mark || (s.message && s.message !== before))) return s;
+        if (s.host && s.host !== host && s.kind !== "loading") return { ...s, kind: "identity_provider" };
+        return null;
+      });
     }
-    if (state.kind === "password_change") throw rpcError(`SAP asks for a new password for ${sys.user || "the user"} on ${sys.name}: the user changes it in the tab, then saves it in the extension.`);
-    if (state.kind === "logon") throw rpcError(`SAP refused the logon to ${sys.name} as ${sys.user || "the user"}${state.message ? `: ${state.message}` : "."}`);
-    if (state.kind === "app" || state.kind === "page") return { ...base, state: "logged_on", tabId };
-    throw rpcError(`${sys.name} did not show SAP within ${Math.round(LOGON_TIMEOUT_MS / 1000)} s.`);
+    if (state.kind === "multi") {
+      if (otherLogons !== "keep") throw fail("multiple_logon", { tabId });
+      if (!(await evalIn(tabId, KEEP_OTHER_LOGONS))) throw fail("multiple_logon", { tabId });
+      await sleep(1000);
+      state = await watch(tabId, LOGON_TIMEOUT_MS, (s) => (isApp(s) || s.kind === "password_change" || s.kind === "sap_error" || (s.kind === "logon" && s.loaded) ? s : null));
+    }
+    if (state.kind === "sap_error") throw fail("sap_error", { tabId, sapMessage: state.message });
+    if (state.kind === "password_change") throw fail("password_change", { tabId, sapMessage: state.message });
+    if (state.kind === "identity_provider") throw fail("identity_provider", { tabId, host: state.host });
+    if (state.kind === "logon") throw fail(refusalOf(state.message), { tabId, sapMessage: state.message || "" });
+    if (isApp(state)) return { ...base, state: "logged_on", tabId };
+    throw fail("timeout", { tabId });
   } finally {
-    // Before the tab is shared again: no password left in any field.
+    logonTabs.delete(tabId);
+    // Before the tab is shared again: no password left in any field. A tab that still shows a password
+    // field (SAP's logon page after a refusal, a new-password form, a sign-in page) is not shared at all:
+    // the user may type there. It stays private until the field is gone.
+    let keep = false;
     if (ownAttach) {
       await evalIn(tabId, CLEAR_PASSWORDS).catch(() => {});
-      await chrome.debugger.detach({ tabId }).catch(() => {});
+      const st = await probe(tabId);
+      keep = st.unreadable || PASSWORD_KINDS.includes(st.kind);
+      if (!keep) await chrome.debugger.detach({ tabId }).catch(() => {});
     }
-    privateTabs.delete(tabId);
-    invalidateTargets();
-    await scheduleRecompute();
+    if (keep) guardTab(tabId, { attachedOwn: true });
+    else {
+      privateTabs.delete(tabId);
+      persistPrivate();
+      invalidateTargets();
+      await scheduleRecompute();
+    }
   }
+}
+
+// After opening the system's address: SAP's logon page, a logged-on page, one of SAP's questions, or an
+// identity provider (another host) that keeps its page up.
+async function arrive(tabId, host, isApp) {
+  let away = 0;
+  return watch(tabId, LOGON_TIMEOUT_MS, (s) => {
+    if (isApp(s)) return s;
+    if (s.host === host && ["logon", "multi", "password_change", "sap_error"].includes(s.kind)) return s;
+    if (s.host && s.host !== host && s.kind !== "loading") {
+      // A sign-in form there, or the same page for a while: the provider waits for the user.
+      away = away || Date.now();
+      if (s.kind === "logon" || s.kind === "password_form" || Date.now() - away > IDP_WAIT_MS) return { ...s, kind: "identity_provider" };
+    } else away = 0;
+    return null;
+  });
 }
 
 // Runs f with the extension's debugger on the tab: the server's attachment when the tab is shared, else a short one of its own.
@@ -1821,7 +2214,8 @@ async function popupState(tabId) {
     portSetting: { value: cfg.port, managed: cfg.portManaged },
     paused: cfg.paused,
     managedOrigins: scope.managed,
-    systems: cfg.systems.map((x) => ({ ...x, kind: x.kind || kindOf(x.url), open: targets.some((t) => tabOfSystem(x, t.url)), loggingOn: logons.has(x.id) })),
+    // Open: a tab the user can switch to; a tab held back at a logon page counts as not open.
+    systems: cfg.systems.map((x) => ({ ...x, kind: x.kind || kindOf(x.url), open: targets.some((t) => tabOfSystem(x, t.url) && !privateTabs.has(t.tabId)), loggingOn: logons.has(x.id) })),
     shared,
     agent,
     currentTab,
@@ -1878,6 +2272,14 @@ async function handlePopup(msg) {
       const old = msg.system.id ? list.find((x) => x.id === msg.system.id) : null;
       if (list.some((x) => x !== old && x.name.toLowerCase() === fields.name.toLowerCase())) throw new Error(`There is a system named ${fields.name} already.`);
       const sys = { ...(old || { id: newId(), passwordIn: null }), ...fields };
+      // A password never follows a system to another address (host, scheme or port): it was saved for the old one.
+      const moved = old && old.passwordIn && new URL(old.url).origin !== new URL(fields.url).origin;
+      if (moved && !(typeof msg.password === "string" && msg.password !== "")) {
+        await forgetPassword(old);
+        sys.passwordIn = null;
+      }
+      // The user acted on what SAP said last (a new password, another user or client): the next logon may try.
+      delete sys.logonIssue;
       if (fields.sso) {
         if (old && old.passwordIn) await forgetPassword(old);
         sys.passwordIn = null;
@@ -1910,7 +2312,7 @@ async function handlePopup(msg) {
         if (r.tabId) await focusTab(r.tabId);
         return { ok: true, state: r.state, message: r.message || "" };
       } catch (e) {
-        return { ok: false, error: e.message || String(e) };
+        return { ok: false, error: e.message || String(e), reason: e.reason || "" };
       }
     }
     case "setPort": {
@@ -1986,10 +2388,14 @@ chrome.runtime.onInstalled.addListener(() => {
 // Worker (re)start: no socket survives a restart, so release old attachments
 // first, then connect.
 const bootInfo = { at: Date.now(), released: [] };
+// Held tabs come back before the relay may ask anything (an alarm can connect before the boot is through).
+const privateRestored = restorePrivate().catch(() => {});
 const booted = (async () => {
   await ensureAlarm().catch(() => {});
   bootInfo.released = await releaseLeftovers().catch((e) => (console.warn("releaseLeftovers", e), []));
+  await privateRestored;
   await migrateSites().catch((e) => console.warn("migrateSites", e));
+  await migrateProfilePasswords().catch(() => {});
   await readScope().catch(() => {});
   await ensureConnected({ force: true });
 })();

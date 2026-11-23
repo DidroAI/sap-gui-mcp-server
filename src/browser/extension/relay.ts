@@ -58,6 +58,13 @@ export interface ExtensionSystem {
   logon: "password" | "sso" | "manual";
   /** A tab shows it now. */
   open: boolean;
+  /** What SAP answered to the last logon, while it stands: a refused password (until the user saves a new one), a lock. */
+  issue?: { reason: string; at: string };
+}
+
+export interface LogonOptions {
+  /** SAP asks whether to end the user's other logons, and the user said to keep them. */
+  otherLogons?: "keep";
 }
 
 /** What the extension answers to "logon". */
@@ -67,6 +74,8 @@ export interface LogonResult {
   user: string;
   /** logged_on: it logged on now; already: a tab was logged on; sso: opened, SAP logged on by itself; needs_user: the logon page waits for the user. */
   state: "logged_on" | "already" | "sso" | "needs_user";
+  /** needs_user: why (no_password, sso_logon_page, identity_provider). */
+  reason?: string;
   tabId?: number;
   /** The tab's CDP target id: the server's session is "chrome:<targetId>". */
   targetId?: string;
@@ -115,10 +124,12 @@ interface CdpMessage {
 }
 
 /** A CDP error to answer with. */
-class CdpError extends Error {
+export class CdpError extends Error {
   constructor(
     message: string,
     readonly code = -32000,
+    /** Why the extension refused (a logon's outcome: wrong_password, user_locked, multiple_logon...), when it says. */
+    readonly reason?: string,
   ) {
     super(message);
   }
@@ -462,8 +473,8 @@ export class ExtensionRelay {
    * Asks the extension to open a registered system and log on: it fills SAP's logon page itself, in a tab
    * withdrawn from this relay until the logon is over. The answer says who is logged on, or why not.
    */
-  async logon(system: string): Promise<LogonResult> {
-    return (await this.request("logon", { system }, Math.max(this.requestTimeoutMs, LOGON_TIMEOUT_MS))) as LogonResult;
+  async logon(system: string, options: LogonOptions = {}): Promise<LogonResult> {
+    return (await this.request("logon", { system, ...(options.otherLogons ? { otherLogons: options.otherLogons } : {}) }, Math.max(this.requestTimeoutMs, LOGON_TIMEOUT_MS))) as LogonResult;
   }
 
   /** Sends a request to the extension; resolves with its `result`. */
@@ -493,7 +504,7 @@ export class ExtensionRelay {
       const p = ext.pending.get(msg.id);
       if (!p) return;
       ext.pending.delete(msg.id);
-      if (isObject(msg.error)) p.reject(new CdpError(String(msg.error.message ?? "extension error"), typeof msg.error.code === "number" ? msg.error.code : -32000));
+      if (isObject(msg.error)) p.reject(new CdpError(String(msg.error.message ?? "extension error"), typeof msg.error.code === "number" ? msg.error.code : -32000, typeof msg.error.reason === "string" ? msg.error.reason : undefined));
       else p.resolve(msg.result);
       return;
     }

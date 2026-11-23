@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { ExtensionSystem, LogonResult } from "../src/browser/extension/relay.js";
@@ -148,6 +148,26 @@ describe("installing the helper", () => {
     expect(answer.ok).toBe(true);
   });
 
+  test.skipIf(process.platform === "win32")("the helper still starts after the Node.js that installed it is gone; doctor asks it, and uninstall removes it", async () => {
+    const home = temp();
+    const config = join(home, ".config");
+    mkdirSync(join(config, "google-chrome"), { recursive: true });
+    const env = { XDG_CONFIG_HOME: config };
+    // A Node.js path that no longer exists (a Homebrew or nvm upgrade moved it).
+    const r = installNativeHost({ platform: "linux", home, env, execPath: join(home, "old-node", "bin", "node") });
+    const nodeDir = dirname(process.execPath.endsWith("bun") ? Bun.which("node") ?? process.execPath : process.execPath);
+    const answer = await callHost([r.launcher], { cmd: "hello" }, { PATH: `${nodeDir}:/usr/bin:/bin`, HOME: home, XDG_CONFIG_HOME: config });
+    expect(answer.ok).toBe(true);
+    const { nativeHostAnswers, uninstallNativeHost } = await import("../src/browser/extension/native.js");
+    expect(nativeHostAnswers("linux", home, env).ok).toBe(true);
+    // keychain: false here: this machine's own Secret Service is not the test's to clear.
+    const u = uninstallNativeHost({ platform: "linux", home, env, keychain: false });
+    expect(u.removed.sort()).toEqual([join(config, "google-chrome", "NativeMessagingHosts", `${NATIVE_HOST}.json`), r.hostDir].sort());
+    expect(existsSync(r.hostDir)).toBe(false);
+    expect(nativeHostInstalled("linux", home, env)).toBe(false);
+    expect(nativeHostAnswers("linux", home, env)).toMatchObject({ ok: false, error: "not installed" });
+  });
+
   test.skipIf(process.platform === "win32")("no browser folder yet: registered for Google Chrome", () => {
     const home = temp();
     const r = installNativeHost({ platform: "darwin", home, env: {} });
@@ -233,6 +253,51 @@ describe("sap_systems and sap_logon", () => {
 
   test("sap_logon: no password saved: the user logs on in the tab", async () => {
     const { call } = await setup({ list: async () => [ECC], logon: async () => ({ system: "ECC dev", client: "800", user: "", state: "needs_user", tabId: 3 }) });
-    expect((await call("sap_logon", { system: "ECC dev" })).text).toContain("ask the user to log on in that tab");
+    expect((await call("sap_logon", { system: "ECC dev" })).text).toContain("ask the user to log on in the tab that is now in front");
+  });
+
+  test("sap_logon: the extension's own words for the user's next step come through as they are", async () => {
+    const { call } = await setup({
+      list: async () => [ECC],
+      logon: async () => ({ system: "ECC dev", client: "800", user: "", state: "needs_user", reason: "identity_provider", tabId: 3, message: "ECC dev sends the browser to idp.example.com to sign in, which the extension does not do. Ask the user to sign in in the tab that is now in front, then call sap_sessions." }),
+    });
+    expect((await call("sap_logon", { system: "ECC dev" })).text).toBe("Opened ECC dev. ECC dev sends the browser to idp.example.com to sign in, which the extension does not do. Ask the user to sign in in the tab that is now in front, then call sap_sessions.");
+  });
+
+  test('sap_logon: otherLogons "keep" goes to the extension only when the agent passes it', async () => {
+    const asked: unknown[] = [];
+    const { client, call } = await setup({ list: async () => [ECC], logon: async (_n, o) => (asked.push(o), { system: "ECC dev", client: "800", user: "JDOE", state: "needs_user" }) });
+    await call("sap_logon", { system: "ECC dev" });
+    await call("sap_logon", { system: "ECC dev", otherLogons: "keep" });
+    expect(asked).toEqual([{}, { otherLogons: "keep" }]);
+    // There is no way to end the user's other logons.
+    expect(JSON.stringify((await client.listTools()).tools.find((t) => t.name === "sap_logon")?.inputSchema)).toContain('"enum":["keep"]');
+    expect((await call("sap_logon", { system: "ECC dev", otherLogons: "end" })).error).toBe(true);
+  });
+
+  test("sap_systems: a refused password that stands, and a system outside SAP_ALLOW_ORIGINS, are said", async () => {
+    const bad = { ...ECC, issue: { reason: "wrong_password", at: "2026-11-23T10:00:00.000Z" } };
+    const { call } = await setup({ list: async () => [bad, S4], logon: async () => ({}) as LogonResult, looksAt: (u) => u.startsWith("http://localhost:8010") });
+    const r = (await call("sap_systems")).text;
+    expect(r).toContain("Last logon: SAP refused its saved password: the user updates it in the extension before the next logon.");
+    expect(r).toContain("2. S/4 sandbox: Fiori launchpad, https://s4.example.com/sap/bc/ui2/flp, client 100. single sign-on: SAP logs on by itself (open in a tab now) Outside SAP_ALLOW_ORIGINS");
+    expect(r).toContain("never asks the user for one");
+  });
+
+  test("sap_logon: a tab the server may not look at (SAP_ALLOW_ORIGINS) is said, not waited for", async () => {
+    const { call } = await setup({ list: async () => [S4], logon: async () => ({ system: "S/4 sandbox", client: "100", user: "", state: "sso", tabId: 4, targetId: "T4" }), looksAt: () => false });
+    const r = await call("sap_logon", { system: "S/4 sandbox" });
+    expect(r.text).toContain("This server does not look at https://s4.example.com: SAP_ALLOW_ORIGINS leaves it out.");
+  }, 20_000);
+});
+
+describe("when the extension cannot be reached", () => {
+  test("Chrome is started only where a desktop is, and never when switched off", async () => {
+    const { mayStartChrome } = await import("../src/browser/extension/index.js");
+    expect(mayStartChrome({}, "darwin")).toBe(true);
+    expect(mayStartChrome({}, "win32")).toBe(true);
+    expect(mayStartChrome({}, "linux")).toBe(false);
+    expect(mayStartChrome({ SAP_EXTENSION_START_CHROME: "off" }, "darwin")).toBe(false);
+    expect(mayStartChrome({ SAP_EXTENSION_START_CHROME: "on" }, "linux")).toBe(true);
   });
 });

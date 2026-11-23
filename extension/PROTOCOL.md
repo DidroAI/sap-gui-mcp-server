@@ -79,7 +79,7 @@ pass the handshake through and then read and inject plain frames. So after
 ## After the handshake
 
 Requests from the relay carry an integer `id`; the extension answers each with
-`{"id":N,"result":{...}}` or `{"id":N,"error":{"message":"...","code":-32000}}`.
+`{"id":N,"result":{...}}` or `{"id":N,"error":{"message":"...","code":-32000,"reason"?:"..."}}`.
 
 | Relay → ext | Result |
 |---|---|
@@ -88,7 +88,7 @@ Requests from the relay carry an integer `id`; the extension answers each with
 | `{"id","type":"detach","tabId"}` | `{}` |
 | `{"id","type":"cdp","tabId","sessionId"?,"method","params"?}` | `{"result":{...}}` = `chrome.debugger.sendCommand({tabId, sessionId}, method, params)`; CDP errors come back as `error` with the CDP code and message |
 | `{"id","type":"systems"}` | `{"systems":[System...]}`: the registered SAP systems (see Systems) |
-| `{"id","type":"logon","system"}` | `{"system","client","user","state","tabId","targetId","message"?}` once logged on (see Systems); a refusal comes back as `error` with SAP's message |
+| `{"id","type":"logon","system","otherLogons"?}` | `{"system","client","user","state","tabId","targetId","reason"?,"message"?}` (see Systems and logging on); a refusal comes back as `error` with a `reason` |
 
 `Tab` = `{"tabId":123,"targetId":"<CDP target id>","url":"...","title":"...","openerTabId"?:122}`.
 
@@ -102,30 +102,178 @@ Messages from the extension without `id`:
 | `{"type":"detached","tabId","reason"}` | `chrome.debugger.onDetach` (`target_closed`, `canceled_by_user`) |
 | `{"type":"ping"}` | every 20 s (keeps the MV3 service worker alive); relay answers `{"type":"pong"}` |
 
-## Systems
+## Systems and logging on
 
 The user registers SAP systems in the popup. A system is
-`{"id","name","url","kind":"webgui"|"fiori"|"other","client","language","user","logon":"password"|"sso"|"manual","open"}`
-as the relay sees it; its password is never part of it. The host of every
-registered system is a shared site (`<scheme>://<host>/*`, any port).
+`{"id","name","url","kind":"webgui"|"fiori"|"other","client","language","user","logon":"password"|"sso"|"manual","open","issue"?}`
+as the relay sees it; its password is never part of it. `issue` is SAP's last
+answer while it stands: `{"reason":"wrong_password"|"user_locked","at"}`.
+The host of every registered system is a shared site (`<scheme>://<host>/*`,
+any port), and those sites are the only tabs the server ever sees: the
+registered systems are the allowed origins. `SAP_ALLOW_ORIGINS` is not
+needed with the extension; when it is set anyway it narrows what the server
+looks at further, and `sap_systems` and `sap_logon` say when it leaves a
+registered system out.
 
-`logon` opens the system (or finds a tab of it that is logged on already:
-`state: "already"`) and logs on:
+### Who starts what
 
-1. The tab is made private first: it is left out of `tabs`, detached from
-   the relay (`tabRemoved` with reason `logon`), and no event or command of
-   it passes until the logon is over. A new tab is opened as `about:blank`
-   and made private before it navigates.
-2. The extension attaches its own `chrome.debugger` session, navigates to
-   the system's address with `sap-client` and `sap-language`, waits for
-   SAP's logon page, and types user and password with `Input.insertText`.
-   When SAP asks whether to end the user's other logons, it keeps them, or
-   gives up; it never ends them.
-3. Before the tab is shared again, every password field of the page is
-   emptied, and a `pagehide` handler empties them if the page is left (the
-   back/forward cache keeps no password).
-4. The answer says who is logged on, or SAP's message. `needs_user`: SAP
-   shows its logon page and no password is saved (the user types it).
+```
+ agent            MCP server (sap_logon)       relay (in the server)        extension (service worker)          Chrome tab           SAP
+   |  sap_logon ECC Dev  |                          |                               |                               |                  |
+   |-------------------->|  extension connected?    |                               |                               |                  |
+   |                     |-- no: Chrome running? ---|  (macOS, Windows: start it,   |                               |                  |
+   |                     |   and wait up to 35 s)   |   SAP_EXTENSION_START_CHROME) |                               |                  |
+   |                     |                          |<== the extension dials in =====|  (every 30 s, at Chrome start, |                  |
+   |                     |                          |    pairing handshake, then     |   or when the popup opens)     |                  |
+   |                     |                          |    encrypted frames            |                               |                  |
+   |                     |-- logon {system,          ->|-- {"type":"logon"} ---------->|  paused? registered?          |                  |
+   |                     |   otherLogons?}           |                               |  a tab of it, logged on, same |                  |
+   |                     |                          |                               |  client and user? -> "already" |                  |
+   |                     |                          |                               |  SAP refused this password    |                  |
+   |                     |                          |                               |  before? -> refuse, type none |                  |
+   |                     |                          |                               |-- private tab (about:blank or |                  |
+   |                     |                          |                               |   the tab at SAP's logon page)->|                 |
+   |                     |                          |  (tab withdrawn: tabRemoved   |-- own chrome.debugger, navigate to url ---------->|
+   |                     |                          |   "logon"; no event passes)    |   ?sap-client&sap-language     |<- logon page ----|
+   |                     |                          |                               |-- type client, language, user, password; submit once ->|
+   |                     |                          |                               |<--------------- Easy Access / launchpad, or SAP's answer |
+   |                     |                          |                               |-- empty every password field, detach,           |
+   |                     |                          |<- tabAdded (shared again) ----|   bring the tab to the front  |                  |
+   |                     |<- {state, user, client,  -|<- result or error {reason} ---|                               |                  |
+   |                     |    targetId} | error      |                               |                               |                  |
+   |                     |-- finds the tab's session (chrome:<targetId>), makes it the active one                   |                  |
+   |<-- "Logged on to ECC Dev as JDOE, client 800" + sessions, or what to ask the user                                |                  |
+   |  sap_look / sap_act on that session (the server drives the tab through the relay's CDP endpoint)                  |                  |
+```
+
+The server never opens, closes or navigates a tab to log on: the extension
+does, and the server only drives the tab once it is shared again. The
+password goes from the keychain (through the helper) to `Input.insertText`
+in that private tab, and nowhere else: not to the relay, the server, the
+agent, a log, or a test fixture.
+
+### When the way is not there
+
+What `sap_logon` (and `sap_systems`) answer, each with the step the agent
+asks the user to take:
+
+| Situation | Answer |
+|---|---|
+| Chrome is not running | macOS and Windows: the server starts the user's own Chrome (`open -a "Google Chrome"`, `start chrome`; no debugging switch, their profile) and waits for the extension. Otherwise, or if it still does not connect: "Google Chrome is not running … ask the user to open Chrome". |
+| Chrome runs, no extension dials in | "not installed, switched off in chrome://extensions, or in another Chrome profile", with the install and pair steps. |
+| The extension dials in with another code | "Ask the user to click the extension's icon and Pair Again". |
+| Another server holds the extension | "Another sap-gui-mcp-server is connected … ask the user to close the other agent". |
+| Sharing is paused | error `paused`: "ask the user to click Resume Sharing in the extension's popup". |
+| The system is not registered | error `not_registered`, with the registered names: "ask the user to open it in Chrome and click Add This SAP Page. Never ask the user for a password." |
+
+### `logon` request and its answers
+
+`{"id","type":"logon","system":"<name or id>","otherLogons"?:"keep"}`. The
+name is matched without case, or by a unique prefix.
+
+Success: `{"system","client","user","state","tabId","targetId","reason"?,"message"?}`:
+
+| `state` | Meaning |
+|---|---|
+| `logged_on` | The extension typed the saved password and SAP showed Easy Access or the launchpad. |
+| `already` | A tab of the system shows SAP logged on (same client and user, where the page tells them: the launchpad's user and client, the address's `sap-client`). It is brought to the front; nothing is typed. This is the "reuse an open tab" rule: a tab at SAP's logon page is not reused for typing (see The logon tab). |
+| `sso` | A single sign-on system showed SAP by itself. |
+| `needs_user` | The user has to act in the tab, which is in front: `reason` `no_password` (no password saved), `sso_logon_page` (single sign-on, but SAP shows its logon page), `identity_provider` (another host asks the user to sign in). `message` says it to the agent. |
+
+Refusals come back as `error` with a `reason`, and a `message` that tells the
+agent what to ask the user (never for the password):
+
+| `reason` | When | The extension |
+|---|---|---|
+| `wrong_password` | SAP's logon page answers "name or password is not correct" | types nothing for this system again (by the server or the popup) until the user saves a new password: no lockout from retries |
+| `user_locked` | "user is locked", "too many failed attempts" | the server does not retry until the user clicks Log On in the popup |
+| `password_change` | SAP asks for a new password | leaves the tab at SAP's form, in front |
+| `multiple_logon` | SAP asks whether to end the user's other logons | leaves the question in the tab. With `otherLogons: "keep"` (after the user said so) it answers "continue without ending"; it never ends other logons |
+| `identity_provider` | a password system goes to another host's sign-in page | types nothing there |
+| `sap_error` | SAP answers with its error page (e.g. "Log on with a dialog user") | passes SAP's text on |
+| `page_changed` | the logon page has no user or password field it knows | the user logs on in the tab |
+| `timeout` | nothing SAP-like within 60 s | the tab stays open |
+| `refused` | any other message on SAP's logon page | passes it on |
+| `paused`, `not_registered`, `password_unreadable` | before anything is opened | |
+
+A refusal that repeats an answer SAP gave earlier (a refused password, a
+lock) opened and typed nothing. The popup shows the standing answer in
+the system's row, with the one action that helps (Update Password).
+
+Each attempt submits SAP's form once. SAP's messages are read only from its
+error elements (`.lsMessageBar--typeError`, `#LOGIN_ERROR_BLOCK`,
+`[role=alert]`…), never its warnings: Web GUI warns about plain HTTP on every
+logon page.
+
+### The logon tab
+
+1. Only a tab of SAP logged on (same client and user) is reused, as it is:
+   nothing is typed. Every logon that types runs in a **new tab**, opened by
+   the extension as `about:blank` with no opener and made private before it
+   navigates: nothing is ever typed into a tab the server had, since a
+   script the server ran in a page (or a window it opened on the same
+   origin) could read the field. The one exception is SAP's question about
+   other logons, answered in its own tab with a click, never a key.
+2. The extension attaches its own `chrome.debugger` session, turns on
+   `Network.setBypassServiceWorker` (a service worker a shared page
+   registered on the origin never serves the logon page), navigates to the
+   system's address with `sap-client` and `sap-language`, and waits for
+   SAP's logon page on the system's own host.
+3. Its scripts run in an **isolated world** (`Page.createIsolatedWorld`):
+   they see the page's document, not its scripts, which therefore cannot
+   patch `focus()` or `querySelector()`. The script that focuses a field
+   checks that the page is the system's own host (and https, when the
+   system's address is) and the top frame, and that the field has the focus; only then does `Input.insertText` type
+   client, user and password. The language is set in SAP's list or field.
+4. The form is submitted once. Whatever SAP answers, every password field
+   is emptied, and a `pagehide` handler empties them if the page is left
+   (the back/forward cache keeps no password). SAP's message is passed on
+   with any occurrence of the password replaced, and cut to 200 characters.
+5. Logged on or not, the tab is brought to the front: the user sees what
+   SAP said.
+
+### Pages with a password field are never shared
+
+A tab that shows a password field (SAP's logon page, its new-password form,
+an identity provider's sign-in page) is never shared with the server: the
+user may type a password there.
+
+- **Tabs the extension opened for a logon** (and so never shared) stay
+  where they are, held back (`tabRemoved` reason `logon`): the extension
+  watches them with its own debugger, with service workers bypassed, and
+  shares them once the field is gone. `needs_user`, `wrong_password`,
+  `password_change` and `identity_provider` leave such a tab with the user.
+- **A tab the server had** that loads such a page (SAP's logon page after a
+  session timeout), or that shows one when the server first attaches: a
+  script the server left in it, or a window of the same origin that holds a
+  reference to it, could read what the user types. So the user does not type
+  there: the tab is emptied (`about:blank`) and closed, and the same address
+  opens in a new tab, held back as above. `attach` answers with an error
+  saying so.
+- The extension's own attachment and the server's never mix: an `attach`
+  that completes after its tab was held back is undone, `cdp` requests and
+  events of a held tab are dropped, and held tabs are restored from
+  `chrome.storage.session` before a restarted worker answers the relay.
+
+**Limits.** The extension finds a password field by looking at the page; it
+cannot stop a page whose scripts the server controls from drawing a
+password field of its own (inside a frame, hidden at first, or a fake
+"session expired" form), and the server runs scripts in shared SAP pages by
+design. The firm guarantee is for passwords the *extension* types: always in
+a tab the server never had. A user who types a password should do so in a
+tab the extension opened (Log On or Open in the popup, or the tab
+`sap_logon` brought to the front).
+
+### Request bodies
+
+`Network.enable` is always sent with `maxPostDataSize: 65536`, so that the
+extension sees a request's body inline. A request whose body names a
+password field (form or JSON), and any request whose body Chrome left out,
+is forwarded without its body, and `Network.getRequestPostData` for it is
+refused. Web GUI's own JSON posts pass as they are.
+
+Only the user adds systems and passwords, in the popup. The relay has no
+request that adds, reads or changes a password or a system.
 
 The password comes from the OS keychain through the helper, or from
 `chrome.storage.local` when there is none. It is never written to sync
