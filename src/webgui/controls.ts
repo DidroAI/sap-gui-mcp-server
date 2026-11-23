@@ -152,6 +152,8 @@ export function setRefusal(c: MarkedControl): string | undefined {
   if (c.type === "GuiPasswordField" || c.inputType === "password") return `${c.sid} is a password field: this server never types a password. Type it yourself.`;
   if (c.type === "GuiOKCodeField") return 'The command field takes {"do":"okcode","value":"..."}, not "set".';
   if (c.type === "GuiGridView") return `${c.sid} is a grid: to type into one of its cells add "row" and "col", e.g. {"do":"set","id":"...","row":0,"col":"<column id>","value":"..."} (the grid's line names the columns whose cells take input).`;
+  if (c.type === "GuiTableControl")
+    return `${c.sid} is a table control: to type into one of its cells add "row" (as the view numbers it) and "col" (column number, title or field name), e.g. {"do":"set","id":"${c.sid}","row":0,"col":"<column>","value":"..."}, or use the cell's own id from the view (<table>/ctxt<FIELD>[col,<row on screen>]).`;
   if (!FIELD_TYPES.has(c.type)) return `${c.sid} is a ${typeName(c.type)}, not a field: "set" types into fields only. Use "press" for a button, "select" for a tab or a menu entry.`;
   if (c.tag !== "INPUT" && c.tag !== "TEXTAREA" && c.type !== "GuiTextEdit" && !c.drawnAsText) return `${c.sid} cannot be typed into (it is shown as text).`;
   return undefined;

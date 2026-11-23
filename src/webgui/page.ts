@@ -542,14 +542,15 @@ export function extractLook(limits: {
           ? prop(capEl.getAttribute("data-ls") ?? "", 1) ||
             norm((capEl as HTMLElement).innerText)
           : "";
-        // Row selectors (the column of buttons at the left): which rows on screen are selected.
+        // Row selectors (the column of buttons at the left): which rows are selected, numbered in the whole table
+        // as its rows are (the screen row plus where the table is scrolled to).
         const tbox = el.getBoundingClientRect();
         const selectors = Array.from(el.querySelectorAll("td[subct='SC'][lsmatrixrowindex]")).filter(
           (td) => Number(td.getAttribute("lsmatrixrowindex")) > 0 && inView(td, tbox),
         );
         const picked = selectors
           .filter(selectorOn)
-          .map((td) => Number(td.getAttribute("lsmatrixrowindex")) - 1)
+          .map((td) => Number(td.getAttribute("lsmatrixrowindex")) - 1 + (Number.isNaN(s.first) ? 0 : s.first))
           .sort((a, b) => a - b);
         const how = /[{,]10:'(MULTI|SINGLE)'/.exec(ls)?.[1];
         const selection = selectors.length

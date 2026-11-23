@@ -36,7 +36,7 @@ describe("1. classic lists read page by page: every line once, title rows once, 
 
   test("ME2L: the last lines, read from the end of the list, keep their numbers", async () => {
     const out = await readRows(listSource(ME2L), "usr", 45, 46);
-    expect(rowLines(out)).toEqual(["  row 45 (cell row 20): Still to be invoiced {6} | 99 {27} | EA {45} | 9,900.00 {48} | USD {65} | 99.00 {70} | % {78}"]);
+    expect(rowLines(out)).toEqual(["  row 45: Still to be invoiced {6} | 99 {27} | EA {45} | 9,900.00 {48} | USD {65} | 99.00 {70} | % {78}"]);
     expect(out.split("\n").at(-1)).toStartWith("  (rows 45 to 45 of 47;");
   });
 
@@ -51,7 +51,7 @@ describe("1. classic lists read page by page: every line once, title rows once, 
     expect(out.split("\n").filter((l) => l.includes("SudaTech GmbH"))).toEqual(["  title 2: Name {0} | SudaTech GmbH {26}"]);
     expect(rows.some((l) => l.includes("2004 {26}"))).toBe(false);
     expect(Math.max(...rows.map(numberOf))).toBe(55);
-    expect(rows.find((l) => l.includes("***"))).toStartWith("  row 55 (cell row 29): ");
+    expect(rows.find((l) => l.includes("***"))).toStartWith("  row 55: ");
     expect(out.split("\n").at(-1)).toStartWith("  (rows 0 to 55 of 56; the control is now scrolled there. Rows are numbered in the whole list (line 0 is the first line below 17 title rows)");
   });
 
@@ -66,13 +66,14 @@ describe("1. classic lists read page by page: every line once, title rows once, 
   });
 });
 
-describe("3. rows are numbered as rows= and scroll count them, with the cell row their ids use", () => {
+describe("3. rows have one number, the one rows= and actions take; the list's line says how a cell id counts", () => {
   test("Web GUI ME2L, first page: lines 0 to 15 on screen rows 5 to 20, so the next range starts at 16", () => {
     const lines = compact(listView({ ...ME2L, webgui: true }, 0)).split("\n");
     const head = lines.find((l) => l.startsWith("usr  list  ")) ?? "";
-    expect(head).toContain('rows numbered in the whole list below its 5 title rows, as "rows" and scroll count them; a cell id counts rows on screen: usr/lbl[col,<cell row>]');
+    expect(head).toContain('rows numbered in the whole list below its 5 title rows: "rows" and "row" in actions take these numbers');
+    expect(head).toContain("row N is usr/lbl[col,N+5] now");
     expect(lines).toContain("  title 1: PO         Type Supplier   Name                                 PGp Order Date {1}");
-    expect(lines.filter((l) => l.startsWith("  row ")).at(-1)).toBe("  row 15 (cell row 20): Still to be invoiced {6} | 910 {27} | PC {45} | 2,730.00 {48} | USD {65} | 100.00 {70} | % {78}");
+    expect(lines.filter((l) => l.startsWith("  row ")).at(-1)).toBe("  row 15: Still to be invoiced {6} | 910 {27} | PC {45} | 2,730.00 {48} | USD {65} | 100.00 {70} | % {78}");
   });
   test("SAP GUI says no title rows: its list rows stay screen rows, and the head says how rows= counts", () => {
     const head = compact(listView(FBL5N, 0)).split("\n").find((l) => l.startsWith("usr  list  ")) ?? "";

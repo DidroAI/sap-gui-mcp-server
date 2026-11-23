@@ -152,6 +152,7 @@ class SapguiDriver implements Driver {
     if (!target) throw missing();
     const id = target.id;
     if (options.rows) {
+      const before = controlBlock(full, id);
       return readRows(
         {
           scrollTo: async (row) => {
@@ -167,6 +168,8 @@ class SapguiDriver implements Driver {
         options.rows.from,
         options.rows.to,
         options.cols,
+        // The control as the screen showed it: a table control goes back there, and rows the range skips are said.
+        before === undefined ? undefined : { block: before, screen: full },
       );
     }
     let block = controlBlock(full, id);

@@ -66,7 +66,11 @@ export function tableCell(screen: Screen, table: Control, row: number, col: unkn
     const p = cellParts(x.id);
     return p?.col === c && p.vrow === vrow;
   });
-  if (!cell) throw new ActionError(`row ${row} of ${table.id} has no cell in column ${c} on screen (the row may be empty and closed for input).`);
+  if (!cell) {
+    const like = tableCells(screen, table).find((x) => cellParts(x.id)?.col === c);
+    const p = like ? cellParts(like.id) : undefined;
+    throw new ActionError(`row ${row} of ${table.id} has no cell in column ${c} on screen (the row may be empty and closed for input).${p ? ` Its cell id would be ${p.table}/${/\/([a-z]+)[^/]*$/.exec(like!.id)?.[1] ?? ""}${p.field}[${c},${vrow}] (a cell id counts rows on the screen).` : ""}`);
+  }
   return { cell };
 }
 

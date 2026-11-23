@@ -56,6 +56,9 @@ do by hand, under their authorisations.
   with `{"do":"grid","id":...,"row":N,"col":"<column>","how":"double"}`.
   Trees: `{"do":"tree","id":...,"node":"<key>","how":"double"}`.
   A cell of an input table or grid: `{"do":"set","id":<table>,"row":N,"col":"<column>","value":...}`.
+  `"row"` is always the number the view prints ("row N:", counted in the
+  whole table or list); the server scrolls to the row. A line of a classic
+  list: `{"do":"dblclick","id":"usr","row":N,"col":<number in braces>}`.
 - **Long lists** show the rows on screen and the total. Move them with
   `{"do":"scroll","id":...,"to":N}` (or `"next"`, `"prev"`, `"first"`,
   `"last"`); read a range with `sap_look` and `"id"`, `"rows": "100-150"`.

@@ -36,8 +36,8 @@ describe("pageOf: the rows of a control, numbered in the whole list", () => {
     expect(p.kind).toBe("table");
     expect(p.total).toBe(171);
     expect(p.rows).toEqual([
-      { n: 60, text: "  row 60 (cell row 0): Name=sixty", cell: 0 },
-      { n: 61, text: "  row 61 (cell row 1): Name=sixty-one", cell: 1 },
+      { n: 60, text: "  row 60: Name=sixty", cell: 0 },
+      { n: 61, text: "  row 61: Name=sixty-one", cell: 1 },
     ]);
   });
   test("a list keeps its title rows apart: they do not scroll", () => {
@@ -45,8 +45,8 @@ describe("pageOf: the rows of a control, numbered in the whole list", () => {
     expect(p.kind).toBe("list");
     expect(p.titles).toEqual(["  title 0: Type {3}"]);
     expect(p.rows).toEqual([
-      { n: 34, text: "  row 34 (cell row 1): AA {3}", cell: 1 },
-      { n: 35, text: "  row 35 (cell row 2): BB {3}", cell: 2 },
+      { n: 34, text: "  row 34: AA {3}", cell: 1 },
+      { n: 35, text: "  row 35: BB {3}", cell: 2 },
     ]);
   });
   test("a tree's nodes are counted from the first one shown", () => {

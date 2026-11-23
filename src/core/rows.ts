@@ -6,8 +6,11 @@
  * A surface gives two functions: scroll the control to a row, and read the
  * control as it is now (its lines of the full view, see `controlBlock`).
  * The answer is in the compact format, with every row under its number in
- * the whole list; a row that is on the screen when the read ends also says
- * its cell row (the row its cell ids name) when that is another number.
+ * the whole table or list: the one number the view prints and actions take
+ * ("row"; the server finds the row's cells on the screen). The cell row a
+ * cell id names is not printed per row: the note at the end says how a
+ * cell id counts. A table control is scrolled back to where it was, so that
+ * a read changes nothing on the screen.
  *
  * Classic lists. A list keeps title rows at the top of its area (column
  * heads, the header block of FBL5N) and scrolls the lines below them: with
@@ -36,7 +39,7 @@ export interface RowSource {
 export interface Row {
   /** Its number in the whole control. */
   n: number;
-  /** The line as written: "  row 60: ...", with the cell row when it differs and the row is on screen. */
+  /** The line as written: "  row 60: ...". */
   text: string;
   /** The row its cell ids name (table control, list), when the control counts rows on the screen. */
   cell?: number;
@@ -54,6 +57,8 @@ export interface Page {
   rows: Row[];
   /** Rows the control has in all, when it says. */
   total: number | undefined;
+  /** Rows `cols` left out because they hold none of the columns (a list). */
+  left?: number;
 }
 
 /** A page as pageOf reads it: also where it is scrolled to and, for a list, its rows by screen row. */
@@ -70,8 +75,8 @@ export interface ReadPage extends Page {
 
 const ROW = /^ {2}(row) (\d+)((?: \((?:selected|total)\))*): /;
 
-/** "  row 60 (cell row 0) (selected): body" from its parts. */
-const rowText = (n: number, flags: string, body: string, cell?: number): string => `  row ${n}${cell !== undefined && cell !== n ? ` (cell row ${cell})` : ""}${flags}: ${body}`;
+/** "  row 60 (selected): body" from its parts: the row's number in the whole table or list, never its cell row. */
+const rowText = (n: number, flags: string, body: string): string => `  row ${n}${flags}: ${body}`;
 
 /**
  * The title rows of a list page as one page tells them: the reader's count
@@ -126,7 +131,7 @@ export function pageOf(block: string, screen?: string, fixedRows?: number): Read
     else if ((kind === "table" || kind === "list") && m) {
       const cell = Number(m[2]);
       const n = first + cell - fixed;
-      rows.push({ n, text: rowText(n, m[3] ?? "", body, cell), cell });
+      rows.push({ n, text: rowText(n, m[3] ?? "", body), cell });
     } else if (kind === "tree") rows.push({ n: first + i++, text: l });
   }
   return { head, frame: lines.slice(0, at), titles, kind, rows, total: Number.isNaN(total) ? undefined : total, first, screen: listed, visible: visible === undefined ? undefined : Number(visible), titleRows };
@@ -202,7 +207,66 @@ export function onlyColumns(page: Page, cols: string[]): Page {
       }),
     };
   }
+  if (page.kind === "list") return listOnly(page, cols, want);
   return page;
+}
+
+/** The cells of a list line as pageOf writes them: "AA {3} | 1.000,00 {53}". */
+const listCells = (body: string): { text: string; c: number }[] =>
+  body.split(" | ").flatMap((cell) => {
+    const m = /^(.*) \{(\d+)\}$/.exec(cell);
+    return m ? [{ text: m[1] ?? "", c: Number(m[2]) }] : [];
+  });
+
+/**
+ * Keeps only some columns of a list (FBL5N "Type,DocumentNo"; before, `cols`
+ * was not applied to lists, live 2026-11-23). A column is named by a title
+ * of the list's heading ("DocumentNo") or by its position in braces ("78").
+ * A heading's column runs from its position to the next heading's; a cell
+ * belongs to the column it overlaps most (amounts are aligned right). Rows
+ * that hold none of the columns (totals, the item lines of ME2L) are left out.
+ */
+function listOnly(page: Page, cols: string[], want: string[]): Page {
+  const heads = page.titles
+    .flatMap((t) => listCells(t.replace(/^ {2}title \d+: /, "")))
+    .sort((a, b) => a.c - b.c);
+  const spans = heads.map((h, i) => ({ title: h.text, from: h.c, to: heads[i + 1]?.c ?? Number.MAX_SAFE_INTEGER }));
+  const picked: { from: number; to: number }[] = [];
+  for (const w of want) {
+    const byTitle = spans.filter((s) => s.title.toLowerCase() === w);
+    if (byTitle.length) picked.push(...byTitle);
+    else if (/^\d+$/.test(w)) picked.push(spans.find((s) => s.from === Number(w)) ?? { from: Number(w), to: Number(w) + 1 });
+  }
+  if (!picked.length)
+    throw new ActionError(
+      `none of the columns ${cols.join(", ")} is in this list: name a column by a title of the list's heading${heads.length ? ` (${heads.map((h) => `${h.text} {${h.c}}`).join(", ")})` : ""} or by its position, the number in braces after a value.`,
+    );
+  const columnOf = (cell: { text: string; c: number }) => {
+    const end = cell.c + Math.max(1, cell.text.length);
+    let best: { from: number; to: number } | undefined;
+    let most = 0;
+    for (const s of spans.length ? spans : picked) {
+      const overlap = Math.min(end, s.to) - Math.max(cell.c, s.from);
+      if (overlap > most) {
+        most = overlap;
+        best = s;
+      }
+    }
+    return best;
+  };
+  const keep = (cell: { text: string; c: number }) => picked.some((p) => (spans.includes(p as (typeof spans)[number]) ? columnOf(cell) === p : cell.c === p.from));
+  let dropped = 0;
+  const rows = page.rows.flatMap((r) => {
+    const m = /^( {2}row \d+(?: \((?:selected|total)\))*: )(.*)$/.exec(r.text);
+    if (!m) return [r];
+    const cells = listCells(m[2] ?? "").filter(keep);
+    if (!cells.length) {
+      dropped++;
+      return [];
+    }
+    return [{ ...r, text: `${m[1]}${cells.map((x) => `${x.text} {${x.c}}`).join(" | ")}` }];
+  });
+  return { ...page, rows, ...(dropped ? { left: dropped } : {}) };
 }
 
 /**
@@ -257,8 +321,25 @@ export function titleRowsOf(pages: { first: number; screen: Map<number, string> 
   return best?.k;
 }
 
+/**
+ * Rows between the last row the screen showed before a read and the first
+ * row of the range asked for: the agent took the last row it saw for
+ * another number (ME2L, P2P-05: "row 15 (cell row 20)", then rows 20-47
+ * were asked for and PO 4500001184 in rows 16 to 19 was never seen). Said
+ * in the answer; "" when the range follows on, or nothing was shown.
+ */
+export function skippedNote(before: Page | undefined, from: number): string {
+  const shown = before?.rows.map((r) => r.n) ?? [];
+  if (!shown.length) return "";
+  const last = Math.max(...shown);
+  if (from <= last + 1 || Math.min(...shown) > last) return "";
+  const a = last + 1;
+  const b = from - 1;
+  return ` The screen showed rows up to ${last}: row${a === b ? ` ${a} is` : `s ${a} to ${b} are`} not in this read ("rows":"${a}-${b}" reads ${a === b ? "it" : "them"}).`;
+}
+
 /** Reads lines `from` to `to` of a classic list: see the head of this file. */
-async function readList(source: RowSource, id: string, from: number, to: number, start: ReadPage): Promise<string> {
+async function readList(source: RowSource, id: string, from: number, to: number, start: ReadPage, cols: string[] | undefined, skipped: string): Promise<string> {
   const pages: ReadPage[] = [start];
   // The line each page was asked for: a page that starts before it is the end of the list.
   const asked: number[] = [from];
@@ -273,6 +354,8 @@ async function readList(source: RowSource, id: string, from: number, to: number,
   };
   const one = start;
   const scrolls = one.visible !== undefined;
+  // Web GUI says how many title rows a list has, and how many lines it has in all.
+  const webgui = /\bbelow \d+ title rows/.test(one.head);
   // One more page, one line further on (or back, at the end): it tells the title rows apart from the lines.
   if (scrolls) {
     const next = await read(one.first + 1);
@@ -281,9 +364,23 @@ async function readList(source: RowSource, id: string, from: number, to: number,
   // The count a page tells, from the top of the list when one is there: Web GUI's page shrinks by one once the
   // list has moved (ECC FBL5N, 2026-11-22), so a scrolled page's "below N title rows" can be one off. A tie-break only.
   const hint = [...pages.filter((p) => p.first === 0), ...pages].map((p) => p.titleRows).find((x) => x !== undefined) ?? 0;
-  let fixed = titleRowsOf(pages, hint) ?? hint;
-  const linesOf = (p: ReadPage) => [...p.screen.entries()].filter(([r]) => r >= fixed).map(([r, text]) => ({ n: p.first + r - fixed, r, text }));
   const total = () => pages[pages.length - 1]?.total;
+  /**
+   * A count that numbers a line at or past the end of the list is too small:
+   * Web GUI's total counts the lines (key 10 of the scrollbar). A blank title
+   * row taken for a line put FBL5N's rows one on and said "of 57" for 56
+   * (live 2026-11-23). SAP GUI's total can be one off: not checked there.
+   */
+  const fits = (k: number): number => {
+    const all = total();
+    if (!webgui || all === undefined) return k;
+    const bottom = Math.max(0, ...pages.flatMap((p) => [...p.screen.keys()]));
+    let n = k;
+    while (n < bottom && pages.some((p) => [...p.screen.keys()].some((r) => r >= n && p.first + r - n >= all))) n++;
+    return n;
+  };
+  let fixed = fits(titleRowsOf(pages, hint) ?? hint);
+  const linesOf = (p: ReadPage) => [...p.screen.entries()].filter(([r]) => r >= fixed).map(([r, text]) => ({ n: p.first + r - fixed, r, text }));
   /**
    * Is line `n` read? A page has read the lines from its first one to the
    * last one it shows (blank lines have no cells); the last page of the list
@@ -304,41 +401,81 @@ async function readList(source: RowSource, id: string, from: number, to: number,
     const p = await read(next);
     // A list that does not move any more.
     if (before.includes(p.first) && !seen(next)) break;
-    fixed = titleRowsOf(pages, hint) ?? fixed;
+    fixed = fits(titleRowsOf(pages, hint) ?? fixed);
   }
   const last = pages[pages.length - 1]!;
   const lines = new Map<number, string>();
   for (const p of pages) for (const l of linesOf(p)) if (!lines.has(l.n)) lines.set(l.n, l.text);
-  // The screen as it is now: its lines say their cell row.
+  // The screen as it is now: where a cell id finds a line.
   const onScreen = new Map(linesOf(last).map((l) => [l.n, l.r]));
-  const rows = [...lines.entries()].filter(([n]) => n >= from && n <= to).sort((a, b) => a[0] - b[0]);
   const top = pages.reduce((a, p) => (p.first < a.first ? p : a), pages[0]!);
   const titles = [...top.screen.entries()].filter(([r]) => r < fixed).sort((a, b) => a[0] - b[0]).map(([r, t]) => `  title ${r}: ${t}`);
   const max = Math.max(-1, ...lines.keys());
   const count = Math.max(total() ?? 0, max + 1);
   const head = `${last.head.replace(/\bbelow \d+ title rows/, `below ${fixed} title rows`)}`;
-  const out = rows.map(([n, t]) => rowText(n, "", t, onScreen.get(n)));
+  let page: Page = {
+    head,
+    frame: last.frame,
+    kind: "list",
+    titles,
+    rows: [...lines.entries()]
+      .filter(([n]) => n >= from && n <= to)
+      .sort((a, b) => a[0] - b[0])
+      .map(([n, t]) => ({ n, text: rowText(n, "", t) })),
+    total: count,
+  };
+  const read0 = page.rows.map((r) => r.n);
+  if (cols?.length) page = onlyColumns(page, cols);
   const firstOn = [...onScreen.entries()].sort((a, b) => a[0] - b[0])[0];
   const where = firstOn
-    ? ` Rows are numbered in the whole list (line 0 is the first line below ${fixed} title row${fixed === 1 ? "" : "s"}), as "rows" and scroll count them; a cell id counts rows on screen: a row on screen now says its cell row (row ${firstOn[0]} is lbl[col,${firstOn[1]}]), scroll to the others before acting on them.`
+    ? ` Rows are numbered in the whole list (line 0 is the first line below ${fixed} title row${fixed === 1 ? "" : "s"}): "rows" and "row" in actions take these numbers. A cell id counts rows on the screen: row ${firstOn[0]} is lbl[col,${firstOn[1]}] now, col in braces.`
     : "";
-  const note = rows.length ? `  (rows ${rows[0]?.[0]} to ${rows[rows.length - 1]?.[0]} of ${count}; the control is now scrolled there.${where})` : `  (no rows ${from} to ${to}: the list has ${count || "fewer"} lines)`;
-  return [...last.frame, head, ...titles, ...out, note].join("\n");
+  const left = page.left ? ` ${page.left} rows that hold none of these columns are left out.` : "";
+  const note = read0.length
+    ? `  (rows ${read0[0]} to ${read0[read0.length - 1]} of ${count}; the control is now scrolled there.${left}${where}${skipped})`
+    : `  (no rows ${from} to ${to}: the list has ${count || "fewer"} lines)`;
+  return [...page.frame, page.head, ...page.titles, ...page.rows.map((r) => r.text), note].join("\n");
 }
 
-export async function readRows(source: RowSource, id: string, from: number, to: number, cols?: string[]): Promise<string> {
+/** Runs of rows that hold nothing on one line: "  rows 25 to 40: (empty)". */
+function foldEmpty(rows: Row[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i]!;
+    if (!/^ {2}row \d+: \(empty\)$/.test(r.text)) {
+      out.push(r.text);
+      continue;
+    }
+    let j = i;
+    while (j + 1 < rows.length && /^ {2}row \d+: \(empty\)$/.test(rows[j + 1]!.text) && rows[j + 1]!.n === rows[j]!.n + 1) j++;
+    out.push(j > i ? `  rows ${r.n} to ${rows[j]!.n}: (empty)` : r.text);
+    i = j;
+  }
+  return out;
+}
+
+/**
+ * Reads rows `from` to `to` of a grid, table control, tree or list.
+ * `before` is the control as the screen showed it before the read (its
+ * block of the full view): a table control is scrolled back there after the
+ * read, and rows the range skips past are said.
+ */
+export async function readRows(source: RowSource, id: string, from: number, to: number, cols?: string[], before?: { block: string; screen: string }): Promise<string> {
+  const prior = before ? pageOf(before.block, before.screen) : undefined;
+  const skipped = skippedNote(prior, from);
   const got = new Map<number, Row>();
   let page: Page | undefined;
+  let read: ReadPage | undefined;
   let next = from;
   for (let n = 0; n < MAX_PAGES && next <= to; n++) {
     await source.scrollTo(next);
     const now = await source.block();
     if (!now) throw new ActionError(`No control "${id}" on this screen any more. Look at the screen again.`);
-    const read = pageOf(now.block, now.screen);
+    read = pageOf(now.block, now.screen);
     page = read;
     if (read.kind === "other") throw new ActionError(`"${id}" has no rows to read: "rows" works on a grid, a table control, a tree or a list.`);
     // A classic list has title rows above the lines that scroll: read apart, see readList.
-    if (read.kind === "list") return readList(source, id, from, to, read);
+    if (read.kind === "list") return readList(source, id, from, to, read, cols, skipped);
     let progress = false;
     let last = -1;
     for (const r of page.rows) {
@@ -352,31 +489,42 @@ export async function readRows(source: RowSource, id: string, from: number, to: 
     next = last + 1;
     if (page.total !== undefined && next >= page.total) break;
   }
-  if (!page) throw new ActionError(`"${id}" could not be read.`);
-  // Rows on the screen now keep their cell row; rows read on an earlier page are not on the screen any more.
-  const here = new Map(page.rows.map((r) => [r.n, r]));
-  for (const [n, r] of got) {
-    const now = here.get(n);
-    if (now) got.set(n, now);
-    else if (r.cell !== undefined) got.set(n, { n, text: r.text.replace(/ \(cell row \d+\)/, "") });
+  if (!page || !read) throw new ActionError(`"${id}" could not be read.`);
+  const table = page.kind === "table";
+  // A table control goes back to where the screen had it: a read changes nothing on the screen (MM03 "Select
+  // View(s)": a read left it scrolled, live 2026-11-23). Its rows keep their numbers either way.
+  let at = read.first;
+  if (table && prior?.kind === "table" && prior.first !== read.first) {
+    await source.scrollTo(prior.first);
+    at = prior.first;
   }
+  // The head says where the table is now.
+  if (table) page = { ...page, head: page.head.replace(/; row 0 here is row \d+ of the table\)$/, ")").replace(/(\(visible [^)]*?)(?:, first \d+)?\)/, (_m, v: string) => `${v}${at ? `, first ${at}` : ""})`) };
   if (cols?.length) {
     const only = onlyColumns({ ...page, rows: [...got.values()] }, cols);
     page = only;
     got.clear();
     for (const r of only.rows) got.set(r.n, r);
   }
-  const rows = [...got.entries()].sort((a, b) => a[0] - b[0]);
+  const rows = [...got.values()].sort((a, b) => a.n - b.n);
   const total = page.total === undefined ? "" : ` of ${page.total}`;
-  const anchor = page.rows.find((r) => r.cell !== undefined);
-  const where =
-    page.kind === "table"
-      ? ` Rows are numbered in the whole table, as "rows" and scroll count them; a cell id counts rows on screen: a row on screen now says its cell row${anchor && anchor.cell !== anchor.n ? ` (row ${anchor.n} is <id>[col,${anchor.cell}])` : ""}, scroll to the others before acting on them.`
+  const scrolledTo = table ? (at === read.first ? " the table is now scrolled there." : ` the table is scrolled back to row ${at}, as it was.`) : " the control is now scrolled there.";
+  const where = table
+    ? ` Rows are numbered in the whole table: "row" in select, set and check takes these numbers, and the server scrolls to the row. A cell id counts rows on the screen instead${at ? `: <id>[col,0] is row ${at} now` : ""}.`
+    : "";
+  // Rows past the last one that holds something, up to the end of the table, are blank lines SAP counts too.
+  const end = page.total === undefined ? undefined : Math.min(to, page.total - 1);
+  const filled = rows.filter((r) => !/: \(empty\)$/.test(r.text)).map((r) => r.n);
+  const lastFilled = filled.length ? Math.max(...filled) : undefined;
+  const allDrawn = read.visible !== undefined && page.total !== undefined && read.first + read.visible >= page.total;
+  const blank =
+    table && end !== undefined && lastFilled !== undefined && lastFilled < end && (allDrawn || rows.some((r) => r.n === end))
+      ? ` Rows ${lastFilled + 1} to ${end} hold nothing: SAP counts ${page.total} rows in this table, blank lines included.`
       : "";
   const note = rows.length
-    ? `  (rows ${rows[0]?.[0]} to ${rows[rows.length - 1]?.[0]}${total}; the control is now scrolled there.${where})`
-    : page.kind === "table" && page.total !== undefined && from < page.total
-      ? `  (rows ${from} to ${Math.min(to, page.total - 1)} hold nothing on the screen: SAP counts ${page.total} rows in this table, blank lines included. If you expect values here, look at the table with its id: it may be outside the part of the page that is drawn.)`
-      : `  (no rows ${from} to ${to}: the control has ${page.total ?? "fewer"} rows)`;
-  return [...page.frame, page.head, ...page.titles, ...rows.map(([, r]) => r.text), note].join("\n");
+    ? `  (rows ${rows[0]?.n} to ${rows[rows.length - 1]?.n}${total};${scrolledTo}${blank}${where}${skipped})`
+    : table && page.total !== undefined && from < page.total
+      ? `  (rows ${from} to ${Math.min(to, page.total - 1)} hold nothing on the screen: SAP counts ${page.total} rows in this table, blank lines included. If you expect values here, look at the table with its id: it may be outside the part of the page that is drawn.${skipped})`
+      : `  (no rows ${from} to ${to}: the control has ${page.total ?? "fewer"} rows${skipped ? `.${skipped}` : ""})`;
+  return [...page.frame, page.head, ...page.titles, ...(table ? foldEmpty(rows) : rows.map((r) => r.text)), note].join("\n");
 }

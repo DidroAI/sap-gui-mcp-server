@@ -105,13 +105,13 @@ describe("compact", () => {
     expect(compact(filled)).not.toContain("no cell of this table");
   });
 
-  test("a table control that is scrolled numbers its rows in the whole table, each with its cell row", () => {
+  test("a table control that is scrolled numbers its rows in the whole table only; its line says how a cell id counts", () => {
     const t = ['wnd[0]/usr/tblT  table  rows 171 (visible 13, first 60); columns: A', 'wnd[0]/usr/tblT/txtZX-A[0,0]  field  A = "1"  (edit)', 'wnd[0]/usr/tblT/txtZX-A[0,1]  field  A = ""  (edit)', 'wnd[0]/usr/tblT/txtZX-A[0,2]  field  A = ""  (edit)'].join("\n");
     expect(compact(t).split("\n")).toEqual([
-      'tblT  table  rows 171 (visible 13, first 60)  (rows numbered in the whole table, as "rows" and scroll count them; a cell id counts rows on screen: <id>[col,<cell row>], e.g. txtZX-A[0,0] is row 60)',
+      'tblT  table  rows 171 (visible 13, first 60)  (rows numbered in the whole table: "row" in actions takes these numbers; a cell id counts rows on the screen: txtZX-A[0,0] is row 60)',
       "  columns: 0 A=txtZX-A",
-      "  row 60 (cell row 0): A=1",
-      "  rows 61 to 62 (cell rows 1 to 2): (empty)",
+      "  row 60: A=1",
+      "  rows 61 to 62: (empty)",
     ]);
     // For core/rows.ts: the screen rows alone, as before.
     expect(compact(t, { screenRows: true }).split("\n")[0]).toBe("tblT  table  rows 171 (visible 13, first 60)  (cell id: <id>[col,row], e.g. txtZX-A[0,0]; row 0 here is row 60 of the table)");
@@ -239,11 +239,11 @@ describe("compact: classic lists", () => {
       "wnd[0]/usr/lbl[3,4]  label  CC",
     ].join("\n");
     expect(compact(webgui).split("\n").slice(2)).toEqual([
-      'usr  list  201 rows (visible 34, first 34, below 2 title rows; scroll for the others)  (rows numbered in the whole list below its 2 title rows, as "rows" and scroll count them; a cell id counts rows on screen: usr/lbl[col,<cell row>], col in braces; rows without braces have their cells in columns 1,3; a checkbox is chk[col,<cell row>])',
+      'usr  list  201 rows (visible 34, first 34, below 2 title rows; scroll for the others)  (rows numbered in the whole list below its 2 title rows: "rows" and "row" in actions take these numbers, e.g. {"do":"dblclick","id":"usr","row":N,"col":<col>}; a cell id counts rows on the screen: row N is usr/lbl[col,N-32] now, col in braces; rows without braces have their cells in columns 1,3; a checkbox is chk[col,...])',
       '  title 0: Entries {0} | "3" {20}',
-      "  row 34 (cell row 2): [ ] | AA",
-      "  row 35 (cell row 3): [x] | BB",
-      "  row 36 (cell row 4): [ ] | CC",
+      "  row 34: [ ] | AA",
+      "  row 35: [x] | BB",
+      "  row 36: [ ] | CC",
     ]);
     // One list alone, whole.
     expect(controlBlock(webgui, "wnd[0]/usr")?.split("\n").length).toBe(11);

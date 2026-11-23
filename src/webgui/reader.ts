@@ -31,7 +31,7 @@ import { checkedNow, clean, clickForRoundtrip, entryFor, clickListLine, clickMen
 import { collectFiles, watchFiles } from "./files.js";
 import { GAVE_UP, gaveUpOn, NO_CANCEL, stillRunning } from "./running.js";
 import { inPageOutcome, LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
-import { chooseEntry, entriesOf, markScrolled, notOnScreen, scrollTo, selectRow } from "./lists.js";
+import { chooseEntry, entriesOf, gridColumnId, listCellId, listScreenRow, markScrolled, notOnScreen, scrollTo, selectRow, tableCellId, tableScreenRow } from "./lists.js";
 import { behindPopup, closedByMessage, popupName, terminationIn, topPopup, transactionOf } from "./popups.js";
 import { extractFacts, extractMenus, markControl, markRow, markSelector, markWindowClose, menuRowOpen, openOverlay, submenuOpen, scrollControl, searchHelps, topWindowOpen } from "./page.js";
 import { checkBeforeAct, focusOf, freshView, guardFacts, isDropdown, kindIn, LOGGED_OFF, loggedOff, look, lookRead, menuLines, readViewer, resolveIn, type ScreenRead, scrollables, VIEWER_TEXT_WHOLE, viewerFrames } from "./screen.js";
@@ -139,7 +139,8 @@ export async function view(session: WebGuiSession, options: LookOptions): Promis
   const sid = resolveIn(read, options.id);
   const full = await withTablesInView(session, read, sid);
   if (options.rows) {
-    if (!controlBlock(full, sid)) throw noControlLook(options.id);
+    const before = controlBlock(full, sid);
+    if (!before) throw noControlLook(options.id);
     return readRows(
       {
         scrollTo: async (row) => {
@@ -155,6 +156,8 @@ export async function view(session: WebGuiSession, options: LookOptions): Promis
       options.rows.from,
       options.rows.to,
       options.cols,
+      // The control as the screen showed it: a table control goes back there, and rows the range skips are said.
+      { block: before, screen: full },
     );
   }
   let block = controlBlock(full, sid);
@@ -335,6 +338,8 @@ export function coveredBy(log: string): string {
 async function run(session: WebGuiSession, a: Action): Promise<string> {
   const page = session.page;
   const id = String(a.id ?? "");
+  const onRow = await rowCellAction(session, a);
+  if (onRow !== undefined) return onRow;
   switch (a.do) {
     case "okcode": {
       const value = String(a.value ?? "");
@@ -472,7 +477,9 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
         if (open === (a.how === "expand")) return `node ${node} is already ${a.how === "expand" ? "expanded" : "collapsed"}: nothing changed`;
       }
       const f = session.frame;
-      const target = { sid: id, row: a.row, node: a.node, col: a.col };
+      // A grid's column by its id or its title, as sap_look's "cols" takes it.
+      const col = a.do === "grid" ? (gridColumnId(await freshView(session), id, a.col) as Action["col"]) : a.col;
+      const target = { sid: id, row: a.row, node: a.node, col };
       let r = await evalLs(session, markRow, target);
       let scrolled = "";
       if (notOnScreen(r) && a.row !== undefined && a.node === undefined) {
@@ -803,6 +810,55 @@ async function chooseSearchHelp(session: WebGuiSession, sid: string, wanted: unk
   return `chose search help "${hit.text}"`;
 }
 
+/** "col" given: a string or a number that is not "". */
+const hasCol = (a: Action): boolean => a.col !== undefined && a.col !== null && String(a.col) !== "";
+
+/**
+ * An action on a cell of a table control or a line of a classic list,
+ * named by the control, "row" (as the view numbers it: in the whole table
+ * or list) and "col": the row is scrolled into view when it is not on the
+ * screen, and the action goes to the cell's own id. Undefined when the
+ * action is not one of these (a row selection is selectRow's).
+ */
+async function rowCellAction(session: WebGuiSession, a: Action): Promise<string | undefined> {
+  const id = String(a.id ?? "");
+  if (a.row === undefined || a.row === null || !id || a.node !== undefined || !/^(set|check|focus|f4|dblclick|grid|select|press)$/.test(a.do)) return undefined;
+  const kind = kindIn(await freshView(session), id);
+  if (kind !== "table" && kind !== "list") return undefined;
+  const row = Number(a.row);
+  const how = a.how ?? "double";
+  const { row: _r, col: _c, how: _h, ...rest } = a;
+  if (kind === "table") {
+    // A row selection: by the row selector (selectRow translates the row).
+    const cellWork = a.do === "set" || a.do === "f4" || a.do === "focus" || ((a.do === "check" || a.do === "dblclick") && hasCol(a)) || (a.do === "grid" && how !== "select");
+    if (!cellWork) return undefined;
+    if (!hasCol(a)) throw new ActionError(`${id} is a table control: "${a.do}" on one of its cells needs "row" (as the view numbers it) and "col" (column number, title or field name), or the cell's own id from the view, e.g. ${id}/ctxt<FIELD>[col,<row on screen>].`);
+    const at = await tableScreenRow(session, id, row);
+    const cell = tableCellId(at.view, id, at.vrow, a.col, row);
+    const doing = a.do === "grid" ? (how === "cell" ? "focus" : "dblclick") : a.do;
+    const done = await run(session, { ...rest, do: doing, id: cell });
+    return `${done} (row ${row}, column ${String(a.col)} of ${id})${at.scrolled}`;
+  }
+  // A classic list: its lines by number; "col" is a position in braces, else the line's first text.
+  if (!/^(dblclick|focus|check|select|grid)$/.test(a.do)) return undefined;
+  let view = await freshView(session);
+  let r = listScreenRow(view, id, row);
+  let scrolled = "";
+  if (r === undefined) {
+    const sc = await scrollTo(session, id, row);
+    view = await look(session);
+    r = listScreenRow(view, id, row);
+    if (typeof sc !== "string") scrolled = ` (scrolled to it)`;
+    if (r === undefined) throw new ActionError(`row ${row} of the list ${id} could not be scrolled onto the screen. sap_look with "id":"${id}" and "rows" reads lines anywhere in the list.`);
+  }
+  const checkbox = a.do === "check";
+  const cell = listCellId(view, id, r, a.col, checkbox);
+  if (!cell) throw new ActionError(`row ${row} of the list ${id} has ${checkbox ? "no checkbox" : hasCol(a) ? `no cell at column ${String(a.col)}` : "no cell"} on the screen (a blank line?). Look at the list: "col" is the number in braces after a value.`);
+  const doing = a.do === "check" ? "check" : a.do === "focus" || (a.do === "grid" && how === "cell") || a.do === "select" ? "focus" : "dblclick";
+  const done = await run(session, { ...rest, do: doing, id: cell });
+  return `${done} (row ${row} of the list)${scrolled}`;
+}
+
 /**
  * Types a value into a cell of a grid: the cell is found as the "grid"
  * action finds it (scrolled to when it is not drawn) and must hold an input
@@ -812,7 +868,7 @@ async function setCell(session: WebGuiSession, a: Action): Promise<string> {
   const f = session.frame;
   const id = String(a.id);
   const row = Number(a.row);
-  const target = { sid: id, row, node: undefined, col: a.col };
+  const target = { sid: id, row, node: undefined, col: gridColumnId(await freshView(session), id, a.col) as Action["col"] };
   let r = await evalLs(session, markRow, target);
   let scrolled = "";
   if (notOnScreen(r)) {

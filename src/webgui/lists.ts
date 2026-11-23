@@ -6,7 +6,7 @@ import type { Locator } from "playwright-core";
 import { ActionError } from "../core/types.js";
 import { clean, evalLs, locate } from "./controls.js";
 import { comboEntries, type MarkedControl, markSelector, type Scrolled, scrollControl } from "./page.js";
-import { freshView, kindIn } from "./screen.js";
+import { freshView, kindIn, look } from "./screen.js";
 import type { WebGuiSession } from "./session.js";
 
 /** A page function's answer for a row that is not drawn. */
@@ -57,19 +57,61 @@ export async function markScrolled<A, R>(session: WebGuiSession, sid: string, ro
 /** The most a row takes to show that its selector was clicked: after this long the click did not change it. */
 const SELECTION_SHOWN_MS = 2000;
 
+/** Where a table control of the view is scrolled to, how many rows it shows and has: from its line. */
+export function tableAt(view: string, sid: string): { first: number; visible: number | undefined; total: number | undefined } | undefined {
+  const line = view.split("\n").find((l) => l.startsWith(`${sid}  table  `));
+  if (!line) return undefined;
+  const num = (re: RegExp) => {
+    const m = re.exec(line)?.[1];
+    return m === undefined ? undefined : Number(m);
+  };
+  return { first: num(/\(visible [^)]*\bfirst (\d+)\)/) ?? 0, visible: num(/\(visible (\d+)/), total: num(/ {2}table {2}rows (\d+)/) };
+}
+
+/**
+ * The screen row of row `row` of a table control (numbered in the whole
+ * table, as the view prints it): the table is scrolled to the row first
+ * when it is not on the screen. A table control's cells and row selectors
+ * count rows on the screen; the agent counts them as the view does (MM03:
+ * "select row 12" selected the row the view called 22, live 2026-11-23).
+ */
+export async function tableScreenRow(session: WebGuiSession, sid: string, row: number): Promise<{ vrow: number; first: number; view: string; scrolled: string }> {
+  if (!Number.isInteger(row) || row < 0) throw new ActionError(`"row" is a row number from 0, as the view numbers the rows of ${sid} (in the whole table).`);
+  let view = await freshView(session);
+  let at = tableAt(view, sid);
+  if (!at) throw new ActionError(`No table control ${sid} on this screen.`);
+  if (at.total !== undefined && row >= at.total) throw new ActionError(`row ${row}: ${sid} has ${at.total} rows (0 to ${at.total - 1}).`);
+  let scrolled = "";
+  const shown = (a: NonNullable<typeof at>) => row >= a.first && (a.visible === undefined || row < a.first + a.visible);
+  if (!shown(at)) {
+    const sc = await scrollTo(session, sid, row);
+    view = await look(session);
+    at = tableAt(view, sid) ?? at;
+    if (typeof sc !== "string") scrolled = scrolledNote({ ...sc, first: at.first });
+    if (!shown(at)) throw new ActionError(`row ${row} of ${sid} could not be scrolled into view (the table shows rows ${at.first} to ${at.first + (at.visible ?? 1) - 1}).`);
+  }
+  return { vrow: row - at.first, first: at.first, view, scrolled };
+}
+
 /**
  * Selects (or deselects) a row of a grid, table control or value-help list
  * by its row selector, the button at the left of the row, as a person
- * clicks it; and reads the state back. A grid row that is not drawn is
- * scrolled to first; a table control counts rows on screen.
+ * clicks it; and reads the state back. `row` is the number the view prints:
+ * in the whole list for a grid, in the whole table for a table control. A
+ * row that is not drawn is scrolled to first.
  */
 export async function selectRow(session: WebGuiSession, sid: string, row: number, on: boolean): Promise<string> {
-  const target = { sid, row };
-  let r = await evalLs(session, markSelector, target);
+  const table = kindIn(await freshView(session), sid) === "table";
   let scrolled = "";
-  if (notOnScreen(r) && kindIn(await freshView(session), sid) !== "table") ({ r, scrolled } = await markScrolled(session, sid, row, markSelector, target, r));
-  if (typeof r === "string")
-    throw new ActionError(notOnScreen(r) ? `${r}: a table control counts its rows on screen (row 0 is the first row shown); scroll it to bring the row into view.` : r);
+  let target = { sid, row };
+  if (table) {
+    const at = await tableScreenRow(session, sid, row);
+    scrolled = at.scrolled;
+    target = { sid, row: at.vrow };
+  }
+  let r = await evalLs(session, markSelector, target);
+  if (notOnScreen(r) && !table) ({ r, scrolled } = await markScrolled(session, sid, row, markSelector, target, r));
+  if (typeof r === "string") throw new ActionError(notOnScreen(r) ? `row ${row} of ${sid} is not on screen: scroll it into view.` : r);
   if (r.selected === on) return `row ${row} of ${sid} was already ${on ? "selected" : "not selected"}: nothing changed${scrolled}`;
   await session.roundtrip(async () => {
     await session.frame.locator("[data-sap-act='selector']").first().click({ timeout: 10000 });
@@ -183,4 +225,128 @@ export async function chooseEntry(session: WebGuiSession, c: MarkedControl, loc:
   if (after && after !== chosen && same(after, chosen)) return `${c.sid} = ${key && !after.startsWith(key) ? `${key} ` : ""}${after}${before === after ? " (it was already chosen)" : ""}`;
   if (after && after !== chosen) throw new ActionError(`${c.sid} shows "${after}" after choosing "${chosen}" (it showed "${before}" before): SAP did not take the entry. Look at the screen.`);
   return `${c.sid} = ${key ? `${key} ` : ""}${chosen}${before === chosen ? " (it was already chosen)" : ""}`;
+}
+
+/** A cell of a table control in the full view: "<table>/<ctl><NAME>[c,r]  <kind>  ...". */
+const TABLE_CELL = /^(.+)\/([a-z]+)([^/[\s]+)\[(\d+),(\d+)\] {2}(\S+)/;
+const norm = (s: string) => s.replace(/\s+/g, " ").replace(/^ | $/g, "").toLowerCase();
+
+/**
+ * The column a "col" names in a table control of the full view: its number
+ * (from 0, as the legend counts), its field name ("RV45A-MABNR", "MABNR",
+ * or the whole cell prefix "ctxtRV45A-MABNR") or its title ("Material").
+ * Throws, naming the columns, when none fits.
+ */
+export function tableColumn(view: string, sid: string, col: unknown): number {
+  const lines = view.split("\n");
+  const head = lines.find((l) => l.startsWith(`${sid}  table  `)) ?? "";
+  const titles = head.includes("columns: ") ? (head.split("columns: ")[1] ?? "").split(" | ").map((t) => t.replace(/^ +| +$/g, "")) : [];
+  const cells = lines.flatMap((l) => {
+    const m = TABLE_CELL.exec(l);
+    return m && m[1] === sid ? [{ ctl: m[2] ?? "", name: m[3] ?? "", c: Number(m[4]) }] : [];
+  });
+  const raw = typeof col === "number" ? String(col) : typeof col === "string" ? col.replace(/^ +| +$/g, "") : "";
+  if (/^\d+$/.test(raw)) {
+    const n = Number(raw);
+    if (n < titles.length || cells.some((x) => x.c === n)) return n;
+  } else if (raw) {
+    const want = raw.toLowerCase();
+    const field = cells.find((x) => `${x.ctl}${x.name}`.toLowerCase() === want || x.name.toLowerCase() === want || x.name.toLowerCase().endsWith(`-${want}`));
+    if (field) return field.c;
+    const title = titles.findIndex((t) => norm(t) === norm(raw));
+    if (title >= 0) return title;
+  }
+  const fields = new Map(cells.map((x) => [x.c, `${x.ctl}${x.name}`]));
+  const known = titles.length ? titles.map((t, i) => `${i} ${t || "?"}${fields.has(i) ? `=${fields.get(i)}` : ""}`) : [...fields].sort((a, b) => a[0] - b[0]).map(([i, f]) => `${i}=${f}`);
+  throw new ActionError(`${sid} has no column "${raw}". "col" is a column number, title or field name: ${known.join(", ")}.`);
+}
+
+/**
+ * The id of the cell of a table control at screen row `vrow` in the column
+ * "col" names, from the full view; the cell id form is named when the row
+ * has no cell there.
+ */
+export function tableCellId(view: string, sid: string, vrow: number, col: unknown, row = vrow): string {
+  const c = tableColumn(view, sid, col);
+  const lines = view.split("\n");
+  const inCol = lines.flatMap((l) => {
+    const m = TABLE_CELL.exec(l);
+    return m && m[1] === sid && Number(m[4]) === c ? [{ id: l.split("  ", 1)[0] ?? "", ctl: m[2] ?? "", name: m[3] ?? "", r: Number(m[5]) }] : [];
+  });
+  const hit = inCol.find((x) => x.r === vrow);
+  if (hit) return hit.id;
+  const like = inCol[0];
+  throw new ActionError(
+    `row ${row} of ${sid} has no cell in column ${c} on the screen (an empty row that takes no input, or a column scrolled out sideways).${like ? ` Its cell id would be ${sid}/${like.ctl}${like.name}[${c},${vrow}] (a cell id counts rows on the screen).` : ""}`,
+  );
+}
+
+/** Where a classic list of the view is scrolled to and how its rows are numbered, from its line. */
+export function listAt(view: string, sid: string): { first: number; visible: number | undefined; titles: number | undefined } | undefined {
+  const line = view.split("\n").find((l) => l.startsWith(`${sid}  list  `));
+  if (!line) return undefined;
+  const num = (re: RegExp) => {
+    const m = re.exec(line)?.[1];
+    return m === undefined ? undefined : Number(m);
+  };
+  const visible = num(/\(visible (\d+)/);
+  // As the compact view numbers it: a list that scrolls and says its title rows (Web GUI) in the whole list,
+  // else by its rows on the screen.
+  const titles = visible === undefined ? undefined : num(/\bbelow (\d+) title rows/);
+  return { first: num(/\bfirst (\d+)/) ?? 0, visible, titles };
+}
+
+/**
+ * The screen row of row `row` of a classic list, numbered as the compact
+ * view numbers it; undefined when the row is not on the screen now.
+ */
+export function listScreenRow(view: string, sid: string, row: number): number | undefined {
+  const at = listAt(view, sid);
+  if (!at) return undefined;
+  if (at.titles === undefined) return row;
+  const r = row - at.first + at.titles;
+  if (r < at.titles || (at.visible !== undefined && r >= at.titles + at.visible)) return undefined;
+  return r;
+}
+
+/**
+ * The id of a cell of a list line at screen row `r`: the one at column
+ * `col` (exact, else the cell that covers it), the first checkbox for
+ * `checkbox`, else the first cell with text.
+ */
+export function listCellId(view: string, sid: string, r: number, col: unknown, checkbox = false): string | undefined {
+  const cells = view.split("\n").flatMap((l) => {
+    const m = /^(\S+)\/(lbl|chk|txt|ctxt)\[(\d+),(\d+)\] {2}(?:label {2}|checkbox {2}|field {2})?(.*)$/.exec(l);
+    return m && m[1] === sid && Number(m[4]) === r ? [{ id: `${sid}/${m[2]}[${m[3]},${m[4]}]`, kind: m[2] ?? "", c: Number(m[3]), text: m[5] ?? "" }] : [];
+  });
+  cells.sort((a, b) => a.c - b.c);
+  const raw = typeof col === "number" ? String(col) : typeof col === "string" ? col.replace(/^ +| +$/g, "") : "";
+  if (/^\d+$/.test(raw)) {
+    const n = Number(raw);
+    return (cells.find((x) => x.c === n && (!checkbox || x.kind === "chk")) ?? cells.find((x) => x.c <= n && n < x.c + Math.max(1, x.text.length) && (!checkbox || x.kind === "chk")))?.id;
+  }
+  if (checkbox) return cells.find((x) => x.kind === "chk")?.id;
+  return (cells.find((x) => x.kind !== "chk" && x.text) ?? cells[0])?.id;
+}
+
+/**
+ * The column id of an ALV grid that "col" names, from the grid's line of
+ * the full view ("columns: VBELN=Sales Document | NETWR=Net Value (Item)"):
+ * the id itself, or a title, as sap_look's "cols" takes them (before, a
+ * title was refused by "grid": live 2026-11-23, VA05). "col" as it is when
+ * neither fits (the page names the columns then).
+ */
+export function gridColumnId(view: string, sid: string, col: unknown): unknown {
+  if (typeof col !== "string" || !col.trim()) return col;
+  const line = view.split("\n").find((l) => l.startsWith(`${sid}  grid  `));
+  if (!line?.includes("; columns: ")) return col;
+  const columns = (line.slice(line.indexOf("; columns: ") + 11).split("; ")[0] ?? "").split(" | ").map((c) => {
+    const at = c.indexOf("=");
+    return at < 0 ? { id: c, title: "" } : { id: c.slice(0, at), title: c.slice(at + 1) };
+  });
+  const want = col.trim();
+  const byId = columns.find((c) => c.id === want) ?? columns.find((c) => c.id.toLowerCase() === want.toLowerCase());
+  if (byId) return byId.id;
+  const byTitle = columns.find((c) => norm(c.title) === norm(want));
+  return byTitle ? byTitle.id : col;
 }
