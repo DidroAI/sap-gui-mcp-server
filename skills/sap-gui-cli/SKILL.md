@@ -16,7 +16,7 @@ screen** (to find an id, read values, see a list).
 ```
 $ sap-gui act set ctxtVBAK-AUART OR
 did set
-CHANGED 1 of 48 lines (same screen; sap_look shows all of it):
+CHANGED 1 of 48 lines on VA01 · "Create Standard Order: Overview" (same screen; sap_look shows all of it):
 screen: .sap-gui/screens/7-act.txt
 ```
 

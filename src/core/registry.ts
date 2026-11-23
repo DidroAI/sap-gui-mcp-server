@@ -3,7 +3,7 @@
  * driver per session, checked each time it is used.
  */
 import { systemAllowed, type Policy } from "./guard.js";
-import type { Driver, SessionInfo, Surface, SurfaceName } from "./types.js";
+import { type Driver, NotOpenYet, type SessionInfo, type Surface, type SurfaceName } from "./types.js";
 
 const SURFACE_NAMES: readonly string[] = ["sapgui", "webgui", "fiori"] satisfies SurfaceName[];
 
@@ -19,6 +19,8 @@ export interface Discovery {
   errors: string[];
   /** Did every surface fail? */
   allFailed: boolean;
+  /** With no session found: what a surface says the user has to do (the SAP window is open, log on there). */
+  hint?: string;
 }
 
 export interface Attached {
@@ -30,6 +32,7 @@ export class Registry {
   private drivers = new Map<string, Driver>();
   private last: SessionInfo[] = [];
   private lastErrors: string[] = [];
+  private lastHint: string | undefined;
   active: string | undefined;
 
   constructor(
@@ -40,22 +43,30 @@ export class Registry {
   /** Every session the surfaces find now; sessions of systems outside SAP_ALLOW_SYSTEMS are left out. */
   async discover(): Promise<Discovery> {
     const failed = new Map<string, string[]>();
-    const found = (
-      await Promise.all(
-        this.surfaces.map((s) =>
-          s.discover().catch((e: unknown) => {
-            const message = (e as Error).message;
-            failed.set(message, [...(failed.get(message) ?? []), s.name]);
+    /** Surfaces that would have to open their browser window first. */
+    const closed: Surface[] = [];
+    const ask = (surfaces: Surface[], quiet: boolean) =>
+      Promise.all(
+        surfaces.map((s) =>
+          s.discover({ quiet }).catch((e: unknown) => {
+            if (quiet && e instanceof NotOpenYet) closed.push(s);
+            else {
+              const message = (e as Error).message;
+              failed.set(message, [...(failed.get(message) ?? []), s.name]);
+            }
             return [] as SessionInfo[];
           }),
         ),
-      )
-    ).flat();
+      );
+    let found = (await ask(this.surfaces, true)).flat();
+    // Nothing is open anywhere: now the SAP window is opened, for the user to log on in.
+    if (!found.length && closed.length) found = (await ask(closed, false)).flat();
     const errors = [...failed].map(([message, names]) => `${names.join(", ")}: ${message}`);
     const failures = [...failed.values()].reduce((n, names) => n + names.length, 0);
     const sessions = found.filter((s) => systemAllowed(this.policy, s));
     this.last = sessions;
     this.lastErrors = errors;
+    this.lastHint = sessions.length || found.length ? undefined : this.surfaces.map((s) => s.whenEmpty?.()).find(Boolean);
     // Drop drivers of sessions that are gone, or that another surface owns now.
     for (const [key, d] of this.drivers)
       if (!sessions.some((s) => keyOf(s) === key)) {
@@ -63,7 +74,7 @@ export class Registry {
         await d.close().catch(() => {});
       }
     if (!this.active || !sessions.some((s) => s.id === this.active)) this.active = sessions[0]?.id;
-    return { sessions, hidden: found.length - sessions.length, errors, allFailed: this.surfaces.length > 0 && failures === this.surfaces.length };
+    return { sessions, hidden: found.length - sessions.length, errors, allFailed: this.surfaces.length > 0 && failures === this.surfaces.length, ...(this.lastHint ? { hint: this.lastHint } : {}) };
   }
 
   /**
@@ -100,6 +111,7 @@ export class Registry {
     const why = this.lastErrors.length ? ` Discovery failed: ${this.lastErrors.join(" | ")}` : "";
     if (ref) return new Error(`No open SAP session matches "${ref}". Call sap_sessions to list them.${why}`);
     if (why) return new Error(`No open SAP session found.${why}`);
+    if (this.lastHint) return new Error(`No open SAP session found. ${this.lastHint}`);
     return new Error("No open SAP session found. Open SAP GUI, or a Web GUI or Fiori tab in Chrome (see sap_sessions for how the server finds them).");
   }
 

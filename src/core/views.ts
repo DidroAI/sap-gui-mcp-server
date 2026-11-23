@@ -60,7 +60,9 @@ export class Views {
           if (popupOver(prev, view)) continue;
           break;
         }
-        const d = diffViews(prev, view, i < kept.length - 1 ? " since you last saw this screen, before the popup" : "");
+        // The popups that closed since: the top window of each view given after this screen.
+        const closed = [...new Set(kept.slice(i + 1).map((v) => v.split("\n").filter((l) => l.startsWith("WINDOW ")).at(-1) ?? "").filter(Boolean))];
+        const d = diffViews(prev, view, "", closed);
         if (d.text.length <= view.length * WORTH_IT) answer = d.text;
         break;
       }

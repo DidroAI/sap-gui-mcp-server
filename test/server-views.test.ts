@@ -44,10 +44,10 @@ describe("sap_act answers with what changed", () => {
     const s = surface.add({ id: "chrome:1", system: "XYZ", transaction: "ZT01" }, { view: screen(), onAct: (a, x) => void (x.view = screen(String(a.value))) });
     expect((await call("sap_look")).text).toBe(screen());
     const r = await call("sap_act", { action: { do: "set", id: "ctxtZHDR-TYPE", value: "AB" } });
-    expect(r.text).toBe('did set\n\nCHANGED 1 of 9 lines (same screen; sap_look shows all of it):\n~ ctxtZHDR-TYPE  field  Order Type = "AB"  (edit)');
+    expect(r.text).toBe('did set\n\nCHANGED 1 of 9 lines on ZT01 · "Synthetic Order: Initial Screen" (same screen; sap_look shows all of it):\n~ ctxtZHDR-TYPE  field  Order Type = "AB"  (edit)');
     // The next answer counts from that one.
     delete s.onAct;
-    expect((await call("sap_act", { action: { do: "set", id: "ctxtZHDR-TYPE", value: "AB" } })).text).toBe("did set\n\nNO CHANGE on the screen (9 lines; sap_look shows it).");
+    expect((await call("sap_act", { action: { do: "set", id: "ctxtZHDR-TYPE", value: "AB" } })).text).toBe("did set\n\nNO CHANGE on ZT01 · \"Synthetic Order: Initial Screen\" (9 lines; sap_look shows it).");
   });
   test("a new screen is always whole", async () => {
     const { surface, call } = await setup();
@@ -78,9 +78,9 @@ describe("sap_look", () => {
     const s = surface.add({ id: "chrome:1", system: "XYZ", transaction: "ZT01" }, { view: screen() });
     expect((await call("sap_look")).text).toBe(screen());
     expect((await call("sap_look")).text).toBe(screen());
-    expect((await call("sap_look", { diff: true })).text).toBe("NO CHANGE on the screen (9 lines; sap_look shows it).");
+    expect((await call("sap_look", { diff: true })).text).toBe('NO CHANGE on ZT01 · "Synthetic Order: Initial Screen" (9 lines; sap_look shows it).');
     s.view = screen("", "E: Enter an order type");
-    expect((await call("sap_look", { diff: true })).text).toBe("CHANGED 1 of 10 lines (same screen; sap_look shows all of it):\n+ sbar  status  E: Enter an order type");
+    expect((await call("sap_look", { diff: true })).text).toBe('CHANGED 1 of 10 lines on ZT01 · "Synthetic Order: Initial Screen" (same screen; sap_look shows all of it):\n+ sbar  status  E: Enter an order type');
   });
   test("full: true gives the full view, and later changes are counted from it", async () => {
     const { surface, call } = await setup();

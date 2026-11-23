@@ -86,11 +86,28 @@ describe("finding a running Chrome", () => {
     }
   });
   test("with nothing configured and no browser allowing it, the server attaches to nothing: port 9222 is not tried", async () => {
-    const e = await chromeTabs({ CHROME_CONFIG_HOME: "/nonexistent-sap-gui-mcp", XDG_CONFIG_HOME: "/nonexistent-sap-gui-mcp", HOME: "/nonexistent-home" }).catch((x: Error) => x.message);
+    const e = await chromeTabs({ SAP_BROWSER: "attach", CHROME_CONFIG_HOME: "/nonexistent-sap-gui-mcp", XDG_CONFIG_HOME: "/nonexistent-sap-gui-mcp", HOME: "/nonexistent-home" }).catch((x: Error) => x.message);
     // Whatever listens on 9222 on this machine, the answer is "no Chrome", with the steps to take.
     expect(e).toContain("No Chrome to attach to.");
     expect(e).toContain("SAP_CHROME_CDP");
     expect(e).toContain("--user-data-dir");
     expect(e).not.toContain("9222: answers");
+  });
+});
+
+describe("an http endpoint that serves no /json/version", () => {
+  // macOS, 2026-11-22: Chrome allowed remote debugging from chrome://inspect, where http://127.0.0.1:9222/json/version
+  // is a 404. Playwright's connection then left an unhandled socket error and doctor ended with a Node stack trace.
+  test("is refused with the reason, and the process carries on", async () => {
+    const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("not found", { status: 404 }) });
+    try {
+      const e = await chromeTabs({ SAP_CHROME_CDP: `http://127.0.0.1:${server.port}` }).catch((x: Error) => x.message);
+      expect(e).toContain("No Chrome answers at SAP_CHROME_CDP");
+      expect(e).toContain("/json/version answers 404");
+      expect(e).toContain("chrome://inspect");
+      await Bun.sleep(200);
+    } finally {
+      server.stop(true);
+    }
   });
 });

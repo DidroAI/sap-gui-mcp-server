@@ -163,3 +163,16 @@ describe("readRows: a classic list whose page shrinks once it moves (live 2026-1
     expect(got.every(([n, item]) => n === item)).toBe(true);
   });
 });
+
+describe("a column that is not there: the error lists the columns close to it (Astra's review, 2026-11-23)", () => {
+  const cols = ["MANDT=Client", "LAND1=Country", "LAENG=Length", "LAENG2=Length of postal code", "BREIT=Width", "LNPLZ=Postal code length", "WAERS=Currency"];
+  const grid: Page = { head: `cntlG/shell  grid  3 rows; columns: ${cols.join(" | ")}`, frame: [], titles: [], kind: "grid", rows: [], total: 3 };
+  test("only the columns whose id or title holds a word of the name", () => {
+    expect(() => onlyColumns(grid, ["length code"])).toThrow(
+      "none of the columns length code is in this grid: the columns close to it are LAENG=Length | LAENG2=Length of postal code | LNPLZ=Postal code length (3 of 7).",
+    );
+  });
+  test("no column close to it: all of them", () => {
+    expect(() => onlyColumns(grid, ["XYZ"])).toThrow(`its columns are ${cols.join(" | ")}.`);
+  });
+});
