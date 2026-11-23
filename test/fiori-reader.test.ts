@@ -175,3 +175,33 @@ describe("ui5Control", () => {
     expect(ui5Control({ handle: "Approved", op: "fill", value: "x" }).status).toBe("NOTFIT");
   });
 });
+
+describe("ui5Look: the page named as shown, tiles without placeholder numbers", () => {
+  test("the launchpad home while the address names an app that did not open (expired logon, live 2026-11-23)", () => {
+    installPage([new FakeControl({ type: "sap.m.Title", id: "t", props: { text: "To-Dos" } })], { title: "Home", hash: "#PurchaseOrder-manage" });
+    const g = globalThis as unknown as { sap: Record<string, unknown> };
+    g.sap.ushell = { Container: { getService: () => ({ getCurrentApplication: () => ({ homePage: true }) }) } };
+    expect(ui5Look({ compact: true }).split("\n")[0]).toBe("PAGE Home (#Shell-home, the launchpad home: #PurchaseOrder-manage was asked for and has not opened)");
+  });
+  test('a tile is its own line: no TileContent, no NumericContent "1234"', () => {
+    const tile = new FakeControl({ type: "sap.m.GenericTile", id: "__tile72", isA: ["sap.m.GenericTile"], props: { header: "Manage Sales Orders" }, handlers: { press: ["p"] } });
+    const tc = new FakeControl({ type: "sap.m.TileContent", id: "__xmlview14--numericTileContent", isA: ["sap.m.TileContent"], parent: tile, tooltip: "1234" });
+    const nc = new FakeControl({ type: "sap.m.NumericContent", id: "__content119", isA: ["sap.m.NumericContent"], parent: tc, props: { value: "1234" }, methods: { getValue: () => "1234" } });
+    installPage([tile, tc, nc], { title: "Search", hash: "#Action-search" });
+    const v = ui5Look({ compact: true });
+    expect(v).toContain("GenericTile #__tile72");
+    expect(v).not.toContain("1234");
+  });
+});
+
+describe("ui5Look: FILTERS, the values a list report's filter bar holds", () => {
+  test("a token left from before is named at the top (live 2026-11-23 #34: 0 rows for own drafts)", () => {
+    const bar = new FakeControl({ type: "sap.ui.comp.smartfilterbar.SmartFilterBar", id: "listReportFilter", isA: ["sap.ui.comp.filterbar.FilterBar"] });
+    const token = { getText: () => "=4500000509" };
+    const po = new FakeControl({ type: "sap.ui.comp.smartfilterbar.SFBMultiInput", id: "listReportFilter-filterItemControl_BASIC-PurchaseOrder", isA: ["sap.m.MultiInput", "sap.m.InputBase"], parent: bar, props: { value: "", placeholder: "Purchase Order" }, methods: { getTokens: () => [token], getValue: () => "", getPlaceholder: () => "Purchase Order" } });
+    const sup = new FakeControl({ type: "sap.ui.comp.smartfilterbar.SFBMultiInput", id: "listReportFilter-filterItemControl_BASIC-Supplier", isA: ["sap.m.MultiInput", "sap.m.InputBase"], parent: bar, props: { value: "" }, methods: { getTokens: () => [], getValue: () => "" } });
+    installPage([bar, po, sup], { title: "Manage Purchase Orders", hash: "#PurchaseOrder-manage&/" });
+    const lines = ui5Look({ compact: true }).split("\n");
+    expect(lines[1]).toBe('FILTERS Purchase Order "=4500000509"  (set in the filter bar, maybe from before: they apply with Go)');
+  });
+});

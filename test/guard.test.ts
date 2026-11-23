@@ -127,3 +127,19 @@ describe("a second write refusal in a session is one line", () => {
     expect(again.refused.length).toBeLessThan(first.refused.length / 2);
   });
 });
+
+describe("a refusal on Fiori gives Fiori's way out", () => {
+  test("Discard Draft, Back or #Shell-home; no okcode, no F3 (live 2026-11-23 #30)", () => {
+    const policy = policyFromEnv({});
+    const action = normalizeAction({ do: "press", id: "edit" });
+    const assessment = { risk: "commit" as const, reason: 'objectpageheaderactionbutton "Edit": creates a draft on the server' };
+    for (const again of [false, true]) {
+      const v = decide(policy, action, assessment, again, true);
+      if (v.run || !("refused" in v)) throw new Error("not refused");
+      expect(v.refused).toContain("Discard Draft");
+      expect(v.refused).toContain("#Shell-home");
+      expect(v.refused).not.toContain("okcode");
+      expect(v.refused).not.toContain("F3");
+    }
+  });
+});

@@ -15,7 +15,7 @@ import { type Action, ActionError, type Assessment, type DiscoverOptions, type D
 import { extractFacts, type PageFacts } from "./page.js";
 import { act, assess, look, view } from "./reader.js";
 import { runningSince } from "./running.js";
-import { hintsOnce, lookRead } from "./screen.js";
+import { lookRead } from "./screen.js";
 import { endedText, WebGuiSession } from "./session.js";
 
 export { assessAction } from "./assess.js";
@@ -126,7 +126,7 @@ export async function webguiView(session: WebGuiSession, options: LookOptions): 
     // The whole screen: the end of the session, the screen and the lock come from one read of the page.
     const r = await lookRead(session, true);
     if (r.ended) return endedView(r.ended);
-    const text = options.compact ? hintsOnce(compact(r.text), session.hints) : r.text;
+    const text = options.compact ? compact(r.text) : r.text;
     return r.locked === true ? `${text}\n${STILL_WORKING}${runningSince(session)}` : text;
   }
   const gone = await session.ended();

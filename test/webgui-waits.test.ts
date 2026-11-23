@@ -204,6 +204,24 @@ describe.skipIf(!exe)("waits of a Web GUI action", () => {
     expect(await page.evaluate(() => (window as unknown as { reloaded?: boolean }).reloaded)).toBe(true);
   });
 
+  test("a list that opens over the button after the action began is closed, and the click made again (S/4 ME23N, live 2026-11-23 #11)", async () => {
+    await open();
+    await page.evaluate(() => {
+      // The list of earlier entries comes with its own round trip, a moment after the field was typed into.
+      setTimeout(() => {
+        const r = (document.getElementById("CANCEL") as HTMLElement).getBoundingClientRect();
+        const list = document.getElementById("LIST") as HTMLElement;
+        list.innerHTML = '<span class="entry">4500000028</span>';
+        Object.assign(list.style, { display: "block", top: `${r.top - 5}px`, left: `${r.left - 5}px`, width: `${r.width + 40}px`, height: `${r.height + 10}px`, background: "white" });
+      }, 150);
+    });
+    await page.waitForTimeout(200);
+    const r = await timed(() => act(session, { do: "press", id: "btn[12]" }));
+    expect(r.note).toStartWith("pressed wnd[0]/tbar[0]/btn[12]");
+    expect(await posted()).toEqual(["vkey/12"]);
+    expect(r.ms).toBeLessThan(8000);
+  });
+
   test("a key that sends nothing answers at once and says so", async () => {
     await open();
     const r = await timed(() => act(session, { do: "key", key: 2 }));

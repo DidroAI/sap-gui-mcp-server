@@ -5,7 +5,8 @@
  * take "cols"; an empty list cell keeps its place; a cell printed twice is
  * printed once; a cell of a table control is found by row and column.
  */
-import { hintsOnce } from "../src/webgui/screen.js";
+import { Views } from "../src/core/views.js";
+import { hintsOnce } from "../src/core/views.js";
 import { describe, expect, test } from "bun:test";
 import { compact } from "../src/core/compact.js";
 import { readRows, type RowSource } from "../src/core/rows.js";
@@ -216,5 +217,30 @@ describe("long hints once per visit to a screen (live 2026-11-23: 480 and 700 ch
     expect(again[2]).toBe("usr  list  40 rows (visible 16, below 17 title rows; scroll for the others)  (rows numbered in the whole list; row N is usr/lbl[col,N+17]; cells in columns 1,6,11; as explained before)");
     expect(again[3]).toBe("tblX  table  rows 2 (visible 2); columns: as listed before  (cell id: <id>[col,row], e.g. ctxtA[0,0])");
     expect(hintsOnce(view("100"), memory)).toBe(view("100"));
+  });
+});
+
+describe("hints once, counted in what the agent is given (Views.present)", () => {
+  const legend = `  columns: ${Array.from({ length: 14 }, (_, i) => `${i + 1} Col${i}=ctxtMEPO1211-F${i}`).join(", ")}`;
+  const screen = (qty: string) =>
+    [
+      "TRANSACTION ME21N  PROGRAM SAPLMEGUI  SCREEN 14",
+      'WINDOW wnd[0]  "Create Purchase Order"',
+      'ctxtMEPO_TOPLINE-SUPERFIELD  field  Supplier = "1000"  (edit)',
+      "tblSAPLMEGUITC_1211  table  rows 15 (visible 8); rows can be selected  (cell id: <id>[col,row], e.g. txtMEPO1211-EBELP[1,0])",
+      legend,
+      `  row 0: Material=100-100; PO Quantity=${qty}`,
+    ].join("\n");
+  test("the first answer has the columns whole; a diff of the table after it says 'as listed before' (ME21N #18, #19)", () => {
+    const views = new Views("diff");
+    expect(views.present("s", screen("5"))).toContain(legend);
+    const d = views.present("s", screen("6"));
+    expect(d).not.toContain(legend);
+    expect(d).toContain("columns: as listed before");
+  });
+  test("a session's first answer on a screen has the whole hint, however often the server read the screen before", () => {
+    const views = new Views("diff");
+    expect(views.present("other", screen("5"))).toContain(legend);
+    expect(views.present("s", screen("5"))).toContain(legend);
   });
 });

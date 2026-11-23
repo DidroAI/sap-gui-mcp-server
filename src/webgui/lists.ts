@@ -292,6 +292,39 @@ export function tableCellId(view: string, sid: string, vrow: number, col: unknow
   );
 }
 
+/**
+ * The cell of table control `sid` at screen row `vrow` in column `col`; a
+ * column scrolled out sideways is scrolled to first (ME21N "Plnt" behind
+ * 14 columns, live 2026-11-23: the set failed). Nothing is clicked: the
+ * table moves by its horizontal scrollbar. Throws as tableCellId when the
+ * column cannot be brought onto the screen.
+ */
+export async function tableCellScrolled(session: WebGuiSession, view: string, sid: string, vrow: number, col: unknown, row: number): Promise<{ cell: string; view: string; sideways: string }> {
+  try {
+    return { cell: tableCellId(view, sid, vrow, col, row), view, sideways: "" };
+  } catch (e) {
+    const c = tableColumn(view, sid, col);
+    let now = view;
+    for (let i = 0; i < 12; i++) {
+      const shown = now.split("\n").flatMap((l) => {
+        const m = TABLE_CELL.exec(l);
+        return m && m[1] === sid ? [Number(m[4])] : [];
+      });
+      // The column is on the screen (the row has no cell there: an empty row), or nothing tells the way.
+      if (!shown.length || shown.includes(c)) break;
+      const r = await scrollTo(session, sid, c > Math.max(...shown) ? "right" : "left");
+      if (typeof r === "string" || r.first === r.from) break;
+      now = await look(session);
+      try {
+        return { cell: tableCellId(now, sid, vrow, col, row), view: now, sideways: " (scrolled sideways to the column)" };
+      } catch {
+        /* one more page */
+      }
+    }
+    throw e;
+  }
+}
+
 /** Where a classic list of the view is scrolled to and how its rows are numbered, from its line. */
 export function listAt(view: string, sid: string): { first: number; visible: number | undefined; titles: number | undefined } | undefined {
   const line = view.split("\n").find((l) => l.startsWith(`${sid}  list  `));

@@ -620,7 +620,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     if (action.do === "open" && info.surface !== "fiori")
       throw new ActionError('open works in a Fiori launchpad tab only (sap_sessions lists the tabs). On an SAP GUI or Web GUI screen, open a transaction with {"do":"okcode","value":"/n<transaction>"}.');
     const assessment = await driver.assess(action);
-    const verdict = decide(policy, action, assessment, writeRefused.has(info.id));
+    const verdict = decide(policy, action, assessment, writeRefused.has(info.id), info.surface === "fiori");
     if (!verdict.run && "refused" in verdict && verdict.refused.startsWith("this action may write")) writeRefused.add(info.id);
     return { driver, info, assessment, verdict };
   }
