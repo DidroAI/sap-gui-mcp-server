@@ -216,7 +216,8 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
   if (!found) lines.push("", `No MCP client found. Add this command to your client's MCP settings by hand: ${command.join(" ")}`);
   lines.push(
     "",
-    changed ? "Next: restart the clients marked above, open an SAP screen, and ask your agent to look at it." : "Next: open an SAP screen and ask your agent to look at it.",
+    changed ? "Next: restart the clients marked above, and ask your agent to look at your SAP screen." : "Next: ask your agent to look at your SAP screen.",
+    "For Web GUI and Fiori, a Chrome window opens: open your SAP address there and log on, once.",
     "If it cannot see SAP, run sap-gui-mcp-server doctor.",
   );
   return { lines, changed };

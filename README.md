@@ -71,8 +71,8 @@ Typing into a field answers with about 50 tokens instead of the screen.
 | --- | --- |
 | SAP GUI for Windows | Windows, SAP GUI for Windows, scripting enabled in SAP GUI **and** allowed on the SAP system ([details](#sap-gui-for-windows)) |
 | SAP GUI for Windows without scripting (experimental) | Windows, SAP GUI for Windows, a connection entry you can edit in SAP Logon, no SNC encryption ([details](#sap-gui-without-scripting-experimental)) |
-| Web GUI | Chrome 144 or later (or Edge) with remote debugging allowed, and a Web GUI tab open and logged on: its address contains `/sap/bc/gui/sap/its/webgui` ([details](#web-gui-and-fiori-in-chrome)) |
-| Fiori | The same Chrome, and a Fiori launchpad tab open and logged on (for example `/sap/bc/ui2/flp`) |
+| Web GUI | Google Chrome installed. The server opens a Chrome window of its own; you open Web GUI there and log on: its address contains `/sap/bc/gui/sap/its/webgui` ([details](#web-gui-and-fiori-in-chrome)) |
+| Fiori | The same window, with a Fiori launchpad open and logged on (for example `/sap/bc/ui2/flp`) |
 
 Web GUI and Fiori work from Windows, macOS and Linux. SAP GUI for Java
 (macOS, Linux) has no scripting and is not supported.
@@ -174,9 +174,14 @@ On Windows, some clients cannot start `npx` directly: use
 `"command": "cmd", "args": ["/c", "npx", "-y", "sap-gui-mcp-server"]`
 (`setup` does this for you).
 
-Then open SAP and ask, for example: *"Look at my SAP screen and tell me
-which fields are required"*, or *"In VA03, open order 19097 and tell me its
-delivery status"*.
+Then ask, for example: *"Look at my SAP screen and tell me which fields are
+required"*, or *"In VA03, open order 19097 and tell me its delivery
+status"*.
+
+- **Web GUI and Fiori:** the first time, a Chrome window opens (the SAP
+  window). Open your SAP address there and log on. You do this once: the
+  window stays open between agent sessions.
+- **SAP GUI for Windows:** open SAP GUI and log on, as you always do.
 
 ## How it finds your sessions
 
@@ -343,26 +348,42 @@ theme or scaling.
 
 ### Web GUI and Fiori in Chrome
 
-The server attaches to the Chrome you are using, in this order:
+There is nothing to set up in Chrome:
 
-1. `SAP_CHROME_CDP`, if you set it, e.g. `http://127.0.0.1:9222`. Nothing
-   else is tried then;
-2. your running Chrome, once you allow it: open
-   `chrome://inspect/#remote-debugging` and tick *Allow remote debugging*.
-   This needs Chrome 144 or later; Chrome asks you to confirm when the
-   server connects. Chrome stable is tried first, then Chrome beta, then
-   Microsoft Edge.
+1. Add the server to your agent ([Install](#install)).
+2. Ask the agent about SAP.
+3. A Chrome window opens: the SAP window. Open your SAP address there (Web
+   GUI or the Fiori launchpad) and log on. The agent works on the SAP
+   screen in that window.
 
-The server does not attach to port 9222 by itself: a browser listening
-there may belong to another tool. To use a Chrome started with
-`--remote-debugging-port`, name it with `SAP_CHROME_CDP`. Since Chrome 136
-that switch only opens the port together with `--user-data-dir`, pointing
-to a directory other than Chrome's default one:
+You log on once. The window stays open when the agent session ends, and the
+next session finds it again. When you close it, it opens again the next
+time the agent needs SAP, on the last SAP address you used. To open it
+yourself:
 
 ```sh
-chrome --remote-debugging-port=9333 --user-data-dir="$HOME/chrome-sap"
-SAP_CHROME_CDP=http://127.0.0.1:9333 npx -y sap-gui-mcp-server sessions
+npx -y sap-gui-mcp-server browser
 ```
+
+How it works:
+
+- The server starts the Google Chrome installed on your machine. If it does
+  not find Chrome, set `SAP_CHROME_PATH` to the program file.
+- The SAP window has a profile of its own, apart from your everyday Chrome:
+  `~/Library/Application Support/sap-gui-mcp-server/chrome` on macOS,
+  `%LOCALAPPDATA%\sap-gui-mcp-server\chrome` on Windows,
+  `~/.local/share/sap-gui-mcp-server/chrome` on Linux. Cookies, saved
+  passwords and settings of the SAP window are kept there.
+- The server sees only the tabs of the SAP window. Your everyday browser is
+  out of its reach.
+- A new SAP window opens on the last SAP address used in it, else on
+  `SAP_START_URL`, else on a short page that says what to do.
+- On Windows, with a SAP GUI session open, the server does not open the SAP
+  window by itself: run `sap-gui-mcp-server browser`, or set
+  `SAP_SURFACES=webgui,fiori`.
+- `doctor` says whether the SAP window runs. It does not open it.
+- The window's DevTools port is open to programs on your own machine
+  (`127.0.0.1`), as with any Chrome started for an automation tool.
 
 Each tab has one owner, decided in one place:
 
@@ -374,13 +395,38 @@ Each tab has one owner, decided in one place:
 - any other tab is left alone. Only `http` and `https` pages are looked
   at, never `chrome://` pages or extensions.
 
+The server reads system, client and user from the page, and `sap_sessions`
+shows each tab's origin. Chrome does not tell a tab's position, so tabs are
+named by their title. Set `SAP_ALLOW_ORIGINS` to look only at your SAP
+hosts. Closing the server never closes the browser.
+
+#### Advanced: use your everyday Chrome
+
+With `SAP_BROWSER=attach` the server opens no window. It attaches to the
+Chrome you already use:
+
+1. open `chrome://inspect/#remote-debugging` and tick *Allow remote
+   debugging*. This needs Chrome 144 or later;
+2. Chrome asks you to confirm when the server connects: click *Allow*.
+
+Chrome stable is tried first, then Chrome beta, then Microsoft Edge.
+
 Remote debugging gives the server (and so the agent using it) access to
 every tab of that browser, not only SAP tabs. The server only reads tabs it
-recognises as SAP, but consider a separate Chrome profile for SAP work, and
-set `SAP_ALLOW_ORIGINS` to look only at your SAP hosts. The server reads
-system, client and user from the page, and `sap_sessions` shows each tab's
-origin. Chrome does not tell a tab's position, so tabs are named by their
-title. Closing the server never closes your browser.
+recognises as SAP, but set `SAP_ALLOW_ORIGINS` to look only at your SAP
+hosts.
+
+To use a Chrome that you start yourself with `--remote-debugging-port`,
+name it with `SAP_CHROME_CDP`. It wins over `SAP_BROWSER`, and nothing else
+is tried then. The server does not attach to port 9222 by itself: a browser
+listening there may belong to another tool. Since Chrome 136 that switch
+only opens the port together with `--user-data-dir`, pointing to a
+directory other than Chrome's default one:
+
+```sh
+chrome --remote-debugging-port=9333 --user-data-dir="$HOME/chrome-sap"
+SAP_CHROME_CDP=http://127.0.0.1:9333 npx -y sap-gui-mcp-server sessions
+```
 
 #### Use your everyday Chrome with the extension
 
@@ -735,9 +781,13 @@ Every setting is an environment variable of the server process.
 | `SAP_DIAG_REQUEST_MS` | `3000` | how long the `diag` method waits for SAP GUI to send a request after a key or a click, before it says the input may have missed |
 | `SAP_DIAG_QUIET_MS` | `60` | how long the traffic must be quiet after SAP's answer before a `diag` action ends |
 | `SAP_DIAG_CAPTURE` | off | a folder where the `diag` method keeps the raw traffic, to debug the decoder. It holds everything SAP GUI sent and received, your logon included: keep it local and delete it after use (the file is created readable by its owner only) |
-| `SAP_CHROME_CDP` | the running Chrome, Chrome beta or Edge | a Chrome DevTools endpoint to attach to, e.g. `http://127.0.0.1:9333` |
-| `SAP_BROWSER` | remote debugging | `extension`: reach Chrome through the extension ([Use your everyday Chrome with the extension](#use-your-everyday-chrome-with-the-extension)) |
-| `SAP_EXTENSION_PORT` | first free of 47823–47830 | the local port where the extension connects |
+| `SAP_BROWSER` | `launch` | `launch`: the server starts Google Chrome with a profile of its own (the SAP window) and sees only its tabs. `attach`: your everyday Chrome, Chrome beta or Edge, with remote debugging allowed ([details](#advanced-use-your-everyday-chrome)). `extension`: your everyday Chrome through the extension ([details](#use-your-everyday-chrome-with-the-extension)) |
+| `SAP_CHROME_PATH` | the installed Google Chrome | the Chrome (or Chromium) program file to start for the SAP window |
+| `SAP_START_URL` | a short start page | the address a new SAP window opens on, e.g. your Web GUI or launchpad address. After the first use, the last SAP address wins |
+| `SAP_CHROME_PROFILE` | a folder of the server (see [Web GUI and Fiori in Chrome](#web-gui-and-fiori-in-chrome)) | the profile directory of the SAP window |
+| `SAP_CHROME_ARGS` | none | more switches for the Chrome of the SAP window, separated by spaces, e.g. `--proxy-server=http://proxy:8080` |
+| `SAP_CHROME_CDP` | not set | a Chrome DevTools endpoint to attach to, e.g. `http://127.0.0.1:9333`. It wins over `SAP_BROWSER` |
+| `SAP_EXTENSION_PORT` | first free of 47823–47830 | with `SAP_BROWSER=extension`, the local port where the extension connects |
 | `SAP_VIEW` | `diff` | `full`: every action answers with the whole screen |
 | `SAP_FIORI_WAIT` | full waits | `busy`: faster Fiori waits (busy indicators only, without UI5's RecordReplay) |
 | `SAP_RECORD_DIR` | `./sap-tests` | where recordings and exports are written |
@@ -761,8 +811,13 @@ Every setting is an environment variable of the server process.
     cannot read SNC-encrypted connections, acts with the keyboard and
     mouse, and drops SAP GUI's connection when the server stops (see
     [SAP GUI without scripting](#sap-gui-without-scripting-experimental)).
-- **Browsers:** Chrome is supported; Microsoft Edge (also Chromium) is
-  found the same way and is likely to work; Firefox and Safari are not.
+- **Browsers:** Chrome is supported. The SAP window is Google Chrome (or
+  the Chromium named in `SAP_CHROME_PATH`); the server does not download a
+  browser. With `SAP_BROWSER=attach`, Microsoft Edge (also Chromium) is
+  found the same way and is likely to work. Firefox and Safari are not
+  supported.
+- **The SAP window needs a screen:** on a machine without one, start a
+  Chrome yourself and name it with `SAP_CHROME_CDP`.
 - **Long lists:**
   - The view shows the rows on screen with the total; `scroll` and
     `sap_look` with `rows` reach the others (see [Long lists](#long-lists)).
