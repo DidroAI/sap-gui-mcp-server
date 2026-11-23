@@ -8,9 +8,11 @@
  *   sap-gui sessions        → sap_sessions (through a running daemon; else the one-shot listing)
  *   sap-gui daemon status|stop
  *
- * Each call prints a few short lines (the action's note, the STATUS line,
- * the SDK code line, where the screen is) and the path of a file that
- * holds the whole answer: the agent reads the screen only when it needs it.
+ * `act` (and `okcode`, `open`) prints sap_act's whole answer, as an MCP
+ * client gets it: the notes, then the lines that changed or the new screen.
+ * `look` prints a few short lines (where the screen is, the status bar).
+ * Each writes the path of a file that holds the whole answer. Screen lines
+ * are cut at MAX_LINE; notes and the reason of an error never are.
  * The calls go to a daemon (daemon.ts) that keeps the SAP connection and
  * the MCP server's state between them.
  */
@@ -34,17 +36,19 @@ import {
   idleMsFromEnv,
 } from "./daemon.js";
 
-export const AGENT_HELP = `Agent CLI (one short answer per call; the whole screen goes to a file, read it when you need it):
+export const AGENT_HELP = `Agent CLI (look prints a short summary and writes the whole screen to a file; act prints its whole answer, as sap_act gives it):
   sap-gui look [--full] [--diff] [--id <id> [--rows 0-50] [--cols A,B]] [--print]
   sap-gui act '<json action>' [--full]     e.g. act '{"do":"set","id":"ctxtVBAK-VBELN","value":"4711"}'
   sap-gui act '[<json action>, ...]'       one screen's actions in one call, e.g. act '[{"do":"set","id":"ctxtVBAK-VKORG","value":"1000"},{"do":"key","key":0}]'
   sap-gui act set <id> <value> | press <id> | key <n> | okcode <cmd> | select <id> | check <id> [true|false]
-              | combo <id> [key] | f4 <id> | dblclick <id> | scroll <id> <to>       shorthand for one action
+              | combo <id> [key] | f4 <id> | dblclick <id> | scroll <id> <to> | open <intent>    shorthand for one action
+  sap-gui okcode <cmd>                     same as act okcode <cmd>, e.g. okcode /nVA03 (it submits: no Enter after it)
+  sap-gui open <intent>                    same as act open <intent>: a Fiori app, e.g. open '#SalesOrder-manage'
   sap-gui use <ref>                        make a session the active one (sessions lists them)
   sap-gui screenshot                       a PNG of the session's window or tab
   sap-gui record <op> ['<json>']           start <name>, assert '{"check":"status","contains":"saved"}', stop, list, ...
   sap-gui daemon status|stop               the background process that keeps the SAP connection
-  look, act, screenshot and record take --session <ref>. Exit code: 0 done, 1 error or refused, 2 usage.
+  look, act, okcode, open, screenshot and record take --session <ref>. Exit code: 0 done, 1 error or refused, 2 usage.
   Writes need SAP_WRITE=on here: the CLI cannot ask the user, so confirm refuses them; your own command approval is the confirmation.
   SAP_CLI_DIR=dir       where answers go (default .sap-gui/screens); SAP_CLI_IDLE=30  minutes before the daemon exits
   SAP_CLI_SESSION=name  one daemon for every directory that sets this name (default: one per directory)`;
@@ -61,7 +65,7 @@ export interface AgentContext {
 }
 
 /** The commands this module answers. */
-export const AGENT_COMMANDS = new Set(["look", "act", "use", "screenshot", "record", "daemon"]);
+export const AGENT_COMMANDS = new Set(["look", "act", "okcode", "open", "use", "screenshot", "record", "daemon"]);
 
 class Usage extends Error {}
 
@@ -207,6 +211,11 @@ function callOf(cmd: string, p: Parsed): Call {
       if (p.flags.get("full")) args.full = true;
       return { tool: "sap_act", args: withSession(args), kind: "screen", print, tag: cmd };
     }
+    // `okcode /nVA03` and `open #SalesOrder-manage`: agents write them as commands of their own.
+    case "okcode":
+    case "open":
+      if (p.positional.length !== 1) throw new Usage(cmd === "okcode" ? "okcode takes one command, e.g. okcode /nVA03." : "open takes one app intent, e.g. open '#SalesOrder-manage'.");
+      return callOf("act", { ...p, positional: [cmd, ...p.positional] });
     case "screenshot":
       only(p, ["session"], cmd);
       return { tool: "sap_screenshot", args: withSession({}), kind: "image", print, tag: cmd };
@@ -351,15 +360,46 @@ export function screenSummary(text: string): string[] {
       head = [...head, body[0]];
       body = body.slice(1);
     }
+  // The notes are said whole; only lines of the screen are cut.
   const out = head.slice(0, 6);
   const top = body.find((l) => l.trim() !== "");
-  if (top !== undefined) out.push(top);
+  if (top !== undefined) out.push(cut(top));
   const code = lines.find((l) => /^\s*code:/.test(l));
   if (code && !out.includes(code)) out.push(code);
   const bar = body.find((l) => STATUS_BAR.test(l));
   const hasStatus = out.some((l) => l.startsWith("STATUS "));
-  if (bar && bar !== top && !(hasStatus && /status {2}[EWA]: /.test(bar))) out.push(bar);
-  return out.map(cut);
+  if (bar && bar !== top && !(hasStatus && /status {2}[EWA]: /.test(bar))) out.push(cut(bar));
+  return out;
+}
+
+/**
+ * What `act` prints: sap_act's answer as the MCP client gets it (the notes,
+ * then the screen or the lines that changed), each screen line cut at
+ * MAX_LINE. Agents that got only "CHANGED n of m lines" ran a look or read
+ * the file after nearly every act.
+ */
+export function actLines(text: string): string[] {
+  const lines = text.split("\n");
+  const blank = lines.indexOf("");
+  if (blank <= 0) return lines;
+  return [...lines.slice(0, blank + 1), ...lines.slice(blank + 1).map(cut)];
+}
+
+/** The first line of sap_look's answer when the screen is the one the last act answered with (server.ts UNCHANGED). */
+const UNCHANGED_HEAD = "Unchanged since your last sap_act";
+
+/** The newest act answer in the directory, if any. */
+function lastAct(dir: string): string | undefined {
+  let best: { n: number; f: string } | undefined;
+  try {
+    for (const f of readdirSync(dir)) {
+      const m = /^(\d+)-act\.txt$/.exec(f);
+      if (m && (!best || Number(m[1]) > best.n)) best = { n: Number(m[1]), f };
+    }
+  } catch {
+    return undefined;
+  }
+  return best && join(dir, best.f);
 }
 
 /** Runs one agent CLI command; answers the exit code. */
@@ -415,12 +455,20 @@ function present(call: Call, result: CallToolResult, ctx: AgentContext): number 
     ctx.out(text);
     return error ? 1 : 0;
   }
+  // A look on the screen the last act answered with: that answer's file is the screen.
+  if (!error && call.tool === "sap_look" && text.startsWith(UNCHANGED_HEAD)) {
+    ctx.out(text);
+    const last = lastAct(screensDir(ctx));
+    if (last) ctx.out(`screen: ${shown(last, ctx.cwd)}`);
+    return 0;
+  }
   const lines = text.split("\n");
   let printed: string[];
-  if (error) {
-    // The message, up to the screen that may follow it.
+  if (call.tool === "sap_act") printed = actLines(text);
+  else if (error) {
+    // The message, whole (a reason is never cut), up to the screen that may follow it.
     const blank = lines.indexOf("");
-    printed = (blank > 0 ? lines.slice(0, blank) : lines).slice(0, 4).map(cut);
+    printed = blank > 0 ? lines.slice(0, blank) : lines;
   } else if (call.kind === "screen") printed = screenSummary(text);
   else printed = lines.length <= 4 ? lines.map(cut) : lines.slice(0, 3).map(cut);
   const whole = printed.join("\n") === text;
