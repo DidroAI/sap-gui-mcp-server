@@ -465,9 +465,10 @@ Actions (`sap_act`):
 {"do": "focus", "id": "ctxtVBAK-VKORG"}
 ```
 
-For `key`, 0 is Enter, 3 Back, 4 F4, 8 F8, 11 Save and 12 Cancel; a key
-is a number from 0 to 99 or a key name (`Enter`, `Escape`, `Shift+Tab`,
-`Control+S`). `combo` without a key lists the dropdown's entries and
+For `key`, name what you mean: `Enter`, `Back`, `Execute` (F8), `Save`,
+`Cancel` (F12), `Exit` (Shift+F3), or any key (`F4`, `Escape`,
+`Shift+Tab`, `Control+S`); SAP's numbers work too (0 Enter, 3 Back, 8
+Execute, 11 Save, 12 Cancel). `combo` without a key lists the dropdown's entries and
 chooses nothing. `scroll` takes a row counted from 0, or `"next"`,
 `"prev"`, `"first"`, `"last"`; a table control's columns scroll with
 `"right"` and `"left"`. `select` with a `row` selects that row of a table

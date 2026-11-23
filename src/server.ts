@@ -176,7 +176,7 @@ const actionFields = {
   do: z.enum(VERBS),
   id: z.string().optional(),
   value: scalar.optional(),
-  key: z.union([z.number(), z.string()]).optional(),
+  key: z.union([z.number(), z.string()]).optional().describe('key: "Enter", "Back", "Execute", "Save", "Cancel", "Exit", "F4", "Shift+F3", or an SAP key number. combo: the entry\'s key or text'),
   // Whole numbers, checked by normalizeAction: .int() would put the safe-integer bounds into tools/list.
   row: z.number().optional(),
   col: z.string().optional(),
@@ -772,7 +772,7 @@ Read the answer in this order: (1) a "STATUS E/W/A" line: E means the step did n
 How SAP works: set only types. Fill every field of the screen, then send one Enter (key 0); SAP then checks the input and fills dependent fields. Do not guess codes: f4 on the field lists the valid ones.
 do, with its fields:
   set  id, value. A field; a grid or table cell: add row, col; in a text editor "\\n" is a line break
-  key  key: 0 Enter, 3 Back, 4 F4, 8 Execute, 11 Save, 12 Cancel, or a name: "F4", "Shift+F3", "Control+S"
+  key  key: a name, "Enter", "Back", "Execute" (F8), "Save", "Cancel" (F12), "Exit", "F4", "Shift+F3", or SAP's number (0 Enter, 3 Back, 8 Execute)
   press  id. A button ("click" too); btn[N] is function key N
   okcode  value: "/nVA03" starts a transaction (unsaved input is lost), "/oVA03" opens it in a new session. Commands go here only: the command field cannot be typed into
   select  id. Tab, radio button, menu entry, list item; with row: a table or grid row (value false deselects)
