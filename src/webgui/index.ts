@@ -8,10 +8,10 @@
  * surface, which reads and drives it with the three `...InFrame` functions.
  */
 import type { Frame, Page } from "playwright-core";
-import { chromeDoctor, chromeTabs, type ChromeTab, sapTabs, stillOwned } from "../browser/chrome.js";
+import { chromeAttached, chromeDoctor, chromeTabs, type ChromeTab, noSessionHint, sapTabs, stillOwned } from "../browser/chrome.js";
 import { isWebguiUrl, tabWhere, WEBGUI_PATH } from "../browser/classify.js";
 import { compact } from "../core/compact.js";
-import { type Action, ActionError, type Assessment, type Driver, type LookOptions, type SessionInfo, type Surface } from "../core/types.js";
+import { type Action, ActionError, type Assessment, type DiscoverOptions, type Driver, type LookOptions, type SessionInfo, type Surface } from "../core/types.js";
 import { extractFacts, type PageFacts } from "./page.js";
 import { act, assess, look, view } from "./reader.js";
 import { runningSince } from "./running.js";
@@ -100,8 +100,8 @@ async function describe(page: Page, id: string, f: PageFacts | undefined): Promi
 const isWebGuiTab = (url: string, f: PageFacts | undefined) => isWebguiUrl(url) || f?.webgui === true;
 
 /** The Web GUI tabs among the open tabs (the classifier's answer), with their session facts. */
-async function discover(env: Env): Promise<{ tab: ChromeTab; info: SessionInfo }[]> {
-  const mine = (await sapTabs(env)).filter((t) => t.owner === "webgui");
+async function discover(env: Env, options: DiscoverOptions = {}): Promise<{ tab: ChromeTab; info: SessionInfo }[]> {
+  const mine = (await sapTabs(env, options)).filter((t) => t.owner === "webgui");
   return Promise.all(mine.map(async ({ tab }) => ({ tab, info: await describe(tab.page, `chrome:${tab.id}`, await facts(tab.page.mainFrame())) })));
 }
 
@@ -195,7 +195,7 @@ class WebGuiDriver implements Driver {
 export function webguiSurface(env: Record<string, string | undefined>): Surface {
   return {
     name: "webgui",
-    discover: async () => (await discover(env)).map((x) => x.info),
+    discover: async (options) => (await discover(env, options)).map((x) => x.info),
     open: async (session) => {
       const tab = (await chromeTabs(env)).find((t) => `chrome:${t.id}` === session.id);
       if (!tab) throw new Error(`${session.where} is not open any more. Call sap_sessions to list the open sessions.`);
@@ -204,7 +204,8 @@ export function webguiSurface(env: Record<string, string | undefined>): Surface 
     },
     doctor: async () => {
       const checks = await chromeDoctor(env);
-      if (checks.some((c) => !c.ok)) return checks;
+      // No browser connected (the SAP window is not open yet): nothing to read, and doctor opens nothing.
+      if (checks.some((c) => !c.ok) || !chromeAttached()) return checks;
       const found = await discover(env).catch(() => []);
       checks.push({
         ok: true,
@@ -215,5 +216,6 @@ export function webguiSurface(env: Record<string, string | undefined>): Surface 
       });
       return checks;
     },
+    whenEmpty: () => noSessionHint(env),
   };
 }

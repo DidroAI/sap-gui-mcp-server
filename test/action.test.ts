@@ -20,7 +20,7 @@ describe("normalizeAction", () => {
     expect(normalizeKey("f24")).toBe("F24");
   });
   test("anything else as a key is refused", () => {
-    for (const bad of [undefined, null, NaN, 1.5, -1, 100, "100", "", "save", "F25", "s", "Shift+s", "Hyper+Enter", true, "Enter+Enter+"])
+    for (const bad of [undefined, null, NaN, 1.5, -1, 100, "100", "", "F25", "s", "Shift+s", "Hyper+Enter", true, "Enter+Enter+"])
       expect(() => normalizeAction({ do: "key", key: bad })).toThrow(ActionError);
     expect(() => normalizeAction({ do: "key", key: { n: 11 } })).toThrow(ActionError);
     expect(() => normalizeAction({ do: "key" })).toThrow(ActionError);
@@ -75,5 +75,16 @@ describe("normalizeAction", () => {
   });
   test("actionText does not depend on property order", () => {
     expect(actionText(normalizeAction({ do: "set", value: "1", id: "x" }))).toBe(actionText(normalizeAction({ id: "x", do: "set", value: "1" })));
+  });
+});
+
+describe("SAP's names for its function keys (Astra's review, 2026-11-23)", () => {
+  test("Execute, Save, Cancel and Exit are their key numbers; Enter and Back as before", () => {
+    expect(normalizeAction({ do: "key", key: "Execute" }).key).toBe(8);
+    expect(normalizeAction({ do: "key", key: "save" }).key).toBe(11);
+    expect(normalizeAction({ do: "key", key: "Cancel" }).key).toBe(12);
+    expect(normalizeAction({ do: "key", key: "Exit" }).key).toBe(15);
+    expect(normalizeAction({ do: "key", key: "Enter" }).key).toBe("Enter");
+    expect(normalizeAction({ do: "key", key: "Shift+F3" }).key).toBe("Shift+F3");
   });
 });

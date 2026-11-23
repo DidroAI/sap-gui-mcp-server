@@ -72,7 +72,10 @@ const NAMED_KEYS: Record<string, string> = {
 const NEEDS_ID: ReadonlySet<Verb> = new Set(["set", "press", "click", "select", "check", "combo", "f4", "focus", "dblclick", "tree", "grid", "toolbar"]);
 
 const KEY_HELP =
-  'key needs "key": an SAP virtual key number from 0 to 99 (0 Enter, 3 Back, 4 F4, 8 F8, 11 Save, 12 Cancel), or a key name (Enter, Escape, Tab, Shift+Tab, F1 to F24, ArrowDown, PageDown, Home, End, Back, Control+S).';
+  'key needs "key": an SAP virtual key number from 0 to 99 (0 Enter, 3 Back, 4 F4, 8 F8, 11 Save, 12 Cancel), or a key name (Enter, Back, Execute, Save, Cancel, Exit, Escape, Tab, Shift+Tab, F1 to F24, ArrowDown, PageDown, Home, End, Control+S).';
+
+/** SAP function keys by the name SAP gives them (Astra's review, 2026-11-23): Execute is F8, Cancel F12, Exit Shift+F3. */
+const SAP_FUNCTION_KEYS: Record<string, number> = { execute: 8, cancel: 12, save: 11, exit: 15 };
 
 /**
  * The key of a key action: an integer 0–99, or a key name in one spelling.
@@ -91,6 +94,8 @@ export function normalizeKey(raw: unknown): number | string | undefined {
     if (!m) return undefined;
     mods.add(m);
   }
+  // SAP's names for its standard function keys: the agent says what it means, the surfaces get the key.
+  if (!mods.size && SAP_FUNCTION_KEYS[base] !== undefined) return SAP_FUNCTION_KEYS[base];
   let key = NAMED_KEYS[base];
   if (!key) {
     const f = /^f(\d{1,2})$/.exec(base);

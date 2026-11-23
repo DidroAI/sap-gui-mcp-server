@@ -58,7 +58,7 @@ describe("one normalised action for assess and act", () => {
   test("an unknown do or key never reaches a surface", async () => {
     const { surface, call } = await setup({ SAP_WRITE: "on" });
     surface.add({ id: "chrome:1", system: "ABA" });
-    for (const action of [{ do: "eval", id: "x" }, { do: "key", key: "save" }, { do: "key", key: 250 }, { do: "set", id: "x", value: { a: 1 } }]) {
+    for (const action of [{ do: "eval", id: "x" }, { do: "key", key: "frobnicate" }, { do: "key", key: 250 }, { do: "set", id: "x", value: { a: 1 } }]) {
       const r = await call("sap_act", { action });
       expect([action, r.error]).toEqual([action, true]);
     }
@@ -497,5 +497,17 @@ describe("the SDK line in the answer", () => {
     expect(draft).not.toContain("sap.key(11)");
     expect(draft.split("\n").filter((l) => l.includes("await sap.")).length).toBe(200);
     expect(draft).toEndWith('  await sap.set("F", "204");\n});\n');
+  });
+});
+
+describe("a key named Save is Save to the guard (Astra's review, 2026-11-23)", () => {
+  test("with writing off it is refused before any surface is asked", async () => {
+    const { surface, call } = await setup({ SAP_WRITE: "off" });
+    surface.add({ id: "chrome:1", system: "ABA", client: "800", transaction: "VA02" }, { assess });
+    const r = await call("sap_act", { action: { do: "key", key: "Save" } });
+    expect(r.error).toBe(true);
+    expect(r.text).toContain("writes are off");
+    expect(surface.acts()).toEqual([]);
+    expect(surface.log[0]).toEqual({ op: "assess", action: { do: "key", key: 11 } });
   });
 });

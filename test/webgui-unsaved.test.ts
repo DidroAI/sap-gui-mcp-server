@@ -61,3 +61,17 @@ describe("input the agent made and a command drops", () => {
     expect(u.left()).toBe("SAP left ZT02 without asking: the value set there since its last success message is lost unless saved before.");
   });
 });
+
+describe("a lookup screen is not a screen that saves (Astra's review, 2026-11-23)", () => {
+  test("values typed where Save is greyed out, or where Execute (F8) runs a search, are not counted", () => {
+    const u = new Unsaved();
+    const grey = view("ZT16", "", "wnd[0]/tbar[0]/btn[11]  button  Save (Ctrl+S)  (greyed out: SAP does not offer it now)");
+    u.seen(grey);
+    u.typed(grey);
+    const lookup = `${view("ZT16")}\nwnd[0]/tbar[1]/btn[8]  button  Execute (F8)`;
+    u.seen(lookup);
+    u.typed(lookup);
+    u.typed(lookup);
+    expect(u.left()).toBeUndefined();
+  });
+});

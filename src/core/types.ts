@@ -138,14 +138,30 @@ export interface DoctorCheck {
   fix?: string;
 }
 
+/**
+ * Thrown by `discover({ quiet: true })` when the surface would have to open something to find sessions
+ * (the SAP window, a Chrome the server starts). The registry asks again, without `quiet`, only when no
+ * surface found a session: a user who works in SAP GUI for Windows gets no Chrome window they did not ask for.
+ */
+export class NotOpenYet extends Error {
+  override name = "NotOpenYet";
+}
+
+export interface DiscoverOptions {
+  /** Open nothing: when the surface's browser window does not run, throw NotOpenYet. */
+  quiet?: boolean;
+}
+
 /** A surface finds sessions and opens drivers on them. */
 export interface Surface {
   readonly name: SurfaceName;
-  /** Sessions open right now. Never logs on and never opens anything. */
-  discover(): Promise<SessionInfo[]>;
+  /** Sessions open right now. Never logs on. Opens nothing but, without `quiet`, the SAP window in Chrome. */
+  discover(options?: DiscoverOptions): Promise<SessionInfo[]>;
   open(session: SessionInfo): Promise<Driver>;
   /** Setup checks for `doctor`: one each, ok or not, what was found, and what to change when not ok. */
   doctor(): Promise<DoctorCheck[]>;
+  /** What the agent should tell the user when no session is found at all, where the surface knows better than the general answer. */
+  whenEmpty?(): string | undefined;
 }
 
 /** An action that could not run: the message is meant for the model. */

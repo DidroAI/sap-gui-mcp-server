@@ -30,7 +30,7 @@ import { assessAction, popupButton, questionRefusal } from "./assess.js";
 import { checkedNow, clean, clickForRoundtrip, clickListLine, clickMenuRow, MenuGone, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlAct, noControlLook, openTextCell, pressOverflow, setCalendar, setRefusal, setTokenField, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
 import { collectFiles, watchFiles } from "./files.js";
 import { GAVE_UP, gaveUpOn, NO_CANCEL, stillRunning } from "./running.js";
-import { LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
+import { inPageOutcome, LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
 import { chooseEntry, entriesOf, markScrolled, notOnScreen, scrollTo, selectRow } from "./lists.js";
 import { behindPopup, closedByMessage, popupName, terminationIn, topPopup, transactionOf } from "./popups.js";
 import { extractFacts, extractMenus, markControl, markRow, markSelector, markWindowClose, menuRowOpen, openOverlay, submenuOpen, scrollControl, searchHelps, topWindowOpen } from "./page.js";
@@ -192,10 +192,11 @@ async function actTimed(session: WebGuiSession, a: Action): Promise<string> {
       else if (before) {
         const now = await look(session).catch(() => "");
         if (now && headerOf(now) !== headerOf(before)) nothing = undefined;
+        else nothing = inPageOutcome(before, now) ?? nothing;
       }
     }
     // A key the popup in front has no function for: the answer names the popup, the key did not reach the window behind it.
-    const front = nothing && a.do === "key" && !LOCAL_KEY.test(vkey(a.key ?? a.value)) ? topPopup(before) : undefined;
+    const front = nothing?.startsWith("Nothing was sent") && a.do === "key" && !LOCAL_KEY.test(vkey(a.key ?? a.value)) ? topPopup(before) : undefined;
     if (front) nothing = `Nothing was sent to SAP: the popup ${popupName(before, front)} is open and this key does nothing on it.`;
     // A file SAP wrote with this step (an export to a "local file") is copied out of the browser and named (files.ts).
     const files = await collectFiles(session).catch(() => [] as string[]);

@@ -44,9 +44,9 @@
  * Environment: SAP_FIORI_WAIT=busy turns RecordReplay.waitForUI5 off (the
  * driver then reads UI5's busy state only, and loads nothing into the page).
  */
-import { chromeDoctor, chromeTabs, sapTabs, stillOwned } from "../browser/chrome.js";
+import { chromeAttached, chromeDoctor, chromeTabs, noSessionHint, sapTabs, stillOwned } from "../browser/chrome.js";
 import { classify, tabSigns, tabWhere } from "../browser/classify.js";
-import type { Driver, SessionInfo, Surface } from "../core/types.js";
+import type { DiscoverOptions, Driver, SessionInfo, Surface } from "../core/types.js";
 import { FioriDriver, pageInfo, sessionOf } from "./driver.js";
 import { isPendingUrl, PendingTab, pendingSession, readPending } from "./pending.js";
 
@@ -63,8 +63,8 @@ function named(session: SessionInfo): SessionInfo {
 }
 
 /** The Fiori tabs among the open tabs (the classifier's answer), with what each page says about itself. */
-async function fioriTabs(env: Env) {
-  const mine = (await sapTabs(env)).filter((t) => t.owner === "fiori");
+async function fioriTabs(env: Env, options: DiscoverOptions = {}) {
+  const mine = (await sapTabs(env, options)).filter((t) => t.owner === "fiori");
   return Promise.all(
     mine.map(async ({ tab }) => {
       const info = await pageInfo(tab.page);
@@ -77,8 +77,8 @@ async function fioriTabs(env: Env) {
  * Tabs at a launchpad address that show no launchpad (a logon or password page, a page that did not load,
  * a tab that does not answer): listed, so that the agent can say what the user has to do (see pending.ts).
  */
-async function pendingTabs(env: Env) {
-  const tabs = (await chromeTabs(env)).filter((t) => isPendingUrl(t.url));
+async function pendingTabs(env: Env, options: DiscoverOptions = {}) {
+  const tabs = (await chromeTabs(env, options)).filter((t) => isPendingUrl(t.url));
   const found = await Promise.all(
     tabs.map(async (tab) => {
       if (classify(tab.page.url(), await tabSigns(tab.page)) !== null) return undefined;
@@ -92,8 +92,8 @@ export function fioriSurface(env: Env): Surface {
   const options = { recordReplay: (env.SAP_FIORI_WAIT ?? "").toLowerCase() !== "busy", idleTimeoutMs: 30_000 };
   return {
     name: "fiori",
-    discover: async (): Promise<SessionInfo[]> => {
-      const [live, pending] = await Promise.all([fioriTabs(env), pendingTabs(env)]);
+    discover: async (options): Promise<SessionInfo[]> => {
+      const [live, pending] = await Promise.all([fioriTabs(env, options), pendingTabs(env, options)]);
       // A tab whose launchpad came up between the two readings is the launchpad's.
       return [...live.map((x) => x.session), ...pending.filter((p) => !live.some((x) => x.session.id === p.session.id)).map((p) => p.session)];
     },
@@ -115,7 +115,8 @@ export function fioriSurface(env: Env): Surface {
     },
     doctor: async () => {
       const out = await chromeDoctor(env);
-      if (out.some((c) => !c.ok)) return out;
+      // No browser connected (the SAP window is not open yet): nothing to read, and doctor opens nothing.
+      if (out.some((c) => !c.ok) || !chromeAttached()) return out;
       try {
         const tabs = await fioriTabs(env);
         out.push({
@@ -130,5 +131,6 @@ export function fioriSurface(env: Env): Surface {
       }
       return out;
     },
+    whenEmpty: () => noSessionHint(env),
   };
 }
