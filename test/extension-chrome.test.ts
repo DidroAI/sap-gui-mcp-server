@@ -168,11 +168,13 @@ describe.skipIf(!exe)("the extension in Chromium", () => {
     await popup.click("#pair").catch(() => {}); // shown while not paired; the worker may have paired by itself already
     expect(await relay.waitForExtension(20_000)).toBe(true);
     await popup.waitForFunction(() => document.getElementById("pill-text")?.textContent === "Connected", undefined, { timeout: 10_000 });
-    expect(await popup.textContent("#status-title")).toBe("Connected to your agent");
+    expect(await popup.textContent("#status-title")).toBe("Your agent is connected");
   }, 40_000);
 
   test("a system is registered in the popup; its password goes to the keychain", async () => {
-    await popup.click("#add");
+    // No system yet: the empty state's one button.
+    expect(await popup.isVisible("#add")).toBe(false);
+    await popup.click("#empty-add");
     await popup.fill("#f-name", "Fake ECC");
     await popup.fill("#f-url", `${origins[0]}${WEBGUI}`);
     await popup.fill("#f-client", "800");
@@ -182,7 +184,9 @@ describe.skipIf(!exe)("the extension in Chromium", () => {
     await popup.click("#save");
     await popup.waitForSelector("#edit-view", { state: "hidden" });
     await popup.waitForSelector(".sys");
-    expect(await popup.locator(".sys .meta").allTextContents()).toEqual([`Web GUI · ${origins[0]!.slice(7)}`, "client 800 · JDOE 🔑"]);
+    expect(await popup.locator(".sys .meta").allTextContents()).toEqual([`${origins[0]!.slice(7)} · client 800`, "Web GUI · JDOE"]);
+    expect(await popup.getAttribute(".sys .meta", "title")).toBe(`${origins[0]}${WEBGUI}`);
+    expect(await popup.textContent(".sys .go")).toBe("Log on");
     const stored = await popup.evaluate(() => chrome.storage.local.get(null));
     expect(JSON.stringify(stored)).not.toContain(PASSWORD);
     expect(stored.systems[0]).toMatchObject({ name: "Fake ECC", client: "800", language: "EN", user: "JDOE", passwordIn: "keychain" });

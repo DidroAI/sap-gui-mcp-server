@@ -26,8 +26,10 @@ The first public version.
   systems** extension (`extension/`) instead: no remote debugging switch,
   only the tabs of the SAP systems registered in the extension are shared.
   The extension is a list of your systems (name, Web GUI or launchpad
-  address, client, language, user): *Add the SAP page I'm on* fills one in
-  from the current tab, *Open* opens it logged on. With a saved password it
+  address, client, language, user), in the look of the Didro platform: *Add
+  this SAP page* fills one in from the current tab, *Log on* (or *Open*)
+  opens it logged on; editing, removing and the saved password are under
+  each system's ⋯ menu. With a saved password it
   logs on by itself, filling SAP's logon page like a password manager, in a
   tab withdrawn from the server until the logon page is gone: the server and
   the agent never see the password. The agent gets `sap_systems` and
