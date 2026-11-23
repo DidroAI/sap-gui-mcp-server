@@ -250,25 +250,25 @@ describe("sapgui surface", () => {
     const { asked, open } = oneScreen(views);
     const d = await open();
     expect(await d.act({ do: "select", id: "tblSAPLMGMMTC_VIEW", row: 0 })).toBe("selected row 0 of wnd[0]/usr/tblSAPLMGMMTC_VIEW");
-    expect(asked.at(-1)?.params.action).toEqual({ do: "selectrow", id: "wnd[0]/usr/tblSAPLMGMMTC_VIEW", row: 0, value: true, table: true });
+    expect(asked.at(-1)?.params.action).toEqual({ do: "selectrow", id: "wnd[0]/usr/tblSAPLMGMMTC_VIEW", row: 0, value: true });
     await d.act({ do: "select", id: "tblSAPLMGMMTC_VIEW", row: 2, value: false });
-    expect(asked.at(-1)?.params.action).toEqual({ do: "selectrow", id: "wnd[0]/usr/tblSAPLMGMMTC_VIEW", row: 2, value: false, table: true });
+    expect(asked.at(-1)?.params.action).toEqual({ do: "selectrow", id: "wnd[0]/usr/tblSAPLMGMMTC_VIEW", row: 2, value: false });
     await d.act({ do: "select", id: "cntlGRID1/shell", row: 5 });
-    expect(asked.at(-1)?.params.action).toEqual({ do: "selectrow", id: "wnd[0]/usr/cntlGRID1/shellcont/shell", row: 5, value: true, table: false });
+    expect(asked.at(-1)?.params.action).toEqual({ do: "grid", id: "wnd[0]/usr/cntlGRID1/shellcont/shell", row: 5, col: "", how: "select" });
     // The grid action on a table control (what the agent tried next): a row selection, or a pointer to what works.
     await d.act({ do: "grid", id: "tblSAPLMGMMTC_VIEW", row: 1, col: "txtMSICHTAUSW-DYTXT", how: "select" });
-    expect(asked.at(-1)?.params.action).toEqual({ do: "selectrow", id: "wnd[0]/usr/tblSAPLMGMMTC_VIEW", row: 1, value: true, table: true });
+    expect(asked.at(-1)?.params.action).toEqual({ do: "selectrow", id: "wnd[0]/usr/tblSAPLMGMMTC_VIEW", row: 1, value: true });
     const n = asked.length;
-    await expect(d.act({ do: "grid", id: "tblSAPLMGMMTC_VIEW", row: 1, col: "txtMSICHTAUSW-DYTXT" })).rejects.toThrow("is a table control, not a grid");
     await expect(d.act({ do: "select", id: "tblSAPLMGMMTC_VIEW", row: -1 })).rejects.toThrow('"row" is a row number');
     expect(asked.slice(n).some((x) => x.op === "act")).toBe(false);
   });
 
-  test("select with row on a control that has no rows says so", async () => {
+  test("select with row on a tab selects the tab", async () => {
     const { asked, open } = oneScreen(FORM);
     const d = await open();
-    await expect(d.act({ do: "select", id: "tabpT1", row: 0 })).rejects.toThrow('"select" with "row" selects a row of a table control or a grid');
-    expect(asked.some((x) => x.op === "act")).toBe(false);
+    // A tab ignores "row": it is selected as a tab.
+    await d.act({ do: "select", id: "tabpT1", row: 0 });
+    expect(asked.at(-1)?.params.action).toMatchObject({ do: "select" });
   });
 
   test("reads get 60 s; an action 180 s, or its own timeout up to 600 s", async () => {
