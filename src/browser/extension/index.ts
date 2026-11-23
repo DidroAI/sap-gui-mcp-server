@@ -7,16 +7,18 @@
  * handed to Playwright's `connectOverCDP` like any other Chrome endpoint.
  */
 import type { DoctorCheck } from "../../core/types.js";
+import { allowedOrigins, originAllowed } from "../classify.js";
 import { formatCode, readOrCreateCode } from "./pairing.js";
-import { ExtensionRelay, type ExtensionInfo, type ExtensionSystem, type LogonResult } from "./relay.js";
+import { execFile, spawn } from "node:child_process";
+import { ExtensionRelay, type ExtensionInfo, type ExtensionSystem, type LogonOptions, type LogonResult } from "./relay.js";
 
 type Env = Record<string, string | undefined>;
 
 /** An MV3 service worker sleeps after 30 s idle; when asleep it reconnects on its next wake-up. */
 const DEFAULT_WAIT_S = 35;
 
-const INSTALL = `Install the sap-gui-mcp-server extension: run \`npx -y sap-gui-mcp-server extension install\`, then in Chrome open chrome://extensions, switch on Developer mode, click "Load unpacked" and choose the folder it names.`;
-const PAIR = `Pair it: click the extension's icon in Chrome's toolbar and "Pair with this computer" (or run \`sap-gui-mcp-server extension pair\` and paste the code it prints).`;
+const INSTALL = `Install the Agent Connector for SAP Systems extension: run \`npx -y sap-gui-mcp-server extension install\`, then in Chrome open chrome://extensions, switch on Developer mode, click "Load unpacked" and choose the folder it names.`;
+const PAIR = `Pair it: click the Agent Connector icon in Chrome's toolbar and "Pair with This Computer" (or run \`npx -y sap-gui-mcp-server extension pair\` and paste the code it prints).`;
 
 let relay: ExtensionRelay | undefined;
 /** When the relay started listening: the wait for the extension counts from then, not again for every call. */
@@ -80,12 +82,52 @@ async function connected(r: ExtensionRelay, ms: number, stopOnRefusal = false): 
   }
 }
 
-/** The one step to take when no extension is connected. */
-function missingStep(info: ExtensionInfo, waitedS: number): string {
+/** The one step to take when no extension is connected. `chromeUp`: is Chrome running (undefined: unknown)? */
+function missingStep(info: ExtensionInfo, waitedS: number, chromeUp?: boolean): string {
   if (info.lastRefusal === "code")
-    return `The sap-gui-mcp-server extension tried to connect with a pairing code that does not match this server's. Run \`sap-gui-mcp-server extension pair\` and paste the code it prints into the extension's popup.`;
-  if (info.attempts > 0) return `The sap-gui-mcp-server extension reached the server but did not pair. ${PAIR}`;
-  return `No sap-gui-mcp-server extension connected within ${waitedS} s. ${INSTALL} Then: ${PAIR}`;
+    return `The Agent Connector extension tried to connect with a pairing code that does not match this server's. Ask the user to click the extension's icon in Chrome and "Pair Again" (or run \`npx -y sap-gui-mcp-server extension pair\` and paste the code it prints).`;
+  if (info.lastRefusal === "busy") return "Another sap-gui-mcp-server is connected to the user's Agent Connector extension already (one server at a time). Ask the user to close the other agent app that uses it, then click Reconnect in the extension's Settings.";
+  if (info.attempts > 0) return `The Agent Connector extension reached the server but did not pair. ${PAIR}`;
+  if (chromeUp === false) return `Google Chrome is not running, so the extension cannot connect. Ask the user to open Chrome (the extension connects within a few seconds), then try again.`;
+  return `No Agent Connector extension connected within ${waitedS} s${chromeUp ? " although Chrome is running" : ""}: it is not installed, switched off in chrome://extensions, or in another Chrome profile. ${INSTALL} Then: ${PAIR}`;
+}
+
+/** Is Google Chrome running? undefined when this cannot be told. */
+export function chromeRunning(platform: NodeJS.Platform = process.platform): Promise<boolean | undefined> {
+  const [cmd, args, test] =
+    platform === "win32"
+      ? (["tasklist", ["/FI", "IMAGENAME eq chrome.exe", "/NH"], (out: string) => /chrome\.exe/i.test(out)] as const)
+      : platform === "darwin"
+        ? (["pgrep", ["-x", "Google Chrome"], (out: string) => out.trim() !== ""] as const)
+        : (["pgrep", ["-f", "(google-chrome|chromium|chrome-linux|/chrome)( |$)"], (out: string) => out.trim() !== ""] as const);
+  return new Promise((resolve) => {
+    execFile(cmd, [...args], { timeout: 3000, windowsHide: true }, (err, out) => {
+      if (err && (err as NodeJS.ErrnoException).code === "ENOENT") return resolve(undefined);
+      resolve(test(String(out ?? "")));
+    });
+  });
+}
+
+/**
+ * Starts the user's own Google Chrome (their profile, no debugging switch): the extension connects once it runs.
+ * On by default on macOS and Windows, where a desktop is there; SAP_EXTENSION_START_CHROME=on|off decides.
+ */
+export function mayStartChrome(env: Env, platform: NodeJS.Platform = process.platform): boolean {
+  const v = env.SAP_EXTENSION_START_CHROME?.trim().toLowerCase();
+  if (v) return /^(on|true|1|yes)$/.test(v);
+  return platform === "darwin" || platform === "win32";
+}
+
+function startChrome(platform: NodeJS.Platform = process.platform): boolean {
+  const [cmd, args] = platform === "darwin" ? ["open", ["-a", "Google Chrome"]] : platform === "win32" ? ["cmd", ["/c", "start", "", "chrome"]] : ["google-chrome", []];
+  try {
+    const child = spawn(cmd, args as string[], { detached: true, stdio: "ignore", windowsHide: true });
+    child.on("error", () => {});
+    child.unref();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -99,23 +141,43 @@ export async function extensionEndpoint(env: Env = process.env, waitMs: number =
   const left = Math.max(MIN_WAIT_MS, startedAt + waitMs - Date.now());
   if (!(await connected(r, Math.min(waitMs, left)))) throw new Error(missingStep(r.extensionInfo(), Math.round((Date.now() - startedAt) / 1000)));
   const version = /(?:Chrome|Chromium)\/([\d.]+)/.exec(r.extensionInfo().userAgent ?? "")?.[1] ?? "";
-  return { url: r.cdpUrl, from: `the sap-gui-mcp-server extension in Chrome${version ? ` ${version}` : ""} (port ${r.port})` };
+  return { url: r.cdpUrl, from: `the Agent Connector extension in Chrome${version ? ` ${version}` : ""} (port ${r.port})` };
 }
 
-/** The relay, once the extension is connected (waits like extensionEndpoint). */
-async function connectedRelay(env: Env): Promise<ExtensionRelay> {
+/**
+ * The relay, once the extension is connected (waits like extensionEndpoint). `start`: when Chrome is not
+ * running, start it (sap_logon: the agent asked to open a system) instead of only saying so.
+ */
+async function connectedRelay(env: Env, start = false): Promise<ExtensionRelay> {
   const r = await extensionRelay(env);
+  if (r.extensionInfo().connected) return r;
   const waitMs = defaultWaitMs(env);
+  // A worker that is awake connects within a second or two; one asleep wakes with its 30 s alarm.
+  if (await connected(r, Math.min(3000, waitMs))) return r;
+  let up = r.extensionInfo().attempts > 0 ? true : await chromeRunning();
+  if (up === false && start && mayStartChrome(env) && startChrome()) {
+    if (await connected(r, Math.max(waitMs, 20000))) return r;
+    up = await chromeRunning();
+  }
   const left = Math.max(MIN_WAIT_MS, startedAt + waitMs - Date.now());
-  if (!(await connected(r, Math.min(waitMs, left)))) throw new Error(missingStep(r.extensionInfo(), Math.round((Date.now() - startedAt) / 1000)));
-  return r;
+  if (up !== false && (await connected(r, Math.min(waitMs, left)))) return r;
+  throw new Error(missingStep(r.extensionInfo(), Math.round((Date.now() - startedAt) / 1000), up));
 }
 
 /** The SAP systems registered in the extension: what sap_systems lists and sap_logon opens. */
 export const extensionSystems = {
   list: async (env: Env = process.env): Promise<ExtensionSystem[]> => (await connectedRelay(env)).systems(),
-  logon: async (system: string, env: Env = process.env): Promise<LogonResult> => (await connectedRelay(env)).logon(system),
+  logon: async (system: string, env: Env = process.env, options: LogonOptions = {}): Promise<LogonResult> => (await connectedRelay(env, true)).logon(system, options),
 };
+
+/** sap_systems and sap_logon's way to the extension (server.ts SystemsAccess), for one environment. */
+export function systemsAccess(env: Env) {
+  return {
+    list: () => extensionSystems.list(env),
+    logon: (name: string, options?: LogonOptions) => extensionSystems.logon(name, env, options),
+    looksAt: (url: string) => originAllowed(url, allowedOrigins(env)),
+  };
+}
 
 /** Setup checks: is the extension installed, paired, connected; when not, the one step to take. */
 export async function extensionDoctor(env: Env = process.env, waitMs: number = defaultWaitMs(env)): Promise<DoctorCheck[]> {
@@ -129,14 +191,14 @@ export async function extensionDoctor(env: Env = process.env, waitMs: number = d
   const left = Math.max(MIN_WAIT_MS, startedAt + waitMs - Date.now());
   if (!(await connected(r, Math.min(waitMs, left), true))) {
     const info = r.extensionInfo();
-    if (info.lastRefusal === "code") return [{ ok: false, check, detail: "the extension is installed but holds another pairing code", fix: 'Click its icon and "Pair again" (or run `sap-gui-mcp-server extension pair` and paste the code it prints).' }];
+    if (info.lastRefusal === "code") return [{ ok: false, check, detail: "the extension is installed but holds another pairing code", fix: 'Click its icon and "Pair Again" (or run `npx -y sap-gui-mcp-server extension pair` and paste the code it prints).' }];
     if (info.attempts > 0) return [{ ok: false, check, detail: "the extension is installed but not paired with this server", fix: PAIR }];
-    return [{ ok: false, check, detail: `no sap-gui-mcp-server extension connected to port ${r.port} within ${Math.round(waitMs / 1000)} s`, fix: `${INSTALL} Then: ${PAIR}` }];
+    return [{ ok: false, check, detail: `no Agent Connector extension connected to port ${r.port} within ${Math.round(waitMs / 1000)} s`, fix: `${INSTALL} Then: ${PAIR}` }];
   }
   const info = r.extensionInfo();
   const version = /(?:Chrome|Chromium)\/([\d.]+)/.exec(info.userAgent ?? "")?.[1];
   const systems = await r.systems().catch(() => undefined);
-  const { nativeHostInstalled } = await import("./native.js");
+  const { nativeHostAnswers } = await import("./native.js");
   const out: DoctorCheck[] = [
     {
       ok: true,
@@ -145,9 +207,14 @@ export async function extensionDoctor(env: Env = process.env, waitMs: number = d
     },
     systems?.length
       ? { ok: true, check: "SAP systems", detail: systems.map((x) => `${x.name}${x.logon === "password" ? " (logs on by itself)" : x.logon === "sso" ? " (single sign-on)" : ""}`).join(", ") }
-      : { ok: false, check: "SAP systems", detail: "none registered in the extension", fix: "Open your SAP system in Chrome, click the extension's icon and \"Add the SAP page I'm on\"." },
+      : { ok: false, check: "SAP systems", detail: "none registered in the extension", fix: "Open your SAP system in Chrome, click the extension's icon and \"Add This SAP Page\"." },
   ];
-  if (!nativeHostInstalled()) out.push({ ok: true, check: "Extension helper", detail: "not installed: saved passwords are kept in the Chrome profile, not in the keychain. Run `sap-gui-mcp-server extension install` to add it" });
+  const helper = nativeHostAnswers();
+  out.push(
+    helper.ok
+      ? { ok: true, check: "Extension helper", detail: `answers; passwords go to ${helper.keychain ?? "no keychain (none found: the extension saves no password)"}` }
+      : { ok: false, check: "Extension helper", detail: helper.error ?? "not installed", fix: "Run `npx -y sap-gui-mcp-server extension install` (again after changing Node.js), then restart Chrome. Without it the extension saves no password." },
+  );
   return out;
 }
 
@@ -162,15 +229,15 @@ export async function stopExtensionRelay(): Promise<void> {
 export function extensionPairCommand(env: Env = process.env): string[] {
   const { code, file } = readOrCreateCode(env);
   return [
-    "Pairing code for the sap-gui-mcp-server extension:",
+    "Pairing code for the Agent Connector for SAP Systems extension:",
     "",
     `  ${formatCode(code)}`,
     "",
     file ? `It is kept in ${file} (readable only by you).` : "It comes from SAP_EXTENSION_CODE.",
-    "In Chrome, click the SAP systems extension's icon, open \"Pair with a code instead\" and paste the code. Pair once per Chrome profile.",
-    "Not installed yet? Run `sap-gui-mcp-server extension install`, open chrome://extensions, switch on Developer mode, click \"Load unpacked\" and choose the folder it names.",
+    "In Chrome, click the Agent Connector extension's icon, open \"Pair with a Code Instead\" and paste the code. Pair once per Chrome profile.",
+    "Not installed yet? Run `npx -y sap-gui-mcp-server extension install`, open chrome://extensions, switch on Developer mode, click \"Load unpacked\" and choose the folder it names.",
   ];
 }
 
-export { ExtensionRelay, type ExtensionInfo, type ExtensionSystem, type LogonResult } from "./relay.js";
+export { CdpError, ExtensionRelay, type ExtensionInfo, type ExtensionSystem, type LogonOptions, type LogonResult } from "./relay.js";
 export { formatCode, normalizeCode, pairingFile, readOrCreateCode } from "./pairing.js";

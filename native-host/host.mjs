@@ -67,7 +67,8 @@ const macos = {
   // `security -i` reads its command from stdin, and -X takes the password in hex: it never shows in the process list.
   set(id, value, label) {
     const hex = Buffer.from(value, "utf8").toString("hex");
-    const quote = (s) => `"${String(s).replace(/["\\]/g, "")}"`;
+    // One line of `security -i` input: no quote, backslash or line break may get into it.
+    const quote = (s) => `"${String(s).replace(/["\\\r\n]/g, " ")}"`;
     const r = run("/usr/bin/security", ["-i"], `add-generic-password -U -a ${quote(id)} -s ${quote(SERVICE)} -l ${quote(label)} -X ${hex}\n`);
     if (r.status !== 0) throw new Error(`the keychain refused the password (${(r.stderr || "").trim().split("\n")[0] || r.status})`);
   },

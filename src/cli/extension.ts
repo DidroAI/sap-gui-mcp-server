@@ -2,13 +2,14 @@
  *   sap-gui-mcp-server extension install [dir]  copies the Chrome extension to a folder Chrome can load, and
  *                                               installs its helper (pairing in one click, passwords in the keychain)
  *   sap-gui-mcp-server extension pair           prints the pairing code, for pairing by hand
+ *   sap-gui-mcp-server extension uninstall [dir] removes the helper, the passwords it saved, and the copied extension
  *
  * Until the extension is in the Chrome Web Store, it is loaded unpacked from a
  * folder. The package's own copy lives in npm's cache, which npx may clear, so
  * `install` copies it to a stable place first (default ~/sap-gui-mcp-extension,
  * a folder Chrome's file dialog shows on every system). `unpack` is the same.
  */
-import { cpSync, existsSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,7 +19,44 @@ export const EXTENSION_HELP = `  sap-gui-mcp-server extension install [dir]
                                 in chrome://extensions > Load unpacked, and install its helper: the extension
                                 then pairs in one click and keeps saved SAP passwords in the keychain
   sap-gui-mcp-server extension pair
-                                print the pairing code, to pair the extension by hand (SAP_BROWSER=extension)`;
+                                print the pairing code, to pair the extension by hand (SAP_BROWSER=extension)
+  sap-gui-mcp-server extension uninstall [dir]
+                                remove the helper from every browser, the SAP passwords it saved in the keychain,
+                                and the copied extension (dir, default ~/sap-gui-mcp-extension)`;
+
+/** Where `install` copied the extension last: kept next to the pairing file, for `uninstall`. */
+async function folderFile(): Promise<string> {
+  const { pairingFile } = await import("../browser/extension/pairing.js");
+  return join(dirname(pairingFile()), "extension-folder");
+}
+async function rememberFolder(dir: string): Promise<void> {
+  try {
+    const f = await folderFile();
+    mkdirSync(dirname(f), { recursive: true, mode: 0o700 });
+    writeFileSync(f, `${dir}\n`);
+  } catch {}
+}
+async function rememberedFolder(): Promise<string | undefined> {
+  try {
+    return readFileSync(await folderFile(), "utf8").trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Is this folder a copy of our extension (its manifest's key is ours)? Only such a folder is ever emptied:
+ *  never the package's own extension folder, nor one inside a source checkout. */
+function isOurCopy(dir: string): boolean {
+  if (resolve(dir) === resolve(bundledExtensionDir())) return false;
+  if (existsSync(join(dir, "..", "package.json")) || existsSync(join(dir, "..", ".git"))) return false;
+  try {
+    const mine = JSON.parse(readFileSync(join(bundledExtensionDir(), "manifest.json"), "utf8")) as { key?: string };
+    const there = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")) as { key?: string };
+    return !!mine.key && there.key === mine.key;
+  } catch {
+    return false;
+  }
+}
 
 /** The extension folder shipped with the package: <package>/extension, from src/cli or dist/cli alike. */
 export function bundledExtensionDir(): string {
@@ -39,8 +77,11 @@ export async function extensionCommand(args: string[], out: (l: string) => void 
       return 1;
     }
     const to = resolve(args[1] ?? join(homedir(), "sap-gui-mcp-extension"));
-    cpSync(from, to, { recursive: true, filter: (p) => !/\.md$/i.test(p) || p.endsWith("README.md") });
+    // An older copy goes first, so that files this version no longer has do not stay behind.
+    if (isOurCopy(to)) rmSync(to, { recursive: true, force: true });
+    cpSync(from, to, { recursive: true, filter: (p) => !/STORE\.md$/i.test(p) });
     out(`Copied the extension to ${to}`);
+    await rememberFolder(to);
     const { installNativeHost } = await import("../browser/extension/native.js");
     let paired = false;
     try {
@@ -52,8 +93,25 @@ export async function extensionCommand(args: string[], out: (l: string) => void 
     }
     out("");
     out(`In Chrome: open chrome://extensions, turn on Developer mode, click "Load unpacked" and pick ${to}.`);
-    out(paired ? `Then click the extension's icon and "Pair with this computer".` : `Then run "sap-gui-mcp-server extension pair" and paste the code into the extension's popup.`);
-    out(`After an update of sap-gui-mcp-server, run install again and click the reload arrow on the extension's card.`);
+    out(`(In the folder dialog on a Mac, press Cmd+Shift+G and type ${to}.)`);
+    out(paired ? `Then click the Agent Connector icon (under the puzzle piece in Chrome's toolbar; pin it there) and "Pair with This Computer".` : `Then run "npx -y sap-gui-mcp-server extension pair" and paste the code into the extension's popup.`);
+    out(`To update: run "npx -y sap-gui-mcp-server@latest extension install" again, then click the reload arrow on the extension's card in chrome://extensions.`);
+    return 0;
+  }
+  if (sub === "uninstall") {
+    const { uninstallNativeHost } = await import("../browser/extension/native.js");
+    const to = resolve(args[1] ?? (await rememberedFolder()) ?? join(homedir(), "sap-gui-mcp-extension"));
+    const r = uninstallNativeHost();
+    for (const x of r.removed) out(`Removed ${x}`);
+    if (r.keychainItems > 0) out(`Deleted ${r.keychainItems} saved SAP password(s) from the keychain.`);
+    else if (r.keychainItems < 0) out("No SAP password saved by the extension is left in the keychain.");
+    else out("No SAP password saved by the extension was found in the keychain.");
+    if (isOurCopy(to)) {
+      rmSync(to, { recursive: true, force: true });
+      out(`Removed the extension's folder ${to}`);
+    } else out(`No copy of the extension in ${to}. If you installed it elsewhere, run uninstall with that folder.`);
+    out("");
+    out(`Last step, in Chrome: open chrome://extensions and click Remove on "Agent Connector for SAP Systems".`);
     return 0;
   }
   err(`Usage:\n${EXTENSION_HELP}`);

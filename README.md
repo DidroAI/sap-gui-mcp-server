@@ -433,27 +433,35 @@ SAP_CHROME_CDP=http://127.0.0.1:9333 npx -y sap-gui-mcp-server sessions
 #### Use your everyday Chrome with the extension
 
 Instead of remote debugging, the server can reach your Chrome through the
-**SAP systems** extension: no `chrome://inspect` switch, your normal profile
-with its SSO, and only the tabs of the SAP systems you register are shared.
-The extension also keeps your systems' logons: the agent can say "log on to
-ECC dev", and the extension types the password into SAP's logon page
-itself. The agent and the server never see it.
+**Agent Connector for SAP Systems** extension: no `chrome://inspect`
+switch, your normal profile with its SSO, and only the tabs of the SAP
+systems you register are shared. The extension also keeps your systems'
+logons: the agent can say "log on to ECC Dev", and the extension types the
+password into SAP's logon page itself. The agent and the server never see
+it.
 
 1. `npx -y sap-gui-mcp-server extension install` copies the extension to
    `~/sap-gui-mcp-extension` and installs its helper (pairing in one click,
    passwords in your keychain). In Chrome, open `chrome://extensions`, turn
-   on *Developer mode*, click *Load unpacked* and pick that folder.
-2. Click the extension's icon and *Pair with this computer*.
-3. Open your SAP system in a tab and click *Add this SAP page*. Add
+   on **Developer mode**, click **Load unpacked** and pick that folder.
+   Pin the icon (puzzle piece, then the pin), and restart Chrome once if it
+   was open during the install.
+2. Click the Agent Connector icon and **Pair with This Computer**.
+3. Open your SAP system in a tab and click **Add This SAP Page**. Add
    user and password if the extension should log on for you.
-4. Set `SAP_BROWSER=extension` in the server's environment. The agent then
-   also has `sap_systems` (your registered systems) and `sap_logon` (open
-   one and log on).
+4. Add `"SAP_BROWSER": "extension"` to the `env` of sap-gui-mcp-server in
+   your agent's settings, and restart the agent app. The agent then also
+   has `sap_systems` (your registered systems) and `sap_logon` (open one and
+   log on).
 
-While the server works in a tab, Chrome shows "started debugging this
-browser". Clicking *Cancel* there stops the sharing until you click
-*Resume sharing* in the popup. See [extension/README.md](extension/README.md)
-for where passwords are kept, permissions, IT deployment and limits.
+While the server works in a tab, Chrome shows "Agent Connector for SAP
+Systems started debugging this browser". Clicking **Cancel** there stops the
+sharing until you click **Resume Sharing** in the popup.
+`npx -y sap-gui-mcp-server extension uninstall` removes the helper and the
+saved passwords. See [extension/README.md](extension/README.md) for what
+happens on a wrong password or a locked user, where passwords are kept,
+permissions, IT deployment and limits. SAP is a trademark of SAP SE; the
+extension is not affiliated with SAP.
 
 ## Tools
 

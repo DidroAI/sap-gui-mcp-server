@@ -1,28 +1,44 @@
-// Icons from lucide (ISC licence, https://lucide.dev), inlined as SVG.
-// Generated from lucide-react 1.67.0; regenerate rather than edit.
+// The popup's icons: one outline set in the manner of SAP Fiori's Horizon icons (1.5 px strokes on a
+// 16-unit grid), drawn for this extension, plus its own product mark and empty-state illustration.
+// No SAP artwork and no icon font. Colours come from popup.css (currentColor, or the classes below).
 
-const svg = (body) =>
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${body}</svg>`;
+const svg = (body, view = "0 0 16 16") => `<svg viewBox="${view}" aria-hidden="true" focusable="false">${body}</svg>`;
+const o = (d) => `<path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="${d}"/>`;
+const dot = (cx, cy, r = 0.9) => `<circle cx="${cx}" cy="${cy}" r="${r}"/>`;
 
 export const ICONS = {
-  plus: svg('<path d="M5 12h14"/><path d="M12 5v14"/>'),
-  ellipsis: svg('<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>'),
-  eye: svg('<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>'),
-  eyeOff: svg('<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/>'),
-  keyRound: svg('<path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/>'),
-  server: svg('<rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/>'),
-  x: svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'),
-  pause: svg('<rect x="14" y="3" width="5" height="18" rx="1"/><rect x="5" y="3" width="5" height="18" rx="1"/>'),
-  play: svg('<path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/>'),
-  settings: svg('<path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/>'),
-  logIn: svg('<path d="m10 17 5-5-5-5"/><path d="M15 12H3"/><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>'),
-  externalLink: svg('<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>'),
-  info: svg('<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>'),
-  triangleAlert: svg('<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>'),
-  pencil: svg('<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>'),
-  trash: svg('<path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>'),
-  check: svg('<path d="M20 6 9 17l-5-5"/>'),
-  plugZap: svg('<path d="M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/><path d="m2 22 3-3"/><path d="M7.5 13.5 10 11"/><path d="M10.5 16.5 13 14"/><path d="m18 3-4 4h6l-4 4"/>'),
-  globe: svg('<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>'),
-  link: svg('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'),
+  add: svg(o("M8 2.5v11M2.5 8h11")),
+  overflow: svg(dot(3, 8, 1.4) + dot(8, 8, 1.4) + dot(13, 8, 1.4)),
+  edit: svg(o("M10.5 2.5l3 3-8 8H2.5v-3z M9 4l3 3")),
+  delete: svg(o("M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.5h6.6L12 4M6.8 6.5v4.5M9.2 6.5v4.5")),
+  key: svg(o("M7.6 8.4a3.4 3.4 0 1 1-1-2.4M7.6 8.4l6-6M11.6 4.4l1.6 1.6M10 6l1.2 1.2") + dot(4.6, 9.4, 0.9)),
+  show: svg(o("M1.5 8C2.7 5.4 5.1 3.8 8 3.8s5.3 1.6 6.5 4.2c-1.2 2.6-3.6 4.2-6.5 4.2S2.7 10.6 1.5 8z") + o("M8 6.2a1.8 1.8 0 1 0 0 3.6 1.8 1.8 0 0 0 0-3.6z")),
+  hide: svg(o("M1.5 8C2.7 5.4 5.1 3.8 8 3.8s5.3 1.6 6.5 4.2c-1.2 2.6-3.6 4.2-6.5 4.2S2.7 10.6 1.5 8z") + o("M8 6.2a1.8 1.8 0 1 0 0 3.6 1.8 1.8 0 0 0 0-3.6zM2.5 2.5l11 11")),
+  information: svg(o("M8 1.75a6.25 6.25 0 1 1 0 12.5 6.25 6.25 0 0 1 0-12.5zM8 7.2v4.3") + dot(8, 4.9)),
+  success: svg(o("M8 1.75a6.25 6.25 0 1 1 0 12.5 6.25 6.25 0 0 1 0-12.5zM5.2 8.2l2 2 3.7-4")),
+  warning: svg(o("M8 2l6.3 11.2H1.7zM8 6.3v3.4") + dot(8, 11.3)),
+  error: svg(o("M8 1.75a6.25 6.25 0 1 1 0 12.5 6.25 6.25 0 0 1 0-12.5zM5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4")),
+  decline: svg(o("M3.5 3.5l9 9M12.5 3.5l-9 9")),
+  pause: svg(o("M5.5 3v10M10.5 3v10")),
+  play: svg(o("M4.5 2.8v10.4L13 8z")),
+  settings: svg('<path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" d="M13.11 6.25 L14.87 6.68 L14.87 9.32 L13.11 9.75 L12.85 10.38 L13.80 11.93 L11.93 13.80 L10.38 12.85 L9.75 13.11 L9.32 14.87 L6.68 14.87 L6.25 13.11 L5.62 12.85 L4.07 13.80 L2.20 11.93 L3.15 10.38 L2.89 9.75 L1.13 9.32 L1.13 6.68 L2.89 6.25 L3.15 5.62 L2.20 4.07 L4.07 2.20 L5.62 3.15 L6.25 2.89 L6.68 1.13 L9.32 1.13 L9.75 2.89 L10.38 3.15 L11.93 2.20 L13.80 4.07 L12.85 5.62Z M8 5.9a2.1 2.1 0 1 0 0 4.2 2.1 2.1 0 0 0 0-4.2z"/>'),
+  open: svg(o("M9 2.5h4.5V7M13.5 2.5L7.5 8.5M11.5 9.5v4h-9v-9h4")),
+  person: svg(o("M8 2.5a2.6 2.6 0 1 1 0 5.2 2.6 2.6 0 0 1 0-5.2zM2.8 13.5c.6-2.6 2.7-4 5.2-4s4.6 1.4 5.2 4")),
+  sso: svg(o("M8 1.8l5.2 2v4c0 3-2.2 5.3-5.2 6.4-3-1.1-5.2-3.4-5.2-6.4v-4zM5.6 8l1.7 1.7 3.2-3.4")),
+  connected: svg(o("M6.5 9.5l3-3M7 4.5l1.3-1.3a2.5 2.5 0 0 1 3.5 3.5L10.5 8M9 11.5l-1.3 1.3a2.5 2.5 0 0 1-3.5-3.5L5.5 8")),
+  // The product's mark: a flat tile with a window and a prompt in it. Ours, not SAP's.
+  mark: svg(
+    '<rect class="mark-tile" width="32" height="32" rx="7"/>' +
+      '<g class="mark-glyph" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="7" width="20" height="18" rx="3"/><path d="M11 13l4 3-4 3M17.5 19h4"/></g>',
+    "0 0 32 32",
+  ),
+  // The empty state's picture: a system window waiting for its first entry.
+  illustration: svg(
+    '<circle class="il-ground" cx="60" cy="52" r="42"/>' +
+      '<rect class="il-card" x="24" y="22" width="72" height="54" rx="8"/>' +
+      '<path class="il-bar" d="M24 30a8 8 0 0 1 8-8h56a8 8 0 0 1 8 8v4H24z"/>' +
+      '<rect class="il-line" x="34" y="44" width="34" height="5" rx="2.5"/><rect class="il-line soft" x="34" y="55" width="48" height="5" rx="2.5"/><rect class="il-line soft" x="34" y="66" width="24" height="5" rx="2.5"/>' +
+      '<circle class="il-badge" cx="92" cy="74" r="13"/><path class="il-plus" d="M92 68v12M86 74h12"/>',
+    "0 0 120 100",
+  ),
 };
