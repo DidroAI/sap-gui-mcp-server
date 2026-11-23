@@ -26,9 +26,10 @@
  */
 import { menuSid, resolveId } from "../core/ids.js";
 import type { Action, Assessment } from "../core/types.js";
-import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayScreen, endsLogon, isGotoMenu, languageCovered, layoutMenu, listChoice, listTitle, MENU_PROGRAMS, okcodeKind, removesViewCriterion, runSwitch, SAFE_VKEYS, safeCode, safeWord, searchButton, SAVE_VKEYS, showsOnly, viewDialog } from "../core/words.js";
+import { actWord, CLOSES_SESSIONS, commitCode, commitWord, deletesLines, discardsInput, displayScreen, draftDocument, draftEdit, itemViewButton, endsLogon, isGotoMenu, languageCovered, layoutMenu, listChoice, listTitle, MENU_PROGRAMS, okcodeKind, removesViewCriterion, runSwitch, SAFE_VKEYS, safeCode, safeWord, searchButton, SAVE_VKEYS, showsOnly, viewDialog } from "../core/words.js";
 import type { MenuEntry } from "./page.js";
 import { vkey } from "./keys.js";
+import { shortcutText } from "./labels.js";
 
 /**
  * Keys that never write, whatever the screen: the safe SAP function keys
@@ -155,14 +156,19 @@ export function keyName(k: string): string {
     .replace(/\s+/g, "")
     .replace(/[+-]/g, "_")
     .replace(/CONTROL|STRG/g, "CTRL")
+    .replace(/UMSCHALT|UMSCH/g, "SHIFT")
     .replace(/^ESC$/, "ESCAPE")
     .replace(/^RETURN$/, "ENTER");
 }
 
-/** The shortcut a button's tooltip ends with: "Save (Ctrl+S)" -> "CTRL_S". */
+/**
+ * The shortcut a button's name carries: "Save (Ctrl+S)" -> "CTRL_S"; also S/4HANA's
+ * "Company Code  ((Ctrl+F2))", a tooltip naming it ("PO History  (Purchase Order
+ * History (F5))"), and a line with the reader's notes after it ("(behind ">>")").
+ */
 function shortcutOf(text: string): string | undefined {
-  const m = /\(([^()]+)\)\s*$/.exec(text);
-  return m?.[1] ? keyName(m[1]) : undefined;
+  const k = shortcutText(text);
+  return k ? keyName(k) : undefined;
 }
 
 /** The function key a toolbar button is bound to, from its id: `wnd[0]/tbar[1]/btn[8]` -> 8. */
@@ -377,6 +383,32 @@ function displayButton(control: ViewControl, text: string, scene: Scene, ctx: As
   return control.window === 0 && control.kind === "button" && /^wnd\[0\]\/(tbar\[1\]|usr)\//.test(control.id) && !control.id.includes("/shell") && !actWord(text) && isDisplayScreen(scene, ctx);
 }
 
+/** A control's SAP name: the id's last part without its type prefix and cell index (`.../btnBT_PEIN` -> BT_PEIN). */
+const sapName = (id: string) =>
+  id
+    .slice(id.lastIndexOf("/") + 1)
+    .replace(/^[a-z]+/, "")
+    .replace(/\[[\d,]+\]$/, "");
+
+/**
+ * A new document that was never saved (core/words.ts draftDocument): ME21N,
+ * ME51N, VA01, VA11, VA21 titled "Create ...", with no document number in the
+ * fields that would show one. Until Save (or Hold, Park), the document lives
+ * in the session's memory only.
+ */
+function draftScreen(scene: Scene, ctx: AssessContext): boolean {
+  const main = scene.windows.find((w) => w.number === 0);
+  if (!main) return false;
+  const numbers = new Map(main.controls.filter((c) => c.kind === "field").map((c) => [sapName(c.id), /= "(.*?)"/.exec(c.text)?.[1] ?? ""]));
+  return draftDocument(ctx.language, main.title, scene.transaction, numbers);
+}
+
+/** A popup's title and text lines, as one text. */
+const popupText = (w: ViewWindow | undefined) => (w ? [w.title, ...w.controls.filter((c) => c.kind === "label").map((c) => c.text)].join(" ") : "");
+
+/** A button in the body of the main window (not a toolbar, not a grid's or a tree's toolbar). */
+const bodyButton = (control: ViewControl) => control.window === 0 && control.kind === "button" && /^wnd\[0\]\/usr\//.test(control.id) && !control.id.includes("/shell");
+
 /** Is this menu entry in one of the transaction's own menus? The last two of the menu bar are SAP's System and Help, the same on every screen. */
 function inOwnMenu(entry: MenuEntry, menus: MenuEntry[]): boolean {
   const n = Number(/^wnd\[0\]\/mbar\/menu\[(\d+)\]/.exec(entry.sid)?.[1] ?? Number.NaN);
@@ -438,9 +470,19 @@ function assessFunction(what: string, text: string, control: ViewControl | undef
   if (control && commitWord(text) && showsOnly(ctx.language, text) && displayButton(control, text, scene, ctx)) return navigate(`${named} shows something on a screen that only displays`);
   // "Remove filter criterion (F6)" in ALV's Filter dialog: the criterion leaves the list's view, nothing is deleted in SAP.
   if (control && control.window > 0 && viewDialog(ctx.language, win?.title) && removesViewCriterion(ctx.language, text)) return navigate(`${named} takes a criterion out of the list's view`);
+  // An item function of a new document that was never saved (draftScreen): delete, add, copy or block a line
+  // (ME21N's Delete and Copy Item), pressed in the body of the screen with no popup over it. It changes the
+  // document in memory only. A function the text does not name as such a line edit is judged as elsewhere. Save, Hold and Park sit in the toolbars and are judged above and
+  // below as everywhere; a body button whose words mean anything else that writes (post, release, send...)
+  // or acts beyond the screen (print, output) is not covered (draftEdit).
+  if (control && bodyButton(control) && topOf(scene.windows)?.number === 0 && draftEdit(text) && draftScreen(scene, ctx)) return navigate(`${named} changes only the new document, which is not saved yet`);
   if (commitWord(text)) return commit(named);
   if (control && control.window > 0 && control.kind === "button") {
     const asked = commitQuestion(scene.windows);
+    // "Delete the item?" on the first popup over a new, unsaved document: the answer deletes a line of that
+    // document in memory (deletesLines names a line; a template or a variant is saved on its own and stays a write).
+    if (asked && !declines(control, text, ctx) && control.window === 1 && topOf(scene.windows)?.number === 1 && deletesLines(ctx.language, popupText(win)) && draftScreen(scene, ctx))
+      return navigate(`${named} on the popup ${quote(asked)} deletes a line of the new document, which is not saved yet`);
     if (asked && !declines(control, text, ctx)) return endsLogon(asked) ? closes(`${named} on the popup ${quote(asked)}`) : commit(`${named} on the popup ${quote(asked)}`);
   }
   // Execute on the selection screen of a report that updates (updateRun).
@@ -451,6 +493,9 @@ function assessFunction(what: string, text: string, control: ViewControl | undef
   if (key !== undefined && SAFE_VKEYS.has(key)) return NAVIGATE;
   if (sc && SAFE_KEYS.has(sc)) return NAVIGATE;
   if (safeWord(ctx.language, text)) return NAVIGATE;
+  // An item button of a sales or purchasing document that moves to another view of it (ITEM_VIEW_BUTTONS:
+  // VA0x's schedule lines and item conditions, ME2xN's item selection), in any mode.
+  if (control && bodyButton(control) && itemViewButton(scene.program, sapName(control.id), text)) return navigate(`${named} moves to another view of the document`);
   // A search button by its SAP name (BP's locator "Start", btnBUS_LOCA_SRCH01-GO), unless its text says it acts.
   if (control && control.kind === "button" && searchButton(control.id) && !actWord(text.replace(/\([^()]*\)\s*$/, "").trim().replace(/^start$/i, ""))) return navigate(`${named} starts a search`);
   // An answer to "Data will be lost..." (discardQuestion) discards the input or keeps it.
