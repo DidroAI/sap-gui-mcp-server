@@ -444,7 +444,7 @@ itself. The agent and the server never see it.
    passwords in your keychain). In Chrome, open `chrome://extensions`, turn
    on *Developer mode*, click *Load unpacked* and pick that folder.
 2. Click the extension's icon and *Pair with this computer*.
-3. Open your SAP system in a tab and click *Add the SAP page I'm on*. Add
+3. Open your SAP system in a tab and click *Add this SAP page*. Add
    user and password if the extension should log on for you.
 4. Set `SAP_BROWSER=extension` in the server's environment. The agent then
    also has `sap_systems` (your registered systems) and `sap_logon` (open

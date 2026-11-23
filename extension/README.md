@@ -57,16 +57,19 @@ is working in.
 
 ## Add your systems
 
-Open your SAP system in a tab and click **Add the SAP page I'm on**: the
+Open your SAP system in a tab and click **Add this SAP page**: the
 address, client and language come from the page. Give it a name, add the
 user and password if the extension should log on for you, and click
 **Save**. Chrome asks once to allow the extension on that site. Or click
-**+ Add** and type the address.
+**Add** (or *Type an address instead*) and type the address.
 
 - **Single sign-on**: tick *Single sign-on* and leave the password out. The
   extension just opens the address.
 - **No password saved**: the extension opens the logon page and you type it.
-- **Open** opens the system in a tab, logged on, or switches to its tab.
+- **Log on** (with a saved password) or **Open** opens the system in a tab,
+  logged on, or switches to its tab.
+- The **⋯** menu next to it edits the system, opens it without logging on,
+  forgets its password or removes it.
 
 Then tell the agent what to do in it. With `SAP_BROWSER=extension` the
 server has two more tools: `sap_systems` lists your systems, and
@@ -89,7 +92,7 @@ whether the extension is connected and paired.
   profile's local storage, on this computer only. The popup says so when
   you save.
 - Never in Chrome sync, never in a log, never sent to the server or the
-  agent. Delete a system, and its password is deleted too.
+  agent. Remove a system, and its password is deleted too.
 
 ## What it can see and do
 
@@ -120,7 +123,7 @@ whether the extension is connected and paired.
 - **"Chrome is being controlled by automated test software"** is not this
   extension. Chrome shows that bar when a program started it with
   `--enable-automation` (Playwright, Puppeteer and tools built on them do).
-  The popup tells you when that is the case.
+  The popup tells you once when that is the case.
 
 ## For IT: deploy to a fleet
 
@@ -168,3 +171,6 @@ let each user pair with their own. Patterns that match every host
 The extension attaches `chrome.debugger` to the shared tabs. It relays the
 Chrome DevTools Protocol over one WebSocket to the server's relay, which
 gives Playwright a browser endpoint. See [PROTOCOL.md](PROTOCOL.md).
+
+The popup uses Instrument Sans (SIL Open Font License, `fonts/OFL.txt`)
+and icons from [lucide](https://lucide.dev) (ISC licence), both bundled.

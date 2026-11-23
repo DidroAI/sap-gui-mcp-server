@@ -1688,6 +1688,8 @@ async function logonSystem(ref, { by }) {
 
 async function doLogon(sys, by) {
   const r = await doLogonSteps(sys, by);
+  // The agent asked for this system: the popup names it as where the agent works.
+  if (by === "server" && Number.isInteger(r.tabId)) noteAgentTab(r.tabId);
   // The server names Chrome tabs by their target id ("chrome:<targetId>" sessions).
   try {
     const t = (await chrome.debugger.getTargets()).find((x) => x.tabId === r.tabId && x.type === "page");
@@ -1805,7 +1807,11 @@ async function popupState(tabId) {
   }
   const shared = [...attached].map((id) => allowed.get(id)).filter(Boolean);
   let agent = null;
-  if (ws && agentTab && Date.now() - agentTab.at < AGENT_TAB_FRESH_MS && allowed.has(agentTab.tabId)) agent = { tabId: agentTab.tabId, title: allowed.get(agentTab.tabId).title };
+  if (ws && agentTab && Date.now() - agentTab.at < AGENT_TAB_FRESH_MS && allowed.has(agentTab.tabId)) {
+    const t = allowed.get(agentTab.tabId);
+    const system = cfg.systems.find((x) => tabOfSystem(x, t.url));
+    agent = { tabId: agentTab.tabId, title: t.title, system: system ? system.name : null };
+  }
   const targets = [...all.values()];
   return {
     status: status.state,
