@@ -101,11 +101,11 @@ describe.skipIf(!exe)("Web GUI reader: lists, dropdowns and handles, in a browse
     expect(c).toContain("btn[2]  button  Choose (F2)");
     const at = c.findIndex((l) => l.startsWith("usr  list  "));
     expect(c.slice(at, at + 5)).toEqual([
-      "usr  list  201 rows (visible 3, below 1 title rows; scroll for the others)  (cell ids: usr/lbl[col,row], col in braces; rows without braces have their cells in columns 1,3,9; a checkbox is chk[col,row])",
-      "  row 0: Type {3} | Name {9}",
-      "  row 1: [ ] | T0 | Name 0",
-      "  row 2: [x] | T1 | Name 1",
-      "  row 3: [ ] | T2 | Name 2",
+      'usr  list  201 rows (visible 3, below 1 title rows; scroll for the others)  (rows numbered in the whole list below its 1 title row, as "rows" and scroll count them; a cell id counts rows on screen: usr/lbl[col,<cell row>], col in braces; rows without braces have their cells in columns 1,3,9; a checkbox is chk[col,<cell row>])',
+      "  title 0: Type {3} | Name {9}",
+      "  row 0 (cell row 1): [ ] | T0 | Name 0",
+      "  row 1 (cell row 2): [x] | T1 | Name 1",
+      "  row 2 (cell row 3): [ ] | T2 | Name 2",
     ]);
   });
 
@@ -115,7 +115,7 @@ describe.skipIf(!exe)("Web GUI reader: lists, dropdowns and handles, in a browse
     expect(await webguiActInFrame(f, { do: "scroll", id: "usr", to: 50 })).toBe("scrolled wnd[0]/usr: rows 50 to 52 of 201");
     expect(await page.evaluate(() => (window as unknown as { scrolls: number[] }).scrolls)).toEqual([51]);
     const c = await compactView();
-    expect(c).toContain("  row 1: [ ] | T50 | Name 50");
+    expect(c).toContain("  row 50 (cell row 1): [ ] | T50 | Name 50");
     expect(c.find((l) => l.startsWith("usr  list  "))).toContain("201 rows (visible 3, first 50, below 1 title rows; scroll for the others)");
     expect(await webguiActInFrame(f, { do: "scroll", id: "usr", to: "next" })).toBe("scrolled wnd[0]/usr: rows 53 to 55 of 201");
     expect(await webguiActInFrame(f, { do: "scroll", id: "usr", to: "last" })).toBe("scrolled wnd[0]/usr: rows 198 to 200 of 201");
@@ -127,16 +127,16 @@ describe.skipIf(!exe)("Web GUI reader: lists, dropdowns and handles, in a browse
   test("a range of rows is read by scrolling; title rows stay apart", async () => {
     const out = (await look({ compact: true, id: "usr", rows: { from: 10, to: 16 } })).split("\n");
     expect(out.slice(2)).toEqual([
-      "usr  list  201 rows (visible 3, first 16, below 1 title rows; scroll for the others)  (cell ids: usr/lbl[col,row], col in braces; a checkbox is chk[col,row])",
+      "usr  list  201 rows (visible 3, first 14, below 1 title rows; scroll for the others)  (cell ids: usr/lbl[col,row], col in braces; a checkbox is chk[col,row])",
       "  title 0: Type {3} | Name {9}",
       "  row 10: [ ] {1} | T10 {3} | Name 10 {9}",
       "  row 11: [ ] {1} | T11 {3} | Name 11 {9}",
       "  row 12: [ ] {1} | T12 {3} | Name 12 {9}",
       "  row 13: [ ] {1} | T13 {3} | Name 13 {9}",
-      "  row 14: [ ] {1} | T14 {3} | Name 14 {9}",
-      "  row 15: [ ] {1} | T15 {3} | Name 15 {9}",
-      "  row 16: [ ] {1} | T16 {3} | Name 16 {9}",
-      "  (rows 10 to 16 of 201; the control is now scrolled there. Rows are numbered in the whole list here; a cell id counts rows on screen, so scroll to a row before acting on it.)",
+      "  row 14 (cell row 1): [ ] {1} | T14 {3} | Name 14 {9}",
+      "  row 15 (cell row 2): [ ] {1} | T15 {3} | Name 15 {9}",
+      "  row 16 (cell row 3): [ ] {1} | T16 {3} | Name 16 {9}",
+      '  (rows 10 to 16 of 201; the control is now scrolled there. Rows are numbered in the whole list (line 0 is the first line below 1 title row), as "rows" and scroll count them; a cell id counts rows on screen: a row on screen now says its cell row (row 14 is lbl[col,1]), scroll to the others before acting on them.)',
     ]);
     await webguiActInFrame(page.mainFrame(), { do: "scroll", id: "usr", to: "first" });
   });

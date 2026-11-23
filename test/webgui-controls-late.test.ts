@@ -256,7 +256,7 @@ describe.skipIf(!exe)("Web GUI reader: controls that answer late or hide their p
 
   test("a wrong dropdown key is answered with the entries as the list writes them", async () => {
     await open();
-    expect(await refusal(actRaw(session, { do: "combo", id: "cmbRMMG1-MBRSH", key: "ZZ" }))).toBe('no entry "ZZ" in wnd[0]/usr/cmbRMMG1-MBRSH: M:Mechanical Engineering, 03:Bottleneck Material');
+    expect(await refusal(actRaw(session, { do: "combo", id: "cmbRMMG1-MBRSH", key: "ZZ" }))).toBe('no entry "ZZ" in wnd[0]/usr/cmbRMMG1-MBRSH: give an entry\'s key exactly ("" for the blank entry, which clears the field). Its entries (key:text): M:Mechanical Engineering, 03:Bottleneck Material');
   });
 
   test("a double-click on a popup's list line that only gave it the cursor is made once more, after its late request", async () => {

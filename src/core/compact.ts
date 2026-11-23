@@ -15,9 +15,20 @@
  *   cell appears with its text when the buttons of its column do not all
  *   say the same (the operator of a selection criterion, a status icon);
  *   a column of equal buttons is named in the column legend only.
+ * - **Row numbers.** A row of a table control or a list is numbered as
+ *   `"rows"` and scroll count it: in the whole table, in the whole list
+ *   below its title rows ("title N" lines). Its cell ids count rows on the
+ *   screen: where that is another number the row says it, `row 60 (cell row
+ *   0)`, and the control's line says so. A list whose reader does not say
+ *   its title rows (SAP GUI) keeps its screen rows, and its line says how
+ *   `"rows"` counts (core/rows.ts measures the title rows).
  * - **Lists.** The cells of a classic list (`lbl[col,row]`) become one line
  *   per row of the list, each cell with its column in braces; rows that share
  *   their columns (a table drawn as a list) are written without them.
+ * - **Numbers.** A `NUMBERS 1.234,56` line under the header says the user's
+ *   decimal notation, from the user's setting when the surface knows it,
+ *   else from the amounts on the screen ("1.000" is a thousand with a
+ *   decimal comma); no line when neither tells.
  * - **Repeated buttons.** Buttons that differ only by the field they belong
  *   to ("Multiple selection" on a selection screen) share one line, with the
  *   names in braces. Toolbar buttons keep a line each, with their whole name
@@ -37,6 +48,7 @@
  *   many are left out and how to get them (sap_look with the control's id).
  */
 import { shortIds } from "./ids.js";
+import { decimalOf, numbersLine } from "./notation.js";
 
 export interface CompactOptions {
   /** Shortest unique handles (default). False: the last segment when unique, else the path below the user area. */
@@ -57,6 +69,22 @@ export interface CompactOptions {
   emptyRuns?: boolean;
   /** Cut row lines when the view is longer than this many characters; 0 never cuts (default 20000). */
   maxChars?: number;
+  /**
+   * Rows of table controls and lists under their screen row, the row of
+   * their cell ids, alone (core/rows.ts numbers them itself). Default false:
+   * a row is numbered in the whole table or list, as "rows" and scroll count
+   * it, and says its cell row when that is another number.
+   */
+  screenRows?: boolean;
+  /**
+   * A NUMBERS line under the header: how the user's numbers are written
+   * ("NUMBERS 1.234,56"), so that "1.000" is read right. Default true; the
+   * notation comes from `decimal` when the surface knows the user's setting,
+   * else from the amounts the screen shows (core/notation.ts).
+   */
+  numbers?: boolean;
+  /** The user's decimal sign, when the surface knows it from the user's settings. */
+  decimal?: "," | ".";
   /**
    * For a view of one control (`controlBlock`): the full view of the screen
    * it is on, so that its handle is the one the screen's view shows.
@@ -351,7 +379,12 @@ export function compact(full: string, options: CompactOptions = {}): string {
       if (cellRest.startsWith("button  ")) {
         button = true;
         cell = (buttonTexts.get(`${tbl}|${c}`)?.size ?? 0) > 1 ? `${col}=${cellRest.slice(8).replace(/ {2}\(.*\)$/, "")}` : null;
-      } else if (cellRest.startsWith("checkbox")) cell = `${col} ${cellRest.includes("[x]") ? "[x]" : "[ ]"}`;
+      } else if (cellRest.startsWith("checkbox") || cellRest.startsWith("radio")) cell = `${col} ${cellRest.includes("[x]") ? "[x]" : "[ ]"}`;
+      else if (cellRest.startsWith("label  ")) {
+        // A text drawn in a cell (SAP GUI: a GuiLabel): a value like any other.
+        const v = cellRest.slice(7).replace(/^\s+|\s+$/g, "");
+        cell = v ? `${col}=${v}` : null;
+      }
       else if (cellRest.startsWith("dropdown")) {
         // A dropdown cell: the entry's text, else its key.
         const v = /= "(.*?)"(.*)$/.exec(cellRest.replace(/ {2}(\d+ )?options: .*$/, "").replace(/\s*\((edit|read-only)\)\s*$/, ""));
@@ -453,15 +486,24 @@ export function compact(full: string, options: CompactOptions = {}): string {
       const l = legend(t);
       const firstCol = [...t.columns.entries()].sort((a, b) => a[0] - b[0])[0];
       const example = firstCol ? `${firstCol[1].id}[${firstCol[0]},0]` : `${short(t.id)}/<id>[0,0]`;
-      const head = `${t.head}  (cell id: <id>[col,row], e.g. ${example}${t.first ? `; row 0 here is row ${t.first} of the table` : ""})`;
+      // Scrolled, its rows are numbered in the whole table (as "rows" and scroll count them) and say their cell row.
+      const head =
+        t.first && !opt.screenRows
+          ? `${t.head}  (rows numbered in the whole table, as "rows" and scroll count them; a cell id counts rows on screen: <id>[col,<cell row>], e.g. ${example} is row ${t.first})`
+          : `${t.head}  (cell id: <id>[col,row], e.g. ${example}${t.first ? `; row 0 here is row ${t.first} of the table` : ""})`;
       // No cell of the table holds a value or takes input: said, or the "rows N" of its line reads as N rows the view left out.
+      // Not "no row is filled": Web GUI draws no cell of a table outside the part of the page in view.
       const rows = out.some((o) => typeof o !== "string" && "cells" in o && o.table === t);
-      const none = rows || !/ {2}table {2}rows /.test(t.head) ? [] : ["  (no row is filled: every row on screen is blank and takes no input. The rows its line counts are SAP's blank lines.)"];
+      const none = rows || !/ {2}table {2}rows /.test(t.head) ? [] : [`  (no cell of this table is in the view: its rows on screen are blank lines, or the table is outside the part of the page that is drawn. sap_look with id "${short(t.id)}" reads it on its own.)`];
       return l ? [head, l, ...none] : [head, ...none];
     }
     if ("cells" in x) {
       const sel = x.table && x.r !== undefined && x.table.selected.has(x.r) ? " (selected)" : "";
-      if (filled(x.cells) || sel || !opt.emptyRuns) return [`${x.prefix}${sel}: ${rowText(x.cells) || "(empty)"}`];
+      // The row in the whole table, and its cell row when that is another number.
+      const at = (r: number) => (x.table && !opt.screenRows ? x.table.first + r : r);
+      const r0 = x.r ?? 0;
+      const label = `${x.prefix.replace(/row \d+$/, `row ${at(r0)}`)}${at(r0) !== r0 ? ` (cell row ${r0})` : ""}`;
+      if (filled(x.cells) || sel || !opt.emptyRuns) return [`${label}${sel}: ${rowText(x.cells) || "(empty)"}`];
       // Empty rows in a run: one line for the run.
       const prev = out[i - 1];
       if (prev && typeof prev !== "string" && "cells" in prev && !filled(prev.cells) && prev.table === x.table && !(prev.table && prev.r !== undefined && prev.table.selected.has(prev.r))) return [];
@@ -471,20 +513,42 @@ export function compact(full: string, options: CompactOptions = {}): string {
         if (!n || typeof n === "string" || !("cells" in n) || filled(n.cells) || n.table !== x.table || (n.table && n.r !== undefined && n.table.selected.has(n.r))) break;
         last = n.r ?? last;
       }
-      return [last > (x.r ?? 0) ? `${x.prefix.replace(/row (\d+)$/, `rows $1 to ${last}`)}: (empty)` : `${x.prefix}: (empty)`];
+      if (last <= r0) return [`${label}: (empty)`];
+      return [`${x.prefix.replace(/row \d+$/, `rows ${at(r0)} to ${at(last)}`)}${at(r0) !== r0 ? ` (cell rows ${r0} to ${last})` : ""}: (empty)`];
     }
     const h = short(x.list.area);
     const cols = shared.get(x.list);
+    // A list that scrolls: its lines below the title rows are numbered in the whole list when the reader says how many title rows it has (Web GUI).
+    const scrolls = /\bvisible \d+/.test(x.list.text);
+    const below = /\bbelow (\d+) title rows/.exec(x.list.text)?.[1];
+    const fixed = scrolls && below !== undefined && !opt.screenRows ? Number(below) : undefined;
+    const first = Number(/\bfirst (\d+)/.exec(x.list.text)?.[1] ?? 0);
     if (x.r === undefined) {
       const how = cols ? `; rows without braces have their cells in columns ${cols}` : "";
-      return [`${h}  list  ${x.list.text || `${x.list.lines.size} rows`}  (cell ids: ${h}/lbl[col,row], col in braces${how}; a checkbox is chk[col,row])`];
+      const ids =
+        fixed !== undefined
+          ? `rows numbered in the whole list below its ${fixed} title row${fixed === 1 ? "" : "s"}, as "rows" and scroll count them; a cell id counts rows on screen: ${h}/lbl[col,<cell row>], col in braces${how}; a checkbox is chk[col,<cell row>]`
+          : scrolls && !opt.screenRows
+            ? `rows here are screen rows, as cell ids count them: ${h}/lbl[col,row], col in braces${how}; a checkbox is chk[col,row]. "rows" and scroll count the list's lines from 0, below its title rows: sap_look with id "${h}" and rows numbers each line`
+            : `cell ids: ${h}/lbl[col,row], col in braces${how}; a checkbox is chk[col,row]`;
+      return [`${h}  list  ${x.list.text || `${x.list.lines.size} rows`}  (${ids})`];
     }
     const cells = x.list.lines.get(x.r) ?? [];
     const plain = cols !== undefined && cells.map((c) => c.c).join(",") === cols;
-    return [`  row ${x.r}: ${cells.map((c) => (plain ? c.text : `${c.text} {${c.c}}`)).join(" | ")}`];
+    const body = cells.map((c) => (plain ? c.text : `${c.text} {${c.c}}`)).join(" | ");
+    if (fixed === undefined) return [`  row ${x.r}: ${body}`];
+    if (x.r < fixed) return [`  title ${x.r}: ${body}`];
+    const n = first + x.r - fixed;
+    return [`  row ${n}${n !== x.r ? ` (cell row ${x.r})` : ""}: ${body}`];
   });
   if (opt.repeatedButtons) text = foldRepeatedButtons(text);
   if (opt.emptyColumns) text = foldEmptyColumns(text);
+  // How the user writes numbers, once, under the header: "1.000" is a thousand with a decimal comma and one with a point.
+  if (opt.numbers !== false && /^TRANSACTION /.test(text[0] ?? "") && !text.some((l) => l.startsWith("NUMBERS "))) {
+    const shown = opt.decimal ? undefined : decimalOf(text.join("\n"));
+    const sign = opt.decimal ?? shown?.sign;
+    if (sign) text.splice(1, 0, numbersLine(sign, shown?.example));
+  }
   return fit(text, opt.maxChars ?? 0).join("\n");
 }
 

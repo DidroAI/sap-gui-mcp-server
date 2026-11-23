@@ -36,8 +36,8 @@ describe("pageOf: the rows of a control, numbered in the whole list", () => {
     expect(p.kind).toBe("table");
     expect(p.total).toBe(171);
     expect(p.rows).toEqual([
-      { n: 60, text: "  row 60: Name=sixty" },
-      { n: 61, text: "  row 61: Name=sixty-one" },
+      { n: 60, text: "  row 60 (cell row 0): Name=sixty", cell: 0 },
+      { n: 61, text: "  row 61 (cell row 1): Name=sixty-one", cell: 1 },
     ]);
   });
   test("a list keeps its title rows apart: they do not scroll", () => {
@@ -45,8 +45,8 @@ describe("pageOf: the rows of a control, numbered in the whole list", () => {
     expect(p.kind).toBe("list");
     expect(p.titles).toEqual(["  title 0: Type {3}"]);
     expect(p.rows).toEqual([
-      { n: 34, text: "  row 34: AA {3}" },
-      { n: 35, text: "  row 35: BB {3}" },
+      { n: 34, text: "  row 34 (cell row 1): AA {3}", cell: 1 },
+      { n: 35, text: "  row 35 (cell row 2): BB {3}", cell: 2 },
     ]);
   });
   test("a tree's nodes are counted from the first one shown", () => {
@@ -141,7 +141,8 @@ function fbl5nList(total = 40, drawn = 22, titles = 3): RowSource & { scrolls: n
 }
 
 describe("readRows: a classic list whose page shrinks once it moves (live 2026-11-22, ECC FBL5N)", () => {
-  const items = (out: string) => [...out.matchAll(/^ {2}row (\d+): Item (\d+)/gm)].map((m) => [Number(m[1]), Number(m[2])]);
+  // A row on screen when the read ends also says its cell row.
+  const items = (out: string) => [...out.matchAll(/^ {2}row (\d+)(?: \(cell row \d+\))?: Item (\d+)/gm)].map((m) => [Number(m[1]), Number(m[2])]);
   test("every row once, under its own number, across the page boundary", async () => {
     const out = await readRows(fbl5nList(), "usr", 0, 100);
     const got = items(out);
@@ -149,11 +150,12 @@ describe("readRows: a classic list whose page shrinks once it moves (live 2026-1
     expect(got.every(([n, item]) => n === item)).toBe(true);
     expect(out).toContain("  title 2: Title 2");
   });
-  test("a range that starts below the top counts the title rows at the top first", async () => {
+  test("a range that starts below the top measures the title rows on a page one line on (core/rows.ts readList)", async () => {
     const src = fbl5nList();
     const got = items(await readRows(src, "usr", 25, 39));
     expect(src.scrolls[0]).toBe(25);
-    expect(src.scrolls[1]).toBe(0);
+    // 25 is past the last page (19): the probe asks for one line after where the list stopped.
+    expect(src.scrolls[1]).toBe(20);
     expect(got.map(([n]) => n)).toEqual(Array.from({ length: 15 }, (_, i) => 25 + i));
     expect(got.every(([n, item]) => n === item)).toBe(true);
   });

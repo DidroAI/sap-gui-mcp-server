@@ -27,7 +27,7 @@ import { readRows } from "../core/rows.js";
 import { ActionError, type Action, type Assessment, type LookOptions } from "../core/types.js";
 import { LOGON_REFUSAL, okcodeKind } from "../core/words.js";
 import { assessAction, popupButton, questionRefusal } from "./assess.js";
-import { checkedNow, clean, clickForRoundtrip, clickListLine, clickMenuRow, MenuGone, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlAct, noControlLook, openTextCell, pressOverflow, setCalendar, setRefusal, setTokenField, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
+import { checkedNow, clean, clickForRoundtrip, entryFor, clickListLine, clickMenuRow, MenuGone, evalLs, FIELD_TYPES, isExactly, locate, marked, noControlAct, noControlLook, openTextCell, pressOverflow, setCalendar, setRefusal, setTokenField, stillThere, SURE_START_MS, typeInto, typeName, windowOf } from "./controls.js";
 import { collectFiles, watchFiles } from "./files.js";
 import { GAVE_UP, gaveUpOn, NO_CANCEL, stillRunning } from "./running.js";
 import { inPageOutcome, LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
@@ -87,15 +87,57 @@ export async function assess(session: WebGuiSession, action: Action): Promise<As
 /** A screen that cannot be read cannot be ruled safe. */
 const unreadable = (e: unknown): Assessment => ({ risk: "commit", reason: `the screen could not be read (${(e as Error).message.split("\n")[0]})` });
 
+/**
+ * The table controls of a view that show no cell. Web GUI draws the cells
+ * of a table only in the part of the page in view: a table further down
+ * (the Output Tax table of BP's Billing tab) has its line and no cell, and
+ * read so it said "no row is filled" while it held DE / TTX1.
+ */
+export function cellLessTables(view: string): string[] {
+  const lines = view.split("\n");
+  return lines
+    .filter((l) => /^\S+ {2}table {2}rows /.test(l))
+    .map((l) => l.split("  ", 1)[0] ?? "")
+    .filter((id) => id && !lines.some((l) => l.startsWith(`${id}/`)));
+}
+
+/** `view` with the lines of table `id` (its own line and its cells) as `again` has them; `view` when `again` has no cell of it either. */
+export function spliceTable(view: string, again: string, id: string): string {
+  const fresh = again.split("\n").filter((l) => l.startsWith(`${id}  `) || l.startsWith(`${id}/`));
+  if (!fresh.some((l) => l.startsWith(`${id}/`))) return view;
+  const lines = view.split("\n");
+  const at = lines.findIndex((l) => l.startsWith(`${id}  `));
+  if (at < 0) return view;
+  return [...lines.slice(0, at), ...fresh, ...lines.slice(at + 1).filter((l) => !l.startsWith(`${id}/`))].join("\n");
+}
+
+/**
+ * The view with the cells of its tables that show none read again with the
+ * table scrolled into the page's view (all of them, or the one `only`
+ * names). A table that has no cell then either is a table of blank lines.
+ */
+async function withTablesInView(session: WebGuiSession, full: string, only?: string): Promise<string> {
+  let out = full;
+  for (const id of cellLessTables(full)) {
+    if (only !== undefined && id !== only) continue;
+    const found = await locate(session, id).catch(() => undefined);
+    if (!found) continue;
+    await found.loc.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => {});
+    out = spliceTable(out, await look(session), id);
+  }
+  return out;
+}
+
 /** The screen, or one control of it, as the tools show it. */
 export async function view(session: WebGuiSession, options: LookOptions): Promise<string> {
   if (!options.id) {
-    const full = await look(session);
+    const full = await withTablesInView(session, await look(session));
     return options.compact ? compact(full) : full;
   }
   if (/^(wnd\[0\]\/)?mbar$/.test(options.id.trim())) return menuLines(session);
-  const full = await look(session);
-  const sid = resolveIn(full, options.id);
+  const read = await look(session);
+  const sid = resolveIn(read, options.id);
+  const full = await withTablesInView(session, read, sid);
   if (options.rows) {
     if (!controlBlock(full, sid)) throw noControlLook(options.id);
     return readRows(
@@ -593,7 +635,19 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
         return entries.length ? `${c.sid} has ${entries.length} entries: ${entries.map((e) => `${e.key}:${e.text}`).join(", ")}` : `${c.sid} has no entries`;
       }
       if (c.readonly) throw new ActionError(await closedText(session, `${c.sid} is read-only: its entry cannot be changed here.`));
-      return chooseEntry(session, c, loc, a.key ?? a.value);
+      // The entry meant, exactly: a key that is not one is refused, never matched to a part of a text.
+      const entries = await entriesOf(session, c.sid).catch(() => []);
+      // Entries that could not be read: chooseEntry opens the list itself and says so when it does not open.
+      if (!entries.length) return chooseEntry(session, c, loc, a.key ?? a.value);
+      const entry = entryFor(c.sid, entries, a.key ?? a.value);
+      if (typeof entry === "string") throw new ActionError(entry);
+      const done = await chooseEntry(session, c, loc, entry.blank ? "" : clean(entry.key) || entry.text);
+      if (entry.blank)
+        // The view names the entry SAP drew last until SAP gets the blank one: said, so that the old key is not read as a failure.
+        return `${done.replace(/ = *$/, " = (blank entry)")} (the field is cleared in the page; SAP gets it with the next Enter. Until then the view may still name the entry it had: press Enter, then look.)`;
+      const shows = done.toLowerCase();
+      if (!shows.includes(clean(entry.key).toLowerCase()) && !shows.includes(clean(entry.text).toLowerCase())) throw new ActionError(`${c.sid}: "${clean(entry.key)}:${clean(entry.text)}" was asked for, but ${done}. Look at the screen.`);
+      return done;
     }
     default:
       throw new ActionError(`unknown action ${a.do}`);

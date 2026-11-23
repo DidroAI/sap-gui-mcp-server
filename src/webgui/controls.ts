@@ -344,3 +344,30 @@ export async function pressOverflow(session: WebGuiSession, c: MarkedControl): P
 
 /** Text as the answers show it: white space folded, no space at either end. */
 export const clean = (t: string | null | undefined): string => (t ?? "").replace(/\s+/g, " ").replace(/^ | $/g, "");
+
+/**
+ * The entry of a dropdown an agent means by `wanted`, exactly: a key ("91"),
+ * a key and its text as the entries are listed ("91:Customer Request") or
+ * shown ("91 Customer Request"), or a whole text ("Customer Request"), in
+ * any case. "" (or " ", or ":" as the list writes the blank entry) is the
+ * blank entry, which clears the field. Nothing else is guessed: a part of a
+ * text (":" in "DEA: Check Form 222") once chose a wrong entry. Answers the
+ * refusal, with the entries, when no entry is meant exactly.
+ */
+export function entryFor(sid: string, entries: { key: string; text: string }[], wanted: unknown): { key: string; text: string; blank: boolean } | string {
+  const w = clean(String(wanted ?? ""));
+  const low = (t: string) => clean(t).toLowerCase();
+  const list = entries.map((e) => `${clean(e.key)}:${clean(e.text)}`).join(", ");
+  if (w === "" || w === ":") {
+    const blank = entries.find((e) => !clean(e.key) && !clean(e.text)) ?? entries.find((e) => !clean(e.key));
+    return blank ? { ...blank, blank: true } : `${sid} has no blank entry, so it cannot be cleared: choose one of its entries (key:text): ${list}`;
+  }
+  const one = (hits: { key: string; text: string }[]) => (hits.length === 1 ? hits[0] : undefined);
+  const byKey = one(entries.filter((e) => clean(e.key) && low(e.key) === w.toLowerCase()));
+  const pair = /^([^:\s]*)\s*[: ]\s*(.*)$/.exec(w);
+  const byPair = pair ? one(entries.filter((e) => low(e.key) === (pair[1] ?? "").toLowerCase() && (!pair[2] || low(e.text) === (pair[2] ?? "").toLowerCase()))) : undefined;
+  const byText = one(entries.filter((e) => clean(e.text) && low(e.text) === w.toLowerCase()));
+  const hit = byKey ?? byPair ?? byText;
+  if (hit) return { ...hit, blank: !clean(hit.key) && !clean(hit.text) };
+  return `no entry "${w}" in ${sid}: give an entry's key exactly ("" for the blank entry, which clears the field). Its entries (key:text): ${list}`;
+}
