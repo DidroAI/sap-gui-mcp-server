@@ -135,6 +135,9 @@ export async function view(session: WebGuiSession, options: LookOptions): Promis
     return options.compact ? compact(full) : full;
   }
   if (/^(wnd\[0\]\/)?mbar$/.test(options.id.trim())) return menuLines(session);
+  // One menu of the menu bar, and every entry below it: "menu[2]", "mbar/menu[1]/menu[0]".
+  const menu = /^(?:wnd\[0\]\/)?(?:mbar\/)?(menu\[\d+\](?:\/menu\[\d+\])*)$/.exec(options.id.trim());
+  if (menu?.[1]) return menuLines(session, menu[1]);
   const read = await look(session);
   const sid = resolveIn(read, options.id);
   const full = await withTablesInView(session, read, sid);

@@ -28,7 +28,7 @@ do by hand, under their authorisations.
    send no Enter after it (a batch skips one that comes right after).
 3. Each answer is the new screen: read it before the next step instead of
    calling `sap_look` again (a `sap_look` right after it, on the same screen,
-   only answers "Unchanged since your last sap_act"). On the same screen it
+   starts with "Unchanged since your last sap_act"). On the same screen it
    holds only what changed (`~` changed, `+` new, `-` gone, `=` context).
 4. Read the **status bar** first (`STATUS E: ...`, or `sbar  status` in the
    view; toasts and popovers in Fiori). `E`: the step did not go through,

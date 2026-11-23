@@ -9,14 +9,18 @@ description: Work in SAP screens from the shell with the sap-gui CLI — run a t
 `npx sap-gui-mcp-server <command>` works too) works in the SAP sessions the
 user already has open, as that user. It never logs on.
 
-Each call prints a few short lines and the path of a file with the whole
-screen. **Read the printed lines; open the file only when you need the
+`look` prints a few short lines (header, status bar) and the path of a file
+with the whole screen; `act`, `okcode` and `open` print their whole answer:
+what ran, then the new screen, or on the same screen only the lines that
+changed. **Read the printed lines; open the file only when you need the
 screen** (to find an id, read values, see a list).
 
 ```
 $ sap-gui act set ctxtVBAK-AUART OR
-did set
+set ctxtVBAK-AUART
+
 CHANGED 1 of 48 lines on VA01 · "Create Standard Order: Overview" (same screen; sap_look shows all of it):
+~ ctxtVBAK-AUART  field  Order Type = "OR"  (edit)
 screen: .sap-gui/screens/7-act.txt
 ```
 
@@ -24,20 +28,30 @@ screen: .sap-gui/screens/7-act.txt
 
 1. `sap-gui look` (or `sap-gui sessions`, then `sap-gui use <n>`, when
    several are open). The printed header says where you are: transaction,
-   program, screen, system. Read the screen file once for the ids.
+   program, screen, system. Read the screen file once for the ids. To start
+   a transaction: `sap-gui okcode /nVA03` (it submits: no Enter after it).
 2. One `sap-gui act` per **screen**, on ids from the screen file: the fields
    and the key that sends them as one JSON list,
    `act '[{"do":"set","id":"ctxtVBAK-VKORG","value":"1000"},{"do":"key","key":0}]'`.
-   It ends at the first surprise (a failure, a popup, an E/W/A status,
-   another screen, a held write) and prints `Ran k of n actions. Stopped: ...`.
-   A step's `"expect":{"screen":"4001"}` lets it go on through a screen you
-   know comes; a write on such a screen needs `"unseen":true` on its step.
-   It prints where the screen is now: the new screen's header, or
-   `CHANGED n of m lines` when it is the same screen (the file then holds
-   only the changes: `~` changed, `+` new, `-` gone, `=` context).
+   It ends at the first surprise (a failure, a popup, an E/W/A status, a
+   held write, another screen unless the next action's id is on it and it
+   does not write) and prints `Ran k of n actions. Stopped: ...`. A step's
+   `"expect":{"screen":"4001"}` (`{"screen":"*"}`: any screen) lets it go on
+   through a screen you know comes; a write on such a screen needs
+   `"unseen":true` on its step. `okcode /n<tcode>` and `open` go on into
+   the screen they open.
+   It prints what ran (ids as the screen names them), then the new screen,
+   or `CHANGED n of m lines` and those lines when it is the same screen
+   (`~` changed, `+` new, `-` gone, `=` context). A `look` right after it,
+   on the same screen, prints only `Unchanged since your last sap_act` and
+   the act's file.
 3. Read the **STATUS** line when there is one: `STATUS E:` is an error (the
    step did not go through), `W:` a warning (Enter accepts it), `A:` an
    abort. A success shows as the status bar line (`sbar  status  S: ...`).
+4. Read numbers with the **NUMBERS** line: `NUMBERS 1.234,56` means a
+   decimal comma ("1.000" is one thousand, "312,000" is 312). When it says
+   `NUMBERS unknown`, find the notation first (an amount with decimals on
+   another screen, or the user's defaults in SU3).
 
 A long run of steps on one screen: `sap-gui look --print` prints all of it.
 
@@ -48,22 +62,25 @@ sap-gui sessions                       the open sessions; * marks the active one
 sap-gui use <n|id|system|tcode>        make one the active session
 sap-gui look [--full] [--diff]         the screen (file); --print prints it
 sap-gui look --id <id> [--rows 100-150] [--cols VBELN,NETWR]   one control whole, a range of rows
+sap-gui look --id mbar | --id 'menu[2]'   the menus and their entries; one menu whole
 sap-gui act '<json>' [--full]          one action (below); '[...]' one screen's actions
+sap-gui okcode </nVA03>                same as act okcode: starts a transaction (no Enter after it)
+sap-gui open <'#Intent-action'>        same as act open: a Fiori launchpad app
 sap-gui screenshot                     a PNG (charts, HTML panels the text cannot show)
 sap-gui record start "<name>" | assert '<json>' | stop | list | status   a repeatable test
 sap-gui replay <file>                  run a recorded test again, no model
 sap-gui daemon status | stop
 ```
 
-`look`, `act`, `screenshot` and `record` take `--session <ref>`. Exit codes: 0 done, 1 error or
-refused (the message is on stderr), 2 usage, 3 held for confirmation.
+`look`, `act`, `okcode`, `open`, `screenshot` and `record` take `--session <ref>`. Exit codes: 0 done,
+1 error or refused (the message is on stderr), 2 usage.
 
 ## Actions
 
 Quote JSON for the shell with single quotes. Shorthands for the common ones:
 `act set <id> <value>`, `press <id>`, `key <n>`, `okcode </nVA03>`,
 `select <id>`, `check <id> true|false`, `combo <id> [key]`, `f4 <id>`,
-`dblclick <id>`, `scroll <id> <row|next|prev|first|last>`.
+`dblclick <id>`, `scroll <id> <row|next|prev|first|last>`, `open <intent>`.
 
 ```
 {"do":"set","id":"ctxtVBAK-AUART","value":"OR"}     type into a field
@@ -94,7 +111,8 @@ Quote JSON for the shell with single quotes. Shorthands for the common ones:
   they are answered.
 - **Long lists** show the rows on screen and the total: scroll, or
   `look --id <id> --rows 100-150`. Do not conclude an entry is missing from
-  the rows on screen.
+  the rows on screen. A wide grid shows its first 15 columns and names the
+  others: read them with `--cols`.
 - **Back without saving**: `act key 3` (F3) or `act key 12`; when SAP asks
   whether to save, answer No unless the user asked to save.
 
