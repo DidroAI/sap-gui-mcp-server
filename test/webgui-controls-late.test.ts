@@ -211,6 +211,45 @@ describe.skipIf(!exe)("Web GUI reader: controls that answer late or hide their p
     expect(await inPage<number[]>("window.scrolls")).toEqual([400, 1001, 601, 0]);
   });
 
+  test("set on a cell of a column scrolled out sideways scrolls to it and types there; no row gets selected (ME21N Plnt, live 2026-11-23)", async () => {
+    await open();
+    await page.evaluate(() => {
+      const t = document.getElementById("tbl1") as HTMLElement;
+      t.setAttribute("lsdata", (t.getAttribute("lsdata") ?? "").replace("ColumnIds:['ZV-POSNR']", "ColumnIds:['ZV-POSNR','ZV-WERKS']"));
+      const th = document.createElement("th");
+      th.setAttribute("lsmatrixrowindex", "0");
+      th.setAttribute("lsmatrixcolindex", "2");
+      th.setAttribute("lsdata", "{17:{ModalNo:0,SID:'wnd[0]/usr/tblZTC_ITEMS/colZV-WERKS',Type:'GuiTableColumn'}}");
+      th.textContent = "Plnt";
+      t.querySelector("tr")?.appendChild(th);
+      // Ctrl+A in a cell of a table control selects all its rows, as in Web GUI.
+      t.addEventListener("keydown", (e) => {
+        if (e.key.toLowerCase() === "a" && (e.ctrlKey || e.metaKey))
+          t.querySelectorAll("td[subct='SC']").forEach((td) => {
+            td.className = "urSTSC lsSTTDScSel2BgColor";
+            (td.firstElementChild as HTMLElement).className = "urBorderBox urSTSCOuterDiv urSTRowSelSecIcon urST4LbSelIcon";
+          });
+      });
+      // The bar draws the Plant cells once the table has moved right, and hides the Item cells.
+      const w = window as unknown as { UCF_Scrollbar: { prototype: { scrollToPosition: (n: number) => void; iScrollPos: number } } };
+      const orig = w.UCF_Scrollbar.prototype.scrollToPosition;
+      w.UCF_Scrollbar.prototype.scrollToPosition = function (n: number) {
+        orig.call(this, n);
+        if (n <= 0 || document.getElementById("PLANT0")) return;
+        t.querySelectorAll("tr").forEach((tr, i) => {
+          if (i === 0) return;
+          tr.querySelector("input")?.closest("td")?.remove();
+          const td = document.createElement("td");
+          td.innerHTML = `<input id="PLANT${i - 1}" value="" lsdata="{0:'x',20:{ModalNo:0,SID:'wnd[0]/usr/tblZTC_ITEMS/ctxtZV-WERKS[1,${i - 1}]',Type:'GuiCTextField'}}">`;
+          tr.appendChild(td);
+        });
+      };
+    });
+    expect(await act({ do: "set", id: "tblZTC_ITEMS", row: 0, col: "Plnt", value: "1000" })).toBe("set wnd[0]/usr/tblZTC_ITEMS/ctxtZV-WERKS[1,0] (row 0, column Plnt of wnd[0]/usr/tblZTC_ITEMS) (scrolled sideways to the column)");
+    expect(await page.locator("#PLANT0").inputValue()).toBe("1000");
+    expect((await fullView()).find((l) => l.startsWith("wnd[0]/usr/tblZTC_ITEMS  table"))).not.toContain("selected rows");
+  });
+
   test("the rows of a dropdown button's menu are named by their scripting id, judged and pressed", async () => {
     await open();
     const mine = "wnd[0]/shellcont/shell/dbtnSELECT/mnu/menu5113NEW:POS_BY_USER_QUERY";

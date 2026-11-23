@@ -346,6 +346,8 @@ export class FioriDriver implements Driver {
         .catch((e: Error) => `[frame error] ${e.message.split("\n")[0]}`);
       if (r) parts.push(r);
     }
+    // The home page while the address names an app that has not opened: the header names the page shown.
+    if (info.transaction && parts.some((x) => /^PAGE .*\(#Shell-home, the launchpad home: /.test(x))) parts[0] = head.replace(/^FIORI {2}\S+/, "FIORI  Shell-home");
     if (options.id) {
       // One control: its lines only, also the part of it below the fold.
       if (parts.length === 1) throw new ActionError(`No control "${options.id}" on this Fiori screen (a control of a Web GUI app inside the launchpad is read with the whole screen). Take the id from sap_look: the text after # in the compact view.`);

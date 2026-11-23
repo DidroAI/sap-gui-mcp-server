@@ -587,6 +587,9 @@ export function ui5Look(opts: Ui5LookOptions): string {
         for (let i = 0; tile && i < 3 && !isA(tile, "sap.m.GenericTile"); i++) tile = tile.getParent?.();
         if (tile && isA(tile, "sap.m.GenericTile") && [norm(tile.getHeader?.()), norm(tile.getSubheader?.())].includes(norm(c.getText?.()))) return;
       }
+      // A tile's KPI frame, and the placeholder "1234" a tile without a KPI shows (live 2026-11-23: two lines
+      // per app tile in a search for apps). A real number of a KPI tile stays.
+      if (opts.compact && (isA(c, "sap.m.TileContent") || (isA(c, "sap.m.NumericContent") && norm(String(c.getValue?.() ?? "")) === "1234"))) return;
       // The one button a menu button renders is the menu button again.
       if (/-internalBtn$/.test(c.getId()) && isA(c.getParent?.(), "sap.m.MenuButton") && (pr.text || pr.tooltip || c.getParent().getTooltip_AsString?.())) return;
         // Column headers are on the table's line already.
@@ -682,7 +685,9 @@ export function ui5Look(opts: Ui5LookOptions): string {
       // Compact: the context only, without the key parts every active document shares (no draft id, "active").
       // A binding path alone ("{value:fi1t3rM0d31>/Supplier/value}") says nothing the line does not.
       const ctxOnly = /\bctx:\S.*$/.exec(b)?.[0];
-      if (b && (!opts.compact || ((row || isA(c, "sap.m.InputBase") || /ObjectPage/.test(t)) && ctxOnly))) {
+      // Compact: on a field only. A row's and a header button's context repeated the document key on every
+      // row and on Edit (live 2026-11-23); the row line already shows the key.
+      if (b && (!opts.compact || (isA(c, "sap.m.InputBase") && !row && ctxOnly))) {
       const shownBinding = opts.compact
         ? String(ctxOnly)
             .replace(/,?DraftUUID=(guid')?00000000-0000-0000-0000-000000000000'?/g, "")
@@ -836,7 +841,42 @@ export function ui5Look(opts: Ui5LookOptions): string {
     if (byHash || discard)
       draft = `DRAFT this page is a draft, kept on the server: it locks the document for other users. Leaving the page keeps it; ${discard ? `"Discard Draft" (#${handleOf(discard.getId())}) deletes it` : "Discard Draft on the document's page deletes it"}, Save activates it.\n`;
   }
-  return `PAGE ${title} (${hash.slice(0, 120)})\n${draft}${lines.join("\n")}`;
+  // The filters a list report holds, in one line at the top: values left from before survive opening the app
+  // again (live 2026-11-23: Purchase Order "=4500000509" stayed, and a search for own drafts found 0 rows).
+  let filters = "";
+  if (!opts.id) {
+    const inBar = (c: C) => {
+      for (let p = c.getParent?.(), i = 0; p && i < 14; p = p.getParent?.(), i++)
+        if (isA(p, "sap.ui.comp.filterbar.FilterBar") || isA(p, "sap.ui.mdc.FilterBar") || isA(p, "sap.fe.core.controls.FilterBar")) return true;
+      return false;
+    };
+    const said: string[] = [];
+    for (const c of allControls) {
+      try {
+        if (!onScreen(c) || !inBar(c)) continue;
+        const name = labelFor(c) || norm(c.getPlaceholder?.() ?? "") || handleOf(c.getId());
+        const tokens: C[] = isA(c, "sap.m.MultiInput") || isA(c, "sap.m.MultiComboBox") ? (c.getTokens?.() ?? []) : [];
+        const texts = tokens.map((t) => norm(t.getText?.() ?? "")).filter(Boolean);
+        if (!texts.length && isA(c, "sap.m.MultiComboBox")) texts.push(...(c.getSelectedItems?.() ?? []).map((x: C) => norm(x.getText?.() ?? "")).filter(Boolean));
+        if (!texts.length && (isA(c, "sap.m.InputBase") || isA(c, "sap.m.SearchField")) && !isA(c, "sap.m.MultiComboBox") && norm(String(c.getValue?.() ?? ""))) texts.push(`"${norm(String(c.getValue()))}"`);
+        if (texts.length) said.push(`${name} ${texts.map((t) => (t.startsWith('"') ? t : `"${t}"`)).join(", ")}`);
+      } catch {
+        /* a control that cannot answer is left out */
+      }
+    }
+    if (said.length) filters = `FILTERS ${said.slice(0, 10).join("; ")}  (set in the filter bar, maybe from before: they apply with Go)\n`;
+  }
+  // The launchpad shows its home page while the address names an app that did not open (its logon expired,
+  // live 2026-11-23: "PAGE Home (#PurchaseOrder-manage)"): the page is named as what it is.
+  let home = false;
+  try {
+    const ushell = (window as unknown as { sap?: { ushell?: { Container?: { getService?: (n: string) => { getCurrentApplication?: () => { homePage?: boolean } | undefined } } } } }).sap?.ushell;
+    home = ushell?.Container?.getService?.("AppLifeCycle")?.getCurrentApplication?.()?.homePage === true;
+  } catch {
+    home = false;
+  }
+  const where = home && hash && !/^#Shell-home\b/.test(hash) ? `#Shell-home, the launchpad home: ${hash.slice(0, 120)} was asked for and has not opened` : hash.slice(0, 120);
+  return `PAGE ${title} (${where})\n${draft}${filters}${lines.join("\n")}`;
 }
 
 /** What the risk rule needs to know about a control (see risk.ts). */

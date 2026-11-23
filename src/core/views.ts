@@ -56,6 +56,8 @@ const KEPT = 3;
 
 export class Views {
   private bySession = new Map<string, string[]>();
+  /** Per session: the long hints given on the screen it is on (`hintsOnce`). */
+  private hints = new Map<string, { screen: string; seen: Set<string> }>();
 
   constructor(readonly mode: ViewMode = "diff") {}
 
@@ -73,6 +75,7 @@ export class Views {
 
   forget(session: string): void {
     this.bySession.delete(session);
+    this.hints.delete(session);
   }
 
   /**
@@ -81,6 +84,11 @@ export class Views {
    * the view is remembered as given.
    */
   present(session: string, view: string, whole = false): string {
+    // Said once per screen, in what the agent is given: a batch reads the screen several times, and a hint
+    // used up by a read the agent never saw came out short the first time (live 2026-11-23).
+    let memory = this.hints.get(session);
+    if (!memory) this.hints.set(session, (memory = { screen: "", seen: new Set() }));
+    view = hintsOnce(view, memory);
     const kept = this.bySession.get(session) ?? [];
     let answer = view;
     if (!whole && this.mode === "diff") {
@@ -102,4 +110,56 @@ export class Views {
     this.remember(session, view);
     return answer;
   }
+}
+
+/**
+ * The compact view with its long hints said once per visit to a screen: a
+ * list's explanation of its row numbers (480 characters), and the columns
+ * of a table or grid (700 characters), which a diff repeated with every
+ * change of the line (live 2026-11-23). After the first time the list keeps
+ * what changes (the cell id of row N, the columns of rows without braces);
+ * a table's or grid's columns, while they are the same, are "as listed
+ * before". Another screen, and the hints come again.
+ */
+export function hintsOnce(text: string, memory: { screen: string; seen: Set<string> }): string {
+  const lines = text.split("\n");
+  const head = /^TRANSACTION (\S*)\s+PROGRAM (\S*)\s+SCREEN (\S*)/.exec(lines[0] ?? "");
+  if (!head) return text;
+  const screen = head.slice(1).join("/");
+  if (memory.screen !== screen) memory.seen.clear();
+  memory.screen = screen;
+  const first = (key: string) => {
+    if (memory.seen.has(key)) return false;
+    memory.seen.add(key);
+    return true;
+  };
+  let table = "";
+  return lines
+    .map((line) => {
+      if (/^\S+ {2}(?:table|grid) {2}/.test(line)) table = line.split("  ")[0] ?? "";
+      // A table control's columns on a line of their own, under its line (ME21N: 700 characters).
+      const legend = /^( +)columns: (.+)$/.exec(line);
+      if (legend && (legend[2] ?? "").length > 120) {
+        if (first(`columns ${table} ${legend[2]}`)) return line;
+        return `${legend[1]}columns: as listed before`;
+      }
+      const list = /^(\S+ {2}list {2}.*?) {2}\(((?:rows numbered in the whole list|rows here are screen rows|cell ids: ).*)\)$/.exec(line);
+      if (list) {
+        if (first(`list ${list[1]?.split("  ")[0]}`)) return line;
+        const hint = list[2] ?? "";
+        const at = /row N is (\S+) now/.exec(hint)?.[1];
+        const cells = /\b(?:cell ids: |as cell ids count them: )(\S+?\[col,row\])/.exec(hint)?.[1];
+        const cols = /rows without braces have their cells in columns ([\d,]+)/.exec(hint)?.[1];
+        const numbered = hint.startsWith("rows numbered") ? "rows numbered in the whole list" : hint.startsWith("rows here") ? "screen rows" : "";
+        const parts = [numbered, at ? `row N is ${at}` : cells ? `cell ${cells}` : "", cols ? `cells in columns ${cols}` : ""].filter(Boolean);
+        return `${list[1]}  (${parts.join("; ")}; as explained before)`;
+      }
+      const grid = /^(\S+ {2}(?:table|grid) {2}.*?; columns: )(.+?)( {2}\(.*\))?$/.exec(line);
+      if (grid && (grid[2] ?? "").length > 120) {
+        if (first(`columns ${line.split("  ")[0]} ${grid[2]}`)) return line;
+        return `${grid[1]}as listed before${grid[3] ?? ""}`;
+      }
+      return line;
+    })
+    .join("\n");
 }

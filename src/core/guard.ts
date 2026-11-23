@@ -159,6 +159,10 @@ export function tcodeRefusal(policy: Policy, tcode: string | undefined): string 
 export const LEAVE_UNSAVED =
   'If you entered or changed anything in this transaction, or opened a document to change it, leave it now without saving so SAP releases the lock on that document: {"do":"okcode","value":"/n"}, or Back (F3) and the answer of SAP\'s "data will be lost" question that leaves without saving. Do not leave it open for the user to save by hand unless they ask you to.';
 
+/** LEAVE_UNSAVED for a Fiori app: no command field there; a draft is discarded by its own button. */
+export const LEAVE_UNSAVED_FIORI =
+  'If you changed fields on this page, or it is a draft (the view says DRAFT), leave it without saving so the document is not left locked: on a draft press "Discard Draft"; else the app\'s Back button or {"do":"open","app":"#Shell-home"}, and answer the launchpad\'s "data will be lost" question with the choice that discards. Do not leave it open for the user to save by hand unless they ask you to.';
+
 export type Verdict =
   | { run: true }
   | { run: false; refused: string }
@@ -174,7 +178,7 @@ export function unknownEffect(assessment: Assessment): boolean {
 }
 
 /** What the server does with an assessed action under the policy. */
-export function decide(policy: Policy, action: Action, assessment: Assessment, again = false): Verdict {
+export function decide(policy: Policy, action: Action, assessment: Assessment, again = false, fiori = false): Verdict {
   const field = commandFieldRefusal(action);
   if (field) return { run: false, refused: field };
   const refusal = tcodeRefusal(policy, tcodeOf(action));
@@ -201,9 +205,12 @@ export function decide(policy: Policy, action: Action, assessment: Assessment, a
   // The second refusal in a session says the rule in one line: the agent has read the whole text once
   // (600 characters on every refusal, live 2026-11-23).
   if (again)
-    return { run: false, refused: `this action may write to SAP (${assessment.reason}) and writes are off. As before: tell the user, leave without saving ({"do":"okcode","value":"/n"}), do not look for another way.` };
+    return {
+      run: false,
+      refused: `this action may write to SAP (${assessment.reason}) and writes are off. As before: tell the user, leave without saving (${fiori ? '"Discard Draft" on a draft, else {"do":"open","app":"#Shell-home"}' : '{"do":"okcode","value":"/n"}'}), do not look for another way.`,
+    };
   return {
     run: false,
-    refused: `this action may write to SAP (${assessment.reason}) and writes are off. Tell the user what you would have saved; do not look for another way. ${LEAVE_UNSAVED} Only the user can allow writes (SAP_WRITE=confirm or on).`,
+    refused: `this action may write to SAP (${assessment.reason}) and writes are off. Tell the user what you would have saved; do not look for another way. ${fiori ? LEAVE_UNSAVED_FIORI : LEAVE_UNSAVED} Only the user can allow writes (SAP_WRITE=confirm or on).`,
   };
 }

@@ -434,8 +434,6 @@ export class WebGuiSession {
   slow = false;
   /** Did the last `waitRoundtrip` see a request that carries a function leave for SAP? */
   started = false;
-  /** The long hints of the compact view already given on this screen (screen.ts `hintsOnce`), and the screen. */
-  hints: { screen: string; seen: Set<string> } = { screen: "", seen: new Set() };
   /** The user's date format ("DD.MM.YYYY"), from the dates the screens read so far showed. */
   dateFormat: string | undefined;
   /** The last full view read, for the step that follows it (assess, then act). */

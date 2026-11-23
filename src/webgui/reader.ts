@@ -31,7 +31,7 @@ import { checkedNow, clean, clickForRoundtrip, closeList, entryFor, clickListLin
 import { collectFiles, watchFiles } from "./files.js";
 import { GAVE_UP, gaveUpOn, NO_CANCEL, stillRunning } from "./running.js";
 import { inPageOutcome, LOCAL_KEY, nothingSent, vkey, wantsOn } from "./keys.js";
-import { chooseEntry, entriesOf, gridColumnId, listCellId, listScreenRow, markScrolled, notOnScreen, scrollTo, selectRow, tableCellId, tableScreenRow } from "./lists.js";
+import { chooseEntry, entriesOf, gridColumnId, listCellId, listScreenRow, markScrolled, notOnScreen, scrollTo, selectRow, tableCellScrolled, tableScreenRow } from "./lists.js";
 import { behindPopup, closedByMessage, popupName, terminationIn, topPopup, transactionOf } from "./popups.js";
 import { clickClientButton, extractFacts, extractMenus, markControl, markRow, markSelector, markWindowClose, menuRowOpen, openOverlay, submenuOpen, scrollControl, searchHelps, topWindowOpen } from "./page.js";
 import { checkBeforeAct, focusOf, freshView, guardFacts, isDropdown, kindIn, LOGGED_OFF, loggedOff, look, lookRead, menuLines, readViewer, resolveIn, type ScreenRead, scrollables, VIEWER_TEXT_WHOLE, viewerFrames } from "./screen.js";
@@ -618,7 +618,10 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
       const iso = c.type !== "GuiTextEdit" && /^\s*\d{4}-\d{2}-\d{2}\s*$/.test(String(a.value ?? "")) ? await dateField(session, c.sid) : undefined;
       const typed = iso ? (isoDateAs(String(a.value), iso) ?? String(a.value)) : String(a.value ?? "");
       // A text editor has lines; every other field has one.
-      const said = await typeInto(session, c.drawnAsText ? await openTextCell(session, c, loc) : loc, typed, c.type === "GuiTextEdit" || c.tag === "TEXTAREA");
+      // A cell of a table control: Ctrl+A there selects every row of the table (ME21N's items all showed
+      // "(selected)" after a set, live 2026-11-23), so its text is taken away as in a grid cell.
+      const tableCell = /\/tbl[^/]+\/[^/]+\[\d+,\d+\]$/.test(c.sid);
+      const said = await typeInto(session, c.drawnAsText ? await openTextCell(session, c, loc) : loc, typed, c.type === "GuiTextEdit" || c.tag === "TEXTAREA", tableCell);
       if (typed !== String(a.value ?? "")) return `set ${c.sid}${said} (the date as "${typed}", the user's format ${iso})`;
       // A number typed in the other decimal notation than the screen's: SAP would read another number, or none.
       const notation = notationNote(String(a.value ?? ""), await freshView(session).catch(() => ""));
@@ -878,10 +881,10 @@ async function rowCellAction(session: WebGuiSession, a: Action): Promise<string 
     if (!cellWork) return undefined;
     if (!hasCol(a)) throw new ActionError(`${id} is a table control: "${a.do}" on one of its cells needs "row" (as the view numbers it) and "col" (column number, title or field name), or the cell's own id from the view, e.g. ${id}/ctxt<FIELD>[col,<row on screen>].`);
     const at = await tableScreenRow(session, id, row);
-    const cell = tableCellId(at.view, id, at.vrow, a.col, row);
+    const { cell, sideways } = await tableCellScrolled(session, at.view, id, at.vrow, a.col, row);
     const doing = a.do === "grid" ? (how === "cell" ? "focus" : "dblclick") : a.do;
     const done = await run(session, { ...rest, do: doing, id: cell });
-    return `${done} (row ${row}, column ${String(a.col)} of ${id})${at.scrolled}`;
+    return `${done} (row ${row}, column ${String(a.col)} of ${id})${at.scrolled}${sideways}`;
   }
   // A classic list: its lines by number; "col" is a position in braces, else the line's first text.
   if (!/^(dblclick|focus|check|select|grid)$/.test(a.do)) return undefined;
@@ -898,8 +901,11 @@ async function rowCellAction(session: WebGuiSession, a: Action): Promise<string 
   const checkbox = a.do === "check";
   const cell = listCellId(view, id, r, a.col, checkbox);
   if (!cell) throw new ActionError(`row ${row} of the list ${id} has ${checkbox ? "no checkbox" : hasCol(a) ? `no cell at column ${String(a.col)}` : "no cell"} on the screen (a blank line?). Look at the list: "col" is the number in braces after a value.`);
-  const doing = a.do === "check" ? "check" : a.do === "focus" || (a.do === "grid" && how === "cell") || a.do === "select" ? "focus" : "dblclick";
+  // "select" clicks the line's cell, as a person puts the cursor on a line: SAP takes the cursor from the
+  // click, not from the page's focus (S/4 ME2L: select by focus, then F2, stayed on the list, live 2026-11-23).
+  const doing = a.do === "check" ? "check" : a.do === "select" ? "press" : a.do === "focus" || (a.do === "grid" && how === "cell") ? "focus" : "dblclick";
   const done = await run(session, { ...rest, do: doing, id: cell });
+  if (a.do === "select") return `${done.replace(/^pressed /, "cursor on ")} (row ${row} of the list: Choose (F2) and the list's functions act on this line)${scrolled}`;
   return `${done} (row ${row} of the list)${scrolled}`;
 }
 

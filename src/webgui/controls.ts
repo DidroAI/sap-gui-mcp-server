@@ -133,10 +133,12 @@ export async function clickForRoundtrip(session: WebGuiSession, sid: string, sur
     // controls below it: the click waited 10 s and failed (live 2026-11-23, ME23N "Select Document"). Closed first.
     await closeList(session);
     try {
-      await session.roundtrip(() => marked(session).click(), sure ? SURE_START_MS : 1200);
+      // The first try waits 3 s, not 10: a list that opens meanwhile covers the control for good.
+      await session.roundtrip(() => marked(session).click(attempt === 0 ? { timeout: 3000 } : {}), sure ? SURE_START_MS : 1200);
     } catch (e) {
-      // It opened after the look: closed, and the click made once more.
-      if (attempt > 0 || !listCovers(e) || !(await closeList(session))) throw e;
+      if (attempt > 0) throw e;
+      // It opened after the look: closed, and the click made once more. Any other hold-up gets the full wait.
+      if (listCovers(e) && !(await closeList(session))) throw e;
       continue;
     }
     if (session.started || !session.slow) return;
@@ -147,7 +149,8 @@ export async function clickForRoundtrip(session: WebGuiSession, sid: string, sur
 /** Did a click fail on an open list (a dropdown's, or a field's earlier entries) over the control? */
 const listCovers = (e: unknown): boolean => {
   const log = e instanceof Error ? e.message : String(e);
-  return /<[^\n]*(role="listbox"|lsListbox|ct="LIB)[^\n]*> intercepts pointer events/.test(log);
+  // Playwright writes "<div ...> intercepts pointer events" or "<span ...> from <div ct="LIB" ...> subtree intercepts ...".
+  return /(role="listbox"|lsListbox|ct="LIB)[^\n]*intercepts pointer events/.test(log);
 };
 
 /** Closes an open list over the screen with Escape, which the list takes (SAP gets nothing). True when one was open and closed. */

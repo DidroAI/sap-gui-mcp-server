@@ -175,6 +175,10 @@ describe.skipIf(!exe)("Web GUI reader: lists, dropdowns and handles, in a browse
     );
     expect(await webguiActInFrame(f, { do: "check", id: "usr", row: 2, value: true })).toContain("(row 2 of the list)");
     expect(await webguiActInFrame(f, { do: "focus", id: "usr", row: 0, col: "9" })).toContain("wnd[0]/usr/lbl[9,1] (row 0 of the list)");
+    // select clicks the line, which gives SAP the cursor (F2 then chooses it).
+    await page.evaluate(() => document.addEventListener("click", (e) => ((window as unknown as { clicked?: string }).clicked = (e.target as HTMLElement).innerText)));
+    expect(await webguiActInFrame(f, { do: "select", id: "usr", row: 1, col: "9" })).toStartWith("cursor on wnd[0]/usr/lbl[9,2] (row 1 of the list: Choose (F2)");
+    expect(await page.evaluate(() => (window as unknown as { clicked?: string }).clicked)).toBe("Name 1");
     // A row on a control without rows is refused, not dropped.
     expect(await refusal(webguiActInFrame(f, { do: "focus", id: "cmbZHDR-BLOCK", row: 3 }))).toContain('"row" and "col" take effect only on a list, table or grid');
   });
