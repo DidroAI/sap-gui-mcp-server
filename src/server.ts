@@ -306,9 +306,9 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     },
     () =>
       answer(async () => {
-        const { sessions, hidden, errors } = await registry.discover();
+        const { sessions, hidden, errors, hint } = await registry.discover();
         const lines = sessions.map((s, i) => sessionLine(s, i, s.id === registry.active));
-        if (!sessions.length) lines.push("No SAP session found.");
+        if (!sessions.length) lines.push(hint ? `No SAP session found. ${hint}` : "No SAP session found.");
         if (hidden) lines.push(`${hidden} session(s) of systems outside SAP_ALLOW_SYSTEMS are hidden.`);
         for (const e of errors) lines.push(`(${e})`);
         return withData(text(lines.join("\n")), data(() => sessionsData(sessions, registry.active)));
