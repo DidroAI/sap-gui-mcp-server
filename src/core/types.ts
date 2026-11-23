@@ -125,6 +125,12 @@ export interface Driver {
   act(action: Action): Promise<string>;
   /** Where the time of the last `act` went, as one line ("1306 ms: sap 812, start 40, ..."); surfaces that do not measure have none. */
   timing?(): string | undefined;
+  /**
+   * The user's number and date notation from the user's settings, where the
+   * surface can read them (Fiori: the launchpad passes them to UI5); undefined
+   * when it cannot. The server asks once per session (core/notation.ts).
+   */
+  notation?(): Promise<{ sign?: "," | "."; spaced?: boolean; date?: string } | undefined>;
   /** PNG of the session's window or tab. */
   screenshot(): Promise<Buffer>;
   close(): Promise<void>;

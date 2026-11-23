@@ -68,6 +68,8 @@ export interface CompactOptions {
   shortRows?: boolean;
   /** Empty table rows in a run on one line (default true). */
   emptyRuns?: boolean;
+  /** A grid shows this many columns, and names the others; 0 shows all. Default GRID_COLUMNS where empty columns are folded (a screen's view), else 0 (a read of rows). */
+  gridColumns?: number;
   /** Cut row lines when the view is longer than this many characters; 0 never cuts (default 20000). */
   maxChars?: number;
   /**
@@ -100,10 +102,48 @@ function keepBehind(l: string): boolean {
   if (/\bsbar\b|  status  /.test(l)) return true;
   // A table's own line: its rows behind the popup keep their column titles.
   if (/^\S+  table  rows /.test(l)) return true;
+  // A value (read-only ones are counted by trimBehindPopups); a table's cells keep their rows.
   if (/= "[^"]+"/.test(l)) return true;
   if (/\[x\]|\(selected\)/.test(l)) return true;
   return false;
 }
+
+/**
+ * An HTML viewer docked beside the screen (outside the user area: ME21N's
+ * and ME23N's help, 7 lines of text and 12 links on every answer) in one
+ * line: its first line of text, and how much more there is. sap_look with
+ * its id shows it whole. A viewer in the user area is the screen's content
+ * and stays as it is.
+ */
+function foldSideViewers(lines: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i] ?? "";
+    const m = /^(wnd\[\d+\]\/\S+) {2}html-viewer$/.exec(l);
+    if (!m || (m[1] ?? "").includes("/usr/")) {
+      out.push(l);
+      continue;
+    }
+    const id = m[1] ?? "";
+    const text: string[] = [];
+    let links = 0;
+    let j = i + 1;
+    for (; j < lines.length; j++) {
+      const x = lines[j] ?? "";
+      if (x.startsWith("  ")) text.push(x.trim());
+      else if (x.startsWith(`${id}/`)) links++;
+      else break;
+    }
+    const first = text.find((t) => !t.startsWith("..."));
+    const more = [text.length > 1 ? `${text.length - 1} more lines of text` : "", links ? `${links} link${links === 1 ? "" : "s"}` : ""].filter(Boolean).join(", ");
+    out.push(`${l}${first ? `  "${first.replace(/"/g, "'")}"` : ""}${more ? `  (${more}: sap_look with id "${id}" shows them)` : ""}`);
+    i = j - 1;
+  }
+  return out;
+}
+
+/** The read-only values behind a popup that its view keeps. */
+const READ_ONLY_BEHIND = 5;
 
 /** Shortens the main window while a popup (wnd[1] and up, or a browser dialog) is open. */
 function trimBehindPopups(lines: string[]): string[] {
@@ -113,9 +153,11 @@ function trimBehindPopups(lines: string[]): string[] {
   let behind = false;
   let dropped = 0;
   const flush = () => {
-    if (dropped) out.push(`  (${dropped} more lines behind the popup: buttons, menus, empty fields, list rows; sap_look full=true shows them)`);
+    if (dropped) out.push(`  (${dropped} more lines behind the popup: buttons, menus, read-only and empty fields, list rows; sap_look full=true shows them)`);
     dropped = 0;
   };
+  // Read-only values behind it: the first few say where the popup came from; the rest (a VA01 overview: some 25) were in the view before it.
+  let readOnly = 0;
   for (const l of lines) {
     if (l.startsWith("WINDOW ")) {
       flush();
@@ -123,7 +165,8 @@ function trimBehindPopups(lines: string[]): string[] {
       out.push(l);
       continue;
     }
-    if (behind && !keepBehind(l)) {
+    const fixed = behind && / {2}(field|dropdown) {2}.*\(read-only\)\s*$/.test(l) && !CELL.test(l) && ++readOnly > READ_ONLY_BEHIND;
+    if (behind && (fixed || !keepBehind(l))) {
       dropped++;
       continue;
     }
@@ -303,6 +346,50 @@ function foldEmptyColumns(lines: string[]): string[] {
   return out;
 }
 
+/** The columns of a grid a view shows by default; the others are named by id, to be read with "cols". */
+export const GRID_COLUMNS = 15;
+/** The ids of the columns left out that a grid's line names; more are counted only. */
+const NAMED_LEFT_OUT = 80;
+
+/**
+ * A grid with more than `max` columns (SE16N on EKPO: 385, each row some 600
+ * characters) shows its first `max` columns; its line names the others by
+ * id, to be read with sap_look's "cols" (by id or title).
+ */
+function foldWideGrids(lines: string[], max: number): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const head = lines[i] ?? "";
+    const m = /^(\S.*  grid  .*?; columns: )(.*?)((?:; empty in these rows: .*)?)$/.exec(head);
+    if (!m) {
+      out.push(head);
+      continue;
+    }
+    const cols = (m[2] ?? "").split(" | ");
+    const rows: { prefix: string; cells: string[] }[] = [];
+    let j = i + 1;
+    for (; j < lines.length; j++) {
+      const r = /^( {2}row \d+(?: \((?:selected|total)\))*: )(.*)$/.exec(lines[j] ?? "");
+      if (!r) break;
+      rows.push({ prefix: r[1] ?? "", cells: (r[2] ?? "").split(" | ") });
+    }
+    if (cols.length <= max || rows.some((r) => r.cells.length !== cols.length)) {
+      out.push(head);
+      continue;
+    }
+    const idsOf = (xs: string[]) => xs.map((c) => c.split("=", 1)[0] ?? c);
+    const named = (ids: string[]) => (ids.length > NAMED_LEFT_OUT ? `${ids.slice(0, NAMED_LEFT_OUT).join(", ")}, ... (sap_look full=true with the id names all)` : ids.join(", "));
+    const ids = idsOf(cols.slice(max));
+    // The columns empty in every row shown, by id too: SE16N on EKPO has some 200.
+    const empty = m[3] ? idsOf(m[3].replace(/^; empty in these rows: /, "").split(" | ")) : [];
+    const emptyPart = empty.length ? `; ${empty.length} columns empty in these rows: ${named(empty)}` : "";
+    out.push(`${m[1]}${cols.slice(0, max).join(" | ")}; ${ids.length} more columns, read with sap_look id and "cols" (ids or titles): ${named(ids)}${emptyPart}`);
+    for (const r of rows) out.push(`${r.prefix}${r.cells.slice(0, max).join(" | ")}`);
+    i = j - 1;
+  }
+  return out;
+}
+
 /** Cuts the row lines of the longest controls until the view fits `maxChars`. */
 function fit(lines: string[], maxChars: number): string[] {
   const total = lines.reduce((n, l) => n + l.length + 1, 0);
@@ -339,7 +426,8 @@ function fit(lines: string[], maxChars: number): string[] {
 
 export function compact(full: string, options: CompactOptions = {}): string {
   const opt: CompactOptions = { handles: true, repeatedButtons: true, dropdowns: true, lists: true, listColumns: true, emptyColumns: true, shortRows: true, emptyRuns: true, maxChars: DEFAULT_MAX_CHARS, ...options };
-  const lines = trimBehindPopups(full.split("\n"));
+  // The view of one control (`screen` given) keeps a viewer whole.
+  const lines = trimBehindPopups(opt.screen === undefined ? foldSideViewers(full.split("\n")) : full.split("\n"));
   const ids = (opt.screen === undefined ? lines : opt.screen.split("\n")).filter((l) => l.startsWith("wnd[")).map(idOf);
   const handles = opt.handles ? shortIds(ids) : plainHandles(ids);
   const short = (id: string) => handles.get(id) ?? id;
@@ -554,6 +642,9 @@ export function compact(full: string, options: CompactOptions = {}): string {
   });
   if (opt.repeatedButtons) text = foldRepeatedButtons(text);
   if (opt.emptyColumns) text = foldEmptyColumns(text);
+  // Not in a read of rows (core/rows.ts: no empty columns folded there either), which picks its columns with "cols".
+  const gridColumns = opt.gridColumns ?? (opt.emptyColumns ? GRID_COLUMNS : 0);
+  if (gridColumns > 0) text = foldWideGrids(text, gridColumns);
   // How the user writes numbers, once, under the header: "1.000" is a thousand with a decimal comma and one with a point.
   if (opt.numbers !== false && /^TRANSACTION /.test(text[0] ?? "") && !text.some((l) => l.startsWith("NUMBERS "))) {
     const shown = opt.decimal ? undefined : decimalOf(text.join("\n"));
