@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { MAX_BATCH, parseBatch, stopAfter } from "../src/batch.js";
+import { idOn, MAX_BATCH, parseBatch, shortNote, stopAfter } from "../src/batch.js";
 import { normalizeAction } from "../src/core/action.js";
 import { policyFromEnv } from "../src/core/guard.js";
 import { parseTest } from "../src/record/format.js";
@@ -50,7 +50,8 @@ describe("sap_act with actions: several actions, one answer", () => {
     expect(r.error).toBe(false);
     expect(dos(sap)).toEqual(["okcode", "set", "set", "key 0", "key 11"]);
     expect(r.text.split("\n")[0]).toBe("Ran 5 actions.");
-    expect(r.text).toContain("2. set wnd[0]/usr/ctxtZORD-KUNNR");
+    // The id as the view names it, not its whole path.
+    expect(r.text).toContain("2. set ctxtZORD-KUNNR\n");
     // No recording is on: no SDK lines (test/surface.test.ts has them while recording).
     expect(r.text).not.toContain("code:");
     expect(r.text).toContain("S: Order 5001 has been saved");
@@ -374,4 +375,58 @@ describe("the rules that end a batch", () => {
     const [s] = parseBatch([{ do: "key", value: 0, expect: { screen: 4001, popup: false }, show: true }]);
     expect(s).toEqual({ n: 1, action: normalizeAction({ do: "key", key: 0 }), expect: { screen: "4001", popup: false }, show: true, unseen: false });
   });
+});
+
+describe("a batch through a screen change it did not name (P6)", () => {
+  const ORDER = { do: "set", id: "ctxtZORD-VBELN", value: "77" };
+  const ITEMS = { do: "select", id: "tabpT\\02" };
+  const withOrder = async () => {
+    const t = await setup();
+    t.sap.orders.set("77", { customer: "2200", quantity: "7", rush: false });
+    await t.call("sap_act", { do: "okcode", value: "/nZA03" });
+    return t;
+  };
+  test("goes on when the next action's id is on the new screen and it does not write", async () => {
+    const { sap, batch } = await withOrder();
+    const r = await batch([ORDER, ENTER, ITEMS]);
+    expect(r.error).toBe(false);
+    expect(r.text.split("\n")[0]).toBe("Ran 3 actions.");
+    expect(r.text).toContain('2. key Enter (the screen changed: it is now ZA03, program SAPMZA03, screen 300');
+    expect(sap.tab).toBe("T\\02");
+  });
+  test("stops as before when the next action's id is not on the new screen", async () => {
+    const { sap, batch } = await withOrder();
+    const r = await batch([ORDER, ENTER, { do: "set", id: "txtZORD-MENGE", value: "1" }]);
+    expect(r.text.split("\n")[0]).toStartWith("Ran 2 of 3 actions. Stopped: after action 2, the screen changed: it is now ZA03");
+    expect(dos(sap)).toEqual(["okcode", "set", "key 0"]);
+  });
+  test("stops before a key (it has no id to show where it is meant) and before a write", async () => {
+    const { batch } = await setup({ SAP_WRITE: "on" });
+    const r = await batch([OPEN, CUSTOMER, ENTER, SAVE]);
+    expect(r.text.split("\n")[0]).toStartWith("Ran 3 of 4 actions. Stopped: after action 3, the screen changed");
+  });
+  test('open goes on like an okcode; {"screen":"*"} is any screen', () => {
+    const [open] = parseBatch([{ do: "open", app: "#SalesOrder-manage" }]);
+    expect(open?.expect).toEqual({ screen: "*" });
+    const a = parseScreen('TRANSACTION ZA01  PROGRAM SAPMZA01  SCREEN 100\nWINDOW wnd[0]  "A"');
+    const b = parseScreen('TRANSACTION ZA03  PROGRAM SAPMZA03  SCREEN 300\nWINDOW wnd[0]  "B"');
+    expect(stopAfter(normalizeAction({ do: "key", key: 0 }), a, b, { screen: "*" })).toBeUndefined();
+    expect(stopAfter(normalizeAction({ do: "key", key: 0 }), a, b)?.why).toBe("screen");
+  });
+  test("idOn: an id, its last part, a handle, a table cell by its column", () => {
+    const v = "wnd[0]/usr/ctxtA-B  field  X = \"\"\nwnd[0]/usr/tblT/ctxtC-D[1,0]  field  = \"\"\ncntlGRID1/shell  grid  3 rows";
+    expect(idOn(v, "ctxtA-B")).toBe(true);
+    expect(idOn(v, "wnd[0]/usr/ctxtA-B")).toBe(true);
+    expect(idOn(v, "ctxtC-D[1,4]")).toBe(true);
+    expect(idOn(v, "cntlGRID1/shell")).toBe(true);
+    expect(idOn(v, "ctxtA")).toBe(false);
+    expect(idOn('Button #save "Save"', "#save")).toBe(true);
+  });
+});
+
+test("shortNote: an id path in a note is cut to the id the view names", () => {
+  expect(shortNote("set wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400/subSUBSCREEN_TC:SAPMV45A:4900/tblSAPMV45ATCTRL_U_ERF_AUFTRAG/ctxtRV45A-MABNR[1,0]")).toBe("set ctxtRV45A-MABNR[1,0]");
+  expect(shortNote("grid double row 3 of wnd[0]/usr/cntlGRID1/shellcont/shell")).toBe("grid double row 3 of cntlGRID1/shell");
+  expect(shortNote('pressed wnd[1]/usr/btnSPOP-OPTION1 "Yes"')).toBe('pressed btnSPOP-OPTION1 "Yes"');
+  expect(shortNote("selected wnd[0]/mbar/menu[1]/menu[0]")).toBe("selected wnd[0]/mbar/menu[1]/menu[0]");
 });

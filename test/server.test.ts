@@ -536,15 +536,21 @@ describe("a key named Save is Save to the guard (Astra's review, 2026-11-23)", (
 
 describe("a sap_look right after sap_act", () => {
   const VIEW = 'TRANSACTION VA03  PROGRAM SAPMV45A  SCREEN 102\nctxtVBAK-VBELN  field  Order = ""  (edit)';
-  test("on the same screen answers in one line, once; the next look gives the view", async () => {
+  test("on the same screen says so first, once, and gives the whole view in the same answer", async () => {
     const { surface, call } = await setup();
     surface.add({ id: "chrome:1", system: "ABA", transaction: "VA03" }, { view: VIEW });
     await call("sap_act", { do: "set", id: "ctxtVBAK-VBELN", value: "1" });
-    expect((await call("sap_look")).text).toBe(UNCHANGED);
-    expect((await call("sap_look")).text).toContain("SCREEN 102");
-    // A batch's answer counts the same, and so does a look that asks only for the changes.
+    const first = (await call("sap_look")).text;
+    expect(first).toStartWith(`${UNCHANGED}\nTRANSACTION VA03`);
+    expect(first).toContain("ctxtVBAK-VBELN");
+    const again = (await call("sap_look")).text;
+    expect(again).not.toContain(UNCHANGED);
+    expect(again).toContain("SCREEN 102");
+    // A batch's answer counts the same, and so does a look that asks only for the changes: the whole view all the same.
     await call("sap_act", { actions: [{ do: "set", id: "ctxtVBAK-VBELN", value: "2" }] });
-    expect((await call("sap_look", { diff: true })).text).toBe(UNCHANGED);
+    const d = (await call("sap_look", { diff: true })).text;
+    expect(d).toStartWith(UNCHANGED);
+    expect(d).toContain("SCREEN 102");
   });
   test("a screen that changed since, or a look that asks for more, gets the screen", async () => {
     const { surface, call } = await setup();
@@ -555,7 +561,7 @@ describe("a sap_look right after sap_act", () => {
     await call("sap_act", { do: "set", id: "ctxtVBAK-VBELN", value: "1" });
     expect((await call("sap_look", { full: true })).text).toStartWith("FULL");
     await call("sap_act", { do: "set", id: "ctxtVBAK-VBELN", value: "1" });
-    expect((await call("sap_look", { id: "ctxtVBAK-VBELN" })).text).not.toBe(UNCHANGED);
+    expect((await call("sap_look", { id: "ctxtVBAK-VBELN" })).text).not.toContain(UNCHANGED);
   });
   test("an act that failed leaves nothing to compare with", async () => {
     const { surface, call } = await setup();
@@ -594,5 +600,33 @@ describe("sap_act without an action to run", () => {
     expect(r.text).toContain("--- the screen after action 1");
     expect(r.text).toContain("3. did set");
     expect(surface.acts().map((a) => a.id)).toEqual(["ctxtA", "ctxtB"]);
+  });
+});
+
+describe("the NUMBERS line on screens that do not show the notation (P1)", () => {
+  const VA03 = 'TRANSACTION VA03  PROGRAM SAPMV45A  SCREEN 4001\nNUMBERS 1.234,56  (decimal comma: "1.000" is one thousand, "1,000" is one, "312,000" is 312)\ntxtVBAK-NETWR  field  Net Value = "1.250,00"  (read-only)\nctxtVBAK-AUDAT  field  Doc. Date = "31.05.2018"  (read-only)';
+  const MB51 = 'TRANSACTION MB51  PROGRAM RM07DOCS  SCREEN 120\ncntlGRID1/shell  grid  2 rows; columns: BWART=MvT | MENGE=Qty\n  row 0: 561 | 1.000\n  row 1: 561 | 1-';
+  test("unknown at first, and said so; known for the session once a screen showed it", async () => {
+    const { surface, call } = await setup();
+    const s = surface.add({ id: "chrome:1", system: "ABA", transaction: "MB51" }, { view: MB51 });
+    const first = (await call("sap_look")).text.split("\n");
+    expect(first[1]).toStartWith("NUMBERS unknown");
+    s.view = VA03;
+    expect((await call("sap_look")).text).not.toContain("NUMBERS unknown");
+    s.view = MB51;
+    const later = (await call("sap_look")).text.split("\n");
+    expect(later[1]).toBe('NUMBERS 1.234,56  (decimal comma: "1.000" is one thousand, "1,000" is one, "312,000" is 312; as seen on an earlier screen; dates DD.MM.YYYY)');
+    // An act's answer that shows such a number says it too, under its header; one that shows none says nothing.
+    expect((await call("sap_act", { do: "key", key: 0 })).text).not.toContain("NUMBERS");
+    s.onAct = (_a, x) => (x.view = MB51.replace("1.000", "2.000"));
+    const acted = (await call("sap_act", { do: "key", key: 0 })).text.split("\n");
+    expect(acted[2]).toStartWith("TRANSACTION MB51");
+    expect(acted[3]).toStartWith("NUMBERS 1.234,56");
+  });
+  test("the user's setting, when the surface reads it, comes first", async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA", transaction: "MB51" }, { view: MB51, notation: { sign: ".", date: "MM/DD/YYYY" } });
+    const v = (await call("sap_look")).text.split("\n");
+    expect(v[1]).toBe('NUMBERS 1,234.56  (decimal point: "1,000" is one thousand, "1.000" is one; the user\'s setting; dates MM/DD/YYYY)');
   });
 });

@@ -918,7 +918,7 @@ export function extractLook(limits: {
       }
     // The entries below the top menus are not on this line: the view of the menu bar alone lists them all.
     if (names.length) {
-      out(0, `wnd[0]/mbar  menubar  ${names.join(", ")}  (every entry and its path: look id "mbar")`);
+      out(0, `wnd[0]/mbar  menubar  ${names.join(", ")}  (its menus and their entries: look id "mbar"; one menu whole: id "menu[N]")`);
       mbarShown = true;
     }
     break;
@@ -929,7 +929,7 @@ export function extractLook(limits: {
     const tops = Array.from(document.querySelectorAll("tr[ct^='POMN']")).filter((tr) => /^wnd\[0\]\/mbar\/menu\[\d+\]$/.test(tr.id));
     const names = tops.map((tr) => `${prop(tr.getAttribute("data-ls") ?? "", 1) || norm(tr.textContent)} {${tr.id.slice("wnd[0]/mbar/".length)}}`);
     // While the menu is open its rows are in the view as "menu" lines (below).
-    if (names.length && !tops.some((tr) => visible(tr) && inView(tr))) out(0, `wnd[0]/mbar  menubar  ${names.join(", ")}  (every entry and its path: look id "mbar")`);
+    if (names.length && !tops.some((tr) => visible(tr) && inView(tr))) out(0, `wnd[0]/mbar  menubar  ${names.join(", ")}  (its menus and their entries: look id "mbar"; one menu whole: id "menu[N]")`);
   }
   // Open popup menus: rows whose DOM id is the scripting id.
   // A closed menu stays in the page, moved far above the window (top -9999 px): only rows in the window are open.

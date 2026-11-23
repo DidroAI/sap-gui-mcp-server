@@ -9,6 +9,7 @@ import { ActionError } from "../core/types.js";
 import { LOGON_PROGRAM, LOGON_REFUSAL } from "../core/words.js";
 import type { FocusFacts } from "./assess.js";
 import { evalLs } from "./controls.js";
+import { mergeLabels } from "./field-labels.js";
 import { buttonLine } from "./labels.js";
 import { type ClientPopup, extractClientPopups, extractFacts, extractLook, extractMenus, extractViewer, extractViewerIds, type FocusedControl, focusedControl, type LookResult, type MenuEntry, normalizeLsdata, type PageFacts, viewerFocus } from "./page.js";
 import { endedText, extractEnded, type WebGuiSession } from "./session.js";
@@ -234,7 +235,17 @@ export async function lookRead(session: WebGuiSession, ended = false): Promise<S
 }
 
 /** Every menu entry of the menu bar, with its id and its shortcut: what the view names as one `menubar` line. */
-export async function menuLines(session: WebGuiSession): Promise<string> {
+/** What "(greyed)" after a menu entry means: said once, on the menu's first line. */
+const GREYED_MENU = '(greyed): SAP does not offer it on this screen';
+
+/**
+ * The menu bar as sap_look shows it for id "mbar": each menu and its
+ * entries, a submenu with how many entries it has (its own look names
+ * them); or, for `under` ("menu[2]", "menu[1]/menu[0]"), that menu and
+ * every entry below it. The whole tree of a transaction such as VA01 is some
+ * 200 lines.
+ */
+export async function menuLines(session: WebGuiSession, under?: string): Promise<string> {
   const menus = await session.frame.evaluate(extractMenus);
   if (!menus.length) return "mbar  menubar  (this screen has no menu bar the server can read)";
   const path = (sid: string) => (sid.match(/menu\[(\d+)\]/g) ?? []).map((x) => Number(x.slice(5, -1)));
@@ -244,11 +255,24 @@ export async function menuLines(session: WebGuiSession): Promise<string> {
     for (let i = 0; i < Math.min(x.length, y.length); i++) if (x[i] !== y[i]) return (x[i] ?? 0) - (y[i] ?? 0);
     return x.length - y.length;
   });
-  const out = ['mbar  menubar  every entry; choose one with {"do":"select","id":"<id>"}'];
-  for (const m of sorted) {
-    const id = m.sid.replace(/^wnd\[0\]\/mbar\//, "");
-    if (!id.startsWith("menu[")) continue;
-    out.push(`  ${"  ".repeat(path(m.sid).length - 1)}${m.text}${m.key ? ` (${m.key.replace(/_/g, "+")})` : ""}  {${id}}${m.disabled ? "  (greyed out: SAP does not offer it on this screen)" : ""}`);
+  const entries = sorted.map((m) => ({ ...m, id: m.sid.replace(/^wnd\[0\]\/mbar\//, "") })).filter((m) => m.id.startsWith("menu["));
+  const below = (id: string) => entries.filter((m) => m.id.startsWith(`${id}/`));
+  const line = (m: (typeof entries)[number], depth: number, more = "") =>
+    `  ${"  ".repeat(depth)}${m.text}${m.key ? ` (${m.key.replace(/_/g, "+")})` : ""}  {${m.id}}${m.disabled ? "  (greyed)" : ""}${more}`;
+  if (under !== undefined) {
+    const top = entries.find((m) => m.id === under);
+    if (!top) throw new ActionError(`No menu "${under}" on this screen: sap_look with id "mbar" lists the menus and their ids.`);
+    const base = path(top.sid).length;
+    const out = [`${under}  menu  ${top.text}: every entry below it; choose one with {"do":"select","id":"<id>"}; ${GREYED_MENU}`];
+    for (const m of below(under)) out.push(line(m, path(m.sid).length - base - 1));
+    return out.join("\n");
+  }
+  const out = [`mbar  menubar  the menus and their entries; choose one with {"do":"select","id":"<id>"}; a submenu's entries: sap_look with its id; ${GREYED_MENU}`];
+  for (const m of entries) {
+    const depth = path(m.sid).length;
+    if (depth > 2) continue;
+    const n = depth === 2 ? below(m.id).filter((x) => path(x.sid).length === 3).length : 0;
+    out.push(line(m, depth - 1, n ? `  (${n} entries: sap_look id "${m.id}")` : ""));
   }
   return out.join("\n");
 }
@@ -299,6 +323,22 @@ const snapshotScript = (ended: boolean): string => `(() => {
 const SNAPSHOT = snapshotScript(false);
 const SNAPSHOT_UNLESS_ENDED = snapshotScript(true);
 
+/**
+ * "S4H (100)" from SAP's session cookie (SAP_SESSIONID_<system>_<client>),
+ * when the tab holds exactly one: two logons in one browser share the
+ * cookies of an origin, and then the cookie does not tell which is this one.
+ */
+async function systemFromCookie(f: Frame): Promise<string> {
+  let cookies: { name: string }[] = [];
+  try {
+    cookies = await f.page().context().cookies(f.url());
+  } catch {
+    return "";
+  }
+  const ids = [...new Set(cookies.map((c) => /^SAP_SESSIONID_([A-Z0-9]{3})_(\d{3})$/.exec(c.name)).filter((m) => !!m).map((m) => `${m[1]} (${m[2]})`))];
+  return ids.length === 1 ? (ids[0] ?? "") : "";
+}
+
 async function read(session: WebGuiSession, ended: boolean): Promise<ScreenRead> {
   const f = session.frame;
   const s = await f.evaluate<Snapshot>(ended ? SNAPSHOT_UNLESS_ENDED : SNAPSHOT);
@@ -310,7 +350,9 @@ async function read(session: WebGuiSession, ended: boolean): Promise<ScreenRead>
     return { text, ended: "", facts, locked: undefined };
   }
   const r = s.look as LookResult;
-  const out = [`TRANSACTION ${r.transaction}  PROGRAM ${r.program}  SCREEN ${r.screen}${r.system ? `  SYSTEM ${r.system}` : ""}`];
+  // S/4HANA's Web GUI has no system information area: the session's facts (its status bar, else its cookie) name the system.
+  const system = r.system || (facts?.system ? `${facts.system}${facts.client ? ` (${facts.client})` : ""}` : await systemFromCookie(f));
+  const out = [`TRANSACTION ${r.transaction}  PROGRAM ${r.program}  SCREEN ${r.screen}${system ? `  SYSTEM ${system}` : ""}`];
   // Web GUI's own dialogs first: while one is open, nothing below reacts.
   out.push(...clientPopupLines(s.popups));
   // The viewers' frames are found only for a screen that has one.
@@ -318,9 +360,8 @@ async function read(session: WebGuiSession, ended: boolean): Promise<ScreenRead>
   const viewers = hasViewer ? await framesOf(f, s.viewers).catch(() => []) : [];
   for (const w of r.windows) {
     out.push(`WINDOW ${w.id}  "${w.title}"`);
-    for (const raw of w.lines) {
-      // S/4HANA's button names carry screen-reader noise and "((Ctrl+F2))": cleaned once, here (labels.ts).
-      const l = buttonLine(raw);
+    // S/4HANA's button names carry screen-reader noise and "((Ctrl+F2))" (labels.ts); labels drawn apart from their field go into its line (field-labels.ts).
+    for (const l of mergeLabels(w.lines.map(buttonLine))) {
       out.push(l);
       if (l.endsWith("  html-viewer")) {
         const v = viewers.find((x) => l.startsWith(`${x.sid}  `));

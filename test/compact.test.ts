@@ -356,3 +356,36 @@ describe("buttons in table cells (ECCSCR-06)", () => {
     expect(compact(view).split("\n")).toContain("  row 0: Item=10; Next=0");
   });
 });
+
+describe("compact: what costs much and says little (P9)", () => {
+  const head = ["TRANSACTION SE16N  PROGRAM SAPLSE16N  SCREEN 200", 'WINDOW wnd[0]  "EKPO: Display of Entries Found"'];
+  test("a grid with many columns shows the first 15, and names the others for cols", () => {
+    const cols = Array.from({ length: 40 }, (_, i) => `C${i}=Title ${i}`);
+    const row = (r: number) => `  row ${r}: ${Array.from({ length: 40 }, (_, i) => `v${r}.${i}`).join(" | ")}`;
+    const v = compact([...head, `wnd[0]/usr/cntlRESULT_LIST/shellcont/shell  grid  2 rows; columns: ${cols.join(" | ")}`, row(0), row(1)].join("\n")).split("\n");
+    const grid = v.find((l) => l.includes("  grid  ")) ?? "";
+    expect(grid).toContain("columns: C0=Title 0 | ");
+    expect(grid).toContain("C14=Title 14; 25 more columns, read with sap_look id and \"cols\" (ids or titles): C15, C16,");
+    expect(grid).not.toContain("Title 15");
+    expect(v).toContain(`  row 0: ${Array.from({ length: 15 }, (_, i) => `v0.${i}`).join(" | ")}`);
+    // A read of rows picks its columns itself: nothing is left out there.
+    expect(compact([...head, `wnd[0]/usr/cntlRESULT_LIST/shellcont/shell  grid  2 rows; columns: ${cols.join(" | ")}`, row(0)].join("\n"), { emptyColumns: false })).toContain("C39=Title 39");
+  });
+  test("an HTML viewer docked beside the screen is one line; one in the user area stays whole", () => {
+    const viewer = ["wnd[0]/shellcont/shell  html-viewer", "  User Interface for the Purchase Order", "  Three screen areas", "wnd[0]/shellcont/shell/html[1]  link  screen areas", "wnd[0]/shellcont/shell/html[2]  link  collect"];
+    const v = compact([...head, ...viewer, 'wnd[0]/usr/txtX  field  X = "1"  (read-only)'].join("\n"));
+    expect(v).toContain('html-viewer  "User Interface for the Purchase Order"  (1 more lines of text, 2 links: sap_look with id "wnd[0]/shellcont/shell" shows them)');
+    expect(v).not.toContain("screen areas");
+    expect(v).toContain('txtX  field  X = "1"');
+    const inside = compact([...head, "wnd[0]/usr/cntlHTML/shellcont/shell  html-viewer", "  Body text"].join("\n"));
+    expect(inside).toContain("  Body text");
+  });
+  test("behind a popup, the first read-only values stay and the others are counted", () => {
+    const behind = Array.from({ length: 9 }, (_, i) => `wnd[0]/usr/txtF${i}  field  F${i} = "v${i}"  (read-only)`);
+    const v = compact([...head, ...behind, 'wnd[0]/usr/txtE  field  E = "e"  (edit)', 'WINDOW wnd[1]  "Q"', "wnd[1]/usr/btnYES  button  Yes"].join("\n"));
+    expect(v).toContain('txtF4  field  F4 = "v4"');
+    expect(v).not.toContain("txtF5");
+    expect(v).toContain('txtE  field  E = "e"  (edit)');
+    expect(v).toContain("4 more lines behind the popup");
+  });
+});

@@ -122,6 +122,20 @@ export function ui5RowOf(a: { handle: string; row: number }): RowOf {
   return { why: `${h} is not a table or a list` };
 }
 
+/** SAP's user defaults as codes (USR01-DCPFM, USR01-DATFM) as a notation; undefined when neither is known. */
+export function notationOfCodes(num: string | null, date: string | null): { sign?: "," | "."; spaced?: boolean; date?: string } | undefined {
+  const out: { sign?: "," | "."; spaced?: boolean; date?: string } = {};
+  if (num === " ") out.sign = ",";
+  else if (num?.toUpperCase() === "X") out.sign = ".";
+  else if (num?.toUpperCase() === "Y") {
+    out.sign = ",";
+    out.spaced = true;
+  }
+  const d = ({ "1": "DD.MM.YYYY", "2": "MM/DD/YYYY", "3": "MM-DD-YYYY", "4": "YYYY.MM.DD", "5": "YYYY/MM/DD", "6": "YYYY-MM-DD" } as Record<string, string>)[date ?? ""];
+  if (d) out.date = d;
+  return out.sign || out.date ? out : undefined;
+}
+
 const within = <T>(p: Promise<T>, ms: number, otherwise: T): Promise<T> =>
   Promise.race([p.catch(() => otherwise), new Promise<T>((r) => setTimeout(() => r(otherwise), ms))]);
 
@@ -582,6 +596,40 @@ export class FioriDriver implements Driver {
     if (r === "ATHOME") return "this is the launchpad's home page, there is nothing to go back to";
     await top.evaluate(() => history.back());
     return "browser history";
+  }
+
+  /**
+   * The user's decimal and date notation as the launchpad hands it to UI5
+   * from the user's SAP defaults (the "legacy" ABAP formats: number " ", X,
+   * Y; date 1-6). Undefined when UI5 was not given them.
+   */
+  async notation(): Promise<{ sign?: "," | "."; spaced?: boolean; date?: string } | undefined> {
+    const r = await within(
+      this.page.mainFrame().evaluate(() => {
+        type Fmt = { getABAPNumberFormat?: () => unknown; getABAPDateFormat?: () => unknown; getLegacyNumberFormat?: () => unknown; getLegacyDateFormat?: () => unknown };
+        const w = window as unknown as { sap?: { ui?: { require?: (n: string) => unknown; getCore?: () => { getConfiguration?: () => { getFormatSettings?: () => Fmt } } } } };
+        let num: unknown;
+        let date: unknown;
+        try {
+          const f = w.sap?.ui?.require?.("sap/base/i18n/Formatting") as Fmt | undefined;
+          num = f?.getABAPNumberFormat?.();
+          date = f?.getABAPDateFormat?.();
+        } catch {
+          /* an older UI5 */
+        }
+        try {
+          const fs = w.sap?.ui?.getCore?.()?.getConfiguration?.()?.getFormatSettings?.();
+          num ??= fs?.getLegacyNumberFormat?.();
+          date ??= fs?.getLegacyDateFormat?.();
+        } catch {
+          /* no UI5 core */
+        }
+        return { num: typeof num === "string" ? num : null, date: typeof date === "string" ? date : null };
+      }),
+      3000,
+      { num: null as string | null, date: null as string | null },
+    );
+    return notationOfCodes(r.num, r.date);
   }
 
   async screenshot(): Promise<Buffer> {

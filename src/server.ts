@@ -13,7 +13,8 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { actionText, normalizeAction, type NormalizedAction, STEP_VERBS } from "./core/action.js";
-import { isLook, MAX_BATCH, parseBatch, staleWrite, stopAfter, unseenWrite } from "./batch.js";
+import { type BatchStep, idOn, isLook, MAX_BATCH, parseBatch, shortNote, staleWrite, stopAfter, unseenWrite } from "./batch.js";
+import { dateFormatOf, type Notation, notationIn, withNumbers } from "./core/notation.js";
 import { commandFieldRefusal, decide, LEAVE_UNSAVED, leavesTransaction, type Policy, sessionRefusal, tcodeOf, tcodeRefusal } from "./core/guard.js";
 import { type Turn, SessionQueue, waitedLine } from "./core/queue.js";
 import { Registry } from "./core/registry.js";
@@ -54,8 +55,11 @@ ${writeRule(policy)}
 Type, press, Enter, open a transaction, answer a popup: sap_act ("actions": a whole screen in one call). Several sessions or systems: sap_sessions. Record a flow as a test or to automate it: sap_record, then sap_replay.`;
 }
 
-/** sap_look's answer when the screen is the one the last sap_act answer ended on. */
-export const UNCHANGED = "Unchanged since your last sap_act (same screen): its answer is the screen. Call sap_look again for the whole view.";
+/**
+ * The first line of sap_look's answer when the screen is the one the last
+ * sap_act answer ended on; the whole view follows it (one call, not two).
+ */
+export const UNCHANGED = "Unchanged since your last sap_act (same screen); the whole view:";
 
 function text(t: string): CallToolResult {
   return { content: [{ type: "text", text: t }] };
@@ -277,11 +281,42 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   /**
    * The screen each session's last sap_act answer ended on, as a fingerprint
    * of its compact view. A bare sap_look right after it, on the same screen,
-   * answers in one line (UNCHANGED): agents called it after most acts, for a
-   * screen they already had (169 of them in one benchmark).
+   * says so first (UNCHANGED), then gives the whole view: agents called it
+   * after most acts, for a screen they already had (169 of them in one
+   * benchmark), and a one-line answer made them call it a second time.
    */
   const actShown = new Map<string, string>();
   const fingerprint = (view: string) => createHash("sha1").update(view).digest("hex");
+
+  /**
+   * Each session's number and date notation (core/notation.ts): from the
+   * user's settings when the surface reads them (asked once), else from the
+   * screens seen so far. An answer that shows a number with a point or a
+   * comma and no notation of its own gets a NUMBERS line from here, or one
+   * that says the notation is unknown.
+   */
+  const notations = new Map<string, Notation>();
+  const settingsAsked = new Set<string>();
+  async function learn(d: Driver, session: string, view: string): Promise<void> {
+    let n: Notation = { ...notations.get(session) };
+    if (d.notation && !settingsAsked.has(session)) {
+      settingsAsked.add(session);
+      const set = await d.notation().catch(() => undefined);
+      if (set?.sign) n = { ...n, sign: set.sign, spaced: set.spaced === true, from: "settings" };
+      if (set?.date) n.date = set.date;
+    }
+    const seen = n.from === "settings" ? undefined : notationIn(view);
+    if (seen?.sign) n = { ...n, sign: seen.sign, spaced: seen.spaced === true, from: "screen" };
+    // Fiori writes dates by the browser's locale, not by the user's SAP setting.
+    const date = view.startsWith("FIORI") ? undefined : dateFormatOf(view);
+    if (date && !n.date) n.date = date;
+    if (n.sign || n.date) notations.set(session, n);
+  }
+  /** `answer` (which shows `view`, or part of it) with the session's NUMBERS line where it needs one. */
+  async function said(d: Driver, session: string, view: string, answer: string): Promise<string> {
+    await learn(d, session, view).catch(() => {});
+    return withNumbers(answer, notations.get(session));
+  }
 
   /**
    * A session reference that matches no session, with exactly one session
@@ -368,7 +403,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
             const { driver, info } = await registry.session(ref);
             registry.active = info.id;
             actShown.delete(info.id);
-            return text(views.present(info.id, await driver.look({ compact: true }), true));
+            const v = await driver.look({ compact: true });
+            return text(await said(driver, info.id, v, views.present(info.id, v, true)));
           }),
         ),
       ),
@@ -378,7 +414,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     "sap_look",
     {
       title: "Look at the SAP screen",
-      description: `The SAP screen as compact text: header, one line per control (id, type, label = "value", state), tables as rows, popups as WINDOW, status bar last. Call it first, for the ids; after sap_act it is rarely needed (that answer is the new screen). Again only to read more: a grid or list shows the rows on screen and the total, read others with id and rows (${MAX_ROWS} at most), never conclude an entry is missing from the rows on screen; a dropdown, tree or text whole: id; menus: id "mbar"; toolbar buttons and hidden ids: full. Charts: sap_screenshot.`,
+      description: `The SAP screen as compact text: header, one line per control (id, type, label = "value", state), tables as rows, popups as WINDOW, status bar last. Call it first, for the ids; after sap_act it is rarely needed (that answer is the new screen). Again only to read more: a grid or list shows the rows on screen and the total, read others with id and rows (${MAX_ROWS} at most), never conclude an entry is missing from the rows on screen; a dropdown, tree or text whole: id; menus: id "mbar", one menu whole: id "menu[2]"; toolbar buttons and hidden ids: full. Charts: sap_screenshot.`,
       inputSchema: {
         session,
         full: z.boolean().optional().describe("every id and toolbar button (larger)"),
@@ -402,7 +438,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
           const range = rows !== undefined ? parseRows(rows) : cols !== undefined ? COLS_ONLY_ROWS : undefined;
           const options: LookOptions = { compact: !full, id, ...(range ? { rows: range } : {}), ...(cols !== undefined ? { cols: cols.split(",") } : {}) };
           // One control is not the screen: what the agent holds of the screen stays as it is.
-          return text(await driver.look(options));
+          const part = await driver.look(options);
+          return text(await said(driver, info.id, part, part));
         }
         // What the last sap_act answer ended on, if nothing came between: asked once.
         const acted = actShown.get(info.id);
@@ -410,12 +447,13 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
         if (full) {
           const whole = await driver.look({ compact: false });
           // The full view holds everything the compact one does: later changes are counted from here.
-          views.remember(info.id, await driver.look({ compact: true }));
-          return text(whole);
+          const c = await driver.look({ compact: true });
+          views.remember(info.id, c);
+          return text(await said(driver, info.id, c, whole));
         }
         const view = await driver.look({ compact: true });
-        if (acted !== undefined && acted === fingerprint(view)) return text(UNCHANGED);
-        return text(views.present(info.id, view, !diff));
+        if (acted !== undefined && acted === fingerprint(view)) return text(await said(driver, info.id, view, `${UNCHANGED}\n${views.present(info.id, view, true)}`));
+        return text(await said(driver, info.id, view, views.present(info.id, view, !diff)));
   }
 
   /** The screen as it is, whole, after `head`: the answer to "actions":[] and to {"do":"look"} in sap_act. */
@@ -426,7 +464,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       actShown.delete(info.id);
       const shown = withStatus(views.present(info.id, v, true), v);
       const top = statusTop(shown, v);
-      return withData(text(`${head}${top ? `\n${top}` : ""}\n\n${shown}`), data((): ActOutput => ({ ran: 0, total: 0, ...screenOf(v) })));
+      return withData(text(await said(driver, info.id, v, `${head}${top ? `\n${top}` : ""}\n\n${shown}`)), data((): ActOutput => ({ ran: 0, total: 0, ...screenOf(v) })));
     });
   }
 
@@ -490,14 +528,14 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     const opens = action.do === "okcode" && typeof action.value === "string" && /^\/o\S/i.test(action.value) && d.info.surface === "sapgui";
     const before = opens ? new Set((await registry.discover()).sessions.map((s) => s.id)) : undefined;
     // While a recording is on, an action that works becomes a step of it.
-    const done = await recorder.act(d, action, risk, () => d.act(action));
+    const done = shortNote(await recorder.act(d, action, risk, () => d.act(action)));
     const acted = Date.now();
     // The line that repeats this action in a script: last in the note block. Kept for a draft test when the action ran where it should.
     const line = codeLine() ? `\ncode: ${codeOf(action)}` : "";
-    const ok = (t: string, v: string, on = session) => {
+    const ok = async (t: string, v: string, on = session, dr: Driver = d) => {
       remember(session, action);
       actShown.set(on, fingerprint(v));
-      return withData(text(t), data(() => ranOn(v)));
+      return withData(text(await said(dr, on, v, t)), data(() => ranOn(v)));
     };
     const note = (screen: () => Promise<string>) =>
       screen().then((v) => ({ v, n: clock ? timed(done, d, clock.wanted, clock.t0, [["judge", clock.judged], ["act", acted - a0], ["answer", Date.now() - acted]]) : done }));
@@ -508,7 +546,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
           registry.active = fresh.id;
           const nd = await registry.driver(fresh.id);
           const { v, n } = await note(() => nd.look({ compact: true }));
-          return ok(`${n}\nA new session opened (${fresh.where}); it is now the active one. The previous session is still open (sap_sessions lists both).${line}\n\n${views.present(fresh.id, v, true)}`, v, fresh.id);
+          return ok(`${n}\nA new session opened (${fresh.where}); it is now the active one. The previous session is still open (sap_sessions lists both).${line}\n\n${views.present(fresh.id, v, true)}`, v, fresh.id, nd);
         }
         await new Promise((r) => setTimeout(r, 500));
       }
@@ -571,7 +609,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       const lines = now.split("\n");
       const here = [lines[0], lines.filter((l) => l.startsWith("WINDOW ")).at(-1)].filter(Boolean).join("  ");
       if (last === now) return fail(`${message}\nThe screen is as you last saw it: ${here}`);
-      return fail(`${message}\n${last === undefined ? "The screen is:" : "The screen is not as you last saw it:"}\n\n${views.present(info.id, now)}`);
+      return fail(await said(driver, info.id, now, `${message}\n${last === undefined ? "The screen is:" : "The screen is not as you last saw it:"}\n\n${views.present(info.id, now)}`));
     } catch {
       return fail(message);
     }
@@ -653,6 +691,29 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     const [first, ...more] = r.content;
     if (r.isError || first?.type !== "text") return r;
     return { ...r, content: [{ ...first, text: `The user confirmed this action in the client (${confirm}).\n${first.text}` }, ...more] };
+  }
+
+  /**
+   * After a step that led to another screen: may the batch go on with the
+   * `next` step? Yes when that step names a control that is on the new screen
+   * (compact view, else the full one) and does not write; an okcode and an
+   * open name no control and go on when they do not write. A step without an
+   * id (a key) means the screen it was sent for: the batch ends there.
+   */
+  async function goesOnAfter(d: Driver, session: string, next: BatchStep, view: string): Promise<boolean> {
+    const a = next.action;
+    const id = typeof a.id === "string" ? a.id : undefined;
+    if (!id && a.do !== "okcode" && a.do !== "open") return false;
+    if (id && !idOn(view, id)) {
+      const full = await d.look({ compact: false }).catch(() => "");
+      if (!idOn(full, id)) return false;
+    }
+    try {
+      const j = await judge(session, a);
+      return !("refused" in j) && j.verdict.run && j.assessment.risk !== "commit";
+    } catch {
+      return false;
+    }
   }
 
   /** The screen once SAP is done with the step before it (at most 15 s), as the compact view. */
@@ -759,7 +820,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
         }
         ran = n;
         remember(id, s.action);
-        lines.push(`${n}. ${said}${s.note ? ` ${s.note}` : ""}`);
+        lines.push(`${n}. ${shortNote(said)}${s.note ? ` ${s.note}` : ""}`);
         codes.push(codeOf(s.action));
         // A menu entry, a favourite or a tree node can open a transaction no okcode named.
         const info = await driver.refresh().catch(() => undefined);
@@ -772,9 +833,15 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
         view = await settled(driver);
         const after = parseScreen(view);
         const stop = stopAfter(s.action, before, after, s.expect);
+        const next = steps[i + 1];
         if (stop && !last) {
-          end = { why: stop.why, text: `after action ${n}, ${stop.text}`, error: false, next: n + 1 };
-          break;
+          // Another screen the agent expected (Enter on an initial screen, Back, a popup answered): the next action shows where it means to be.
+          if (stop.why === "screen" && next && (await goesOnAfter(driver, id, next, view))) {
+            lines[lines.length - 1] += ` (${stop.text})`;
+          } else {
+            end = { why: stop.why, text: `after action ${n}, ${stop.text}`, error: false, next: n + 1 };
+            break;
+          }
         }
         // Nothing follows the last action: only what it said it expects is worth a line.
         if (stop?.why === "expect") note = `Action ${n}: ${stop.text}.`;
@@ -809,8 +876,9 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
           screen = `\n\n(the screen could not be read: ${(e as Error).message.split("\n")[0]})`;
         }
       }
-      const said = data((): ActOutput => ({ ran, total, ...(stopped ? { stopped } : {}), ...(seen !== undefined ? screenOf(seen) : { screen: {} }) }));
-      return withTurn(withData(end?.error ? fail(`${body}${screen}`) : text(`${body}${screen}`), said), turn);
+      const out = data((): ActOutput => ({ ran, total, ...(stopped ? { stopped } : {}), ...(seen !== undefined ? screenOf(seen) : { screen: {} }) }));
+      const all = driver && id && seen !== undefined ? await said(driver, id, seen, `${body}${screen}`) : `${body}${screen}`;
+      return withTurn(withData(end?.error ? fail(all) : text(all), out), turn);
     });
     if (done || !box.held) return done ?? fail("Not run.");
     const r = await confirmHeld(box.held, box.held.action, whole);
@@ -844,7 +912,7 @@ toolbar id, button
 scroll id, to: a row from 0, next, prev, first, last, left, right
 open app "#SalesOrder-manage" (Fiori launchpad)
 timeout: seconds per step (default 180).
-actions: [...] up to ${MAX_BATCH} in one call, a screen's fields then its key: [{"do":"set","id":"ctxtVBAK-AUART","value":"OR"},{"do":"key","key":0}]. Stops at the first surprise (failure, refusal, a write awaiting yes, popup, E/W/A status, another screen; an okcode "/n<tcode>" goes on into it). Per step: expect {"screen":"4001"}|{"popup":true}|{"status":"W"} goes on through it; show:true adds the screen after it; unseen:true lets a write run on a screen first reached in the batch.
+actions: [...] up to ${MAX_BATCH} in one call, a screen's fields then its key: [{"do":"set","id":"ctxtVBAK-AUART","value":"OR"},{"do":"key","key":0}]. Stops at the first surprise (failure, refusal, a write awaiting yes, popup, E/W/A status, another screen unless the next action's id is on it and it does not write; okcode "/n<tcode>" and open go on into it). Per step: expect {"screen":"4001"}|{"screen":"*"} (any)|{"popup":true}|{"status":"W"} goes on through it; show:true adds the screen after it; unseen:true lets a write run on a screen first reached in the batch.
 Do not repeat a failed action unchanged.
 ${writeRule(policy)}`,
       // Loose: "action":{...}, the older shape of one action, still works (clients and recordings that send it), and so do "timing" and other keys an action passes on.

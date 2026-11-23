@@ -119,7 +119,7 @@ describe("act", () => {
     await run(["act", "set", "ctxtZHDR-CUST", "4711"]);
     const r = await run(["look"]);
     expect(r.code).toBe(0);
-    expect(r.lines).toEqual(["Unchanged since your last sap_act (same screen): its answer is the screen. Call sap_look again for the whole view.", "screen: .sap-gui/screens/1-act.txt"]);
+    expect(r.lines).toEqual(["Unchanged since your last sap_act (same screen); the whole view:", "screen: .sap-gui/screens/1-act.txt"]);
     expect((await run(["look"])).lines[0]).toStartWith("TRANSACTION ZT01");
   });
   test("screen lines are cut, notes and reasons never", async () => {
