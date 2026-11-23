@@ -192,7 +192,8 @@ describe.skipIf(!exe)("Web GUI reader: controls that answer late or hide their p
   test("a row that shows its selection 350 ms after the click is waited for: no false \"still not selected\"", async () => {
     await open();
     expect(await act({ do: "select", id: "tblZTC_ITEMS", row: 0 })).toBe("selected row 0 of wnd[0]/usr/tblZTC_ITEMS");
-    expect(await act({ do: "select", id: "tblZTC_ITEMS", row: 1 })).toBe("selected row 1 of wnd[0]/usr/tblZTC_ITEMS");
+    // A row selected adds to the selection: said, with how to clear one.
+    expect(await act({ do: "select", id: "tblZTC_ITEMS", row: 1 })).toBe('selected row 1 of wnd[0]/usr/tblZTC_ITEMS (row 0 is selected too: {"do":"select","id":"wnd[0]/usr/tblZTC_ITEMS","row":N,"value":false} clears one)');
     expect((await fullView()).find((l) => l.startsWith("wnd[0]/usr/tblZTC_ITEMS  table"))).toContain("selected rows 0,1");
     expect(await act({ do: "check", id: "tblZTC_ITEMS", row: 0, value: false })).toBe("deselected row 0 of wnd[0]/usr/tblZTC_ITEMS");
     expect(await act({ do: "select", id: "tblZTC_ITEMS", row: 1 })).toBe("row 1 of wnd[0]/usr/tblZTC_ITEMS was already selected: nothing changed");

@@ -11,7 +11,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { ActionError } from "../src/core/types.js";
 import { STILL_WORKING, webguiView } from "../src/webgui/index.js";
-import { act, nothingSent, vkey } from "../src/webgui/reader.js";
+import { act, assess, look, nothingSent, vkey } from "../src/webgui/reader.js";
 import { inPageOutcome } from "../src/webgui/keys.js";
 import { extractEnded, WebGuiSession } from "../src/webgui/session.js";
 
@@ -33,6 +33,10 @@ const PAGE = `<!doctype html><html lang="en"><head><title>Synthetic</title></hea
 <div id="LIST" ct="LIB" class="lsListbox" style="display:none;position:absolute;top:120px;left:20px;width:80px;height:40px">A B</div>
 <script>
   window.posted = [];
+  // A tab that takes no typed key (live 2026-11-23, a fresh ECC tab): deaf to keys from the browser, or to all keys.
+  window.addEventListener('keydown', function (e) {
+    if ((window.deaf && e.isTrusted) || window.deafAll) { e.preventDefault(); e.stopImmediatePropagation(); }
+  }, true);
   // Escape with a menu or a list open closes it and goes no further, as in Web GUI.
   window.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape') return;
@@ -129,6 +133,76 @@ describe.skipIf(!exe)("waits of a Web GUI action", () => {
     const note = await f();
     return { note, ms: Date.now() - t0 };
   };
+
+  test("a tab that takes no typed key gets the command set in the field and its Enter sent through the page", async () => {
+    await open();
+    await page.evaluate(() => {
+      (window as unknown as { deaf: boolean }).deaf = true;
+    });
+    expect(await act(session, { do: "okcode", value: "/nMB51" })).toBe("okcode /nMB51");
+    expect(await posted()).toEqual(["vkey/0"]);
+  });
+
+  test("a tab that takes no key at all says to reload it, not to try again", async () => {
+    await open();
+    await page.evaluate(() => {
+      (window as unknown as { deafAll: boolean }).deafAll = true;
+    });
+    const e = await act(session, { do: "okcode", value: "/nMB51" }).then(
+      () => undefined,
+      (x: unknown) => x as Error,
+    );
+    expect(e?.message).toContain("the tab takes no keyboard input");
+    expect(e?.message).toContain("reload it (no logon needed");
+    expect(e?.message).not.toContain("try again");
+    expect(await page.locator("#ToolbarOkCode").inputValue()).toBe("");
+  }, 20000);
+
+  test("a list of earlier entries over a button is closed before the click (S/4 input history, live 2026-11-23)", async () => {
+    await open();
+    await page.evaluate(() => {
+      const r = (document.getElementById("CANCEL") as HTMLElement).getBoundingClientRect();
+      const list = document.getElementById("LIST") as HTMLElement;
+      Object.assign(list.style, { display: "block", top: `${r.top - 5}px`, left: `${r.left - 5}px`, width: `${r.width + 40}px`, height: `${r.height + 10}px`, background: "white" });
+    });
+    const r = await timed(() => act(session, { do: "press", id: "btn[12]" }));
+    expect(r.note).toStartWith("pressed wnd[0]/tbar[0]/btn[12]");
+    expect(await posted()).toEqual(["vkey/12"]);
+    expect(r.ms).toBeLessThan(5000);
+  });
+
+  test("an ISO date typed into a date field is typed in the user's format (ECC ME21N refused 2026-11-20, live 2026-11-23)", async () => {
+    await open();
+    await page.evaluate(() => {
+      const f = document.createElement("input");
+      f.id = "F2";
+      f.value = "23.11.2026";
+      f.setAttribute("lsdata", "{0:'x',20:{ModalNo:0,SID:'wnd[0]/usr/ctxtZ-BEDAT',Type:'GuiCTextField'}}");
+      document.body.insertBefore(f, document.getElementById("sysInfoAreaMenuItemSAPITS_MBAR_TRANSACTION"));
+    });
+    expect(await act(session, { do: "set", id: "ctxtZ-BEDAT", value: "2026-11-20" })).toBe('set wnd[0]/usr/ctxtZ-BEDAT (the date as "20.11.2026", the user\'s format DD.MM.YYYY)');
+    expect(await page.locator("#F2").inputValue()).toBe("20.11.2026");
+    // Not a date field: the value as given.
+    expect(await act(session, { do: "set", id: "ctxtZ-ORDER", value: "2026-11-20" })).toBe("set wnd[0]/usr/ctxtZ-ORDER");
+    expect(await page.locator("#F1").inputValue()).toBe("2026-11-20");
+  });
+
+  test("Web GUI's own timeout dialog: its buttons have ids and Reload can be pressed (live 2026-11-23: no id, could not be pressed)", async () => {
+    await open();
+    await page.evaluate(() => {
+      const d = document.createElement("div");
+      d.setAttribute("ct", "PW");
+      d.id = "sesTimeoutPopupWindow";
+      d.innerHTML = '<span class="urPWTitleText">Session Timeout</span><div class="urPWContent">Session has timed out. Would you like to reload this page?</div><div class="urBtnStd" onclick="window.reloaded=true"><span>Reload</span></div><div class="urBtnStd">Cancel</div>';
+      document.body.appendChild(d);
+    });
+    const v = await look(session);
+    expect(v).toContain("browser/btn[0]  button  Reload");
+    expect(v).toContain("browser/btn[1]  button  Cancel");
+    expect((await assess(session, { do: "press", id: "browser/btn[0]" })).risk).toBe("navigate");
+    expect(await act(session, { do: "press", id: "browser/btn[0]" })).toStartWith('pressed browser/btn[0] "Reload"');
+    expect(await page.evaluate(() => (window as unknown as { reloaded?: boolean }).reloaded)).toBe(true);
+  });
 
   test("a key that sends nothing answers at once and says so", async () => {
     await open();

@@ -113,3 +113,17 @@ describe("the transaction a session is in", () => {
     expect(leavesTransaction(p, { do: "key", key: 3 })).toBe(false);
   });
 });
+
+describe("a second write refusal in a session is one line", () => {
+  test("the first says it all; the next one the rule only (live 2026-11-23: 600 characters each time)", () => {
+    const policy = policyFromEnv({});
+    const action = normalizeAction({ do: "key", key: 11 });
+    const assessment = { risk: "commit" as const, reason: "key 11 is Save" };
+    const first = decide(policy, action, assessment);
+    const again = decide(policy, action, assessment, true);
+    if (first.run || !("refused" in first) || again.run || !("refused" in again)) throw new Error("not refused");
+    expect(first.refused).toContain("SAP_WRITE=confirm or on");
+    expect(again.refused).toBe('this action may write to SAP (key 11 is Save) and writes are off. As before: tell the user, leave without saving ({"do":"okcode","value":"/n"}), do not look for another way.');
+    expect(again.refused.length).toBeLessThan(first.refused.length / 2);
+  });
+});

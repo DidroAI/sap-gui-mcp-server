@@ -4,7 +4,8 @@
  * the focused control, and the logon and logoff pages.
  */
 import type { Frame } from "playwright-core";
-import { resolveId, severalText, shortIds } from "../core/ids.js";
+import { names, resolveId, severalText, shortIds } from "../core/ids.js";
+import { dateFormatOf } from "../core/notation.js";
 import { ActionError } from "../core/types.js";
 import { LOGON_PROGRAM, LOGON_REFUSAL } from "../core/words.js";
 import type { FocusFacts } from "./assess.js";
@@ -81,10 +82,12 @@ export async function viewerFrames(session: WebGuiSession): Promise<{ sid: strin
 /** Lines for Web GUI's own dialogs, with what the agent can do about them. */
 function clientPopupLines(pops: ClientPopup[]): string[] {
   const out: string[] = [];
+  // Its buttons get ids, counted over all such dialogs: press id "browser/btn[0]" (the timeout's Reload had none, live 2026-11-23).
+  let n = 0;
   for (const p of pops) {
     out.push(`WINDOW browser  "${p.title}"  (a Web GUI message above the SAP screen; the SAP screen does not react until it is closed)`);
     if (p.text) out.push(`text  "${p.text}"`);
-    for (const b of p.buttons) out.push(`button  ${b}`);
+    for (const b of p.buttons) out.push(`browser/btn[${n++}]  button  ${b}`);
     if (/timeout|timed out|abgelaufen|expir/i.test(`${p.id} ${p.title} ${p.text}`))
       out.push("NOTE the SAP session has timed out. Ask the user to reload the page and log on again; this server never logs on.");
   }
@@ -187,9 +190,56 @@ export function scrollables(view: string): string[] {
 export function resolveIn(view: string, ident: string): string {
   const ids = idsOf(view);
   const r = resolveId(ids, ident);
+  // "cntlGRID1/shell" on a screen without that grid named the one other "shell" (the menu tree of SAP Easy
+  // Access, live 2026-11-23): a shell is named by its container, which must be in the id found.
+  if ("id" in r && /\/shell(cont)?(\[\d+\])?$/.test(ident.trim()) && !names(r.id, ident.trim().replace(/^wnd\[\d+\]\//, ""))) return ident.trim();
   if ("id" in r) return r.id;
   if ("several" in r) throw new ActionError(severalText(ident, r.several, shortIds(ids)));
   return ident.trim();
+}
+
+/**
+ * The compact view with its long hints said once per visit to a screen: a
+ * list's explanation of its row numbers (480 characters), and the columns
+ * of a table or grid (700 characters), which a diff repeated with every
+ * change of the line (live 2026-11-23). After the first time the list keeps
+ * what changes (the cell id of row N, the columns of rows without braces);
+ * a table's or grid's columns, while they are the same, are "as listed
+ * before". Another screen, and the hints come again.
+ */
+export function hintsOnce(text: string, memory: { screen: string; seen: Set<string> }): string {
+  const lines = text.split("\n");
+  const head = /^TRANSACTION (\S*)\s+PROGRAM (\S*)\s+SCREEN (\S*)/.exec(lines[0] ?? "");
+  if (!head) return text;
+  const screen = head.slice(1).join("/");
+  if (memory.screen !== screen) memory.seen.clear();
+  memory.screen = screen;
+  const first = (key: string) => {
+    if (memory.seen.has(key)) return false;
+    memory.seen.add(key);
+    return true;
+  };
+  return lines
+    .map((line) => {
+      const list = /^(\S+ {2}list {2}.*?) {2}\(((?:rows numbered in the whole list|rows here are screen rows|cell ids: ).*)\)$/.exec(line);
+      if (list) {
+        if (first(`list ${list[1]?.split("  ")[0]}`)) return line;
+        const hint = list[2] ?? "";
+        const at = /row N is (\S+) now/.exec(hint)?.[1];
+        const cells = /\b(?:cell ids: |as cell ids count them: )(\S+?\[col,row\])/.exec(hint)?.[1];
+        const cols = /rows without braces have their cells in columns ([\d,]+)/.exec(hint)?.[1];
+        const numbered = hint.startsWith("rows numbered") ? "rows numbered in the whole list" : hint.startsWith("rows here") ? "screen rows" : "";
+        const parts = [numbered, at ? `row N is ${at}` : cells ? `cell ${cells}` : "", cols ? `cells in columns ${cols}` : ""].filter(Boolean);
+        return `${list[1]}  (${parts.join("; ")}; as explained before)`;
+      }
+      const grid = /^(\S+ {2}(?:table|grid) {2}.*?; columns: )(.+?)( {2}\(.*\))?$/.exec(line);
+      if (grid && (grid[2] ?? "").length > 120) {
+        if (first(`columns ${line.split("  ")[0]} ${grid[2]}`)) return line;
+        return `${grid[1]}as listed before${grid[3] ?? ""}`;
+      }
+      return line;
+    })
+    .join("\n");
 }
 
 /** The full view, read again unless one was read a moment ago. */
@@ -230,6 +280,9 @@ export async function lookRead(session: WebGuiSession, ended = false): Promise<S
   if (!r.ended) {
     session.view = { at: Date.now(), text: r.text };
     session.unsaved.seen(r.text);
+    // The user's date format, for an ISO date typed later (reader.ts "set").
+    const date = dateFormatOf(r.text);
+    if (date) session.dateFormat = date;
   }
   return r;
 }

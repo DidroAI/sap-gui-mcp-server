@@ -727,6 +727,9 @@ export function assessAction(action: Action, view: string, menus: MenuEntry[], c
   const windows = parseView(view);
   const scene: Scene = { windows, menus, program: programOf(view), transaction: /^TRANSACTION (\S+)/.exec(view)?.[1] ?? "", dynpro:/  SCREEN (\S+)/.exec(view.split("\n", 1)[0] ?? "")?.[1] ?? "" };
   const id = String(action.id ?? "");
+  // A button of Web GUI's own dialog (session timeout: Reload, Cancel): it reloads the page or closes the
+  // dialog; SAP gets nothing to save.
+  if (/^browser\/btn\[\d+\]$/.test(id.trim()) && (action.do === "press" || action.do === "click")) return NAVIGATE;
   switch (action.do) {
     case "okcode":
       return assessOkcode(String(action.value ?? ""), view, scene, ctx);
@@ -768,6 +771,10 @@ export function assessAction(action: Action, view: string, menus: MenuEntry[], c
         if (!acts) return { risk: BASE_RISK[action.do] ?? "navigate", reason: "" };
         return commit(`${action.do} on ${quote(id)}, which is not on the screen the server read, so what it does is unknown`);
       }
+      // A line of a classic list by its number: the reader ticks that line's checkbox or puts the cursor on
+      // its cell (select, focus), which stays in the page until the next step. Judged as that cell, not as the list.
+      if (control.kind === "list" && action.row !== undefined && action.row !== null && (action.do === "select" || action.do === "check" || action.do === "focus"))
+        return { risk: BASE_RISK[action.do] ?? "navigate", reason: "" };
       // Fields, tabs, radio buttons, labels and lists hold input or show something: they do not write.
       if (INERT_KINDS.has(control.kind)) return { risk: acts ? "navigate" : (BASE_RISK[action.do] ?? "navigate"), reason: "" };
       // Value help and focus on a button do nothing; typing into one is refused by the reader.

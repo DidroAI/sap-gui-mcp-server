@@ -1,3 +1,4 @@
+import { resolveIn } from "../src/webgui/screen.js";
 import { describe, expect, test } from "bun:test";
 import { names, resolveId, severalText, shortIds } from "../src/core/ids.js";
 
@@ -121,5 +122,13 @@ describe("resolveId: which control an id means", () => {
     expect(resolveId(IDS, "ctxtZOLD-FIELD")).toEqual({ none: true });
     expect(resolveId(IDS, "cntlGRID1/shell")).toEqual({ none: true });
     expect(resolveId(IDS, "")).toEqual({ none: true });
+  });
+});
+
+describe("Web GUI: a shell is named by its container", () => {
+  const view = ["TRANSACTION SMEN  PROGRAM SAPLSMTR_NAVIGATION  SCREEN 101", 'WINDOW wnd[0]  "SAP Easy Access"', "wnd[0]/usr/cntlIMAGE_CONTAINER/shellcont/shell  tree  14 nodes shown"].join("\n");
+  test('"cntlGRID1/shell" on a screen without that grid names nothing, not the other shell (live 2026-11-23)', () => {
+    expect(resolveIn(view, "cntlGRID1/shell")).toBe("cntlGRID1/shell");
+    expect(resolveIn(view, "cntlIMAGE_CONTAINER/shell")).toBe("wnd[0]/usr/cntlIMAGE_CONTAINER/shellcont/shell");
   });
 });
