@@ -11,7 +11,9 @@ already have open**:
   launchpad.
 
 It finds your open sessions by itself and works in them as you, under your
-SAP authorisations. It never logs on and never stores a password. Actions
+SAP authorisations. The server never logs on by itself and never sees a
+password: with the optional Chrome extension, the extension logs on to the
+systems you registered in it, and keeps their passwords to itself. Actions
 that may write to SAP are refused unless you allow them.
 
 > Status: 0.1.0, the first public version. It works on real systems, but
@@ -430,22 +432,28 @@ SAP_CHROME_CDP=http://127.0.0.1:9333 npx -y sap-gui-mcp-server sessions
 
 #### Use your everyday Chrome with the extension
 
-Instead of remote debugging, the server can reach your Chrome through a
-small extension: no `chrome://inspect` switch, your normal profile with
-its SSO, and the extension sees only the sites you allow.
+Instead of remote debugging, the server can reach your Chrome through the
+**SAP systems** extension: no `chrome://inspect` switch, your normal profile
+with its SSO, and only the tabs of the SAP systems you register are shared.
+The extension also keeps your systems' logons: the agent can say "log on to
+ECC dev", and the extension types the password into SAP's logon page
+itself. The agent and the server never see it.
 
-1. `npx -y sap-gui-mcp-server extension unpack` copies the extension to
-   `~/sap-gui-mcp-extension`. In Chrome, open `chrome://extensions`, turn
+1. `npx -y sap-gui-mcp-server extension install` copies the extension to
+   `~/sap-gui-mcp-extension` and installs its helper (pairing in one click,
+   passwords in your keychain). In Chrome, open `chrome://extensions`, turn
    on *Developer mode*, click *Load unpacked* and pick that folder.
-2. `npx -y sap-gui-mcp-server extension pair` prints a pairing code. Open
-   the extension's popup, paste the code, and click *Allow this site* on
-   your SAP tab.
-3. Set `SAP_BROWSER=extension` in the server's environment.
+2. Click the extension's icon and *Pair with this computer*.
+3. Open your SAP system in a tab and click *Add the SAP page I'm on*. Add
+   user and password if the extension should log on for you.
+4. Set `SAP_BROWSER=extension` in the server's environment. The agent then
+   also has `sap_systems` (your registered systems) and `sap_logon` (open
+   one and log on).
 
 While the server works in a tab, Chrome shows "started debugging this
 browser". Clicking *Cancel* there stops the sharing until you click
-*Resume* in the popup. See [extension/README.md](extension/README.md) for
-permissions, IT deployment and limits.
+*Resume sharing* in the popup. See [extension/README.md](extension/README.md)
+for where passwords are kept, permissions, IT deployment and limits.
 
 ## Tools
 
@@ -453,6 +461,8 @@ permissions, IT deployment and limits.
 | --- | --- |
 | `sap_sessions` | lists the SAP sessions open on this machine; `*` marks the active one |
 | `sap_use` | makes another session the active one: by number, id, system, transaction, or surface (`fiori`, `webgui`, `sapgui`) |
+| `sap_systems` | with `SAP_BROWSER=extension`: lists the SAP systems registered in the extension (name, address, client, user, how it logs on) |
+| `sap_logon` | with `SAP_BROWSER=extension`: opens a registered system and logs on; the extension fills SAP's logon page, the server never sees the password |
 | `sap_look` | the screen as compact text; `full: true` for every id and column; `diff: true` for what changed since the last view; `id` for one control whole; `id` and `rows` for a range of rows of a long list, and `cols` for only some of its columns |
 | `sap_act` | one action, then the new screen, or only what changed when the screen is the same one; `actions` for several in one call (see [Several actions in one call](#several-actions-in-one-call)) |
 | `sap_screenshot` | a PNG of the window or tab, for charts and visual checks |

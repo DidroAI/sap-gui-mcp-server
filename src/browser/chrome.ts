@@ -256,7 +256,7 @@ async function open(env: Env, key: string, options: OpenOptions = {}): Promise<C
     const endpoint = await extensionEndpoint(env);
     const c = await attach(endpoint);
     if (c) return c;
-    throw new Error(`The sap-gui-mcp-server bridge extension is connected, but the server could not attach through it (${errors.join("; ")}).`);
+    throw new Error(`The sap-gui-mcp-server extension is connected, but the server could not attach through it (${errors.join("; ")}).`);
   }
   // <<< SAP_BROWSER=extension
   // 2. The SAP window: the one that runs, else a Chrome started now.

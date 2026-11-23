@@ -7,7 +7,14 @@ import { surfacesFromEnv } from "./surfaces.js";
 
 /** Runs the server on stdio until the client closes it. */
 export async function serveStdio(env: Record<string, string | undefined> = process.env): Promise<void> {
-  const { server, registry } = createServer({ policy: policyFromEnv(env), surfaces: surfacesFromEnv(env), view: viewModeFromEnv(env) });
+  // SAP_BROWSER=extension: the systems registered in the extension, for sap_systems and sap_logon.
+  const systems = extensionMode(env) ? (await import("./browser/extension/index.js")).extensionSystems : undefined;
+  const { server, registry } = createServer({
+    policy: policyFromEnv(env),
+    surfaces: surfacesFromEnv(env),
+    view: viewModeFromEnv(env),
+    ...(systems ? { systems: { list: () => systems.list(env), logon: (name: string) => systems.logon(name, env) } } : {}),
+  });
   const close = async () => {
     await registry.closeAll();
     await disconnectChrome().catch(() => {});
