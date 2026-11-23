@@ -11,6 +11,8 @@
 #   on failure                                       -> {"id":3,"ok":false,"error":"CODE: text"}
 #
 # Ops: ping, sessions, info, screen, describe, act, screenshot, doctor-local, doctor-engine.
+# Act kinds beyond SAP GUI's own verbs: selectrow (a table control's row, by its absolute number),
+# cell (an ALV grid cell: modifyCell, then triggerModified).
 # An act answers {done:true}; a scroll adds where the control was and is (from, first, visible, total).
 # The host returns raw facts (ids, types, texts, state, grids, trees); the text
 # view is formatted in TypeScript (src/sapgui/format.ts).
@@ -576,26 +578,63 @@ function Op-Act($req) {
     $fv = T $o 'FirstVisibleRow'
     $v = T $o 'VisibleRowCount'
     if ($null -ne $fv -and $null -ne $v -and [int]$v -gt 0 -and ($row -lt [int]$fv -or $row -ge ([int]$fv + [int]$v))) { S $o 'FirstVisibleRow' $row }
-    M $o 'SetCurrentCell' @($row, [string]$a['col'])
-    if ([string]$a['how'] -eq 'select') { S $o 'SelectedRows' ([string]$row) }
+    # Without a column (a row selected by "select" with "row"), the cursor stays where it is.
+    $how = [string]$a['how']
+    if ([string]$a['col']) { M $o 'SetCurrentCell' @($row, [string]$a['col']) }
+    if ($how -eq 'select') { S $o 'SelectedRows' ([string]$row) }
+    elseif ($how -eq 'unselect') { M $o 'ClearSelection' $null }
     else { M $o 'DoubleClickCurrentCell' $null }
   }
+  elseif ($do -eq 'cell') {
+    # A cell of an ALV grid that takes input, as SAP GUI records a typed cell:
+    # modifyCell row, "COL", "value"; then triggerModified (the grid's data_changed event).
+    $row = [int]$a['row']
+    $col = [string]$a['col']
+    $rc = [int](G $o 'RowCount')
+    if ($row -ge $rc) { throw "NOT_FOUND: row $($row): the grid has $rc rows (0 to $($rc - 1))" }
+    $fv = T $o 'FirstVisibleRow'
+    $v = T $o 'VisibleRowCount'
+    if ($null -ne $fv -and $null -ne $v -and [int]$v -gt 0 -and ($row -lt [int]$fv -or $row -ge ([int]$fv + [int]$v))) { S $o 'FirstVisibleRow' $row }
+    M $o 'SetCurrentCell' @($row, $col)
+    M $o 'ModifyCell' @($row, $col, [string]$a['value'])
+    M $o 'TriggerModified' $null
+  }
   elseif ($do -eq 'selectrow') {
+    # A table control's row, by its number from the table's first row (not from the first one on screen),
+    # as a click on its row selector does: GetAbsoluteRow(n).Selected = True. A GuiTableControl has no
+    # Select method (calling it was the DISP_E_UNKNOWNNAME), and GetAbsoluteRow is a method call, then
+    # Selected a property write on the GuiTableRow it returns.
     $row = [int]$a['row']
     $on = [bool]$a['value']
-    if ([bool]$a['table']) {
-      # A table control counts its rows on screen: row 0 is the first one shown.
-      $pos = 0
+    $rc = [int](G $o 'RowCount')
+    if ($row -ge $rc) { throw "NOT_FOUND: row $($row): the table has $rc rows (0 to $($rc - 1))" }
+    # A row that is not on screen is scrolled to first. Scrolling is a roundtrip: the table is found again after it.
+    $sb = T $o 'VerticalScrollbar'
+    $pos = 0
+    if ($null -ne $sb) { $pos = [int](T $sb 'Position') }
+    $vis = [int](T $o 'VisibleRowCount')
+    if ($null -ne $sb -and $vis -gt 0 -and ($row -lt $pos -or $row -ge ($pos + $vis))) {
+      S $sb 'Position' ([Math]::Min($row, [int](T $sb 'Maximum')))
+      Wait-Ready $ses
+      $o = G $ses 'FindById' @($id)
       $sb = T $o 'VerticalScrollbar'
       if ($null -ne $sb) { $pos = [int](T $sb 'Position') }
-      $vis = [int](T $o 'VisibleRowCount')
-      if ($vis -gt 0 -and $row -ge $vis) { throw "NOT_FOUND: row $($row): a table control counts its rows on screen (0 to $($vis - 1) now); scroll it to bring the row into view" }
-      $r = G $o 'GetAbsoluteRow' @($pos + $row)
-      if (-not [bool](T $r 'Selectable')) { throw "NOT_FOUND: row $($row): this row of $id has no row selector" }
-      S $r 'Selected' $on
     }
-    elseif ($on) { S $o 'SelectedRows' ([string]$row) }
-    else { S $o 'SelectedRows' '' }
+    $r = G $o 'GetAbsoluteRow' @($row)
+    # Selectable is false where the table has no row selectors; unknown (null) on old SAP GUI: then just try.
+    $selectable = T $r 'Selectable'
+    if ($null -eq $selectable -or [bool]$selectable) { S $r 'Selected' $on }
+    else {
+      # No row selector: the row's first checkbox that takes input is its selection (e.g. MSICHTAUSW-KZSEL).
+      # GetCell takes the row on screen: the row minus the scrollbar's position.
+      $done = $false
+      $cols = [int](G (G $o 'Columns') 'Count')
+      for ($c = 0; $c -lt $cols -and -not $done; $c++) {
+        $cell = T $o 'GetCell' @(($row - $pos), $c)
+        if ($null -ne $cell -and [string](T $cell 'Type') -eq 'GuiCheckBox' -and [bool](T $cell 'Changeable')) { S $cell 'Selected' $on; $done = $true }
+      }
+      if (-not $done) { throw "NOT_SELECTABLE: row $row of $id has no row selector and no checkbox that takes input" }
+    }
   }
   elseif ($do -eq 'toolbar') { M $o 'PressToolbarButton' @([string]$a['button']) }
   else { throw "UNKNOWN_ACTION: $do" }

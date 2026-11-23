@@ -9,7 +9,10 @@
  * Actions: set, press, key, select, check, combo (without a key: the
  * entries), okcode, f4, focus, dblclick, tree (double, select, expand,
  * collapse), grid (double, select), toolbar and scroll (a grid, a table
- * control, a list, a long tree). Ids are the ones the view shows; handles
+ * control, a list, a long tree). "select" with "row" selects a table
+ * control's or a grid's row; "set" with "row" and "col" types into a table
+ * control's or a grid's cell (table.ts). Tab and Space, which SAP GUI has no
+ * virtual key for, become a focus, a tick or a row selection. Ids are the ones the view shows; handles
  * and SAP field names work too (resolve.ts), and an id that names several
  * controls is refused with the list of them.
  */
@@ -25,6 +28,7 @@ import { fullView } from "./format.js";
 import { vkeyNumber } from "./keys.js";
 import { HostError, MAX_TIMEOUT_MS, type PowershellPolicy, powershellPolicy, PsHost, READ_TIMEOUT_MS } from "./host.js";
 import { relativeId, resolve, resolveStrict } from "./resolve.js";
+import { focusedRow, gridColumn, localKey, nextField, tableCell } from "./table.js";
 
 const PREFIX = "sapgui:";
 /** How long a screen read may serve the step that follows it (assess, then act). */
@@ -50,6 +54,9 @@ const isPassword = (c: Control) => c.type === "GuiPasswordField" || /(^|\/)pwd[^
 
 /** Types "set" may write a text into. */
 const SET_TYPES = new Set(["GuiTextField", "GuiCTextField"]);
+
+/** Types SAP GUI scripting can "Select" (a tab, a radio button, a menu entry). */
+const SELECT_TYPES = new Set(["GuiTab", "GuiRadioButton", "GuiMenu", "GuiContextMenu", "GuiTableRow"]);
 
 export interface SapguiOptions {
   /** Default: process.platform. */
@@ -89,6 +96,8 @@ function explain(e: unknown): Error {
     case "NOT_FOUND":
       // A row the grid does not have, or a control that went away between the read and the action.
       return new ActionError(/^row \d+:/.test(e.message) ? `${e.message}.` : `${e.message}. Use an id from the screen you are on (it may have changed since your last look).`);
+    case "NOT_SELECTABLE":
+      return new ActionError(`${e.message}. Tick the row's checkbox with "check" on its cell id, or select by a row button if the screen has one.`);
     case "NO_SCROLL":
       return new ActionError(`${e.message}: "scroll" works on a grid, a table control, a tree or a list.`);
     default:
@@ -214,7 +223,34 @@ class SapguiDriver implements Driver {
   async assess(action: Action): Promise<Assessment> {
     const screen = await this.screen();
     if (isLogonScreen(screen.program, screen.screen)) throw new ActionError(LOGON_REFUSAL);
+    // Tab and Space have no virtual key: they are judged as what they become (a focus, a tick, a row selection).
+    if (action.do === "key" && localKey(action.key ?? action.value)) {
+      const instead = this.keyAction(screen, action);
+      return assess(screen, instead, await this.target(screen, instead));
+    }
     return assess(screen, action, await this.target(screen, action));
+  }
+
+  /**
+   * What a key SAP GUI has no virtual key for does here: Tab and Shift+Tab move the
+   * focus to the next (previous) field that takes input; Space ticks the focused
+   * checkbox or selects the row of the focused table cell; Shift+Space selects that row.
+   */
+  private keyAction(screen: Screen, action: Action): Action {
+    const k = localKey(action.key ?? action.value);
+    if (k === "tab" || k === "backtab") {
+      const to = nextField(screen, k === "backtab");
+      if (!to) throw new ActionError('No field takes input in this window: there is nowhere for Tab to go. Put the cursor on a control with {"do":"focus","id":"<id>"}.');
+      return { do: "focus", id: to.id };
+    }
+    const focused = screen.focus ? resolve(screen, screen.focus) : undefined;
+    if (k === "space" && focused && (focused.type === "GuiCheckBox" || focused.type === "GuiRadioButton"))
+      return { do: "check", id: focused.id, value: focused.type === "GuiRadioButton" ? true : !focused.selected };
+    const inRow = focusedRow(screen);
+    if (inRow) return { do: "select", id: inRow.table.id, row: inRow.row };
+    throw new ActionError(
+      `${k === "space" ? "Space" : "Shift+Space"} has no virtual key in SAP GUI, and the cursor is not in a table row${k === "space" ? " or on a checkbox" : ""}. Select a table row with {"do":"select","id":"<table>","row":N}, an ALV grid row with {"do":"grid","id":"<grid>","row":N,"col":"<col>","how":"select"}, tick a checkbox with {"do":"check","id":"<id>"}.`,
+    );
   }
 
   async act(action: Action): Promise<string> {
@@ -228,8 +264,15 @@ class SapguiDriver implements Driver {
       return this.run({ do: "okcode", value: action.value }, `okcode ${action.value}`, timeoutMs);
     }
     if (doing === "key") {
+      if (localKey(action.key ?? action.value)) {
+        const instead = this.keyAction(now, action);
+        return `key ${String(action.key ?? action.value).trim()}: ${await this.act({ ...instead, timeout: action.timeout })}`;
+      }
       const key = vkeyNumber(action.key ?? action.value);
-      if (key === undefined) throw new ActionError('key needs "key": a virtual key number (0 Enter, 3 Back, 4 F4, 8 F8, 12 Cancel) or a function key by name (Enter, F8, Shift+F3, Control+s)');
+      if (key === undefined)
+        throw new ActionError(
+          'key needs "key": a virtual key number (0 Enter, 3 Back, 4 F4, 8 F8, 12 Cancel) or a function key by name (Enter, F8, Shift+F3, Control+s). Tab moves to the next field (or use {"do":"focus","id":"<id>"}); Space ticks the focused checkbox or selects the focused table row (or use "check", or "select" with "row").',
+        );
       return this.run({ do: "key", key }, `key ${key}`, timeoutMs);
     }
     const screen = now;
@@ -250,16 +293,45 @@ class SapguiDriver implements Driver {
         if (target.type === "GuiCheckBox" || target.type === "GuiRadioButton") return this.act({ ...action, do: "check" });
         if (target.type === "GuiComboBox") return this.act({ ...action, do: "combo", key: action.value });
         // A text editor has lines (SAP GUI separates them with CR LF); every other field has one.
+        // A cell of a table control or of an ALV grid, by row and column.
+        if (target.type === "GuiTableControl") return this.tableAct(target, action, (cell) => {
+            const { row: _row, col: _col, ...rest } = action;
+            return this.act({ ...rest, id: cell.id });
+          }, timeoutMs);
+        if (target.type === "GuiShell" && target.sub === "GridView") {
+          if (!Number.isInteger(action.row) || action.col === undefined) throw new ActionError(`${id} is an ALV grid: "set" into one of its cells needs "row" (number, from "row N:") and "col" (column id).`);
+          const col = gridColumn(target, action.col);
+          const single = oneLine(String(action.value ?? ""));
+          return this.run({ do: "cell", id, row: action.row, col, value: single.text }, `set row ${action.row}, column ${col} of ${id} = "${single.text}"${single.had ? ` (${ONE_LINE_NOTE})` : ""}`, timeoutMs);
+        }
         if (target.type === "GuiShell" && target.sub === "TextEdit") return this.run({ do: "set", id, value: String(action.value ?? "").replace(/\r\n?|\n/g, "\r\n") }, `set ${id}`, timeoutMs);
-        if (!SET_TYPES.has(target.type)) throw new ActionError(`${id} is a ${target.type}, not a field: "set" types into fields only. Use "press" for a button, "select" for a tab or a menu entry.`);
+        if (!SET_TYPES.has(target.type))
+          throw new ActionError(`${id} is a ${target.type}, not a field: "set" types into fields only, or into a table's or grid's cell given "row" and "col". Use "press" for a button, "select" for a tab or a menu entry.`);
         const single = oneLine(String(action.value ?? ""));
         return this.run({ do: "set", id, value: single.text }, `set ${id} = "${single.text}"${single.had ? ` (${ONE_LINE_NOTE})` : ""}`, timeoutMs);
       case "press":
         if (target.type !== "GuiButton") throw new ActionError(`${id} is a ${target.type}, not a button: use "select" for a tab or a menu entry, "set" for a field.`);
         return this.run({ do: doing, id }, `${doing} ${id}`, timeoutMs);
-      case "select":
-        if (action.row !== undefined) return this.selectRow(target, action, timeoutMs);
+      case "select": {
+        // A row of a table control or of an ALV grid, as a click on its row selector does.
+        if (action.row !== undefined) {
+          const on = action.value === undefined || !(action.value === false || action.value === "false" || action.value === "" || action.value === 0);
+          if (target.type === "GuiTableControl") return this.selectRow(target, action.row, on, timeoutMs);
+          if (target.type === "GuiShell" && target.sub === "GridView") {
+            if (!Number.isInteger(action.row)) throw new ActionError('"row" is a row number from 0, as the grid shows it ("row N:")');
+            return this.run({ do: "grid", id, row: action.row, col: "", how: on ? "select" : "unselect" }, `${on ? "selected" : "unselected"} row ${action.row} of ${id}`, timeoutMs);
+          }
+        }
+        if (target.type === "GuiButton") return this.act({ ...action, do: "press" });
+        if (target.type === "GuiCheckBox") return this.act({ ...action, do: "check" });
+        if (target.type === "GuiTableControl" || (target.type === "GuiShell" && target.sub === "GridView"))
+          throw new ActionError(`${id} is a ${target.type === "GuiTableControl" ? "table" : "grid"}: "select" needs "row", e.g. {"do":"select","id":"${id}","row":0}.`);
+        if (!SELECT_TYPES.has(target.type))
+          throw new ActionError(
+            `${id} is a ${target.type}, which cannot be selected: "select" takes a tab, a radio button, a menu entry, or a table or grid row with "row". Use "set" for a field, "check" for a checkbox, "dblclick" for a list entry, "focus" to put the cursor on it.`,
+          );
         return this.run({ do: doing, id }, `${doing} ${id}`, timeoutMs);
+      }
       case "focus":
       case "f4":
         return this.run({ do: doing, id }, `${doing} ${id}`, timeoutMs);
@@ -291,15 +363,18 @@ class SapguiDriver implements Driver {
         return this.run({ do: "tree", id, node: String(action.node), how, ...(action.col ? { col: action.col } : {}) }, `tree ${how} node ${String(action.node).trim()} in ${id}`, timeoutMs);
       }
       case "grid": {
-        // A table control is not an ALV grid: selecting its row goes by its row selector; anything else by the cell's id.
         if (target.type === "GuiTableControl") {
-          if ((action.how ?? "double") === "select" && action.row !== undefined) return this.selectRow(target, { ...action, value: true }, timeoutMs);
-          throw new ActionError(`${id} is a table control, not a grid: select a row with {"do":"select","id":"${id}","row":N}, open a cell with dblclick on its cell id (<column id>[col,row] from the view).`);
+          // A table control is no ALV grid: its rows are selected by their row selector, its cells are controls.
+          const how = action.how ?? "double";
+          if (how === "select") return this.selectRow(target, action.row, true, timeoutMs);
+          if (!["double", "cell"].includes(how)) throw new ActionError('grid "how" is double, select or cell');
+          return this.tableAct(target, action, (cell) => this.run({ do: how === "cell" ? "focus" : "dblclick", id: cell.id }, `${how === "cell" ? "cursor on" : "double-click"} ${cell.id}`, timeoutMs), timeoutMs);
         }
         if (!Number.isInteger(action.row) || typeof action.col !== "string") throw new ActionError('grid needs "row" (number, from "row N:") and "col" (column id, e.g. "VBELN")');
         const how = action.how ?? "double";
         if (!["double", "select"].includes(how)) throw new ActionError('grid "how" is double or select');
-        return this.run({ do: "grid", id, row: action.row, col: action.col, how }, `grid ${how} row ${action.row}, column ${action.col} in ${id}`, timeoutMs);
+        const col = target.type === "GuiShell" && target.sub === "GridView" ? gridColumn(target, action.col) : action.col;
+        return this.run({ do: "grid", id, row: action.row, col, how }, `grid ${how} row ${action.row}, column ${action.col} in ${id}`, timeoutMs);
       }
       case "scroll":
         return this.scroll(target, (action.to ?? "next") as number | string, timeoutMs);
@@ -311,18 +386,30 @@ class SapguiDriver implements Driver {
     }
   }
 
-  /**
-   * "select" with "row": a row of a table control by its row selector (rows counted on screen, as the
-   * cell ids and Web GUI count them), or a grid row (counted in the whole grid); "value": false deselects.
-   */
-  private selectRow(target: Control, action: Action, timeoutMs: number): Promise<string> {
-    const row = action.row;
-    if (!Number.isInteger(row) || (row as number) < 0) throw new ActionError('"row" is a row number counted from 0.');
-    const on = !(action.value === false || /^(false|0|off|no|)$/i.test(String(action.value ?? "x")));
-    const table = target.type === "GuiTableControl";
-    if (!table && !(target.type === "GuiShell" && target.sub === "GridView"))
-      throw new ActionError(`${target.id} is a ${target.type}: "select" with "row" selects a row of a table control or a grid.`);
-    return this.run({ do: "selectrow", id: target.id, row, value: on, table }, `${on ? "selected" : "deselected"} row ${row} of ${target.id}`, timeoutMs);
+  /** Selects (or unselects) a table control's row, by its number from the table's first row. */
+  private async selectRow(table: Control, row: unknown, on: boolean, timeoutMs: number): Promise<string> {
+    if (!Number.isInteger(row) || (row as number) < 0) throw new ActionError(`"row" is a row number from 0, counted from the table's first row, e.g. {"do":"select","id":"${table.id}","row":0}`);
+    const total = table.rowCount;
+    if (typeof total === "number" && (row as number) >= total) throw new ActionError(`row ${row}: ${table.id} has ${total} rows (0 to ${total - 1}).`);
+    return this.run({ do: "selectrow", id: table.id, row, value: on }, `${on ? "selected" : "unselected"} row ${row} of ${table.id}`, timeoutMs);
+  }
+
+  /** Finds a table control's cell by row and column, scrolling the row into view first when needed, and acts on it. */
+  private async tableAct(table: Control, action: Action, then: (cell: Control) => Promise<string>, timeoutMs: number): Promise<string> {
+    if (action.row === undefined || action.col === undefined)
+      throw new ActionError(`${table.id} is a table: give "row" (from 0) and "col" (field name or column title), or the cell's own id from sap_look (e.g. ${table.id}/txt<FIELD>[col,row]).`);
+    const row = Number(action.row);
+    let screen = await this.screen(true);
+    let current = this.strict(screen, table.id) ?? table;
+    let found = tableCell(screen, current, row, action.col);
+    if ("scroll" in found) {
+      await this.scroll(current, row, timeoutMs);
+      screen = await this.screen();
+      current = this.strict(screen, table.id) ?? current;
+      found = tableCell(screen, current, row, action.col);
+      if ("scroll" in found) throw new ActionError(`row ${row} of ${table.id} could not be scrolled into view.`);
+    }
+    return then(found.cell);
   }
 
   private async run(action: Record<string, unknown>, note: string, timeoutMs = ACT_MS): Promise<string> {

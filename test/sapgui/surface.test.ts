@@ -293,7 +293,8 @@ describe("sapgui surface", () => {
     expect((await d.assess({ do: "key", key: "Control+s" })).risk).toBe("commit");
     await d.act({ do: "key", key: "Shift+F3" });
     expect(asked.at(-1)?.params.action).toEqual({ do: "key", key: 15 });
-    await expect(d.act({ do: "key", key: "Space" })).rejects.toThrow('key needs "key"');
+    await expect(d.act({ do: "key", key: "Space" })).rejects.toThrow('Space has no virtual key in SAP GUI, and the cursor is not in a table row');
+    await expect(d.act({ do: "key", key: "Alt+Q" })).rejects.toThrow('key needs "key"');
   });
 
   test("screenshot", async () => {
