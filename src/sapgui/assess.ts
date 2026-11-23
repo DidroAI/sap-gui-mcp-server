@@ -22,7 +22,7 @@
  * The tables are in core/words.ts, shared with the other surfaces.
  */
 import { ActionError, type Action, type Assessment } from "../core/types.js";
-import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayTitle, endsLogon, layoutMenu, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS, searchButton, showsOnly } from "../core/words.js";
+import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayScreen, endsLogon, layoutMenu, MENU_PROGRAMS, okcodeKind, removesViewCriterion, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS, searchButton, showsOnly, viewDialog } from "../core/words.js";
 import type { Control, Screen } from "./facts.js";
 import { vkeyNumber } from "./keys.js";
 import { allControls } from "./resolve.js";
@@ -127,15 +127,16 @@ function declines(screen: Screen, b: Control): boolean {
 /**
  * A screen that only displays an object, as Web GUI's rule (webgui/assess.ts
  * isDisplayScreen): the main window's title says so ("Display Material
- * (Initial Screen)", "Material anzeigen") in a covered language, and Save is
- * not on offer. SAP GUI keeps the Save icon in the system toolbar of every
+ * (Initial Screen)", "Material anzeigen") in a covered language, or the
+ * transaction is one that displays (DISPLAY_TCODES: ME23N titles its screen
+ * after the order), and Save is not on offer. SAP GUI keeps the Save icon in the system toolbar of every
  * screen and greys it out where nothing can be saved: greyed out is
  * `changeable: false`. A button of the transaction then moves to another
  * view of the object or to another transaction, where the guard judges again.
  */
 function isDisplayScreen(screen: Screen): boolean {
   const main = screen.windows.find((w) => w.id === "wnd[0]");
-  if (!main || !displayTitle(screen.language, main.title)) return false;
+  if (!main || !displayScreen(screen.language, main.title, screen.transaction)) return false;
   const buttons = main.controls.filter((c) => c.type === "GuiButton");
   // The system toolbar must have been read: without it, a missing Save proves nothing.
   if (!buttons.some((c) => /^wnd\[0\]\/tbar\[0\]\/btn\[\d+\]$/.test(c.id))) return false;
@@ -176,6 +177,9 @@ function assessButton(screen: Screen, b: Control, how: string): Assessment {
   // "Display deletion log" on a screen that only displays: the commit word names what is shown (showsOnly).
   const worded = [b.text, b.tip].filter((t) => commitWord(t));
   if (worded.length && worded.every((t) => showsOnly(screen.language, t)) && displayButton(screen, b)) return { risk: "navigate", reason: `${named} shows something on a screen that only displays` };
+  // "Remove filter criterion (F6)" in ALV's Filter dialog: the criterion leaves the list's view, nothing is deleted in SAP.
+  if (win !== "wnd[0]" && viewDialog(screen.language, screen.windows.find((w) => w.id === win)?.title) && [b.text, b.tip].some((t) => removesViewCriterion(screen.language, t)))
+    return { risk: "navigate", reason: `${named} takes a criterion out of the list's view` };
   if (commitWord(b.text, b.tip)) return commit(named);
   const question = commitQuestion(screen);
   if (question && b.id.startsWith(`${screen.activeWindow}/`) && !declines(screen, b))
@@ -305,6 +309,8 @@ export function assess(screen: Screen, action: Action, target?: Control): Assess
       return notSafe(`${action.do} on ${target.type} "${shown(target)}"`);
     }
     case "toolbar": {
+      // A button of the screen's own toolbar named as a grid's toolbar button: there is no grid toolbar to act on.
+      if (target?.type === "GuiButton") throw new ActionError(`"${action.id ?? ""}" is a button of the screen, not a grid's or a tree's toolbar. Press it: {"do":"press","id":"${action.id ?? ""}"}.`);
       const id = String(action.button ?? "");
       const b = target?.buttons?.find((x) => x.id === id);
       const label = b ? [b.text, b.tip].map((s) => s.trim()).find(Boolean) ?? id : id;

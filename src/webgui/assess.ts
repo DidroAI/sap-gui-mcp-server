@@ -26,7 +26,7 @@
  */
 import { menuSid, resolveId } from "../core/ids.js";
 import type { Action, Assessment } from "../core/types.js";
-import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayTitle, endsLogon, isGotoMenu, languageCovered, layoutMenu, listChoice, listTitle, MENU_PROGRAMS, okcodeKind, runSwitch, SAFE_VKEYS, safeCode, safeWord, searchButton, SAVE_VKEYS, showsOnly } from "../core/words.js";
+import { actWord, CLOSES_SESSIONS, commitCode, commitWord, discardsInput, displayScreen, endsLogon, isGotoMenu, languageCovered, layoutMenu, listChoice, listTitle, MENU_PROGRAMS, okcodeKind, removesViewCriterion, runSwitch, SAFE_VKEYS, safeCode, safeWord, searchButton, SAVE_VKEYS, showsOnly, viewDialog } from "../core/words.js";
 import type { MenuEntry } from "./page.js";
 import { vkey } from "./keys.js";
 
@@ -190,6 +190,8 @@ interface Scene {
   windows: ViewWindow[];
   menus: MenuEntry[];
   program: string;
+  /** The transaction from the header ("XD03"). */
+  transaction: string;
   /** The screen number from the header ("1000"). */
   dynpro: string;
 }
@@ -353,11 +355,13 @@ function updateRun(scene: Scene, ctx: AssessContext): string | undefined {
  * (item conditions, schedule lines, a list of orders) or to another
  * transaction, where the guard judges again. Fields that take input there
  * are keys to search by (the initial screen). "Display <-> Change" leads to
- * a screen titled "Change", where this no longer holds.
+ * a screen titled "Change", where this no longer holds. A transaction that
+ * displays (DISPLAY_TCODES) says it too, whatever its title (ME23N titles the
+ * order); the missing Save still decides.
  */
 function isDisplayScreen(scene: Scene, ctx: AssessContext): boolean {
   const main = scene.windows.find((w) => w.number === 0);
-  if (!main || !displayTitle(ctx.language, main.title)) return false;
+  if (!main || !displayScreen(ctx.language, main.title, scene.transaction)) return false;
   const buttons = main.controls.filter((c) => c.kind === "button");
   // The system toolbar must have been read: without it, a missing Save proves nothing.
   if (!buttons.some((c) => /^wnd\[0\]\/tbar\[0\]\/btn\[\d+\]$/.test(c.id))) return false;
@@ -432,6 +436,8 @@ function assessFunction(what: string, text: string, control: ViewControl | undef
   if (control && key === 0 && isMessagePopup(win)) return navigate(`${named} acknowledges the message`);
   // "Display deletion log" on a screen that only displays: the commit word names what is shown (showsOnly).
   if (control && commitWord(text) && showsOnly(ctx.language, text) && displayButton(control, text, scene, ctx)) return navigate(`${named} shows something on a screen that only displays`);
+  // "Remove filter criterion (F6)" in ALV's Filter dialog: the criterion leaves the list's view, nothing is deleted in SAP.
+  if (control && control.window > 0 && viewDialog(ctx.language, win?.title) && removesViewCriterion(ctx.language, text)) return navigate(`${named} takes a criterion out of the list's view`);
   if (commitWord(text)) return commit(named);
   if (control && control.window > 0 && control.kind === "button") {
     const asked = commitQuestion(scene.windows);
@@ -674,7 +680,7 @@ function assessOkcode(value: string, view: string, scene: Scene, ctx: AssessCont
  */
 export function assessAction(action: Action, view: string, menus: MenuEntry[], ctx: AssessContext = {}): Assessment {
   const windows = parseView(view);
-  const scene: Scene = { windows, menus, program: programOf(view), dynpro: /  SCREEN (\S+)/.exec(view.split("\n", 1)[0] ?? "")?.[1] ?? "" };
+  const scene: Scene = { windows, menus, program: programOf(view), transaction: /^TRANSACTION (\S+)/.exec(view)?.[1] ?? "", dynpro:/  SCREEN (\S+)/.exec(view.split("\n", 1)[0] ?? "")?.[1] ?? "" };
   const id = String(action.id ?? "");
   switch (action.do) {
     case "okcode":
