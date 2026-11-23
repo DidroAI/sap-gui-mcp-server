@@ -41,12 +41,12 @@ describe("sameScreen", () => {
 
 describe("diffViews", () => {
   test("nothing changed", () => {
-    expect(diffViews(view(), view()).text).toBe("NO CHANGE on the screen (15 lines; sap_look shows it).");
+    expect(diffViews(view(), view()).text).toBe('NO CHANGE on ZT01 · "Synthetic Order: Overview" (15 lines; sap_look shows it).');
   });
   test("a changed line, a new line and a line that is gone", () => {
     const d = diffViews(view({ extra: ["lblOLD  label  Old"] }), view({ type: "AB", status: "E: Order type AB is not defined" }));
     expect(d.text.split("\n")).toEqual([
-      "CHANGED 3 of 16 lines (same screen; sap_look shows all of it):",
+      'CHANGED 3 of 16 lines on ZT01 · "Synthetic Order: Overview" (same screen; sap_look shows all of it):',
       '~ ctxtZHDR-TYPE  field  Order Type = "AB"  (edit)',
       "+ sbar  status  E: Order type AB is not defined",
       "- lblOLD  label  Old",
@@ -82,7 +82,7 @@ describe("Views: what an action answers with", () => {
   test("the same screen with a small change: the changes", () => {
     const v = new Views();
     v.present("s", view());
-    expect(v.present("s", view({ type: "AB" }))).toBe('CHANGED 1 of 15 lines (same screen; sap_look shows all of it):\n~ ctxtZHDR-TYPE  field  Order Type = "AB"  (edit)');
+    expect(v.present("s", view({ type: "AB" }))).toBe('CHANGED 1 of 15 lines on ZT01 · "Synthetic Order: Overview" (same screen; sap_look shows all of it):\n~ ctxtZHDR-TYPE  field  Order Type = "AB"  (edit)');
     // Counted from the view just given, not from the first one.
     expect(v.present("s", view({ type: "AB" }))).toStartWith("NO CHANGE");
   });
@@ -102,7 +102,7 @@ describe("Views: what an action answers with", () => {
     const v = new Views();
     v.present("s", view());
     v.present("s", POPUP);
-    expect(v.present("s", view({ type: "AB" }))).toBe('CHANGED 1 of 15 lines since you last saw this screen, before the popup (same screen; sap_look shows all of it):\n~ ctxtZHDR-TYPE  field  Order Type = "AB"  (edit)');
+    expect(v.present("s", view({ type: "AB" }))).toBe('CHANGED 1 of 15 lines on ZT01 · "Synthetic Order: Overview", back from the popup "Information" (since before it; same screen; sap_look shows all of it):\n~ ctxtZHDR-TYPE  field  Order Type = "AB"  (edit)');
   });
   test("back on a screen seen earlier, with another screen in between: whole", () => {
     const v = new Views();
@@ -132,7 +132,7 @@ describe("fields that a message closed", () => {
   test("four or more fields that only closed for input share one line; the message stays", () => {
     const d = diffViews(view({ type: "AB" }), ro(view({ type: "AB", status: "W: The date lies in the future" })));
     expect(d.text.split("\n")).toEqual([
-      "CHANGED 5 of 16 lines (same screen; sap_look shows all of it):",
+      'CHANGED 5 of 16 lines on ZT01 · "Synthetic Order: Overview" (same screen; sap_look shows all of it):',
       "~ 4 fields closed for input (read-only now), values as before: ctxtZHDR-TYPE, ctxtZHDR-ORG, ctxtZHDR-CHAN, ...",
       "+ sbar  status  W: The date lies in the future",
     ]);
