@@ -15,7 +15,7 @@ import { type Action, ActionError, type Assessment, type DiscoverOptions, type D
 import { extractFacts, type PageFacts } from "./page.js";
 import { act, assess, look, view } from "./reader.js";
 import { runningSince } from "./running.js";
-import { lookRead } from "./screen.js";
+import { hintsOnce, lookRead } from "./screen.js";
 import { endedText, WebGuiSession } from "./session.js";
 
 export { assessAction } from "./assess.js";
@@ -71,16 +71,18 @@ async function identityFromCookies(page: Page): Promise<{ system?: string; clien
     .context()
     .cookies(page.url())
     .catch(() => []);
-  for (const c of cookies) {
-    const m = /^SAP_SESSIONID_([A-Z0-9]{3})_(\d{3})$/.exec(c.name);
-    if (m?.[1] && m[2]) return { system: m[1], client: m[2] };
-  }
-  return {};
+  // Two logons in one browser share the cookies of a host (any port): only a single one says which this is.
+  const ids = [...new Set(cookies.map((c) => /^SAP_SESSIONID_([A-Z0-9]{3})_(\d{3})$/.exec(c.name)).flatMap((m) => (m?.[1] && m[2] ? [`${m[1]} ${m[2]}`] : [])))];
+  if (ids.length !== 1) return {};
+  const [system = "", client = ""] = (ids[0] ?? "").split(" ");
+  return { system, client };
 }
 
 async function describe(page: Page, id: string, f: PageFacts | undefined): Promise<SessionInfo> {
   const url = new URL(page.url());
-  const cookie = f?.system && f.client ? {} : await identityFromCookies(page);
+  // A logon page belongs to no session yet: a cookie names another tab's (sap_sessions called an ECC logon tab
+  // "S4H (300)", live 2026-11-23).
+  const cookie = (f?.system && f.client) || f?.logon ? {} : await identityFromCookies(page);
   const system = f?.system || cookie.system;
   const client = f?.client || cookie.client || url.searchParams.get("sap-client") || undefined;
   const title = f?.title || (await page.title().catch(() => ""));
@@ -124,7 +126,7 @@ export async function webguiView(session: WebGuiSession, options: LookOptions): 
     // The whole screen: the end of the session, the screen and the lock come from one read of the page.
     const r = await lookRead(session, true);
     if (r.ended) return endedView(r.ended);
-    const text = options.compact ? compact(r.text) : r.text;
+    const text = options.compact ? hintsOnce(compact(r.text), session.hints) : r.text;
     return r.locked === true ? `${text}\n${STILL_WORKING}${runningSince(session)}` : text;
   }
   const gone = await session.ended();

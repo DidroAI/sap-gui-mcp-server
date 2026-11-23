@@ -187,7 +187,7 @@ describe.skipIf(!exe)("Web GUI reader: control states as Web GUI draws them, in 
     expect(full).toContain("wnd[0]/usr/tblZTC_ITEMS  table  rows 3 (visible 3); rows can be selected; selected rows 1; columns: Item | Material | Reason");
     const c = await compactView();
     expect(c).toContain("  row 1 (selected): Item=20; Material=M-18");
-    expect(await act({ do: "select", id: "tblZTC_ITEMS", row: 0 })).toBe("selected row 0 of wnd[0]/usr/tblZTC_ITEMS");
+    expect(await act({ do: "select", id: "tblZTC_ITEMS", row: 0 })).toBe('selected row 0 of wnd[0]/usr/tblZTC_ITEMS (row 1 is selected too: {"do":"select","id":"wnd[0]/usr/tblZTC_ITEMS","row":N,"value":false} clears one)');
     expect(await act({ do: "select", id: "tblZTC_ITEMS", row: 0 })).toBe("row 0 of wnd[0]/usr/tblZTC_ITEMS was already selected: nothing changed");
     expect(await act({ do: "check", id: "tblZTC_ITEMS", row: 1, value: false })).toBe("deselected row 1 of wnd[0]/usr/tblZTC_ITEMS");
     expect(await fullView()).toContain("wnd[0]/usr/tblZTC_ITEMS  table  rows 3 (visible 3); rows can be selected; selected rows 0; columns: Item | Material | Reason");

@@ -339,7 +339,7 @@ export function skippedNote(before: Page | undefined, from: number): string {
 }
 
 /** Reads lines `from` to `to` of a classic list: see the head of this file. */
-async function readList(source: RowSource, id: string, from: number, to: number, start: ReadPage, cols: string[] | undefined, skipped: string): Promise<string> {
+async function readList(source: RowSource, id: string, from: number, to: number, start: ReadPage, cols: string[] | undefined, skipped: string, prior: ReadPage | undefined): Promise<string> {
   const pages: ReadPage[] = [start];
   // The line each page was asked for: a page that starts before it is the end of the list.
   const asked: number[] = [from];
@@ -403,13 +403,33 @@ async function readList(source: RowSource, id: string, from: number, to: number,
     if (before.includes(p.first) && !seen(next)) break;
     fixed = fits(titleRowsOf(pages, hint) ?? fixed);
   }
-  const last = pages[pages.length - 1]!;
+  let last = pages[pages.length - 1]!;
   const lines = new Map<number, string>();
   for (const p of pages) for (const l of linesOf(p)) if (!lines.has(l.n)) lines.set(l.n, l.text);
+  // The list goes back to where the screen had it, as a table control does: a read changes nothing on the
+  // screen (FBL5N was left scrolled, live 2026-11-23).
+  let restored = false;
+  if (prior && prior.first !== last.first) {
+    await source.scrollTo(prior.first);
+    const now = await source.block();
+    if (now) {
+      const back = pageOf(now.block, now.screen);
+      if (back.first === prior.first) {
+        last = back;
+        restored = true;
+      }
+    }
+  }
   // The screen as it is now: where a cell id finds a line.
   const onScreen = new Map(linesOf(last).map((l) => [l.n, l.r]));
   const top = pages.reduce((a, p) => (p.first < a.first ? p : a), pages[0]!);
-  const titles = [...top.screen.entries()].filter(([r]) => r < fixed).sort((a, b) => a[0] - b[0]).map(([r, t]) => `  title ${r}: ${t}`);
+  const allTitles = [...top.screen.entries()].filter(([r]) => r < fixed).sort((a, b) => a[0] - b[0]);
+  // The list's header lines (FBL5N: 12 lines about the customer) come once, with a read from line 0; any other
+  // read has the column heading only (the title line with the most cells), not 900 bytes again each time.
+  const heading = allTitles.reduce<[number, string] | undefined>((a, t) => (!a || t[1].split(" | ").length >= a[1].split(" | ").length ? t : a), undefined);
+  const whole = from === 0 && !cols?.length;
+  const titles = (whole || !heading ? allTitles : [heading]).map(([r, t]) => `  title ${r}: ${t}`);
+  const titlesLeft = whole || !heading ? 0 : allTitles.length - 1;
   const max = Math.max(-1, ...lines.keys());
   const count = Math.max(total() ?? 0, max + 1);
   const head = `${last.head.replace(/\bbelow \d+ title rows/, `below ${fixed} title rows`)}`;
@@ -431,10 +451,14 @@ async function readList(source: RowSource, id: string, from: number, to: number,
     ? ` Rows are numbered in the whole list (line 0 is the first line below ${fixed} title row${fixed === 1 ? "" : "s"}): "rows" and "row" in actions take these numbers. A cell id counts rows on the screen: row ${firstOn[0]} is lbl[col,${firstOn[1]}] now, col in braces.`
     : "";
   const left = page.left ? ` ${page.left} rows that hold none of these columns are left out.` : "";
+  const scrolledTo = restored ? ` the list is scrolled back to line ${prior?.first ?? 0}, as it was.` : " the control is now scrolled there.";
+  const moreTitles = titlesLeft ? ` ${titlesLeft} more title line${titlesLeft === 1 ? "" : "s"} (the list's header) come with "rows" from 0.` : "";
   const note = read0.length
-    ? `  (rows ${read0[0]} to ${read0[read0.length - 1]} of ${count}; the control is now scrolled there.${left}${where}${skipped})`
+    ? `  (rows ${read0[0]} to ${read0[read0.length - 1]} of ${count};${scrolledTo}${left}${where}${moreTitles})`
     : `  (no rows ${from} to ${to}: the list has ${count || "fewer"} lines)`;
-  return [...page.frame, page.head, ...page.titles, ...page.rows.map((r) => r.text), note].join("\n");
+  // Rows the read skips past are said first: at the end of a long answer the agent did not see it (live 2026-11-23).
+  const first = skipped ? [`  (${skipped.trim()})`] : [];
+  return [...page.frame, page.head, ...first, ...page.titles, ...page.rows.map((r) => r.text), note].join("\n");
 }
 
 /** Runs of rows that hold nothing on one line: "  rows 25 to 40: (empty)". */
@@ -475,7 +499,7 @@ export async function readRows(source: RowSource, id: string, from: number, to: 
     page = read;
     if (read.kind === "other") throw new ActionError(`"${id}" has no rows to read: "rows" works on a grid, a table control, a tree or a list.`);
     // A classic list has title rows above the lines that scroll: read apart, see readList.
-    if (read.kind === "list") return readList(source, id, from, to, read, cols, skipped);
+    if (read.kind === "list") return readList(source, id, from, to, read, cols, skipped, prior?.kind === "list" ? prior : undefined);
     let progress = false;
     let last = -1;
     for (const r of page.rows) {
