@@ -28,6 +28,15 @@ import { type Action, ActionError } from "./types.js";
 export const VERBS = ["set", "press", "click", "key", "select", "check", "combo", "okcode", "f4", "focus", "dblclick", "tree", "grid", "toolbar", "scroll", "open"] as const;
 export type Verb = (typeof VERBS)[number];
 
+/**
+ * `{"do":"look"}`: not an action. Agents send it inside "actions" for the
+ * screen after the step before it (`show`), or alone for the screen; the
+ * schema takes it (`STEP_VERBS`) so that it is not refused as unknown.
+ */
+export const LOOK = "look";
+/** What "do" may say in sap_act's schema: the verbs, and look. */
+export const STEP_VERBS = [...VERBS, LOOK] as const;
+
 /** Older names that are still accepted, and the verb they mean. */
 export const VERB_ALIASES: Readonly<Record<string, Verb>> = { fill: "set", double: "dblclick" };
 
