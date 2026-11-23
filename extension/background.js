@@ -1,14 +1,21 @@
-// sap-gui-mcp-server bridge: MV3 service worker.
+// SAP systems for sap-gui-mcp-server: MV3 service worker.
+//
+// Keeps the user's SAP systems (name, address, client, language, user) and
+// their saved passwords, and logs on to them by filling SAP's logon page
+// itself, like a password manager. Registered systems are the sites it shares.
 //
 // Connects to the sap-gui-mcp-server relay on 127.0.0.1 (see PROTOCOL.md),
 // proves both sides hold the pairing code, then runs the relay's requests with
-// chrome.debugger on allowed tabs only. Every frame after the handshake is
+// chrome.debugger on shared tabs only. Every frame after the handshake is
 // encrypted and authenticated with keys derived from the code. Nothing here
-// loads or evaluates remote code: the relay can only ask for the four request
-// types below.
+// loads or evaluates remote code: the relay can only ask for the request
+// types below. A password never goes to the relay: while the extension logs on
+// in a tab, that tab is withdrawn from the server, and it comes back only once
+// SAP's logon page is gone or its password field is empty.
 
 import { normalizeCode, CODE_LENGTH } from "./code.js";
 
+const NATIVE_HOST = "ai.didro.sap_gui_mcp";
 const PORT_FIRST = 47823;
 const PORT_LAST = 47830;
 const EXT_VERSION = chrome.runtime.getManifest().version;
@@ -153,6 +160,10 @@ let known = new Map(); // tabId -> Tab: allowed tabs the relay has been told abo
 let allowedCache = new Map(); // tabId -> Tab, refreshed by computeAllowed()
 let scope = { patterns: [], granted: [], managed: [], wildcard: false, paused: false }; // last scope read
 const recentlyClosed = new Set();
+// Tabs the extension is logging on in: never shared until the logon page is gone.
+const privateTabs = new Set();
+// The shared tab the server sent its last command to, for the popup.
+let agentTab = null; // { tabId, at }
 
 // Per attached tab:
 const children = new Map(); // tabId -> Map<childSessionId, {targetId, type, url, parent?, clientPage}>
@@ -231,7 +242,8 @@ async function getConfig() {
     portManaged: managedPort !== null,
     lastPort: local.lastPort,
     paused: !!local.paused,
-    sites: Array.isArray(local.sites) ? local.sites.filter((x) => typeof x === "string") : [],
+    sites: [...(Array.isArray(local.sites) ? local.sites.filter((x) => typeof x === "string") : []), ...validSystems(local.systems).map((x) => systemPattern(x.url)).filter(Boolean)],
+    systems: validSystems(local.systems),
     managedOrigins: Array.isArray(managed.allowedOrigins) ? managed.allowedOrigins.filter((x) => typeof x === "string") : [],
   };
 }
@@ -450,7 +462,7 @@ async function computeAllowed() {
   for (const t of targets) {
     if (t.type !== "page" || typeof t.tabId !== "number" || all.has(t.tabId)) continue;
     all.set(t.tabId, t);
-    if (isAllowedUrl(t.url, s)) allowed.set(t.tabId, { tabId: t.tabId, targetId: t.id, url: t.url, title: t.title });
+    if (isAllowedUrl(t.url, s) && !privateTabs.has(t.tabId)) allowed.set(t.tabId, { tabId: t.tabId, targetId: t.id, url: t.url, title: t.title });
   }
   await Promise.all(
     [...allowed.values()].map(async (tab) => {
@@ -493,6 +505,7 @@ async function recompute() {
   const reasons = new Map();
   const reasonFor = (tabId, old) => {
     if (scope.paused) return "paused";
+    if (privateTabs.has(tabId)) return "logon";
     if (recentlyClosed.has(tabId) || !all.has(tabId)) return "closed";
     const t = all.get(tabId);
     if (old && originOf(old.url) !== originOf(t.url)) return "left_origin";
@@ -707,11 +720,11 @@ function reqMap(tabId) {
   return m;
 }
 
-function rememberRequest(tabId, key, url) {
+function rememberRequest(tabId, key, url, secret = false) {
   const m = reqMap(tabId);
   const ok = isAllowedResourceUrl(url);
   m.delete(key); // re-insert: most recent last
-  m.set(key, { url, ok });
+  m.set(key, { url, ok, secret });
   while (m.size > MAX_REQUESTS_PER_TAB) m.delete(m.keys().next().value);
   return ok;
 }
@@ -747,6 +760,41 @@ function takeExtraInfo(tabId, key) {
   return v;
 }
 
+// Form fields that hold a password, as SAP's and other logon forms name them.
+const PASSWORD_FIELD = /(^|[&\s"'])(sap-password\w*|sap-system-login-password\w*|j_password|password|passwd|pwd)=/i;
+
+function postBody(req) {
+  if (!req) return "";
+  if (typeof req.postData === "string") return req.postData;
+  if (Array.isArray(req.postDataEntries)) {
+    try {
+      return req.postDataEntries.map((e) => (typeof e.bytes === "string" ? atob(e.bytes) : "")).join("");
+    } catch {
+      return "";
+    }
+  }
+  return "";
+}
+
+function carriesPassword(req) {
+  if (!req || !req.hasPostData) return false;
+  const body = postBody(req);
+  // Chrome leaves out only large bodies (Web GUI's own JSON posts can be): a logon form is small.
+  if (!body) return false;
+  let decoded = body;
+  try {
+    decoded = decodeURIComponent(body.replace(/\+/g, " "));
+  } catch {}
+  return PASSWORD_FIELD.test(body) || PASSWORD_FIELD.test(decoded) || /name="(sap-password|password|j_password)"/i.test(body);
+}
+
+function withoutBody(p) {
+  const request = { ...p.request };
+  delete request.postData;
+  delete request.postDataEntries;
+  return { ...p, request };
+}
+
 // Decide what to do with a Network.* event: returns a list of [method, params]
 // to forward (possibly empty, possibly with held ExtraInfo events after it).
 function filterNetworkEvent(tabId, sid, method, p) {
@@ -760,7 +808,10 @@ function filterNetworkEvent(tabId, sid, method, p) {
   if (method === "Network.requestWillBeSent" || method === "Network.webSocketCreated") {
     const url = method === "Network.webSocketCreated" ? p.url : p.request && p.request.url;
     const before = m.get(key);
-    const ok = rememberRequest(tabId, key, url);
+    // A form that sends a password (SAP's logon page resent by a reload or the history): its body stays here.
+    const secret = method === "Network.requestWillBeSent" && carriesPassword(p.request);
+    if (secret) p = withoutBody(p);
+    const ok = rememberRequest(tabId, key, url, secret);
     const held = takeExtraInfo(tabId, key);
     if (ok) return [[method, p], ...held];
     if (before && before.ok) {
@@ -838,6 +889,7 @@ async function checkCdp(m, tabId) {
       if (BODY_READS.has(method)) {
         const r = typeof params.requestId === "string" ? requests.get(tabId)?.get((sid || "") + "|" + params.requestId) : null;
         if (!r || !r.ok) throw rpcError(`${method}: request ${params.requestId} is not a request to a shared site`);
+        if (r.secret && method === "Network.getRequestPostData") throw rpcError(`${method}: request ${params.requestId} sends a password; its body stays in the browser`);
       }
   }
   for (const u of siteUrls(method, params)) {
@@ -869,6 +921,11 @@ async function handleRequest(m) {
       await detachTab(requireTabId(m));
       return {};
     }
+    case "systems":
+      return { systems: await systemsForServer() };
+    case "logon":
+      // The answer says who is logged on where, or why not: never the password.
+      return await logonSystem(m.system, { by: "server" });
     case "cdp": {
       const tabId = requireTabId(m);
       if (!allowedCache.has(tabId) || scope.paused) throw rpcError(`tab ${tabId} is not shared with sap-gui-mcp-server`);
@@ -884,6 +941,7 @@ async function handleRequest(m) {
       }
       if (!attached.has(tabId)) throw rpcError(`tab ${tabId} is not attached`);
       const target = sessionTarget(tabId, m.sessionId);
+      noteAgentTab(tabId, m.method);
       try {
         const result = await chrome.debugger.sendCommand(target, m.method, m.params || {});
         if (m.method === "Page.enable") {
@@ -1133,8 +1191,13 @@ function tryPort(port, code) {
 
 const STATUS_RANK = { not_found: 0, not_relay: 0, busy: 1, untrusted: 2, wrong_code: 3, tampered: 4 };
 
-async function scan() {
-  const cfg = await getConfig();
+async function scan(helperTried = false) {
+  let cfg = await getConfig();
+  if (!cfg.code && !cfg.codeManaged && !helperTried) {
+    // Paired by the helper, if it is installed: the user copies nothing.
+    helperTried = true;
+    if ((await pairWithHelper()).ok) cfg = await getConfig();
+  }
   if (!cfg.code) {
     setStatus(cfg.codeManagedInvalid ? "bad_managed_code" : "no_code");
     return false;
@@ -1157,6 +1220,11 @@ async function scan() {
       continue;
     }
     if ((STATUS_RANK[r.reason] ?? 0) > (STATUS_RANK[worst.reason] ?? 0)) worst = { reason: r.reason, port };
+  }
+  if (worst.reason === "wrong_code" && !cfg.codeManaged && !helperTried) {
+    // The machine's code changed (a new pairing file): the helper knows the new one.
+    const before = cfg.code;
+    if ((await pairWithHelper()).ok && (await getConfig()).code !== before) return scan(true);
   }
   setStatus(worst.reason === "not_relay" ? "not_found" : worst.reason, worst.port);
   return false;
@@ -1275,34 +1343,502 @@ async function reconnect() {
   return ensureConnected({ force: true });
 }
 
+// ---------------------------------------------------------------- SAP systems
+
+// A system: { id, name, url, kind, client, language, user, sso, passwordIn }
+// url: the address to open (Web GUI or launchpad). sso: SAP logs the user on by
+// itself (single sign-on, certificates), so no password is kept. passwordIn:
+// "keychain" (the helper's OS keychain), "profile" (chrome.storage.local) or
+// null. The password itself is never part of a system object.
+
+const KINDS = ["webgui", "fiori", "other"];
+
+function validSystems(list) {
+  if (!Array.isArray(list)) return [];
+  return list.filter((x) => x && typeof x.id === "string" && typeof x.name === "string" && typeof x.url === "string" && systemPattern(x.url));
+}
+
+// The shared-site pattern of a system: its host, any port (SAP systems often answer on several).
+function systemPattern(u) {
+  try {
+    const url = new URL(u);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return `${url.protocol}//${url.hostname}/*`;
+  } catch {
+    return null;
+  }
+}
+
+function kindOf(u) {
+  try {
+    const p = new URL(u).pathname.toLowerCase();
+    if (p.includes("/sap/bc/gui/sap/its/webgui")) return "webgui";
+    if (p.includes("/sap/bc/ui2/flp") || p.includes("/ui2/ushell") || p.includes("fiorilaunchpad")) return "fiori";
+  } catch {}
+  return "other";
+}
+
+// The address a SAP page was opened at, cleaned up to register: no hash, only SAP's own start parameters.
+function cleanSapUrl(u) {
+  const url = new URL(u);
+  const keep = new URLSearchParams();
+  for (const k of ["sap-client", "sap-language", "~transaction", "sap-theme"]) if (url.searchParams.has(k)) keep.set(k, url.searchParams.get(k));
+  url.search = keep.toString();
+  url.hash = "";
+  // Web GUI adds a session part after the service ("/webgui/~4E…" or ";~sysid=…"): drop it.
+  url.pathname = url.pathname.replace(/(\/sap\/bc\/gui\/sap\/its\/webgui).*$/i, "$1");
+  return url.toString();
+}
+
+// What the popup proposes for the tab the user is on.
+function suggestionFor(tab) {
+  let url;
+  try {
+    url = new URL(tab.url);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  const kind = kindOf(tab.url);
+  const sapLike = kind !== "other" || /\/sap\//i.test(url.pathname);
+  const client = url.searchParams.get("sap-client") || "";
+  const language = (url.searchParams.get("sap-language") || "").toUpperCase();
+  const label = kind === "webgui" ? "Web GUI" : kind === "fiori" ? "Fiori" : "SAP";
+  return {
+    sapLike,
+    url: cleanSapUrl(tab.url),
+    kind,
+    client,
+    language,
+    // A host name says which system it is (s4d.example.com -> S4D); on this computer, what kind of page it is.
+    name: `${/^(localhost|127\.|\[::1\])/.test(url.hostname) ? label : url.hostname.split(".")[0].toUpperCase()}${client ? ` ${client}` : ""}`,
+  };
+}
+
+// The address to open: the system's, with its client and language as SAP's URL parameters.
+function startUrl(sys) {
+  const url = new URL(sys.url);
+  if (sys.client && !url.searchParams.has("sap-client")) url.searchParams.set("sap-client", sys.client);
+  if (sys.language && !url.searchParams.has("sap-language")) url.searchParams.set("sap-language", sys.language);
+  return url.toString();
+}
+
+async function getSystems() {
+  return validSystems((await chrome.storage.local.get("systems")).systems);
+}
+
+async function putSystems(list) {
+  await chrome.storage.local.set({ systems: list });
+}
+
+function findSystem(list, ref) {
+  if (typeof ref !== "string" || !ref.trim()) return null;
+  const r = ref.trim().toLowerCase();
+  return list.find((x) => x.id === ref) || list.find((x) => x.name.toLowerCase() === r) || (list.filter((x) => x.name.toLowerCase().startsWith(r)).length === 1 ? list.find((x) => x.name.toLowerCase().startsWith(r)) : null);
+}
+
+// Does a tab show this system (same origin, under the system's path)?
+function tabOfSystem(sys, tabUrl) {
+  try {
+    const a = new URL(sys.url);
+    const b = new URL(tabUrl);
+    if (a.origin !== b.origin) return false;
+    const base = a.pathname.replace(/\/[^/]*\.[a-z]+$/i, "/").replace(/\/+$/, "").toLowerCase();
+    return b.pathname.toLowerCase().startsWith(base);
+  } catch {
+    return false;
+  }
+}
+
+// What the server sees of the systems: never a password, only whether one is saved.
+async function systemsForServer() {
+  const list = await getSystems();
+  const targets = await currentTargets().catch(() => []);
+  return list.map((x) => ({
+    id: x.id,
+    name: x.name,
+    url: x.url,
+    kind: x.kind || kindOf(x.url),
+    client: x.client || "",
+    language: x.language || "",
+    user: x.user || "",
+    logon: x.sso ? "sso" : x.passwordIn ? "password" : "manual",
+    open: targets.some((t) => t.type === "page" && tabOfSystem(x, t.url) && !privateTabs.has(t.tabId)),
+  }));
+}
+
+// Sites added with "Allow this site" before systems existed become systems.
+async function migrateSites() {
+  const { sites } = await chrome.storage.local.get("sites");
+  if (!Array.isArray(sites) || !sites.length) return;
+  const list = await getSystems();
+  for (const p of sites) {
+    const m = /^(https?):\/\/([^/*]+)\/\*$/.exec(p);
+    if (!m || list.some((x) => systemPattern(x.url) === p)) continue;
+    list.push({ id: newId(), name: m[2], url: `${m[1]}://${m[2]}/`, kind: "other", client: "", language: "", user: "", sso: true, passwordIn: null });
+  }
+  await putSystems(list);
+  await chrome.storage.local.remove("sites");
+}
+
+function newId() {
+  return "s" + [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// ---------------------------------------------------------------- the helper (native messaging host)
+
+let helper = null; // { ok, keychain } once asked
+
+async function native(msg) {
+  try {
+    return await chrome.runtime.sendNativeMessage(NATIVE_HOST, msg);
+  } catch {
+    return null; // not installed, or it failed to start
+  }
+}
+
+// Asked once per worker; when it was missing, again after a while (the user may have installed it since).
+async function helperInfo(force = false) {
+  if (helper && !force && (helper.ok || Date.now() - helper.at < 15000)) return helper;
+  const r = await native({ cmd: "hello" });
+  helper = r && r.ok ? { ok: true, keychain: r.keychain || null, at: Date.now() } : { ok: false, keychain: null, at: Date.now() };
+  return helper;
+}
+
+// Pairing in one click (or none): the helper reads the machine's pairing code.
+async function pairWithHelper() {
+  const cfg = await getConfig();
+  if (cfg.codeManaged) return { ok: false, error: "The pairing code is set by your organization." };
+  const r = await native({ cmd: "pair" });
+  if (!r || !r.ok) {
+    await helperInfo(true);
+    return { ok: false, error: r ? r.error || "the helper failed" : "helper_missing" };
+  }
+  const code = validCode(r.code);
+  if (!code) return { ok: false, error: "the helper gave an invalid code" };
+  if (code !== cfg.code) await chrome.storage.local.set({ pairingCode: code });
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------- passwords
+
+async function savePassword(sys, password) {
+  const h = await helperInfo();
+  if (h.ok && h.keychain) {
+    const r = await native({ cmd: "secret.set", id: sys.id, value: password, label: sys.name });
+    if (r && r.ok) {
+      await forgetProfilePassword(sys.id);
+      return "keychain";
+    }
+  }
+  // No keychain: this Chrome profile's local storage (never sync storage).
+  const { secrets = {} } = await chrome.storage.local.get("secrets");
+  secrets[sys.id] = password;
+  await chrome.storage.local.set({ secrets });
+  return "profile";
+}
+
+async function readPassword(sys) {
+  if (sys.passwordIn === "keychain") {
+    const r = await native({ cmd: "secret.get", id: sys.id });
+    return r && r.ok && typeof r.value === "string" ? r.value : null;
+  }
+  if (sys.passwordIn === "profile") {
+    const { secrets = {} } = await chrome.storage.local.get("secrets");
+    return typeof secrets[sys.id] === "string" ? secrets[sys.id] : null;
+  }
+  return null;
+}
+
+async function forgetProfilePassword(id) {
+  const { secrets } = await chrome.storage.local.get("secrets");
+  if (secrets && id in secrets) {
+    delete secrets[id];
+    await chrome.storage.local.set({ secrets });
+  }
+}
+
+async function forgetPassword(sys) {
+  await forgetProfilePassword(sys.id);
+  if (sys.passwordIn === "keychain") await native({ cmd: "secret.delete", id: sys.id });
+}
+
+// ---------------------------------------------------------------- logging on
+
+const LOGON_TIMEOUT_MS = 60000;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Runs in the page: what SAP shows. Never returns a field's value.
+const PROBE = `(() => {
+  const vis = (e) => !!e && !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
+  const q = (s) => [...document.querySelectorAll(s)].filter(vis);
+  const text = (e) => (e.innerText || e.textContent || "").replace(/\\s+/g, " ").trim();
+  const loaded = document.readyState === "complete";
+  const user = q('input[name="sap-user"], input#sap-user, input[name="j_username"]')[0];
+  const pw = q('input[name="sap-password"], input#sap-password, input[type="password"]');
+  const newPw = q('input[name*="passwordnew" i], input[name*="password-new" i], input[name*="newpassword" i], input[id*="passwordnew" i]');
+  const message = (() => {
+    for (const e of q('[role="alert"], .urMsgBarTxt, [id*="MESSAGE" i], [id*="ERROR" i], [class*="error" i], [class*="Message" i], .sapMMsgStrip')) {
+      const t = text(e);
+      if (t && t.length < 400 && !/^(user|password|client|language)$/i.test(t)) return t;
+    }
+    return "";
+  })();
+  const body = text(document.body || document.documentElement).slice(0, 4000);
+  if (newPw.length || pw.length > 1 && /new password|neues kennwort|change.*password|kennwort.*ändern/i.test(body)) return { kind: "password_change", message };
+  const radios = q('input[type="radio"]');
+  if (radios.length && /already logged on|bereits angemeldet|multiple logon|mehrfachanmeldung/i.test(body)) return { kind: "multi", message: "" };
+  if (user && pw.length) return { kind: "logon", loaded, message, client: !!q('input[name="sap-client"]:not([readonly])')[0] };
+  if (!loaded) return { kind: "loading" };
+  const app = !!document.querySelector("#ToolbarOkCode, #shell-header, #shell-hdr, #canvas, .sapUshellShellHead, [id^=M0]") || !!(window.sap && window.sap.ushell && window.sap.ushell.Container);
+  return { kind: app ? "app" : "page", title: document.title };
+})()`;
+
+// SAP asks whether to end the user's other logons: keep them, always.
+const KEEP_OTHER_LOGONS = `(() => {
+  const vis = (e) => !!e && !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
+  const label = (r) => ((r.labels && r.labels[0] && r.labels[0].innerText) || (r.closest("label,tr,div") || {}).innerText || "").replace(/\\s+/g, " ");
+  const keep = [...document.querySelectorAll('input[type="radio"]')].filter(vis).find((r) => /without ending|ohne .*beenden/i.test(label(r)));
+  if (!keep) return false;
+  keep.click();
+  const go = document.querySelector("#SESSION_QUERY_CONTINUE_BUTTON") || [...document.querySelectorAll('button, [role="button"], input[type="submit"]')].filter(vis).find((b) => /continue|weiter/i.test(b.innerText || b.value || ""));
+  if (!go) return false;
+  go.click();
+  return true;
+})()`;
+
+// Empties every password field: run before a logon tab goes back to the server, and when the page is left
+// (a page kept in the back/forward cache keeps no password either).
+const CLEAR_PASSWORDS = `(() => {
+  const clear = () => { for (const e of document.querySelectorAll('input[type="password"], input[name="sap-password"]')) e.value = ""; };
+  clear();
+  addEventListener("pagehide", clear, { capture: true });
+  return true;
+})()`;
+
+const FOCUS = (selector) => `(() => {
+  const e = [...document.querySelectorAll(${JSON.stringify(selector)})].find((x) => x.offsetWidth || x.offsetHeight);
+  if (!e) return false;
+  e.removeAttribute("readonly");
+  e.focus();
+  e.select && e.select();
+  return document.activeElement === e;
+})()`;
+
+const SUBMIT = `(() => {
+  const vis = (e) => !!e && !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
+  const b = document.querySelector("#LOGON_BUTTON") || [...document.querySelectorAll('button[type="submit"], input[type="submit"], #LOGIN_LINK, [role="button"]')].filter(vis).find((x) => /log ?on|log ?in|anmelden|sign in/i.test(x.innerText || x.value || x.title || ""));
+  if (b) { b.click(); return "button"; }
+  const f = (document.querySelector('input[name="sap-password"]') || {}).form;
+  if (f) { f.requestSubmit ? f.requestSubmit() : f.submit(); return "form"; }
+  return "";
+})()`;
+
+async function evalIn(tabId, expression) {
+  const r = await chrome.debugger.sendCommand({ tabId }, "Runtime.evaluate", { expression, returnByValue: true, awaitPromise: false });
+  if (r && r.exceptionDetails) throw new Error("script failed");
+  return r && r.result ? r.result.value : undefined;
+}
+
+async function probe(tabId) {
+  try {
+    return (await evalIn(tabId, PROBE)) || { kind: "loading" };
+  } catch {
+    return { kind: "loading" }; // between two documents
+  }
+}
+
+async function typeInto(tabId, selector, value) {
+  if (!(await evalIn(tabId, FOCUS(selector)))) return false;
+  await chrome.debugger.sendCommand({ tabId }, "Input.insertText", { text: value });
+  return true;
+}
+
+// Waits until the page is one of `kinds` (or the time is up): the last probe.
+async function waitFor(tabId, kinds, ms) {
+  const end = Date.now() + ms;
+  let last = { kind: "loading" };
+  let steadyPage = 0;
+  while (Date.now() < end) {
+    last = await probe(tabId);
+    if (kinds.includes(last.kind)) return last;
+    // A page that is neither SAP's logon page nor a known SAP screen, three times in a row: take it as it is.
+    steadyPage = last.kind === "page" ? steadyPage + 1 : 0;
+    if (steadyPage >= 3 && kinds.includes("app")) return last;
+    await sleep(500);
+  }
+  return last;
+}
+
+const logons = new Map(); // system id -> running logon promise
+
+// Opens a system and logs on to it. by: "server" (the relay asked) or "user" (the popup).
+async function logonSystem(ref, { by }) {
+  const list = await getSystems();
+  const sys = findSystem(list, ref);
+  if (!sys) {
+    const names = list.map((x) => x.name);
+    throw rpcError(names.length ? `No system "${ref}" in the extension. Registered: ${names.join(", ")}.` : "No SAP system is registered in the extension yet: the user adds them in the extension's popup.");
+  }
+  if (logons.has(sys.id)) return logons.get(sys.id);
+  const p = doLogon(sys, by).finally(() => logons.delete(sys.id));
+  logons.set(sys.id, p);
+  return p;
+}
+
+async function doLogon(sys, by) {
+  const r = await doLogonSteps(sys, by);
+  // The server names Chrome tabs by their target id ("chrome:<targetId>" sessions).
+  try {
+    const t = (await chrome.debugger.getTargets()).find((x) => x.tabId === r.tabId && x.type === "page");
+    if (t) r.targetId = t.id;
+  } catch {}
+  return r;
+}
+
+async function doLogonSteps(sys, by) {
+  const base = { system: sys.name, client: sys.client || "", user: sys.user || "" };
+  // A shared tab of this system that shows SAP already: nothing to do.
+  const targets = await chrome.debugger.getTargets();
+  const candidates = targets.filter((t) => t.type === "page" && typeof t.tabId === "number" && tabOfSystem(sys, t.url) && !privateTabs.has(t.tabId));
+  let reuse = null;
+  for (const t of candidates) {
+    const state = await withOwnDebugger(t.tabId, () => probe(t.tabId)).catch(() => ({ kind: "loading" }));
+    if (state.kind === "app" || state.kind === "page") {
+      if (by === "user") await focusTab(t.tabId);
+      return { ...base, state: "already", tabId: t.tabId, title: t.title };
+    }
+    if (state.kind === "logon" && !reuse) reuse = t.tabId;
+  }
+  const password = sys.sso ? null : await readPassword(sys);
+  if (!password && !sys.sso && sys.passwordIn) throw rpcError(`The saved password of ${sys.name} could not be read${sys.passwordIn === "keychain" ? " from the keychain" : ""}. The user can save it again in the extension's popup.`);
+  // From here the tab is the extension's alone until the logon page is gone.
+  let tabId = reuse;
+  if (tabId !== null) {
+    privateTabs.add(tabId);
+    await scheduleRecompute();
+    await chrome.tabs.update(tabId, by === "user" ? { active: true } : {}).catch(() => {});
+  } else {
+    const tab = await chrome.tabs.create({ url: "about:blank", active: by === "user" || !candidates.length });
+    tabId = tab.id;
+    privateTabs.add(tabId);
+  }
+  let ownAttach = false;
+  try {
+    await chrome.debugger.attach({ tabId }, "1.3");
+    ownAttach = true;
+    await chrome.debugger.sendCommand({ tabId }, "Page.enable").catch(() => {});
+    if (reuse === null) await chrome.debugger.sendCommand({ tabId }, "Page.navigate", { url: startUrl(sys) });
+    let state = await waitFor(tabId, ["logon", "app", "password_change", "multi"], LOGON_TIMEOUT_MS / 2);
+    if (state.kind === "app" || state.kind === "page") return { ...base, state: sys.sso ? "sso" : "already", tabId };
+    if (state.kind === "logon") {
+      if (!password) {
+        // SSO that still shows the logon page, or no password saved: the user types it in the tab.
+        return { ...base, state: "needs_user", tabId, message: "SAP shows its logon page and no password is saved: the user logs on in that tab." };
+      }
+      if (!state.loaded) state = await waitFor(tabId, ["logon"], 5000);
+      // Web GUI swaps its logon fields once its scripts run: let it settle.
+      await sleep(800);
+      if (sys.client && state.client) await typeInto(tabId, 'input[name="sap-client"]', sys.client);
+      if (sys.user && !(await typeInto(tabId, 'input[name="sap-user"], input#sap-user, input[name="j_username"]', sys.user))) throw rpcError("The user field of SAP's logon page was not found.");
+      if (!(await typeInto(tabId, 'input[name="sap-password"], input#sap-password, input[type="password"]', password))) throw rpcError("The password field of SAP's logon page was not found.");
+      await evalIn(tabId, `addEventListener("pagehide", () => { for (const e of document.querySelectorAll('input[type="password"]')) e.value = ""; }, { capture: true }), true`);
+      if (!(await evalIn(tabId, SUBMIT))) await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+      // The logon page reloads with SAP's message when it refuses: wait for a new document first.
+      await sleep(1500);
+      state = await waitFor(tabId, ["app", "multi", "password_change", "logon"], LOGON_TIMEOUT_MS);
+      if (state.kind === "multi") {
+        if (!(await evalIn(tabId, KEEP_OTHER_LOGONS))) throw rpcError(`${sys.user || "The user"} is logged on to ${sys.name} already, and SAP asks whether to end the other logons: the extension does not choose that. The user answers in the tab.`);
+        await sleep(1500);
+        state = await waitFor(tabId, ["app", "password_change", "logon"], LOGON_TIMEOUT_MS);
+      }
+    }
+    if (state.kind === "password_change") throw rpcError(`SAP asks for a new password for ${sys.user || "the user"} on ${sys.name}: the user changes it in the tab, then saves it in the extension.`);
+    if (state.kind === "logon") throw rpcError(`SAP refused the logon to ${sys.name} as ${sys.user || "the user"}${state.message ? `: ${state.message}` : "."}`);
+    if (state.kind === "app" || state.kind === "page") return { ...base, state: "logged_on", tabId };
+    throw rpcError(`${sys.name} did not show SAP within ${Math.round(LOGON_TIMEOUT_MS / 1000)} s.`);
+  } finally {
+    // Before the tab is shared again: no password left in any field.
+    if (ownAttach) {
+      await evalIn(tabId, CLEAR_PASSWORDS).catch(() => {});
+      await chrome.debugger.detach({ tabId }).catch(() => {});
+    }
+    privateTabs.delete(tabId);
+    invalidateTargets();
+    await scheduleRecompute();
+  }
+}
+
+// Runs f with the extension's debugger on the tab: the server's attachment when the tab is shared, else a short one of its own.
+async function withOwnDebugger(tabId, f) {
+  if (attached.has(tabId)) return f();
+  await chrome.debugger.attach({ tabId }, "1.3");
+  try {
+    return await f();
+  } finally {
+    await chrome.debugger.detach({ tabId }).catch(() => {});
+  }
+}
+
+async function focusTab(tabId) {
+  const tab = await chrome.tabs.update(tabId, { active: true }).catch(() => null);
+  if (tab && typeof tab.windowId === "number") await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+}
+
+function noteAgentTab(tabId) {
+  agentTab = { tabId, at: Date.now() };
+}
+
 // ---------------------------------------------------------------- popup
+
+const AGENT_TAB_FRESH_MS = 10 * 60 * 1000;
 
 async function popupState(tabId) {
   const cfg = await getConfig();
   const { allowed, all } = await computeAllowed();
+  const h = await helperInfo();
   let currentTab = null;
   if (Number.isInteger(tabId) && all.has(tabId)) {
     const t = all.get(tabId);
-    let origin = null;
-    let web = false;
-    try {
-      const u = new URL(t.url);
-      web = u.protocol === "http:" || u.protocol === "https:";
-      origin = web ? u.origin : null;
-    } catch {}
-    currentTab = { tabId, url: t.url, title: t.title, web, origin, allowed: allowed.has(tabId), matches: web && isAllowedUrl(t.url, { ...scope, paused: false }) };
+    const system = cfg.systems.find((x) => tabOfSystem(x, t.url)) || null;
+    currentTab = { tabId, title: t.title, shared: allowed.has(tabId), system: system ? system.id : null, suggestion: system ? null : suggestionFor(t) };
   }
+  const shared = [...attached].map((id) => allowed.get(id)).filter(Boolean);
+  let agent = null;
+  if (ws && agentTab && Date.now() - agentTab.at < AGENT_TAB_FRESH_MS && allowed.has(agentTab.tabId)) agent = { tabId: agentTab.tabId, title: allowed.get(agentTab.tabId).title };
+  const targets = [...all.values()];
   return {
     status: status.state,
     port: status.port,
     code: { set: !!cfg.code, managed: cfg.codeManaged, managedInvalid: cfg.codeManagedInvalid },
+    helper: h,
     portSetting: { value: cfg.port, managed: cfg.portManaged },
     paused: cfg.paused,
-    origins: { granted: scope.granted, managed: scope.managed, wildcard: scope.wildcard },
-    shared: [...attached].map((id) => allowed.get(id) || { tabId: id, url: "", title: "" }),
+    managedOrigins: scope.managed,
+    systems: cfg.systems.map((x) => ({ ...x, kind: x.kind || kindOf(x.url), open: targets.some((t) => tabOfSystem(x, t.url)), loggingOn: logons.has(x.id) })),
+    shared,
+    agent,
     currentTab,
     version: EXT_VERSION,
   };
+}
+
+function cleanSystemInput(input) {
+  const name = String(input.name || "").trim().slice(0, 60);
+  if (!name) throw new Error("Give the system a name.");
+  let url;
+  try {
+    url = new URL(String(input.url || "").trim());
+  } catch {
+    throw new Error("The address must be a full URL, such as https://sap.example.com/sap/bc/ui2/flp.");
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("The address must start with https:// or http://.");
+  const client = String(input.client || "").trim();
+  if (client && !/^\d{3}$/.test(client)) throw new Error("The client has three digits, such as 100.");
+  const language = String(input.language || "").trim().toUpperCase();
+  if (language && !/^[A-Z0-9]{1,2}$/.test(language)) throw new Error("The language is SAP's one- or two-letter key, such as EN or DE.");
+  const user = String(input.user || "").trim().toUpperCase().slice(0, 40);
+  return { name, url: url.toString(), kind: kindOf(url.toString()), client, language, user, sso: !!input.sso };
 }
 
 async function handlePopup(msg) {
@@ -1312,6 +1848,11 @@ async function handlePopup(msg) {
       return { ok: true };
     case "state":
       return popupState(msg.tabId);
+    case "pair": {
+      const r = await pairWithHelper();
+      if (r.ok) reconnect();
+      return r;
+    }
     case "setCode": {
       const code = normalizeCode(msg.code);
       if (!code) {
@@ -1322,23 +1863,49 @@ async function handlePopup(msg) {
       await chrome.storage.local.set({ pairingCode: code });
       return { ok: true, code };
     }
-    case "addSite": {
-      // After "Allow this site": Chrome granted the pattern (or already allows every site).
-      const p = msg.pattern;
-      if (typeof p !== "string" || !webPattern(p) || isBareWildcard(p)) throw new Error("invalid site pattern");
-      if (!(await chrome.permissions.contains({ origins: [p] }))) throw new Error("Chrome did not grant access to this site");
-      const { sites = [] } = await chrome.storage.local.get("sites");
-      if (!sites.includes(p)) await chrome.storage.local.set({ sites: [...sites, p] });
-      return { ok: true };
+    case "saveSystem": {
+      // The popup asked Chrome for the site (chrome.permissions.request) in the click itself.
+      const fields = cleanSystemInput(msg.system || {});
+      const pattern = systemPattern(fields.url);
+      if (!(await chrome.permissions.contains({ origins: [pattern] }))) throw new Error("Chrome did not allow the extension on this site.");
+      const list = await getSystems();
+      const old = msg.system.id ? list.find((x) => x.id === msg.system.id) : null;
+      if (list.some((x) => x !== old && x.name.toLowerCase() === fields.name.toLowerCase())) throw new Error(`There is a system named ${fields.name} already.`);
+      const sys = { ...(old || { id: newId(), passwordIn: null }), ...fields };
+      if (fields.sso) {
+        if (old && old.passwordIn) await forgetPassword(old);
+        sys.passwordIn = null;
+      } else if (typeof msg.password === "string" && msg.password !== "") {
+        sys.passwordIn = await savePassword(sys, msg.password);
+      } else if (msg.clearPassword && old && old.passwordIn) {
+        await forgetPassword(old);
+        sys.passwordIn = null;
+      }
+      await putSystems(old ? list.map((x) => (x.id === old.id ? sys : x)) : [...list, sys]);
+      scheduleRecompute();
+      return { ok: true, id: sys.id, passwordIn: sys.passwordIn };
     }
-    case "removeSite": {
-      const p = msg.pattern;
-      if (typeof p !== "string") throw new Error("invalid site pattern");
-      const { sites = [] } = await chrome.storage.local.get("sites");
-      if (sites.includes(p)) await chrome.storage.local.set({ sites: sites.filter((x) => x !== p) });
-      await chrome.permissions.remove({ origins: [p] }).catch(() => {}); // a required or wildcard grant stays; the site still stops counting
+    case "deleteSystem": {
+      const list = await getSystems();
+      const sys = list.find((x) => x.id === msg.id);
+      if (!sys) return { ok: true };
+      await forgetPassword(sys);
+      const rest = list.filter((x) => x.id !== sys.id);
+      await putSystems(rest);
+      const pattern = systemPattern(sys.url);
+      // The site stays allowed while another system is on it, or while the organization allows it.
+      if (!rest.some((x) => systemPattern(x.url) === pattern) && !scope.managed.includes(pattern)) await chrome.permissions.remove({ origins: [pattern] }).catch(() => {});
       scheduleRecompute();
       return { ok: true };
+    }
+    case "openSystem": {
+      try {
+        const r = await logonSystem(msg.id, { by: "user" });
+        if (r.tabId) await focusTab(r.tabId);
+        return { ok: true, state: r.state, message: r.message || "" };
+      } catch (e) {
+        return { ok: false, error: e.message || String(e) };
+      }
     }
     case "setPort": {
       const p = msg.port === null || msg.port === "" ? null : Number(msg.port);
@@ -1389,7 +1956,7 @@ chrome.permissions.onRemoved.addListener(() => scheduleRecompute());
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" || area === "managed") {
     if ("pairingCode" in changes || "port" in changes) reconnect();
-    if ("paused" in changes || "allowedOrigins" in changes || "sites" in changes) scheduleRecompute();
+    if ("paused" in changes || "allowedOrigins" in changes || "sites" in changes || "systems" in changes) scheduleRecompute();
   }
 });
 
@@ -1416,6 +1983,7 @@ const bootInfo = { at: Date.now(), released: [] };
 const booted = (async () => {
   await ensureAlarm().catch(() => {});
   bootInfo.released = await releaseLeftovers().catch((e) => (console.warn("releaseLeftovers", e), []));
+  await migrateSites().catch((e) => console.warn("migrateSites", e));
   await readScope().catch(() => {});
   await ensureConnected({ force: true });
 })();

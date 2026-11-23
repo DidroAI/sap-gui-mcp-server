@@ -87,6 +87,8 @@ Requests from the relay carry an integer `id`; the extension answers each with
 | `{"id","type":"attach","tabId"}` | `{"tab":Tab}` after `chrome.debugger.attach({tabId},"1.3")` (already attached: same answer) |
 | `{"id","type":"detach","tabId"}` | `{}` |
 | `{"id","type":"cdp","tabId","sessionId"?,"method","params"?}` | `{"result":{...}}` = `chrome.debugger.sendCommand({tabId, sessionId}, method, params)`; CDP errors come back as `error` with the CDP code and message |
+| `{"id","type":"systems"}` | `{"systems":[System...]}`: the registered SAP systems (see Systems) |
+| `{"id","type":"logon","system"}` | `{"system","client","user","state","tabId","targetId","message"?}` once logged on (see Systems); a refusal comes back as `error` with SAP's message |
 
 `Tab` = `{"tabId":123,"targetId":"<CDP target id>","url":"...","title":"...","openerTabId"?:122}`.
 
@@ -96,16 +98,65 @@ Messages from the extension without `id`:
 |---|---|
 | `{"type":"event","tabId","sessionId"?,"method","params"}` | `chrome.debugger.onEvent`; `sessionId` = `source.sessionId` (a child session: OOPIF, worker), absent for the tab's own session |
 | `{"type":"tabAdded","tab":Tab}` | a tab became allowed: opened, navigated into an allowed origin, origin granted, sharing resumed |
-| `{"type":"tabRemoved","tabId","reason":"closed"\|"left_origin"\|"origin_revoked"\|"paused"}` | a tab is no longer allowed; the extension has already detached it |
+| `{"type":"tabRemoved","tabId","reason":"closed"\|"left_origin"\|"origin_revoked"\|"paused"\|"logon"}` | a tab is no longer allowed; the extension has already detached it |
 | `{"type":"detached","tabId","reason"}` | `chrome.debugger.onDetach` (`target_closed`, `canceled_by_user`) |
 | `{"type":"ping"}` | every 20 s (keeps the MV3 service worker alive); relay answers `{"type":"pong"}` |
+
+## Systems
+
+The user registers SAP systems in the popup. A system is
+`{"id","name","url","kind":"webgui"|"fiori"|"other","client","language","user","logon":"password"|"sso"|"manual","open"}`
+as the relay sees it; its password is never part of it. The host of every
+registered system is a shared site (`<scheme>://<host>/*`, any port).
+
+`logon` opens the system (or finds a tab of it that is logged on already:
+`state: "already"`) and logs on:
+
+1. The tab is made private first: it is left out of `tabs`, detached from
+   the relay (`tabRemoved` with reason `logon`), and no event or command of
+   it passes until the logon is over. A new tab is opened as `about:blank`
+   and made private before it navigates.
+2. The extension attaches its own `chrome.debugger` session, navigates to
+   the system's address with `sap-client` and `sap-language`, waits for
+   SAP's logon page, and types user and password with `Input.insertText`.
+   When SAP asks whether to end the user's other logons, it keeps them, or
+   gives up; it never ends them.
+3. Before the tab is shared again, every password field of the page is
+   emptied, and a `pagehide` handler empties them if the page is left (the
+   back/forward cache keeps no password).
+4. The answer says who is logged on, or SAP's message. `needs_user`: SAP
+   shows its logon page and no password is saved (the user types it).
+
+The password comes from the OS keychain through the helper, or from
+`chrome.storage.local` when there is none. It is never written to sync
+storage, a log, or the relay.
+
+## The helper (native messaging host)
+
+`sap-gui-mcp-server extension install` installs `ai.didro.sap_gui_mcp`
+(`native-host/host.mjs`, plain Node.js), allowed for this extension's id
+only (fixed by the manifest's `key`). One JSON message per call:
+
+| Ext → helper | Answer |
+| --- | --- |
+| `{"cmd":"hello"}` | `{"ok":true,"version":1,"keychain":name\|null}` |
+| `{"cmd":"pair"}` | `{"ok":true,"code"}`: the machine's pairing code (the file the server reads), made if missing |
+| `{"cmd":"secret.set","id","value","label"}` | `{"ok":true,"keychain"}` after a read-back; the password goes to the keychain tool on stdin, never on its command line |
+| `{"cmd":"secret.get","id"}` | `{"ok":true,"value"}` |
+| `{"cmd":"secret.delete","id"}` | `{"ok":true}` |
+
+Keychains: macOS Keychain (`security`), the Secret Service (`secret-tool`)
+on Linux, DPAPI on Windows. The extension pairs through the helper when it
+has no code, and again when the relay refuses its code. The helper never
+talks to the server.
 
 ## Scope (enforced by the extension)
 
 A tab is allowed when all hold:
-- its URL is http(s) and matches one of: the host permissions the user granted
-  (`chrome.permissions.getAll().origins`, from the popup's "Allow this site"),
+- its URL is http(s) and matches one of: the host of a system the user
+  registered (Chrome granted it when the system was saved, and still does),
   or `allowedOrigins` in managed storage (IT policy, match patterns);
+- the extension is not logging on in it (see Systems);
 - sharing is not paused. Clicking Cancel on Chrome's "started debugging this
   browser" bar (`onDetach` reason `canceled_by_user`) pauses sharing for the
   whole browser until the user clicks Resume in the popup.
@@ -118,9 +169,9 @@ that page reaches the relay. A navigation that never happens (a download, a
 either, once.
 
 Bare wildcard host patterns (`<all_urls>`, `https://*/*`, Chrome's "On all
-sites") are ignored, from grants and policy: then only the sites added with
-"Allow this site" (kept by the extension, and still covered by Chrome's
-grant) are shared.
+sites") are ignored, from grants and policy: then only the hosts of the
+registered systems (still covered by Chrome's grant) are shared. Sites added
+with "Allow this site" by version 0.1 become systems named by their host.
 
 The extension never attaches anything else and refuses `attach`/`cdp` for a
 tab that is not allowed (error). Whatever `chrome.debugger` allows, it also

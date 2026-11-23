@@ -22,6 +22,20 @@ The first public version.
 - `SAP_BROWSER=attach` uses the browser you already work in instead
   (Chrome or Edge, once remote debugging is allowed at `chrome://inspect`).
   A DevTools endpoint named in `SAP_CHROME_CDP` wins over both.
+- `SAP_BROWSER=extension` reaches your everyday Chrome through the **SAP
+  systems** extension (`extension/`) instead: no remote debugging switch,
+  only the tabs of the SAP systems registered in the extension are shared.
+  The extension is a list of your systems (name, Web GUI or launchpad
+  address, client, language, user): *Add the SAP page I'm on* fills one in
+  from the current tab, *Open* opens it logged on. With a saved password it
+  logs on by itself, filling SAP's logon page like a password manager, in a
+  tab withdrawn from the server until the logon page is gone: the server and
+  the agent never see the password. The agent gets `sap_systems` and
+  `sap_logon`. `sap-gui-mcp-server extension install` copies the extension
+  and installs its helper (a native messaging host): the extension pairs in
+  one click, and keeps passwords in the macOS Keychain, the Secret Service
+  or Windows DPAPI. The link to the server is a local WebSocket, paired with
+  a code and encrypted (AES-GCM).
 - **SAP GUI without scripting (experimental)**: `SAP_GUI_METHOD=diag` reads
   the screen from SAP GUI's DIAG traffic through a local SAProuter, and acts
   with the keyboard and mouse (see below).

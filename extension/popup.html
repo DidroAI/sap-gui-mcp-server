@@ -2,60 +2,102 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>sap-gui-mcp-server bridge</title>
+  <title>SAP systems</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <header>
-    <h1>sap-gui-mcp-server bridge</h1>
-    <div id="status" class="pill">…</div>
+  <header class="top">
+    <img class="mark" src="icons/32.png" alt="" width="20" height="20">
+    <h1>SAP systems</h1>
+    <span id="pill" class="pill"><i></i><span id="pill-text">…</span></span>
   </header>
 
-  <section id="pairing">
-    <h2>Pairing</h2>
-    <p id="pair-managed" class="note" hidden>Pairing code set by your organization.</p>
-    <form id="pair-form">
-      <input id="code" type="text" autocomplete="off" spellcheck="false"
-             placeholder="ABCDE-FGHJK-MNPQR-STVWX-YZ012-3" aria-label="Pairing code">
-      <button type="submit">Save</button>
-    </form>
-    <p id="pair-hint" class="note">Run <code>sap-gui-mcp-server extension pair</code> and paste the code.</p>
+  <!-- Status: one line that says what the agent can do now. -->
+  <section id="status" class="card status">
+    <div id="status-title" class="status-title">Starting…</div>
+    <div id="status-detail" class="status-detail">&nbsp;</div>
+    <div id="status-actions" class="actions"></div>
   </section>
 
-  <section id="this-tab" hidden>
-    <h2>This tab</h2>
-    <div class="row">
-      <span id="tab-origin" class="origin"></span>
-      <span id="tab-state" class="tag"></span>
+  <!-- Pairing, only while not paired. -->
+  <section id="pairing" class="card" hidden>
+    <div class="status-title">Connect to your agent</div>
+    <p id="pair-text" class="muted"></p>
+    <button id="pair" class="primary wide" type="button">Pair with this computer</button>
+    <details id="pair-manual">
+      <summary>Pair with a code instead</summary>
+      <p class="muted">Run <code>npx -y sap-gui-mcp-server extension pair</code> in a terminal and paste the code.</p>
+      <form id="pair-form" class="inline">
+        <input id="code" type="text" autocomplete="off" spellcheck="false" placeholder="Pairing code" aria-label="Pairing code">
+        <button type="submit">Save</button>
+      </form>
+    </details>
+    <p id="pair-hint" class="muted small"></p>
+  </section>
+
+  <!-- The list. -->
+  <main id="list-view">
+    <div class="list-head">
+      <h2>Systems</h2>
+      <button id="add" class="link" type="button">+ Add</button>
     </div>
-    <button id="allow" type="button" hidden>Allow this site</button>
-  </section>
+    <button id="add-current" class="suggest" type="button" hidden>
+      <span class="plus">+</span>
+      <span><b>Add the SAP page I'm on</b><span id="add-current-detail" class="small muted"></span></span>
+    </button>
+    <ul id="systems" class="systems"></ul>
+    <div id="empty" class="empty" hidden>
+      <p><b>No system yet.</b></p>
+      <p class="muted">Open your SAP system (Web GUI or the Fiori launchpad) in a tab, then click <i>Add the SAP page I'm on</i>. Or add one by its address.</p>
+    </div>
+    <p id="list-error" class="error small" hidden></p>
+  </main>
 
-  <section>
-    <h2>Allowed sites</h2>
-    <ul id="origins" class="list"></ul>
-    <p id="no-origins" class="note">No site allowed yet. Open your SAP system and click “Allow this site”.</p>
-    <p id="wildcard-note" class="note warn" hidden>Chrome allows this extension on all sites; only sites you add with “Allow this site” are shared.</p>
-  </section>
+  <!-- Add or edit a system. -->
+  <form id="edit-view" class="edit" hidden autocomplete="off">
+    <div class="list-head">
+      <h2 id="edit-title">Add a system</h2>
+    </div>
+    <label>Name<input id="f-name" type="text" placeholder="ECC dev" required maxlength="60"></label>
+    <label>Address<input id="f-url" type="url" placeholder="https://sap.example.com/sap/bc/ui2/flp" required></label>
+    <div class="two">
+      <label>Client<input id="f-client" type="text" inputmode="numeric" placeholder="100" maxlength="3"></label>
+      <label>Language<input id="f-language" type="text" placeholder="EN" maxlength="2"></label>
+    </div>
+    <label class="check"><input id="f-sso" type="checkbox"> Single sign-on: SAP logs me on by itself</label>
+    <div id="cred-fields">
+      <label>User<input id="f-user" type="text" placeholder="optional" maxlength="40" autocapitalize="characters"></label>
+      <label>Password
+        <span class="pw"><input id="f-password" type="password" placeholder="optional" autocomplete="new-password"><button id="f-show" class="ghost" type="button" title="Show">Show</button></span>
+      </label>
+      <p id="pw-where" class="small muted"></p>
+      <label id="clear-pw-row" class="check" hidden><input id="f-clear-pw" type="checkbox"> Forget the saved password</label>
+    </div>
+    <p class="small muted">Your agent never sees the password: the extension types it into SAP's logon page.</p>
+    <p id="edit-error" class="error small" hidden></p>
+    <div class="actions end">
+      <button id="delete" class="danger ghost" type="button" hidden>Delete</button>
+      <span class="grow"></span>
+      <button id="cancel" type="button">Cancel</button>
+      <button id="save" class="primary" type="submit">Save</button>
+    </div>
+  </form>
 
-  <section>
-    <h2>Shared tabs</h2>
-    <ul id="shared" class="list"></ul>
-    <p id="no-shared" class="note">The server is not using any tab.</p>
-    <button id="pause" type="button">Pause sharing</button>
-    <p id="paused-note" class="note warn" hidden>Sharing is paused: the server sees no tab until you resume.</p>
-  </section>
-
-  <details>
-    <summary>Advanced</summary>
-    <form id="port-form" class="row">
-      <label for="port">Port</label>
-      <input id="port" type="number" min="1" max="65535" placeholder="47823–47830">
-      <button type="submit">Save</button>
-      <button id="reconnect" type="button">Reconnect</button>
-    </form>
-    <p id="version" class="note"></p>
-  </details>
+  <footer>
+    <button id="pause" class="link" type="button">Pause sharing</button>
+    <details id="settings">
+      <summary>Settings</summary>
+      <form id="port-form" class="inline">
+        <label for="port" class="muted small">Port</label>
+        <input id="port" type="number" min="1" max="65535" placeholder="47823–47830">
+        <button type="submit">Save</button>
+        <button id="reconnect" type="button">Reconnect</button>
+      </form>
+      <p id="managed" class="small muted" hidden></p>
+      <p id="version" class="small muted"></p>
+    </details>
+  </footer>
+  <p id="automation" class="warnbox small" hidden>This Chrome was started by automation software (<code>--enable-automation</code>): that is what shows “Chrome is being controlled by automated test software”, not this extension. Start Chrome normally to lose that bar.</p>
 
   <script type="module" src="popup.js"></script>
 </body>

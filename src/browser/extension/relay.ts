@@ -1,5 +1,5 @@
 /**
- * The relay between the sap-gui-mcp-server bridge extension and Playwright (see extension/PROTOCOL.md).
+ * The relay between the sap-gui-mcp-server extension and Playwright (see extension/PROTOCOL.md).
  *
  * `chrome.debugger` in an MV3 extension gives one CDP session per tab (plus
  * flat child sessions) and no browser target, while Playwright's
@@ -44,6 +44,37 @@ export interface ExtensionTab {
   title: string;
   openerTabId?: number;
 }
+
+/** A SAP system registered in the extension, as the server sees it (extension/background.js, systemsForServer). */
+export interface ExtensionSystem {
+  id: string;
+  name: string;
+  url: string;
+  kind: "webgui" | "fiori" | "other";
+  client: string;
+  language: string;
+  user: string;
+  /** password: the extension logs on with a saved password; sso: SAP logs on by itself; manual: the user types it. */
+  logon: "password" | "sso" | "manual";
+  /** A tab shows it now. */
+  open: boolean;
+}
+
+/** What the extension answers to "logon". */
+export interface LogonResult {
+  system: string;
+  client: string;
+  user: string;
+  /** logged_on: it logged on now; already: a tab was logged on; sso: opened, SAP logged on by itself; needs_user: the logon page waits for the user. */
+  state: "logged_on" | "already" | "sso" | "needs_user";
+  tabId?: number;
+  /** The tab's CDP target id: the server's session is "chrome:<targetId>". */
+  targetId?: string;
+  message?: string;
+}
+
+/** A logon waits for SAP's logon page, then for SAP's answer. */
+const LOGON_TIMEOUT_MS = 150_000;
 
 /** Why the last extension that tried was turned away: a wrong pairing code, or another extension already connected. */
 export type Refusal = "code" | "busy";
@@ -377,7 +408,7 @@ export class ExtensionRelay {
   private onCdpSocket(ws: WebSocket): void {
     this.track(ws);
     if (!this.ext) {
-      ws.close(1011, "the sap-gui-mcp-server bridge extension is not connected");
+      ws.close(1011, "the sap-gui-mcp-server extension is not connected");
       return;
     }
     this.cdp = ws;
@@ -399,10 +430,10 @@ export class ExtensionRelay {
   private extensionGone(): void {
     const ext = this.ext;
     this.ext = undefined;
-    if (ext) for (const p of ext.pending.values()) p.reject(new CdpError("The sap-gui-mcp-server bridge extension disconnected"));
+    if (ext) for (const p of ext.pending.values()) p.reject(new CdpError("The sap-gui-mcp-server extension disconnected"));
     this.tabs.clear();
     this.aliases.clear();
-    this.cdp?.close(1011, "the sap-gui-mcp-server bridge extension disconnected");
+    this.cdp?.close(1011, "the sap-gui-mcp-server extension disconnected");
   }
 
   /** Playwright went away: detach every tab, so Chrome's "is debugging this browser" bar goes. */
@@ -421,15 +452,29 @@ export class ExtensionRelay {
 
   // ─── Extension side ──────────────────────────────────────────────────
 
+  /** The SAP systems the user registered in the extension: name, address, client, user; never a password. */
+  async systems(): Promise<ExtensionSystem[]> {
+    const r = await this.request("systems");
+    return isObject(r) && Array.isArray(r.systems) ? (r.systems.filter(isObject) as unknown as ExtensionSystem[]) : [];
+  }
+
+  /**
+   * Asks the extension to open a registered system and log on: it fills SAP's logon page itself, in a tab
+   * withdrawn from this relay until the logon is over. The answer says who is logged on, or why not.
+   */
+  async logon(system: string): Promise<LogonResult> {
+    return (await this.request("logon", { system }, Math.max(this.requestTimeoutMs, LOGON_TIMEOUT_MS))) as LogonResult;
+  }
+
   /** Sends a request to the extension; resolves with its `result`. */
-  private request(type: string, fields: Params = {}): Promise<unknown> {
+  private request(type: string, fields: Params = {}, timeoutMs = this.requestTimeoutMs): Promise<unknown> {
     const ext = this.ext;
-    if (!ext) return Promise.reject(new CdpError("The sap-gui-mcp-server bridge extension is not connected"));
+    if (!ext) return Promise.reject(new CdpError("The sap-gui-mcp-server extension is not connected"));
     const id = ++ext.nextId;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        if (ext.pending.delete(id)) reject(new CdpError(`The sap-gui-mcp-server bridge extension did not answer "${type}" within ${Math.round(this.requestTimeoutMs / 1000)} s`));
-      }, this.requestTimeoutMs);
+        if (ext.pending.delete(id)) reject(new CdpError(`The sap-gui-mcp-server extension did not answer "${type}" within ${Math.round(timeoutMs / 1000)} s`));
+      }, timeoutMs);
       timer.unref?.();
       const done = <T>(f: (v: T) => void) => (v: T) => {
         clearTimeout(timer);

@@ -55,6 +55,7 @@
     "!dist/**/*.map",
     "skills",
     "extension",
+    "native-host",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
