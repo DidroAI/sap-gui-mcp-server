@@ -4,7 +4,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { policyFromEnv } from "../src/core/guard.js";
 import type { Action, Assessment } from "../src/core/types.js";
-import { createServer, statusTop, withStatus } from "../src/server.js";
+import { createServer, statusTop, UNCHANGED, withStatus } from "../src/server.js";
 import { FakeSurface } from "./fakes.js";
 
 /** Save (key 11) commits; everything else navigates. */
@@ -331,7 +331,29 @@ describe("session list", () => {
     const { surface, call } = await setup();
     surface.add({ id: "chrome:1", system: "ABA", transaction: "VA03" });
     expect((await call("sap_use", { session: "webgui" })).text).toContain("SCREEN VA03");
-    expect((await call("sap_look", { session: "fiori" })).error).toBe(true);
+    // A name that matches nothing, with one session open: that one, said in the first line.
+    const one = await call("sap_look", { session: "fiori" });
+    expect(one.error).toBe(false);
+    expect(one.text.split("\n")[0]).toBe('(No session matches "fiori"; using the only open one: webgui ABA, VA03.)');
+  });
+  test("with several sessions open, a name that matches none is still an error", async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA", transaction: "VA03" });
+    surface.add({ id: "chrome:2", system: "XYZ", transaction: "VA01" });
+    for (const tool of ["sap_look", "sap_use", "sap_screenshot"]) {
+      const r = await call(tool, { session: "sapgui" });
+      expect([tool, r.error]).toEqual([tool, true]);
+      expect(r.text).toContain('No open SAP session matches "sapgui"');
+    }
+  });
+  test("sap_act and sap_screenshot fall back to the only session too", async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA", transaction: "VA03" });
+    const act = await call("sap_act", { do: "set", id: "ctxtA", value: "1", session: "sapgui" });
+    expect(act.error).toBe(false);
+    expect(act.text.split("\n")[0]).toStartWith('(No session matches "sapgui"; using the only open one');
+    expect(surface.acts()).toHaveLength(1);
+    expect((await call("sap_screenshot", { session: "S4H" })).text).toStartWith('(No session matches "S4H"');
   });
 });
 
@@ -509,5 +531,68 @@ describe("a key named Save is Save to the guard (Astra's review, 2026-11-23)", (
     expect(r.text).toContain("writes are off");
     expect(surface.acts()).toEqual([]);
     expect(surface.log[0]).toEqual({ op: "assess", action: { do: "key", key: 11 } });
+  });
+});
+
+describe("a sap_look right after sap_act", () => {
+  const VIEW = 'TRANSACTION VA03  PROGRAM SAPMV45A  SCREEN 102\nctxtVBAK-VBELN  field  Order = ""  (edit)';
+  test("on the same screen answers in one line, once; the next look gives the view", async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA", transaction: "VA03" }, { view: VIEW });
+    await call("sap_act", { do: "set", id: "ctxtVBAK-VBELN", value: "1" });
+    expect((await call("sap_look")).text).toBe(UNCHANGED);
+    expect((await call("sap_look")).text).toContain("SCREEN 102");
+    // A batch's answer counts the same, and so does a look that asks only for the changes.
+    await call("sap_act", { actions: [{ do: "set", id: "ctxtVBAK-VBELN", value: "2" }] });
+    expect((await call("sap_look", { diff: true })).text).toBe(UNCHANGED);
+  });
+  test("a screen that changed since, or a look that asks for more, gets the screen", async () => {
+    const { surface, call } = await setup();
+    const s = surface.add({ id: "chrome:1", system: "ABA", transaction: "VA03" }, { view: VIEW });
+    await call("sap_act", { do: "set", id: "ctxtVBAK-VBELN", value: "1" });
+    s.view = VIEW.replace('""', '"1"');
+    expect((await call("sap_look")).text).toContain('Order = "1"');
+    await call("sap_act", { do: "set", id: "ctxtVBAK-VBELN", value: "1" });
+    expect((await call("sap_look", { full: true })).text).toStartWith("FULL");
+    await call("sap_act", { do: "set", id: "ctxtVBAK-VBELN", value: "1" });
+    expect((await call("sap_look", { id: "ctxtVBAK-VBELN" })).text).not.toBe(UNCHANGED);
+  });
+  test("an act that failed leaves nothing to compare with", async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA", transaction: "VA03" }, { view: VIEW });
+    await call("sap_look");
+    expect((await call("sap_act", { do: "eval", id: "x" })).error).toBe(true);
+    expect((await call("sap_look")).text).toContain("SCREEN 102");
+  });
+});
+
+describe("sap_act without an action to run", () => {
+  test('"actions":[] answers with the screen, not an error', async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA", transaction: "VA03" });
+    const r = await call("sap_act", { actions: [] });
+    expect(r.error).toBe(false);
+    expect(r.text).toBe('No actions sent ("actions" is empty): this is the screen.\n\nSCREEN VA03');
+    expect(surface.acts()).toEqual([]);
+  });
+  test('{"do":"look"} alone, or only looks in "actions", is the screen', async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA", transaction: "VA03" });
+    const one = await call("sap_act", { do: "look" });
+    expect(one.error).toBe(false);
+    expect(one.text).toBe("look is not an action: this is the screen.\n\nSCREEN VA03");
+    const only = await call("sap_act", { actions: [{ do: "look" }] });
+    expect(only.text).toBe("No action to run: this is the screen.\n\nSCREEN VA03");
+    expect(surface.acts()).toEqual([]);
+  });
+  test('{"do":"look"} in "actions" is the screen after the step before it, not an "Invalid option"', async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA", transaction: "VA03" });
+    const r = await call("sap_act", { actions: [{ do: "set", id: "ctxtA", value: "1" }, { do: "look" }, { do: "set", id: "ctxtB", value: "2" }] });
+    expect(r.error).toBe(false);
+    expect(r.text.split("\n")[0]).toBe("Ran 2 actions.");
+    expect(r.text).toContain("--- the screen after action 1");
+    expect(r.text).toContain("3. did set");
+    expect(surface.acts().map((a) => a.id)).toEqual(["ctxtA", "ctxtB"]);
   });
 });

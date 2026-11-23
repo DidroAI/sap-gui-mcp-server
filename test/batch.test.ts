@@ -172,6 +172,37 @@ describe("a batch that opens a transaction", () => {
   });
 });
 
+describe("an Enter right after an okcode", () => {
+  test("does not run: the okcode already submitted, and its line says so", async () => {
+    const { sap, batch } = await setup();
+    const r = await batch([{ do: "okcode", value: "/nZA03" }, ENTER, { do: "set", id: "ctxtZORD-VBELN", value: "5000" }, ENTER]);
+    expect(r.error).toBe(false);
+    expect(r.text.split("\n")[0]).toBe("Ran 3 actions; 1 Enter skipped.");
+    expect(r.text).toContain("(skipped Enter: okcode already submits)");
+    // The numbers are those of the list sent: the Enter after the set is action 4.
+    expect(r.text).toContain("3. set");
+    expect(r.text).toContain("4. key");
+    expect(dos(sap)).toEqual(["okcode", "set", "key 0"]);
+    expect(r.text).toContain("Display Order 5000");
+  });
+  test('"Enter" by name and any okcode count; an Enter that says more, or comes later, runs', async () => {
+    expect(parseBatch([{ do: "okcode", value: "=SAVE" }, { do: "key", key: "enter" }]).map((s) => [s.n, s.action.do, s.note])).toEqual([[1, "okcode", "(skipped Enter: okcode already submits)"]]);
+    expect(parseBatch([{ do: "okcode", value: "/nZA03" }, { ...ENTER, expect: { popup: true } }])).toHaveLength(2);
+    expect(parseBatch([{ do: "okcode", value: "/nZA03" }, CUSTOMER, ENTER])).toHaveLength(3);
+    expect(parseBatch([{ do: "okcode", value: "/nZA03" }, { do: "look" }, ENTER])).toHaveLength(2);
+  });
+  test("an okcode SAP answers with an error: the answer has the error, and no Enter went after it", async () => {
+    const { sap, batch } = await setup();
+    const r = await batch([{ do: "okcode", value: "/nZZ99" }, ENTER]);
+    expect(r.text.split("\n")[0]).toBe("Ran 1 action; 1 Enter skipped.");
+    expect(r.text).toContain("STATUS E: Transaction ZZ99 does not exist");
+    expect(dos(sap)).toEqual(["okcode"]);
+    // With more after it, the batch stops there, and says the rest did not run.
+    const more = await batch([{ do: "okcode", value: "/nZZ99" }, ENTER, CUSTOMER]);
+    expect(more.text.split("\n")[0]).toStartWith("Ran 1 of 3 actions. Stopped: after action 1, the status bar shows E: Transaction ZZ99 does not exist. Actions 2 to 3 did not run.");
+  });
+});
+
 describe("a write goes only to the screen the agent last saw", () => {
   // SAP moved on behind the agent's back (a step answered "nothing was sent" while SAP went on, live
   // 2026-11-20): the agent decided on screen 200, SAP is on screen 100 now.
@@ -285,13 +316,12 @@ describe("a batch and the guard: each action has its own decision", () => {
       expect(r.text.toLowerCase()).toContain("action 3 of 3");
       expect(r.text).toEndWith("Nothing ran.");
     }
-    // A "do" the schema does not list is refused by the input validation, before the server runs anything.
+    // A "do" no surface knows is refused with the list of the ones there are, before anything runs.
     const unknown = await batch([OPEN, CUSTOMER, { do: "eval", id: "x" }]);
     expect(unknown.error).toBe(true);
-    expect(unknown.text).toContain("actions[2].do");
+    expect(unknown.text).toContain('Action 3 of 3: Unknown action "eval"');
     expect(sap.acts).toEqual([]);
     expect((await batch(Array.from({ length: MAX_BATCH + 1 }, () => ENTER))).text).toContain(`${MAX_BATCH} actions at most`);
-    expect((await batch([])).error).toBe(true);
     expect((await call("sap_act", { action: ENTER, actions: [ENTER] })).text).toBe('Send one action ("do" and its fields) or "actions", not both.');
     expect((await call("sap_act", { ...ENTER, actions: [ENTER] })).error).toBe(true);
     expect(sap.acts).toEqual([]);
@@ -342,6 +372,6 @@ describe("the rules that end a batch", () => {
   });
   test("expect and show are not part of the action", () => {
     const [s] = parseBatch([{ do: "key", value: 0, expect: { screen: 4001, popup: false }, show: true }]);
-    expect(s).toEqual({ action: normalizeAction({ do: "key", key: 0 }), expect: { screen: "4001", popup: false }, show: true, unseen: false });
+    expect(s).toEqual({ n: 1, action: normalizeAction({ do: "key", key: 0 }), expect: { screen: "4001", popup: false }, show: true, unseen: false });
   });
 });

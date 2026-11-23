@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { ChromeTab } from "../src/browser/chrome.js";
 import { ActionError, type SessionInfo } from "../src/core/types.js";
-import { FioriDriver } from "../src/fiori/driver.js";
+import { FioriDriver, fioriGridOp, fioriIntentOfOkcode, HOME_INTENT, ui5RowOf } from "../src/fiori/driver.js";
 import { ui5Logon } from "../src/fiori/ui5.js";
 
 interface Fake {
@@ -161,6 +161,72 @@ describe("fiori driver: open, Back and unknown keys", () => {
     const first = on({ ui5Back: "HOME" });
     expect(await first.d.act({ do: "key", key: 3 })).toContain("the launchpad's home page was opened");
     expect(first.clicks).toEqual([]);
+  });
+
+  test("an okcode that names an app opens it; /n opens the home page; a transaction is still refused", async () => {
+    for (const [value, intent] of [
+      ["/nPurchaseOrder-manage", "#PurchaseOrder-manage"],
+      ["#Material-transferStock", "#Material-transferStock"],
+      ["/n#SalesOrder-display?SalesOrder=4711", "#SalesOrder-display?SalesOrder=4711"],
+      ["/n", "#Shell-home"],
+    ] as const) {
+      const { d, ran } = on({ ui5Open: "OK" });
+      expect(await d.assess({ do: "okcode", value })).toMatchObject({ risk: "navigate" });
+      const said = await d.act({ do: "okcode", value });
+      expect([value, said]).toEqual([value, expect.stringContaining(`okcode ${value} in a Fiori tab is `)]);
+      expect(said).toContain(`open ${intent}; idle`);
+      expect(ran).toContain(`ui5Open(${intent})`);
+    }
+    const { d } = on({ ui5Open: "OK" });
+    await expect(d.act({ do: "okcode", value: "/nVA01" })).rejects.toThrow('"okcode" works on SAP GUI screens only');
+  });
+  test("a grid row selected or opened is the row selected or pressed", async () => {
+    const pressed = on({ ui5RowOf: { id: "app--items-row3" }, ui5Control: { status: "TARGET", note: "sap.m.ColumnListItem app--items-row3" } });
+    expect(await pressed.d.act({ do: "grid", id: "items", row: 3, how: "double" })).toStartWith("grid row 3 in a Fiori tab is press on the row; press sap.m.ColumnListItem app--items-row3; idle");
+    expect(pressed.clicks).toEqual(["target"]);
+    const selected = on({ ui5RowOf: { id: "app--items-row0" }, ui5Control: { status: "DONE", note: "sap.m.ColumnListItem app--items-row0 selected" } });
+    expect(await selected.d.act({ do: "grid", id: "items", row: 0, how: "select" })).toStartWith("grid row 0 in a Fiori tab is select on the row; select ");
+    const missing = on({ ui5RowOf: { why: "row 40 of items is not on screen (rows 0 to 19 are): scroll to it first" } });
+    await expect(missing.d.act({ do: "grid", id: "items", row: 40, how: "select" })).rejects.toThrow("row 40 of items is not on screen");
+    // A cell, or a grid without a row, has no Fiori meaning.
+    await expect(on({}).d.act({ do: "grid", id: "items", row: 1, col: "A", how: "cell" })).rejects.toThrow('"grid" works on SAP GUI screens only');
+  });
+});
+
+describe("fiori: what SAP GUI actions mean in a Fiori tab", () => {
+  test("okcode values that are an app's intent, or the home page", () => {
+    expect(fioriIntentOfOkcode("/nPurchaseOrder-manage")).toBe("#PurchaseOrder-manage");
+    expect(fioriIntentOfOkcode(" /N#Material-transferStock ")).toBe("#Material-transferStock");
+    expect(fioriIntentOfOkcode("#X-y")).toBe("#X-y");
+    expect(fioriIntentOfOkcode("/n")).toBe(HOME_INTENT);
+    for (const v of ["/nVA01", "VA01", "PurchaseOrder-manage", "/oX-y", "/nhttps://evil.example/x-y", "=SAVE", 3]) expect([v, fioriIntentOfOkcode(v)]).toEqual([v, undefined]);
+  });
+  test("grid how: select is select, double (and open, press) is a press; others none", () => {
+    expect(fioriGridOp({ do: "grid", id: "t", row: 1 })).toBe("select");
+    expect(fioriGridOp({ do: "grid", id: "t", row: 1, how: "double" })).toBe("press");
+    expect(fioriGridOp({ do: "grid", id: "t", row: 1, how: "cell" })).toBeUndefined();
+    expect(fioriGridOp({ do: "grid", id: "t", how: "select" })).toBeUndefined();
+  });
+  test("ui5RowOf finds the row of a list, of a grid table on screen, through a smart table", () => {
+    const ctl = (id: string, more: Record<string, unknown> = {}) => ({ getId: () => id, ...more });
+    const rows = [0, 1, 2].map((i) => ctl(`app--grid-rows-row${i}`, { getBindingContext: () => ({}) }));
+    const items = [0, 1].map((i) => ctl(`app--list-item${i}`));
+    const inner = ctl("app--smart-ui5table", { getItems: () => items });
+    const all = [ctl("app--list", { getItems: () => items }), ctl("app--grid", { getRows: () => rows, getFirstVisibleRow: () => 10 }), ctl("app--smart", { getTable: () => inner }), ctl("app--text")];
+    const g = globalThis as unknown as { window?: unknown };
+    const had = g.window;
+    g.window = { sap: { ui: { getCore: () => ({ mElements: Object.fromEntries(all.map((c) => [c.getId(), c])) }) } } };
+    try {
+      expect(ui5RowOf({ handle: "list", row: 1 })).toEqual({ id: "app--list-item1" });
+      expect(ui5RowOf({ handle: "#grid", row: 11 })).toEqual({ id: "app--grid-rows-row1" });
+      expect(ui5RowOf({ handle: "grid", row: 3 })).toEqual({ why: "row 3 of grid is not on screen (rows 10 to 12 are): scroll to it first" });
+      expect(ui5RowOf({ handle: "smart", row: 0 })).toEqual({ id: "app--list-item0" });
+      expect(ui5RowOf({ handle: "list", row: 5 })).toEqual({ why: "list has 2 rows loaded; row 5 is not among them" });
+      expect(ui5RowOf({ handle: "text", row: 0 })).toEqual({ why: "text is not a table or a list" });
+      expect(ui5RowOf({ handle: "nope", row: 0 })).toBeNull();
+    } finally {
+      g.window = had;
+    }
   });
 });
 

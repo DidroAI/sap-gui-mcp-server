@@ -48,6 +48,80 @@ const KEY_HELP = "Fiori keys: Enter, Space, Escape, Tab, Shift+Tab, F4, Delete, 
 const unknownKey = (action: Action) => new ActionError(`Unknown key ${JSON.stringify(action.key ?? action.value ?? "")}. ${KEY_HELP}`);
 const OPEN_HELP = 'open takes the intent of a launchpad app, e.g. {"do":"open","app":"#SalesOrder-manage"} (parameters allowed: "#SalesOrder-display?SalesOrder=4711"); never a URL: the tab stays on its launchpad.';
 
+/** The launchpad's home page, as an intent. */
+export const HOME_INTENT = "#Shell-home";
+
+/**
+ * The launchpad intent an okcode means in a Fiori tab, or undefined. Agents
+ * send SAP GUI's command for an app: "#Material-transferStock",
+ * "/nPurchaseOrder-manage", "/n#PurchaseOrder-manage" (42 refusals in one
+ * benchmark), and "/n" for "leave to the start", which here is the home page.
+ */
+export function fioriIntentOfOkcode(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const v = value.trim();
+  if (/^\/n$/i.test(v)) return HOME_INTENT;
+  const m = /^(?:\/n\s*)?(#?[A-Za-z0-9_]+-[A-Za-z0-9_].*)$/i.exec(v);
+  if (!m || !(v.startsWith("#") || /^\/n/i.test(v))) return undefined;
+  return intentOf(m[1]);
+}
+
+/** What SAP GUI's grid action means on a Fiori table: a row selected, or a row pressed (opened). */
+export function fioriGridOp(action: Action): "select" | "press" | undefined {
+  if (action.do !== "grid" || typeof action.row !== "number") return undefined;
+  const how = String(action.how ?? "select").toLowerCase();
+  if (how === "select") return "select";
+  if (how === "double" || how === "dblclick" || how === "open" || how === "press" || how === "click") return "press";
+  return undefined;
+}
+
+/** The answer of `ui5RowOf`: the row's id, or why there is none. */
+type RowOf = { id: string } | { why: string } | null;
+
+/**
+ * In the page: the id of row `row` (counted from 0) of a UI5 table or list,
+ * found by the table's id from the view; null when no control of this frame
+ * has that id. Runs in the browser: it uses nothing from outside itself.
+ */
+export function ui5RowOf(a: { handle: string; row: number }): RowOf {
+  // biome-ignore lint/suspicious/noExplicitAny: UI5 objects in the page
+  type U = any;
+  const sap = (window as U).sap;
+  if (!sap?.ui?.getCore) return null;
+  const El = sap.ui.require?.("sap/ui/core/Element") ?? sap.ui.core?.Element;
+  const reg = El?.registry ?? sap.ui.getCore().mElements;
+  const all: U[] = reg?.all ? Object.values(reg.all()) : Object.values(reg ?? {});
+  const h = String(a.handle ?? "")
+    .replace(/^#/, "")
+    .replace(/^id=/, "");
+  let c: U = all.find((x) => x.getId() === h);
+  if (!c) {
+    const hits = all.filter((x) => {
+      const id: string = x.getId();
+      return id.endsWith(`--${h}`) || id.endsWith(`::${h}`);
+    });
+    const vis = hits.filter((x) => x.getDomRef?.()?.getBoundingClientRect?.().width > 0);
+    c = (vis.length ? vis : hits)[0];
+  }
+  if (!c) return null;
+  // A smart or an mdc table wraps the table that holds the rows.
+  for (let i = 0; i < 3 && c && !c.getItems && !c.getRows; i++) c = c.getTable?.() ?? c._oTable;
+  if (!c) return { why: `${h} is not a table or a list` };
+  if (typeof c.getItems === "function") {
+    const items: U[] = c.getItems().filter((x: U) => !x.isA?.("sap.m.GroupHeaderListItem"));
+    const it = items[a.row];
+    return it ? { id: it.getId() } : { why: `${h} has ${items.length} rows loaded; row ${a.row} is not among them` };
+  }
+  if (typeof c.getRows === "function") {
+    const first: number = c.getFirstVisibleRow?.() ?? 0;
+    const rows: U[] = c.getRows();
+    const r = rows[a.row - first];
+    if (!r || !r.getBindingContext?.()) return { why: `row ${a.row} of ${h} is not on screen (rows ${first} to ${first + rows.length - 1} are): scroll to it first` };
+    return { id: r.getId() };
+  }
+  return { why: `${h} is not a table or a list` };
+}
+
 const within = <T>(p: Promise<T>, ms: number, otherwise: T): Promise<T> =>
   Promise.race([p.catch(() => otherwise), new Promise<T>((r) => setTimeout(() => r(otherwise), ms))]);
 
@@ -322,13 +396,41 @@ export class FioriDriver implements Driver {
     if (frame) return webguiAssessInFrame(frame, action);
     // A key the surface does not have fails here, before the user is asked to confirm it.
     if (action.do === "key" && ui5.length && !keyOf(action)) throw unknownKey(action);
-    if (WEBGUI_ONLY.has(action.do)) return { risk: "read", reason: `"${action.do}" needs a Web GUI screen, and none is open in this tab` };
+    if (WEBGUI_ONLY.has(action.do)) {
+      // An okcode that names an app, a grid row: judged as the Fiori action it becomes.
+      const as = await this.inFiori(action, ui5).catch(() => undefined);
+      if (as) return this.assess(as.action);
+      return { risk: "read", reason: `"${action.do}" needs a Web GUI screen, and none is open in this tab` };
+    }
     // The focused control and the open dialog's default button (Enter and Space press them), and the page's language.
     const here = (await this.control({ handle: "", op: "facts" }, ui5))?.result;
     const ctx = { focused: here?.facts, dialogDefault: here?.dialogDefault, language: here?.language };
     if (action.do === "key" || !action.id) return assessAction(action, undefined, ctx);
     const hit = await this.control({ handle: action.id, op: "facts" }, ui5);
     return assessAction(action, hit?.result.facts, { ...ctx, language: hit?.result.language ?? ctx.language });
+  }
+
+  /**
+   * What an okcode or a grid action means in a tab with no Web GUI screen:
+   * "/nPurchaseOrder-manage" opens that app, "/n" the home page; a grid row
+   * selected or opened is the row selected or pressed. Undefined when it
+   * means nothing here; an ActionError when the row is not there.
+   */
+  private async inFiori(action: Action, ui5: Frame[]): Promise<{ action: Action; said: string } | undefined> {
+    if (action.do === "okcode") {
+      const app = fioriIntentOfOkcode(action.value);
+      if (!app) return undefined;
+      return { action: { do: "open", app }, said: `okcode ${String(action.value)} in a Fiori tab is ${app === HOME_INTENT ? "the launchpad's home page" : `open ${app}`}` };
+    }
+    const op = fioriGridOp(action);
+    if (!op) return undefined;
+    for (const f of ui5) {
+      const r = await f.evaluate(ui5RowOf, { handle: String(action.id ?? ""), row: action.row as number }).catch((): RowOf => null);
+      if (!r) continue;
+      if ("why" in r) throw new ActionError(r.why);
+      return { action: { do: op, id: r.id }, said: `grid row ${action.row} in a Fiori tab is ${op} on the row` };
+    }
+    throw new ActionError(`No table "${String(action.id ?? "")}" on this screen. Take the id from sap_look.`);
   }
 
   // ---- act
@@ -343,7 +445,13 @@ export class FioriDriver implements Driver {
       await this.idle();
       return note;
     }
-    if (WEBGUI_ONLY.has(action.do)) throw new ActionError(`"${action.do}" works on SAP GUI screens only; this Fiori tab shows none. Use ids from sap_look with set, press, select, check, combo, key, f4 or scroll.`);
+    if (WEBGUI_ONLY.has(action.do)) {
+      const as = await this.inFiori(action, ui5);
+      if (as) return `${as.said}; ${await this.act(as.action)}`;
+      throw new ActionError(
+        `"${action.do}" works on SAP GUI screens only; this Fiori tab shows none. Use ids from sap_look with set, press, select, check, combo, key, f4 or scroll; open an app with {"do":"open","app":"#Object-action"}.`,
+      );
+    }
     if (!ui5.length) throw new ActionError("SAPUI5 is not running in this tab (a logon page, or the app is still loading).");
 
     if (action.do === "key") {
