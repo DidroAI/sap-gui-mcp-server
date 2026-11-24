@@ -69,6 +69,29 @@ describe("init", () => {
     expect(f.lines).toContain("✓ sap.config.ts: overwritten");
   });
 
+  test("an edited skill or Cursor rule is kept, and replaced with --force", async () => {
+    // No client found: Claude Code's project skill.
+    await init({ ...base(), yes: true });
+    const skill = join(cwd, ".claude", "skills", "sap-gui-drive", "SKILL.md");
+    writeFileSync(skill, "mine");
+    const r = await init({ ...base(), yes: true });
+    expect(read(skill)).toBe("mine");
+    expect(r.lines).toContain(`– Claude Code skill sap-gui-drive: differs, kept (--force replaces it) (${join(".claude", "skills", "sap-gui-drive")})`);
+    const f = await init({ ...base(), yes: true, force: true });
+    expect(read(skill)).toBe(read(join(packageRoot(), "skills", "sap-gui-drive", "SKILL.md")));
+    expect(f.lines.some((l) => l.startsWith("• Claude Code skill sap-gui-drive: updated"))).toBe(true);
+    // Cursor found: its rule.
+    mkdirSync(join(home, ".cursor"));
+    await init({ ...base(), yes: true });
+    const rule = join(cwd, ".cursor", "rules", "sap-gui-drive.mdc");
+    writeFileSync(rule, "my rule");
+    const c = await init({ ...base(), yes: true });
+    expect(read(rule)).toBe("my rule");
+    expect(c.lines.some((l) => l.startsWith("– Cursor skill sap-gui-drive: differs, kept"))).toBe(true);
+    await init({ ...base(), yes: true, force: true });
+    expect(read(rule)).toStartWith("---\ndescription:");
+  });
+
   test("--dry-run writes nothing", async () => {
     mkdirSync(join(home, ".cursor"));
     writeFileSync(join(cwd, ".gitignore"), "");
