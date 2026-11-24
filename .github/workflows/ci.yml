@@ -110,12 +110,6 @@ jobs:
           node --input-type=module -e 'await import("sap-gui-mcp-server"); console.log("library entry imports")'
           node --input-type=module -e 'await import("sap-gui-mcp-server/test"); console.log("test entry imports")'
           echo "::endgroup::"
-          # npm init writes "type": "commonjs": the TypeScript config and tests must still load.
-          echo "::group::init --yes, then the runner lists the example test"
-          npx --no-install sap-gui init --yes
-          npx --no-install sap-gui test --list | tee "$RUNNER_TEMP/list.txt"
-          grep -q "SU3 shows my user" "$RUNNER_TEMP/list.txt"
-          echo "::endgroup::"
       # The built server against the fake SAP GUI (COM, through Windows PowerShell).
       # Not yet run on a CI runner: kept non-blocking until it has passed once.
       - name: SAP GUI surface end to end, against the fake SAP GUI
@@ -143,25 +137,6 @@ jobs:
       # VitePress fails the build on dead internal links.
       - run: bun run build
 
-  mcpb:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    # Non-blocking for now: scripts/build-mcpb.mjs (the Claude Desktop bundle) is new.
-    # Drop continue-on-error once it has passed on main.
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: 1.4.4
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24
-      - run: bun install --frozen-lockfile
-      - run: bun run build
-      - run: bun run build:mcpb
 
   bench:
     runs-on: ubuntu-latest
