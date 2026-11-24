@@ -40,7 +40,7 @@ import { notationNote } from "../core/notation.js";
 import { HostError, MAX_TIMEOUT_MS, powershellExe, PsHost, READ_TIMEOUT_MS } from "../sapgui/host.js";
 import type { Transport } from "../sapgui/facts.js";
 import { vkeyNumber } from "../sapgui/keys.js";
-import { type Cells, cellMetrics, cellsFromEnv, type HostWindow, pickWindow, type Rect } from "./geometry.js";
+import { type Cells, cellMetrics, cellPoint, cellsFromEnv, type HostWindow, pickWindow, type Rect } from "./geometry.js";
 import { type Geometry, type Named, namedControl, type Plan, plainMisuse, planCombo, planGrid, planGridScroll, planPage, planPlain, planTableRow, planToolbar, planTree, position, scrollables, scrollTarget, type Step, type TreeChange, toolbarKey, untypedKey } from "./plan.js";
 import { type Hop, startRouter } from "./router.js";
 import { lookControl } from "./rows.js";
@@ -686,8 +686,7 @@ export class DiagDriver implements Driver {
     return {
       at: (w, row, col, width = 1) => {
         const c = cellsOf(w);
-        const [left, topPx] = hostOf(w).area as Rect;
-        return [left + c.x0 + c.cw * col + Math.min(Math.floor((c.cw * Math.max(1, width)) / 2), 3 * c.cw), topPx + c.ch * row + c.y0];
+        return cellPoint(hostOf(w).area as Rect, w.size, row, col, width, c);
       },
       get cells() {
         return cellsOf(active(s));
