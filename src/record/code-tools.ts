@@ -230,7 +230,7 @@ export function staticProblems(src: string): string[] {
       const head = src.slice(at, lit?.at);
       if (/^import\s+type\b/.test(head)) continue;
       const braces = /\{([^}]*)\}/.exec(head);
-      if (!braces || /^import\s+[\w$]+\s*,|\*\s*as\b/.test(head)) {
+      if (!braces || /^import\s+[\w$]+\s*,/.test(head) || /\*\s*as\b/.test(head)) {
         problems.push(`line ${lineOf(src, at)}: import named exports only: import { expect, test } from "${spec}"`);
         continue;
       }

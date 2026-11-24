@@ -3,7 +3,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseTest } from "../src/record/format.js";
-import { callOf, codeOf, connect, draftTest, expect, ExpectError, parseGrid, Refused } from "../src/sdk/index.js";
+import { bareLabel, callOf, codeOf, connect, draftTest, expect, ExpectError, parseGrid, Refused } from "../src/sdk/index.js";
 import { FakeSap } from "./record-fakes.js";
 
 const quick = { timeout: 300 };
@@ -151,5 +151,15 @@ describe("table controls", () => {
     const g = parseGrid(text, "tbl");
     bunExpect(g.columns).toEqual(["VBAP-POSNR", "RV45A-MABNR", "VBAP-ARKTX", "VBAPD-EPMEH", "TPRIT-BEZEI"]);
     bunExpect(g.rows[0]?.cells).toEqual(["10", "P-109", "Pumpe Stahlguss", "true", "Standard item"]);
+  });
+
+  test("long adversarial lines are read in linear time", () => {
+    const t0 = performance.now();
+    parseGrid(`g  grid  ${"9".repeat(50_000)}; columns: ${"columns: a".repeat(20_000)}`, "g");
+    const legend = `  columns: ${"; 9 more to the left (".repeat(20_000)}\r`;
+    parseGrid(`tbl  table  rows 1\n${legend}\n  row 0: ${"=a".repeat(50_000)}\r`, "tbl");
+    bunExpect(bareLabel(`${" ".repeat(50_000)}x`)).toBe("x");
+    bunExpect(bareLabel("Continue (Enter) ")).toBe("Continue");
+    bunExpect(performance.now() - t0).toBeLessThan(200);
   });
 });

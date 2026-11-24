@@ -293,7 +293,7 @@ export async function clickMenuRow(session: WebGuiSession, id: string): Promise<
   const dom = await f.evaluate(menuRowOpen, id).catch(() => "");
   if (!dom) return false;
   try {
-    await session.roundtrip(() => f.locator(`tr[id="${dom.replace(/"/g, '\\"')}"]`).first().click({ timeout: MENU_CLICK_MS }), 1200);
+    await session.roundtrip(() => f.locator(`tr[id="${dom.replace(/["\\]/g, "\\$&")}"]`).first().click({ timeout: MENU_CLICK_MS }), 1200);
   } catch (e) {
     // The row was open when read and could not be clicked: its menu closed again, or something covers it.
     if (e instanceof Error && /Timeout \d+ms exceeded/.test(e.message)) throw new MenuGone(`The menu entry ${id} could not be clicked: its menu closed again or is covered. Nothing was chosen; look at the screen and open the menu again.`);

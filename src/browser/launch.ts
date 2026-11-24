@@ -93,10 +93,17 @@ export function sapProfileDir(platform: NodeJS.Platform, env: Env, home: string 
   return posix.join(env.XDG_DATA_HOME || posix.join(home, ".local", "share"), app, "chrome");
 }
 
+/** `s` without the characters of `chars` at its end. A loop: a regex such as /\/+$/ is slow on a long run of them that does not end the string. */
+export function trimEndOf(s: string, chars: string): string {
+  let end = s.length;
+  while (end > 0 && chars.includes(s.charAt(end - 1))) end--;
+  return s.slice(0, end);
+}
+
 /** The small JSON file next to the profile directory: the last SAP address seen in the window. */
-export const stateFile = (profileDir: string): string => `${profileDir.replace(/[\\/]+$/, "")}.json`;
+export const stateFile = (profileDir: string): string => `${trimEndOf(profileDir, "\\/")}.json`;
 /** The local start page, next to the profile directory. */
-export const startPageFile = (profileDir: string): string => `${profileDir.replace(/[\\/]+$/, "")}-start.html`;
+export const startPageFile = (profileDir: string): string => `${trimEndOf(profileDir, "\\/")}-start.html`;
 
 export const START_PAGE = `<!doctype html>
 <html lang="en">

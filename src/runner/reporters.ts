@@ -58,8 +58,21 @@ export function driftLines(r: TestResult): string[] {
 function where(r: TestResult, rootDir: string): string | undefined {
   const file = r.file.split("/").join(sep);
   const line = r.error?.stack?.split("\n").find((l) => l.includes(file));
-  const m = line?.match(/\(?((?:file:\/\/)?[^()]+:\d+:\d+)\)?\s*$/);
-  return m?.[1] ? relative(rootDir, m[1].replace(/^file:\/\//, "")) : undefined;
+  const at = line === undefined ? undefined : stackPlace(line);
+  return at ? relative(rootDir, at) : undefined;
+}
+
+/**
+ * "    at fn (file:///x/a.sap.ts:5:60)" or "    at /x/a.sap.ts:5:60" -> "/x/a.sap.ts:5:60".
+ * Cut with lastIndexOf, not one regex over the line: that is slow on a long line that does not end in a place.
+ */
+export function stackPlace(line: string): string | undefined {
+  const t = line.trim().replace(/\)$/, "");
+  const place = t
+    .slice(t.lastIndexOf("(") + 1)
+    .replace(/^at /, "")
+    .replace(/^file:\/\//, "");
+  return /:\d+:\d+$/.test(place) ? place : undefined;
 }
 
 /** The failures, numbered, then the counts. */

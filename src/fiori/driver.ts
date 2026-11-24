@@ -339,7 +339,7 @@ export class FioriDriver implements Driver {
     this.idleAt = Date.now();
     // A launchpad whose logon expired looks busy: its OData requests never come back (live 2026-11-20, an agent
     // spent 5 minutes on it). When a wait ran out, SAP is asked once whether this tab is still logged on.
-    if (/^busy:|waitForUI5 timed out/.test(note) && (await logonState(this.page, this.info.client)) === "expired") throw new ActionError(FIORI_LOGGED_OFF);
+    if ((note.startsWith("busy:") || note.includes("waitForUI5 timed out")) && (await logonState(this.page, this.info.client)) === "expired") throw new ActionError(FIORI_LOGGED_OFF);
     return note || "no UI5";
   }
 
