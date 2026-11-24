@@ -15,6 +15,9 @@
  *    only the WebSocket, and asks the user to allow each new connection: so
  *    we keep one connection.
  *
+ * With SAP_BROWSER=extension, none of these: the server reaches Chrome through the
+ * sap-gui-mcp-server extension and its local relay (src/browser/extension/).
+ *
  * Nothing else is tried. In attach mode in particular the server does not attach to
  * 127.0.0.1:9222 on its own: a browser listening there may be another tool's
  * (a test runner's, another agent's), not the user's. A Chrome started with
@@ -235,7 +238,8 @@ async function open(env: Env, key: string, options: OpenOptions = {}): Promise<C
       });
       return c;
     } catch (e) {
-      errors.push(`${endpoint.from}: ${(e as Error).message.split("\n")[0]}`);
+      // The extension relay's CDP path is its secret: Playwright's errors repeat the URL.
+      errors.push(`${endpoint.from}: ${(e as Error).message.split("\n")[0]?.replace(/\/cdp\/[0-9a-f]+/g, "/cdp/…")}`);
       return undefined;
     }
   };
@@ -246,6 +250,15 @@ async function open(env: Env, key: string, options: OpenOptions = {}): Promise<C
     if (c) return c;
     throw new Error(`No Chrome answers at SAP_CHROME_CDP=${explicit.url} (${errors.join("; ")}).`);
   }
+  // >>> SAP_BROWSER=extension: the extension's relay is the endpoint (src/browser/extension/); nothing else is tried (SAP_CHROME_CDP wins, as over the other modes).
+  if (extensionMode(env)) {
+    const { extensionEndpoint } = await import("./extension/index.js");
+    const endpoint = await extensionEndpoint(env);
+    const c = await attach(endpoint);
+    if (c) return c;
+    throw new Error(`The sap-gui-mcp-server extension is connected, but the server could not attach through it (${errors.join("; ")}).`);
+  }
+  // <<< SAP_BROWSER=extension
   // 2. The SAP window: the one that runs, else a Chrome started now.
   if (browserMode(env) === "launch") {
     const window = await ensureSapWindow(env, options.launch === false ? { launch: false } : {});
@@ -268,10 +281,13 @@ async function open(env: Env, key: string, options: OpenOptions = {}): Promise<C
   );
 }
 
+/** SAP_BROWSER=extension: Chrome is reached through the sap-gui-mcp-server extension (src/browser/extension/). */
+export const extensionMode = (env: Env): boolean => env.SAP_BROWSER?.trim().toLowerCase() === "extension" && !env.SAP_CHROME_CDP?.trim();
+
 async function chrome(env: Env, options: OpenOptions = {}): Promise<Connection> {
   const cdp = env.SAP_CHROME_CDP?.trim() ?? "";
-  // The key names the browser: the endpoint, or the SAP window of a profile directory, or the everyday Chrome ("").
-  const key = cdp || (browserMode(env) === "launch" ? `launch|${env.SAP_CHROME_PROFILE?.trim() ?? ""}` : "");
+  // The key names the browser: the extension, the endpoint, the SAP window of a profile directory, or the everyday Chrome ("").
+  const key = cdp || (extensionMode(env) ? "extension|" : browserMode(env) === "launch" ? `launch|${env.SAP_CHROME_PROFILE?.trim() ?? ""}` : "");
   if (connection?.key === key && connection.browser.isConnected()) return connection;
   // A call that may not start Chrome and one that may do not share a pending connection.
   const pending = options.launch === false ? `${key}|quiet` : key;
@@ -450,11 +466,24 @@ export async function disconnectChrome(): Promise<void> {
   connection = undefined;
   // On a browser reached with connectOverCDP, close() disconnects; it does not end the browser.
   if (c?.browser.isConnected()) await c.browser.close().catch(() => {});
+  // >>> SAP_BROWSER=extension: the relay's port is closed too, so the process can end.
+  if (c?.endpoint.from.includes("extension")) await (await import("./extension/index.js")).stopExtensionRelay().catch(() => {});
+  // <<< SAP_BROWSER=extension
 }
+
+/** Doctor gives an asleep extension worker one wake-up (Chrome's alarms fire every 30 s at most). */
+const EXTENSION_DOCTOR_WAIT_MS = 35_000;
 
 /** Setup checks: is there a Chrome we can attach to, which version, how many tabs; when not, the one step to take. */
 export async function chromeDoctor(env: Record<string, string | undefined>): Promise<DoctorCheck[]> {
   const check = "Chrome";
+  // >>> SAP_BROWSER=extension: is the extension installed, paired and connected; then the same checks as below.
+  if (extensionMode(env)) {
+    const { extensionDoctor } = await import("./extension/index.js");
+    const checks = await extensionDoctor(env, EXTENSION_DOCTOR_WAIT_MS);
+    if (!checks.every((x) => x.ok)) return checks;
+  }
+  // <<< SAP_BROWSER=extension
   let c: Connection;
   if (usesSapWindow(env)) {
     // Doctor starts nothing: it says whether the SAP window runs, and connects only to one that does.
@@ -475,6 +504,7 @@ export async function chromeDoctor(env: Record<string, string | undefined>): Pro
     c = await chrome(env, { launch: false });
   } catch (e) {
     const message = (e as Error).message;
+    if (extensionMode(env)) return [{ ok: false, check, detail: message }];
     if (env.SAP_CHROME_CDP)
       return [{ ok: false, check, detail: message.split(/(?<=\.) /)[0] ?? message, fix: "Check that this Chrome runs with --remote-debugging-port and --user-data-dir, or unset SAP_CHROME_CDP to use your everyday Chrome." }];
     if (usesSapWindow(env)) return [{ ok: false, check, detail: message, fix: "Close the SAP window (the Chrome that this server opened), then run sap-gui-mcp-server browser." }];

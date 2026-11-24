@@ -66,6 +66,8 @@
     "!docs/tool-review.md",
     "!docs/live-writes-2026-11-21.md",
     "!docs/node22-linux-2026-11-21.md",
+    "extension",
+    "native-host",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"

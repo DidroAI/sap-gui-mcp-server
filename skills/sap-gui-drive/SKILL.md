@@ -7,7 +7,8 @@ description: Work in SAP screens with the sap-gui MCP tools — run a transactio
 
 The `sap-gui` server ([sap-gui-mcp-server](https://github.com/DidroAI/sap-gui-mcp-server);
 its tools are named `sap_*`, whatever name the server was added under) works
-in the SAP sessions the user already has open, as that user. It never logs on. Everything you do is what the user could
+in the SAP sessions the user already has open, as that user. It never logs on, except with `sap_logon` to a system the user
+registered in the Chrome extension (`sap_systems` lists them; the extension types the password). Everything you do is what the user could
 do by hand, under their authorisations.
 
 ## The loop

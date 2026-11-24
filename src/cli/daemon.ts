@@ -26,6 +26,7 @@ import type { Surface } from "../core/types.js";
 import { viewModeFromEnv } from "../core/views.js";
 import { recorderOptionsFromEnv } from "../record/recorder.js";
 import { createServer, SERVER_NAME, SERVER_VERSION } from "../server.js";
+import { extensionMode } from "../browser/chrome.js";
 
 export type Env = Record<string, string | undefined>;
 
@@ -165,11 +166,14 @@ const MAX_REQUEST = 1 << 20;
 export async function startDaemon(o: DaemonOptions): Promise<Daemon> {
   const settings = settingsOf(o.env);
   const token = randomBytes(24).toString("hex");
+  // SAP_BROWSER=extension: the systems registered in the extension (sap_systems, sap_logon).
+  const systems = extensionMode(o.env) ? (await import("../browser/extension/index.js")).systemsAccess : undefined;
   const { server, registry } = createServer({
     policy: policyFromEnv(o.env),
     surfaces: o.surfaces,
     view: viewModeFromEnv(o.env),
     record: recorderOptionsFromEnv(o.env, `${SERVER_NAME}-mcp-server ${SERVER_VERSION} (cli)`, o.cwd),
+    ...(systems ? { systems: systems(o.env) } : {}),
   });
   const client = new Client({ name: "sap-gui-cli", version: SERVER_VERSION });
   const [a, b] = InMemoryTransport.createLinkedPair();

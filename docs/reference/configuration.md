@@ -34,6 +34,8 @@ Lists are separated by commas or spaces and are not case-sensitive.
 | `SAP_SURFACES` | `sapgui,webgui,fiori` on Windows, `webgui,fiori` elsewhere | any of `sapgui`, `webgui`, `fiori` | which kinds of session to look for. Lower case |
 | `SAP_GUI_METHOD` | scripting | `diag` | `diag` reads SAP GUI for Windows from its network traffic instead of scripting (experimental). Any other value means scripting. See [Network reader](../guides/network-reader.md) |
 | `SAP_CHROME_CDP` | the running Chrome, then Chrome Beta, then Edge, that allows remote debugging | `http://127.0.0.1:9333` | a Chrome DevTools endpoint (`http`, `https`, `ws` or `wss`). Nothing else is tried when it is set. See [Chrome](../guides/chrome.md) |
+| `SAP_BROWSER` | `launch` | `launch`, `attach`, `extension` | `launch`: the server starts Google Chrome with a profile of its own (the SAP window). `attach`: your everyday Chrome or Edge with remote debugging allowed. `extension`: your everyday Chrome through the Agent Connector extension. `SAP_CHROME_CDP` wins over it. See [Chrome](../guides/chrome.md#use-your-everyday-chrome-with-the-extension) |
+| `SAP_EXTENSION_PORT` | first free of 47823–47830 | a port | with `SAP_BROWSER=extension`, the local port where the extension connects |
 
 ## Network reader (`SAP_GUI_METHOD=diag`)
 

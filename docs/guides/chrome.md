@@ -57,6 +57,40 @@ This is also the way for a Chrome older than 144, which has no switch in
 Edge (also Chromium) is found the same way, after Chrome stable and beta,
 and is likely to work. Firefox and Safari are not supported.
 
+## Use your everyday Chrome with the extension
+
+Instead of remote debugging, the server can reach your Chrome through the
+**Agent Connector for SAP Systems** extension: no `chrome://inspect`
+switch, your normal profile with its SSO, and only the tabs of the SAP
+systems you register are shared. The extension also keeps your systems'
+logons: the agent can say "log on to ECC Dev", and the extension types the
+password into SAP's logon page itself. The agent and the server never see
+it.
+
+1. `npx -y sap-gui-mcp-server extension install` copies the extension to
+   `~/sap-gui-mcp-extension` and installs its helper (pairing in one click,
+   passwords in your keychain). In Chrome, open `chrome://extensions`, turn
+   on **Developer mode**, click **Load unpacked** and pick that folder.
+   Pin the icon (puzzle piece, then the pin), and restart Chrome once if it
+   was open during the install.
+2. Click the Agent Connector icon and **Pair with This Computer**.
+3. Open your SAP system in a tab and click **Add This SAP Page**. Add
+   user and password if the extension should log on for you.
+4. Add `"SAP_BROWSER": "extension"` to the `env` of sap-gui-mcp-server in
+   your agent's settings, and restart the agent app. The agent then also
+   has `sap_systems` (your registered systems) and `sap_logon` (open one and
+   log on).
+
+While the server works in a tab, Chrome shows "Agent Connector for SAP
+Systems started debugging this browser". Clicking **Cancel** there stops the
+sharing until you click **Resume Sharing** in the popup.
+`npx -y sap-gui-mcp-server extension uninstall` removes the helper and the
+saved passwords. See
+[extension/README.md](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/extension/README.md)
+for what happens on a wrong password or a locked user, where passwords are
+kept, permissions, IT deployment and limits. SAP is a trademark of SAP SE;
+the extension is not affiliated with SAP.
+
 ## Which tabs are SAP's
 
 Each tab has one owner, decided in one place:

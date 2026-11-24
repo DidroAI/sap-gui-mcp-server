@@ -7,6 +7,8 @@
  *   sap_look        the active screen as compact text (or full)
  *   sap_act         one action (guardrails first), then the new screen
  *   sap_screenshot  a PNG of the session's window or tab
+ *   sap_systems     the SAP systems registered in the Chrome extension (SAP_BROWSER=extension)
+ *   sap_logon       opens one and logs on: the extension fills SAP's logon page, the server never sees the password
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -18,6 +20,7 @@ import { dateFormatOf, type Notation, notationIn, withNumbers } from "./core/not
 import { commandFieldRefusal, decide, LEAVE_UNSAVED, leavesTransaction, type Policy, sessionRefusal, tcodeOf, tcodeRefusal } from "./core/guard.js";
 import { type Turn, SessionQueue, waitedLine } from "./core/queue.js";
 import { Registry } from "./core/registry.js";
+import type { ExtensionSystem, LogonOptions, LogonResult } from "./browser/extension/relay.js";
 import { ActionError, type Assessment, type Driver, type LookOptions, type SessionInfo, type Surface } from "./core/types.js";
 import { type ViewMode, Views } from "./core/views.js";
 import { Recorder, type RecorderOptions, recorderOptionsFromEnv } from "./record/recorder.js";
@@ -48,11 +51,11 @@ export function writeRule(policy: Policy): string {
  * (Codex), so the first paragraph stands on its own: what this is, in the
  * user's words, and where to start. Routing between the tools follows.
  */
-function instructions(policy: Policy): string {
-  return `Works in the SAP screens the user already has open, as that user: SAP GUI for Windows, SAP Web GUI and Fiori in Chrome (transactions such as VA01 or ME23N, ALV grids, popups). It never logs on.
+function instructions(policy: Policy, systems = false): string {
+  return `Works in the SAP screens the user already has open, as that user: SAP GUI for Windows, SAP Web GUI and Fiori in Chrome (transactions such as VA01 or ME23N, ALV grids, popups). ${systems ? "It logs on only to the systems the user registered in the Chrome extension (sap_systems, sap_logon)." : "It never logs on."}
 Start with sap_look, or directly with sap_act okcode /n<transaction> when the task names it. Each sap_act answer is the new screen: act again from it. Read the status bar after each call: SAP reports errors there.
 ${writeRule(policy)}
-Type, press, Enter, open a transaction, answer a popup: sap_act ("actions": a whole screen in one call). Several sessions or systems: sap_sessions. Record a flow as a test or to automate it: sap_record, then sap_replay.`;
+Type, press, Enter, open a transaction, answer a popup: sap_act ("actions": a whole screen in one call). Several sessions or systems: sap_sessions${systems ? "; a system that is not open: sap_systems, sap_logon" : ""}. Record a flow as a test or to automate it: sap_record, then sap_replay.`;
 }
 
 /**
@@ -229,6 +232,36 @@ export interface ServerOptions {
   code?: boolean;
   /** Adds structuredContent (structured.ts) to the answers code reads, and declares their output schemas; default: SAP_STRUCTURED=on. */
   structured?: boolean;
+  /** The systems registered in the Chrome extension (SAP_BROWSER=extension): adds sap_systems and sap_logon. */
+  systems?: SystemsAccess;
+}
+
+/** The extension's systems, as the server reaches them (src/browser/extension/index.ts, extensionSystems). */
+export interface SystemsAccess {
+  list(): Promise<ExtensionSystem[]>;
+  logon(system: string, options?: LogonOptions): Promise<LogonResult>;
+  /** May the server look at a tab of this address (SAP_ALLOW_ORIGINS)? Absent: every registered system's. */
+  looksAt?(url: string): boolean;
+}
+
+const KIND_NAME: Record<string, string> = { webgui: "Web GUI", fiori: "Fiori launchpad", other: "SAP" };
+const LOGON_NAME: Record<string, string> = {
+  password: "the extension logs on with the saved password",
+  sso: "single sign-on: SAP logs on by itself",
+  manual: "no password saved: the user logs on in the tab",
+};
+
+/** What stands from the last logon (ExtensionSystem.issue): the agent must not retry before the user acts. */
+const ISSUE_NAME: Record<string, string> = {
+  wrong_password: "SAP refused its saved password: the user updates it in the extension before the next logon",
+  user_locked: "SAP said the user is locked: the user has it unlocked, then logs on from the extension's popup",
+};
+
+/** One line per registered system. */
+export function systemLine(x: ExtensionSystem, i: number): string {
+  const facts = [KIND_NAME[x.kind] ?? "SAP", x.url, x.client && `client ${x.client}`, x.language && `language ${x.language}`, x.user && `user ${x.user}`].filter(Boolean).join(", ");
+  const issue = x.issue && ISSUE_NAME[x.issue.reason] ? ` Last logon: ${ISSUE_NAME[x.issue.reason]}.` : "";
+  return `${i + 1}. ${x.name}: ${facts}. ${LOGON_NAME[x.logon] ?? ""}${x.open ? " (open in a tab now)" : ""}${issue}`;
 }
 
 /** The actions kept per session for a draft test (sap_record {"op":"code"} with no recording on). */
@@ -256,11 +289,11 @@ export function codeFromEnv(value: string | undefined): boolean | undefined {
   return undefined;
 }
 
-export function createServer({ policy, surfaces, view = "diff", record, code = codeFromEnv(process.env.SAP_CODE), structured = structuredFromEnv(process.env.SAP_STRUCTURED) }: ServerOptions) {
+export function createServer({ policy, surfaces, view = "diff", record, code = codeFromEnv(process.env.SAP_CODE), structured = structuredFromEnv(process.env.SAP_STRUCTURED), systems }: ServerOptions) {
   const registry = new Registry(surfaces, policy);
   const views = new Views(view);
   const recorder = new Recorder(record ?? recorderOptionsFromEnv(process.env, `${SERVER_NAME}-mcp-server ${SERVER_VERSION}`));
-  const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, { instructions: instructions(policy) });
+  const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, { instructions: instructions(policy, !!systems) });
   const session = z.string().optional().describe("number, id, system, transaction or sapgui|webgui|fiori; default: the active one");
   const queue = new SessionQueue();
   /** The data of an answer, when structured output is on; undefined (nothing added) when it is off. */
@@ -407,7 +440,10 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     {
       title: "List open SAP sessions",
       description:
-        "The SAP sessions open (SAP GUI windows; Web GUI and Fiori tabs in Chrome); * marks the active one. Needed only with several sessions, or when a tool says none matches. None: ask the user to open SAP and log on; this server never logs on.",
+        "The SAP sessions open (SAP GUI windows; Web GUI and Fiori tabs in Chrome); * marks the active one. Needed only with several sessions, or when a tool says none matches. " +
+        (systems
+          ? "A system that is not open: sap_systems lists the ones the user registered, sap_logon opens one and logs on."
+          : "None: ask the user to open SAP and log on; this server never logs on."),
       inputSchema: {},
       ...(structured ? { outputSchema: sessionsOutput } : {}),
       annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
@@ -416,12 +452,92 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       answer(async () => {
         const { sessions, hidden, errors, hint } = await registry.discover();
         const lines = sessions.map((s, i) => sessionLine(s, i, s.id === registry.active));
-        if (!sessions.length) lines.push(hint ? `No SAP session found. ${hint}` : "No SAP session found.");
+        if (!sessions.length) lines.push(systems ? `No SAP session found. ${await systemsHint()}` : hint ? `No SAP session found. ${hint}` : "No SAP session found.");
         if (hidden) lines.push(`${hidden} session(s) of systems outside SAP_ALLOW_SYSTEMS are hidden.`);
         for (const e of errors) lines.push(`(${e})`);
         return withData(text(lines.join("\n")), data(() => sessionsData(sessions, registry.active)));
       }),
   );
+
+  /** With no session open: the registered systems, so that the agent can log on without asking for an address. */
+  async function systemsHint(): Promise<string> {
+    try {
+      const list = await systems!.list();
+      if (!list.length) return "No system is registered in the Chrome extension either: ask the user to open SAP in Chrome and click Add This SAP Page in the extension's popup (the Agent Connector icon in Chrome's toolbar).";
+      return `Systems registered in the Chrome extension: ${list.map((x) => x.name).join(", ")}. sap_logon opens one and logs on.`;
+    } catch (e) {
+      return `(The Chrome extension did not answer: ${(e as Error).message})`;
+    }
+  }
+
+  if (systems) {
+    server.registerTool(
+      "sap_systems",
+      {
+        title: "List the registered SAP systems",
+        description:
+          "Lists the SAP systems the user registered in the Chrome extension: name, Web GUI or Fiori launchpad, address, client, language, user, and whether the extension can log on by itself. Use it when the task names a system that sap_sessions does not show; then sap_logon.",
+        inputSchema: {},
+        annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+      },
+      () =>
+        answer(async () => {
+          const list = await systems.list();
+          if (!list.length) return text("No SAP system is registered in the Chrome extension. Ask the user to open their SAP system in Chrome and click Add This SAP Page in the extension's popup (the Agent Connector icon in Chrome's toolbar). Never ask the user for a password.");
+          const lines = list.map((x, i) => systemLine(x, i) + (systems.looksAt && !systems.looksAt(x.url) ? " Outside SAP_ALLOW_ORIGINS: this server does not look at its tabs." : ""));
+          return text([...lines, "", "sap_logon opens one and logs on. Passwords stay in the extension: this server never sees them, and never asks the user for one."].join("\n"));
+        }),
+    );
+
+    server.registerTool(
+      "sap_logon",
+      {
+        title: "Open a registered SAP system and log on",
+        description:
+          "Opens a system registered in the Chrome extension (sap_systems) in a Chrome tab, brings it to the front and logs on as its saved user: the extension types the password into SAP's logon page itself, and this server never sees it. A tab of the system that is logged on already (same client and user) is used as it is. The new session becomes the active one. On a single sign-on system it waits for SAP to log on by itself. When it stops (wrong password, locked user, new password needed, SAP asking about other logons, an identity provider), the answer says what to ask the user: never retry on your own, and never ask the user for a password.",
+        inputSchema: {
+          system: z.string().describe("the system's name, as sap_systems lists it"),
+          otherLogons: z
+            .enum(["keep"])
+            .optional()
+            .describe('only after the user said so: SAP asks whether to end the user\'s other logons, and "keep" continues without ending them'),
+        },
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      },
+      ({ system, otherLogons }) =>
+        answer(async () => {
+          const r = await systems.logon(system, otherLogons ? { otherLogons } : {});
+          const who = `${r.user ? ` as ${r.user}` : ""}${r.client ? `, client ${r.client}` : ""}`;
+          const head =
+            r.state === "logged_on"
+              ? `Logged on to ${r.system}${who}.`
+              : r.state === "already"
+                ? `${r.system} is open and logged on in a tab already${who}.`
+                : r.state === "sso"
+                  ? `Opened ${r.system}; SAP logged on by itself (single sign-on).`
+                  : `Opened ${r.system}. ${r.message || "SAP shows its logon page and no password is saved: ask the user to log on in the tab that is now in front, then call sap_sessions."}`;
+          if (r.state === "needs_user") return text(head);
+          // The tab is shared again once SAP's logon page is gone: find its session.
+          const id = r.targetId ? `chrome:${r.targetId}` : undefined;
+          let info: SessionInfo | undefined;
+          for (let i = 0; i < 20 && !info; i++) {
+            const { sessions } = await registry.discover();
+            info = sessions.find((s) => s.id === id);
+            if (!info) await new Promise((res) => setTimeout(res, 500));
+          }
+          if (!info) {
+            // SAP_ALLOW_ORIGINS narrows what the server looks at, below what the extension shares.
+            const sys = systems.looksAt ? (await systems.list().catch(() => [])).find((x) => x.name === r.system) : undefined;
+            if (sys && !systems.looksAt!(sys.url))
+              return text(`${head} This server does not look at ${new URL(sys.url).origin}: SAP_ALLOW_ORIGINS leaves it out. Ask whoever set up the server to add it there, or to remove SAP_ALLOW_ORIGINS (the extension already limits the server to the registered systems).`);
+            return text(`${head} Its tab is not listed as a SAP session yet: call sap_sessions in a moment.`);
+          }
+          registry.active = info.id;
+          const { sessions } = await registry.discover();
+          return text([head, "", ...sessions.map((s, i) => sessionLine(s, i, s.id === registry.active)), "", "The session marked * is the active one: go on with sap_look or sap_act."].join("\n"));
+        }),
+    );
+  }
 
   server.registerTool(
     "sap_use",
