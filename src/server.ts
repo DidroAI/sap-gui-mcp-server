@@ -306,6 +306,26 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   const ranOn = (v: string): ActOutput => ({ ran: 1, total: 1, ...screenOf(v) });
   /** Does an answer end with the SDK line? Asked after the action: a recording is on or off by then. */
   const codeLine = () => code ?? recorder.recording;
+  /**
+   * The logon each session was last seen with. SAP GUI ids are positions ("ses[0]"): after a log off and a
+   * logon to another system the same id is another session, and what the server kept for it (actions,
+   * notation, the last view, a refused write) is forgotten.
+   */
+  const logons = new Map<string, string>();
+  async function attach(ref: string | undefined) {
+    const hit = await registry.session(ref);
+    const { id, system, client, user } = hit.info;
+    const logon = [system, client, user].map((x) => (x ?? "").toUpperCase()).join("/");
+    const was = logons.get(id);
+    if (was !== undefined && was !== logon) {
+      for (const m of [history, actShown, actCount, notations]) m.delete(id);
+      settingsAsked.delete(id);
+      writeRefused.delete(id);
+      views.forget(id);
+    }
+    logons.set(id, logon);
+    return hit;
+  }
   /** The actions that ran, per session, oldest first. */
   const history = new Map<string, NormalizedAction[]>();
   function remember(session: string, action: NormalizedAction): void {
@@ -569,7 +589,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       answer(() =>
         leniently(raw, (ref) =>
           serial(ref, "sap_use", async () => {
-            const { driver, info } = await registry.session(ref);
+            const { driver, info } = await attach(ref);
             registry.active = info.id;
             actShown.delete(info.id);
             const v = await driver.look({ compact: true });
@@ -599,7 +619,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   );
 
   async function look(ref: string | undefined, full: boolean | undefined, diff: boolean | undefined, id: string | undefined, rows: string | undefined, cols: string | undefined): Promise<CallToolResult> {
-    const { driver, info } = await registry.session(ref);
+    const { driver, info } = await attach(ref);
     if (rows !== undefined && !id) throw new ActionError('"rows" needs "id": the grid, table, tree or list to read.');
     if (cols !== undefined && !id) throw new ActionError('"cols" needs "id": the grid or table control whose columns to keep.');
     if (id) {
@@ -629,7 +649,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   /** The screen as it is, whole, after `head`: the answer to "actions":[] and to {"do":"look"} in sap_act. */
   async function current(ref: string | undefined, head: string): Promise<CallToolResult> {
     return serial(ref, "sap_look", async () => {
-      const { driver, info } = await registry.session(ref);
+      const { driver, info } = await attach(ref);
       const v = await driver.look({ compact: true });
       actShown.delete(info.id);
       const shown = withStatus(views.present(info.id, v, true), v);
@@ -744,7 +764,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   const writeRefused = new Set<string>();
   /** The session as it is now, and what the guard says about this action on it. A look-ahead (`goesOnAfter`) keeps no record. */
   async function judge(ref: string | undefined, action: NormalizedAction, lookAhead = false) {
-    const { driver, info } = await registry.session(ref);
+    const { driver, info } = await attach(ref);
     // The transaction the session is in counts too, however it was opened.
     const here = sessionRefusal(policy, info);
     if (here && !leavesTransaction(policy, action))
@@ -777,7 +797,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   async function failedOn(ref: string | undefined, e: unknown): Promise<CallToolResult> {
     const message = withNextStep((e as Error).message);
     try {
-      const { driver, info } = await registry.session(ref);
+      const { driver, info } = await attach(ref);
       const now = await driver.look({ compact: true });
       const last = views.last(info.id);
       // Where the session is, in one line: the header and the window in front.

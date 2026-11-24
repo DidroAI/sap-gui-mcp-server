@@ -244,6 +244,19 @@ describe("fields of a batch step on a single action (review, 2026-11-24)", () =>
   });
 });
 
+describe("a new logon in the same session id starts afresh (review, 2026-11-24)", () => {
+  test("a refused write on the old system does not shorten the first refusal on the new one", async () => {
+    const { surface, call } = await setup();
+    const s = surface.add({ id: "sapgui:/app/con[0]/ses[0]", system: "ABA", client: "800", user: "U1", transaction: "VA02" }, { assess });
+    await call("sap_act", { action: { do: "key", key: 11 } });
+    expect((await call("sap_act", { action: { do: "key", key: 11 } })).text).toContain("As before");
+    s.info = { ...s.info, system: "PRD", client: "100" };
+    const r = await call("sap_act", { action: { do: "key", key: 11 } });
+    expect(r.text).not.toContain("As before");
+    expect(r.text).toContain("SAP_WRITE=confirm or on");
+  });
+});
+
 describe("confirm mode with elicitation", () => {
   const env = { SAP_WRITE: "confirm" };
   test("the user accepts in the client: the action runs", async () => {
