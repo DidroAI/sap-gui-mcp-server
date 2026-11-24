@@ -89,8 +89,14 @@ export function tcodeOf(action: Action): string | undefined {
   // Fiori: the app an open action names, as the lists spell an intent ("#SalesOrder-manage?..." -> "SALESORDER-MANAGE").
   if (action.do === "open") return typeof action.app === "string" ? /^#?([A-Za-z0-9_]+-[A-Za-z0-9_]+)/.exec(action.app.trim())?.[1]?.toUpperCase() : undefined;
   if (action.do !== "okcode") return undefined;
+  // A Fiori intent sent as an okcode ("#SalesOrder-manage", "/n#SalesOrder-manage?x=1"): a Fiori tab opens
+  // that app, so the lists judge it as they judge open.
+  const v = typeof action.value === "string" ? action.value.trim() : "";
+  const intent = /^(?:\/[nNoO*]\s*)?#([A-Za-z0-9_]+-[A-Za-z0-9_]+)/.exec(v)?.[1];
+  if (intent) return intent.toUpperCase();
   const k = okcodeKind(action.value);
-  return k.kind === "transaction" ? k.tcode : undefined;
+  // "/nVA01?x=1": the lists name the transaction, not what follows it.
+  return k.kind === "transaction" ? k.tcode.split(/[?&#\s]/)[0] || undefined : undefined;
 }
 
 /**

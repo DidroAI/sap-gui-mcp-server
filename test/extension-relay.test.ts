@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
+import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
 import { chromium } from "playwright-core";
@@ -320,6 +322,52 @@ describe("handshake", () => {
     await c.next((m) => m.type === "hello");
     c.ws.send("x".repeat(5000));
     expect((await c.closed).code).toBe(1009);
+  });
+  test("a frame header past the pre-auth limit closes the socket before its body comes (review, 2026-11-24)", async () => {
+    const relay = await startRelay();
+    const sock = connect(relay.port, "127.0.0.1");
+    await new Promise<void>((r) => sock.once("connect", () => r()));
+    const got: Buffer[] = [];
+    sock.on("data", (d: Buffer) => got.push(d));
+    const ended = new Promise<void>((r) => sock.once("close", () => r()));
+    sock.write(
+      `GET /extension HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ${randomBytes(16).toString("base64")}\r\nSec-WebSocket-Version: 13\r\nOrigin: ${EXT_ORIGIN}\r\n\r\n`,
+    );
+    await new Promise((r) => setTimeout(r, 100));
+    // A masked text frame that says 10 MB follow; only its header is sent.
+    const header = Buffer.alloc(14);
+    header[0] = 0x81;
+    header[1] = 0x80 | 127;
+    header.writeUInt32BE(0, 2);
+    header.writeUInt32BE(10 * 1024 * 1024, 6);
+    sock.write(header);
+    await Promise.race([ended, new Promise((_, no) => setTimeout(() => no(new Error("socket still open")), 2000))]);
+    // The close frame carries 1009.
+    const all = Buffer.concat(got);
+    const close = all.indexOf(Buffer.from([0x88]), all.indexOf("\r\n\r\n") + 4);
+    expect(close).toBeGreaterThan(0);
+    expect(all.readUInt16BE(close + 2)).toBe(1009);
+  });
+  test("a paired extension may send frames past the pre-auth limit", async () => {
+    const relay = await startRelay();
+    const ext = await FakeExtension.connect(relay);
+    ext.send({ type: "ping", pad: "x".repeat(200_000) });
+    expect(await ext.client.next((m) => m.type === "pong")).toEqual({ type: "pong" });
+  });
+  test("a path the URL parser refuses is a 400, and the relay keeps running (review, 2026-11-24)", async () => {
+    const relay = await startRelay();
+    const answer = await new Promise<string>((resolve) => {
+      const sock = connect(relay.port, "127.0.0.1", () =>
+        sock.write(`GET // HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ${randomBytes(16).toString("base64")}\r\nSec-WebSocket-Version: 13\r\n\r\n`),
+      );
+      let text = "";
+      sock.on("data", (d: Buffer) => (text += d.toString()));
+      sock.on("close", () => resolve(text));
+    });
+    expect(answer).toStartWith("HTTP/1.1 400");
+    const ext = await FakeExtension.connect(relay);
+    ext.send({ type: "ping" });
+    expect(await ext.client.next((m) => m.type === "pong")).toEqual({ type: "pong" });
   });
   test("at most 4 sockets wait for their auth at once", async () => {
     const relay = await startRelay();

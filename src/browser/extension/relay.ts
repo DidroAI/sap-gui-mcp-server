@@ -19,7 +19,7 @@ import { randomBytes } from "node:crypto";
 import { createServer, STATUS_CODES, type IncomingMessage, type Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { FrameCipher, hmac, sameSecret, sessionKey } from "./pairing.js";
-import { WebSocket, WebSocketServer } from "./ws.js";
+import { raiseMaxPayload, WebSocket, WebSocketServer } from "./ws.js";
 
 /** The ports the extension scans, in order. */
 export const EXTENSION_PORTS: readonly number[] = [47823, 47824, 47825, 47826, 47827, 47828, 47829, 47830];
@@ -33,6 +33,8 @@ const SILENCE_MS = 65_000;
 /** Before the handshake nothing bigger than an `auth` frame is read, and only this many such sockets are open at once. */
 const PRE_AUTH_MAX_BYTES = 4096;
 const MAX_UNAUTHENTICATED = 4;
+/** The largest frame a paired extension or the CDP client may send. */
+const MAX_FRAME_BYTES = 64 * 1024 * 1024;
 /** A request the extension has not answered by then fails, so a stuck tab does not hold Playwright forever. */
 const REQUEST_TIMEOUT_MS = 60_000;
 
@@ -186,7 +188,9 @@ export class ExtensionRelay {
   private readonly requestTimeoutMs: number;
   /** 32 random bytes, hex: the CDP path. Never written anywhere. */
   private readonly secret = randomBytes(32).toString("hex");
-  private readonly wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 * 1024 });
+  private readonly wss = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME_BYTES });
+  /** The extension's socket: frames past PRE_AUTH_MAX_BYTES are refused at their header until it pairs. */
+  private readonly preAuth = new WebSocketServer({ noServer: true, maxPayload: PRE_AUTH_MAX_BYTES });
   private readonly sockets = new Set<WebSocket>();
   private unauthenticated = 0;
   private server: Server | undefined;
@@ -285,6 +289,7 @@ export class ExtensionRelay {
     for (const ws of this.sockets) ws.close(1001, "the server is stopping");
     for (const ws of this.sockets) ws.terminate();
     this.wss.close();
+    this.preAuth.close();
     const server = this.server;
     this.server = undefined;
     if (server) {
@@ -297,12 +302,18 @@ export class ExtensionRelay {
 
   private onUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
     socket.on("error", () => {});
-    const path = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
+    let path: string;
+    try {
+      // "//" and other paths the URL parser refuses: a 400, never an exception that ends the server.
+      path = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
+    } catch {
+      return refuse(socket, 400);
+    }
     const origin = req.headers.origin;
     if (path === "/extension") {
       if (!origin?.startsWith("chrome-extension://")) return refuse(socket, 403);
       if (this.unauthenticated >= MAX_UNAUTHENTICATED) return refuse(socket, 503);
-      this.wss.handleUpgrade(req, socket, head, (ws) => this.onExtensionSocket(ws));
+      this.preAuth.handleUpgrade(req, socket, head, (ws) => this.onExtensionSocket(ws));
       return;
     }
     if (path.startsWith("/cdp/") && sameSecret(path, `/cdp/${this.secret}`)) {
@@ -389,6 +400,7 @@ export class ExtensionRelay {
       }
       authed = true;
       uncount();
+      raiseMaxPayload(ws, MAX_FRAME_BYTES);
       this.lastRefusal = undefined;
       inbound = new FrameCipher(sessionKey(this.code, "sap-gui-key-e2s", nS, nE));
       const outbound = new FrameCipher(sessionKey(this.code, "sap-gui-key-s2e", nS, nE));
