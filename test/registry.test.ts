@@ -136,6 +136,19 @@ describe("messages and references", () => {
     expect((await registry.session()).info.system).toBe("QAS");
     expect(webgui.opened).toBe(1);
   });
+  test("a loose reference that fits several sessions is an error that lists them, unless one is active (review, 2026-11-24)", async () => {
+    const { webgui, registry } = setup();
+    webgui.add({ id: "chrome:1", system: "ABA", client: "100", transaction: "VA03" });
+    webgui.add({ id: "chrome:2", system: "ABA", client: "800", transaction: "VA03" });
+    webgui.add({ id: "chrome:3", system: "S4H", transaction: "MM03" });
+    await registry.discover();
+    registry.active = "chrome:3";
+    expect(() => registry.resolve("ABA")).toThrow(/"ABA" fits 2 sessions: 1\. chrome:1 \(ABA\/100, VA03\); 2\. chrome:2 \(ABA\/800, VA03\)/);
+    await expect(registry.driver("VA03")).rejects.toThrow(/Name one by its number or id/);
+    expect(registry.resolve("MM03")?.id).toBe("chrome:3");
+    registry.active = "chrome:2";
+    expect(registry.resolve("ABA")?.id).toBe("chrome:2");
+  });
   test("a surface name is a reference", async () => {
     const { webgui, fiori, registry } = setup();
     webgui.add({ id: "chrome:1", system: "ABA", transaction: "VA03" });

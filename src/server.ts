@@ -1,5 +1,5 @@
 /**
- * The MCP server: six tools over the registry of open SAP sessions, and two
+ * The MCP server: seven tools over the registry of open SAP sessions, and two
  * that turn a session into a repeatable test (record/tools.ts).
  *
  *   sap_sessions    list the SAP sessions open on this machine
@@ -142,6 +142,8 @@ export function withNextStep(message: string): string {
 /** What the user was shown when asked to confirm: the action runs only if all of it still holds. */
 interface Shown {
   session: string;
+  /** How many actions the server had run in the session when the user was asked. */
+  acts: number;
   surface: string;
   system: string | undefined;
   client: string | undefined;
@@ -152,8 +154,8 @@ interface Shown {
   reason: string;
 }
 
-function shownOf(info: SessionInfo, action: NormalizedAction, a: Assessment): Shown {
-  return { session: info.id, surface: info.surface, system: info.system, client: info.client, transaction: info.transaction, title: info.title, action, risk: a.risk, reason: a.reason };
+function shownOf(info: SessionInfo, action: NormalizedAction, a: Assessment, acts = 0): Shown {
+  return { session: info.id, acts, surface: info.surface, system: info.system, client: info.client, transaction: info.transaction, title: info.title, action, risk: a.risk, reason: a.reason };
 }
 
 /** What differs between what the user confirmed and what is there now; empty when nothing does. */
@@ -170,6 +172,8 @@ export function changedSince(then: Shown, now: Shown): string[] {
   was("window title", then.title, now.title);
   was("action", actionText(then.action), actionText(now.action));
   was("what the action does", `${then.risk}: ${then.reason}`, `${now.risk}: ${now.reason}`);
+  // A field set by another call while the user read the question: the screen looks the same, the data does not.
+  if (now.acts !== then.acts) out.push(`${now.acts - then.acts} other action(s) ran in this session while the user was asked`);
   return out;
 }
 
@@ -320,6 +324,12 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
    */
   const actShown = new Map<string, string>();
   const fingerprint = (view: string) => createHash("sha1").update(view).digest("hex");
+  /** Actions run per session, so a confirmation can tell that another call acted while the user was asked. */
+  const actCount = new Map<string, number>();
+  const counted = <T>(session: string, f: () => Promise<T>): Promise<T> => {
+    actCount.set(session, (actCount.get(session) ?? 0) + 1);
+    return f();
+  };
 
   /**
    * Each session's number and date notation (core/notation.ts): from the
@@ -413,7 +423,14 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
 
   /** The queue a call on `ref` waits in: the session's id, found without opening it. */
   async function laneOf(ref: string | undefined): Promise<string> {
-    const pick = () => (ref ? registry.resolve(ref)?.id : registry.active);
+    const pick = () => {
+      try {
+        return ref ? registry.resolve(ref)?.id : registry.active;
+      } catch {
+        // An ambiguous reference: the call says so when its turn comes.
+        return undefined;
+      }
+    };
     let key = pick();
     if (!key) {
       await registry.discover().catch(() => {});
@@ -582,31 +599,31 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   );
 
   async function look(ref: string | undefined, full: boolean | undefined, diff: boolean | undefined, id: string | undefined, rows: string | undefined, cols: string | undefined): Promise<CallToolResult> {
-        const { driver, info } = await registry.session(ref);
-        if (rows !== undefined && !id) throw new ActionError('"rows" needs "id": the grid, table, tree or list to read.');
-        if (cols !== undefined && !id) throw new ActionError('"cols" needs "id": the grid or table control whose columns to keep.');
-        if (id) {
-          // Columns without rows: the rows from the first one on (a page of them; the answer says where it ends).
-          const range = rows !== undefined ? parseRows(rows) : cols !== undefined ? COLS_ONLY_ROWS : undefined;
-          const options: LookOptions = { compact: !full, id, ...(range ? { rows: range } : {}), ...(cols !== undefined ? { cols: cols.split(",") } : {}) };
-          // One control is not the screen: what the agent holds of the screen stays as it is.
-          const part = await driver.look(options);
-          return text(await said(driver, info.id, part, part));
-        }
-        // What the last sap_act answer ended on, if nothing came between: asked once.
-        const acted = actShown.get(info.id);
-        actShown.delete(info.id);
-        if (full) {
-          const whole = await driver.look({ compact: false });
-          // The full view holds everything the compact one does: later changes are counted from here.
-          const c = await driver.look({ compact: true });
-          views.remember(info.id, c);
-          return text(await said(driver, info.id, c, whole));
-        }
-        const view = await driver.look({ compact: true });
-        // Asked for the changes ("diff"): those, also right after an action (live 2026-11-23: the whole 8 KB view came back).
-        if (acted !== undefined && acted === fingerprint(view)) return text(await said(driver, info.id, view, diff ? views.present(info.id, view, false) : `${UNCHANGED}\n${views.present(info.id, view, true)}`));
-        return text(await said(driver, info.id, view, views.present(info.id, view, !diff)));
+    const { driver, info } = await registry.session(ref);
+    if (rows !== undefined && !id) throw new ActionError('"rows" needs "id": the grid, table, tree or list to read.');
+    if (cols !== undefined && !id) throw new ActionError('"cols" needs "id": the grid or table control whose columns to keep.');
+    if (id) {
+      // Columns without rows: the rows from the first one on (a page of them; the answer says where it ends).
+      const range = rows !== undefined ? parseRows(rows) : cols !== undefined ? COLS_ONLY_ROWS : undefined;
+      const options: LookOptions = { compact: !full, id, ...(range ? { rows: range } : {}), ...(cols !== undefined ? { cols: cols.split(",") } : {}) };
+      // One control is not the screen: what the agent holds of the screen stays as it is.
+      const part = await driver.look(options);
+      return text(await said(driver, info.id, part, part));
+    }
+    // What the last sap_act answer ended on, if nothing came between: asked once.
+    const acted = actShown.get(info.id);
+    actShown.delete(info.id);
+    if (full) {
+      const whole = await driver.look({ compact: false });
+      // The full view holds everything the compact one does: later changes are counted from here.
+      const c = await driver.look({ compact: true });
+      views.remember(info.id, c);
+      return text(await said(driver, info.id, c, whole));
+    }
+    const view = await driver.look({ compact: true });
+    // Asked for the changes ("diff"): those, also right after an action (live 2026-11-23: the whole 8 KB view came back).
+    if (acted !== undefined && acted === fingerprint(view)) return text(await said(driver, info.id, view, diff ? views.present(info.id, view, false) : `${UNCHANGED}\n${views.present(info.id, view, true)}`));
+    return text(await said(driver, info.id, view, views.present(info.id, view, !diff)));
   }
 
   /** The screen as it is, whole, after `head`: the answer to "actions":[] and to {"do":"look"} in sap_act. */
@@ -656,7 +673,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   /** Leaves a transaction the agent may not work in, and says how that went. */
   async function leave(d: Driver): Promise<string> {
     try {
-      await d.act(normalizeAction({ do: "okcode", value: "/n" }));
+      await counted(d.info.id, () => d.act(normalizeAction({ do: "okcode", value: "/n" })));
       return "The server left it with /n; input that was not saved there is gone.";
     } catch (e) {
       return `The server could not leave it with /n (${(e as Error).message.split("\n")[0]}): leave it before doing anything else.`;
@@ -681,7 +698,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     const opens = action.do === "okcode" && typeof action.value === "string" && /^\/o\S/i.test(action.value) && d.info.surface === "sapgui";
     const before = opens ? new Set((await registry.discover()).sessions.map((s) => s.id)) : undefined;
     // While a recording is on, an action that works becomes a step of it.
-    const done = shortNote(await recorder.act(d, action, risk, () => d.act(action)));
+    const done = shortNote(await counted(session, () => recorder.act(d, action, risk, () => d.act(action))));
     const acted = Date.now();
     // The line that repeats this action in a script: last in the note block. Kept for a draft test when the action ran where it should.
     const line = codeLine() ? `\ncode: ${codeOf(action)}` : "";
@@ -723,10 +740,10 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     return ok(`${n}${top ? `\n${top}` : ""}${line}\n\n${shown}`, v);
   }
 
-  /** The session as it is now, and what the guard says about this action on it. */
   /** Sessions that had a write refused: the next refusal is one line (core/guard.ts `decide`). */
   const writeRefused = new Set<string>();
-  async function judge(ref: string | undefined, action: NormalizedAction) {
+  /** The session as it is now, and what the guard says about this action on it. A look-ahead (`goesOnAfter`) keeps no record. */
+  async function judge(ref: string | undefined, action: NormalizedAction, lookAhead = false) {
     const { driver, info } = await registry.session(ref);
     // The transaction the session is in counts too, however it was opened.
     const here = sessionRefusal(policy, info);
@@ -737,7 +754,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       throw new ActionError('open works in a Fiori launchpad tab only (sap_sessions lists the tabs). On an SAP GUI or Web GUI screen, open a transaction with {"do":"okcode","value":"/n<transaction>"}.');
     const assessment = await driver.assess(action);
     const verdict = decide(policy, action, assessment, writeRefused.has(info.id), info.surface === "fiori");
-    if (!verdict.run && "refused" in verdict && verdict.refused.startsWith("this action may write")) writeRefused.add(info.id);
+    // A look-ahead refuses nothing to the agent: the first refusal it sees stays the long one.
+    if (!lookAhead && !verdict.run && "refused" in verdict && verdict.refused.startsWith("this action may write")) writeRefused.add(info.id);
     return { driver, info, assessment, verdict };
   }
 
@@ -746,7 +764,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     const j = await judge(shown.session, shown.action);
     if ("refused" in j) return fail(`Refused: ${j.refused}`);
     if (!j.verdict.run && "refused" in j.verdict) return fail(`Refused: ${j.verdict.refused}`);
-    const changed = changedSince(shown, shownOf(j.info, shown.action, j.assessment));
+    const changed = changedSince(shown, shownOf(j.info, shown.action, j.assessment, actCount.get(shown.session) ?? 0));
     if (changed.length) return fail(`Not run: the screen changed since the confirmation was asked (${changed.join("; ")}). Look at the screen and call sap_act again.`);
     return perform(j.driver, shown.action, whole, j.assessment.risk);
   }
@@ -788,13 +806,16 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     // The guard and the action run in the session's turn; asking the user does not hold the session.
     type Held = { info: SessionInfo; assessment: Assessment; confirm: string };
     const box: { held?: Held } = {};
-    const done = await queue.run(await laneOf(ref), actionText(action), async (turn): Promise<CallToolResult | undefined> => {
+    // The call keeps to the session it queued for: a sap_use or a new logon while it waits does not move it.
+    const lane = await laneOf(ref);
+    const at = lane === "*" ? ref : lane;
+    const done = await queue.run(lane, actionText(action), async (turn): Promise<CallToolResult | undefined> => {
       const q0 = Date.now();
       let j: Awaited<ReturnType<typeof judge>>;
       try {
-        j = await judge(ref, action);
+        j = await judge(at, action);
       } catch (e) {
-        return withTurn(await failedOn(ref, e), turn);
+        return withTurn(await failedOn(at, e), turn);
       }
       if ("refused" in j) return withTurn(fail(`Refused: ${j.refused}`), turn);
       const { driver, info, assessment, verdict } = j;
@@ -805,7 +826,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
         const stale = staleWrite(parseScreen(seen), parseScreen(now));
         if (stale) return withTurn(fail(`Not run: ${stale}.\n\n${views.present(info.id, now, true)}`), turn);
       }
-      if (verdict.run) return withTurn(await perform(driver, action, whole, assessment.risk, { t0: q0, judged: Date.now() - q0, wanted }).catch((e: unknown) => failedOn(ref, e)), turn);
+      if (verdict.run) return withTurn(await perform(driver, action, whole, assessment.risk, { t0: q0, judged: Date.now() - q0, wanted }).catch((e: unknown) => failedOn(at, e)), turn);
       if ("refused" in verdict) return withTurn(fail(`Refused: ${verdict.refused}`), turn);
       if (!canElicit()) return withTurn(fail(`Refused: ${cannotAsk(verdict.confirm)}`), turn);
       box.held = { info, assessment, confirm: verdict.confirm };
@@ -819,7 +840,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   async function confirmHeld(held: { info: SessionInfo; assessment: Assessment; confirm: string }, action: NormalizedAction, whole: boolean): Promise<CallToolResult> {
     asks++;
     const { info, assessment, confirm } = held;
-    const shown = shownOf(info, action, assessment);
+    const shown = shownOf(info, action, assessment, actCount.get(info.id) ?? 0);
     const what = `${confirm}, on ${place(info)}`;
     let answer: Awaited<ReturnType<typeof server.server.elicitInput>>;
     try {
@@ -870,7 +891,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       if (!idOn(part(full), id)) return false;
     }
     try {
-      const j = await judge(session, a);
+      const j = await judge(session, a, true);
       return !("refused" in j) && j.verdict.run && j.assessment.risk !== "commit";
     } catch {
       return false;
@@ -912,7 +933,9 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     const rest = (from: number) => (from > total ? "" : from === total ? ` Action ${total} did not run.` : ` Actions ${from} to ${total} did not run.`);
     type Held = { info: SessionInfo; assessment: Assessment; confirm: string; action: NormalizedAction };
     const box: { held?: Held; head?: string; ran?: number; stopped?: { why: string; text: string } } = {};
-    const done = await queue.run(await laneOf(ref), `${total} actions`, async (turn): Promise<CallToolResult | undefined> => {
+    const lane = await laneOf(ref);
+    const at = lane === "*" ? ref : lane;
+    const done = await queue.run(lane, `${total} actions`, async (turn): Promise<CallToolResult | undefined> => {
       const lines: string[] = [];
       const codes: string[] = [];
       let ran = 0;
@@ -932,10 +955,10 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
         let j: Awaited<ReturnType<typeof judge>>;
         try {
           // The session the first action ran on is the session of all of them.
-          j = await judge(id ?? ref, s.action);
+          j = await judge(id ?? at, s.action);
         } catch (e) {
           // No session, or an id that names nothing here: with nothing run yet, the answer is the one of a single action.
-          if (i === 0) return withTurn(await failedOn(ref, e), turn);
+          if (i === 0) return withTurn(await failedOn(at, e), turn);
           end = { why: "failed", text: `${what} could not run: ${(e as Error).message}`, error: true, next: n + 1 };
           view = undefined;
           break;
@@ -973,7 +996,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
         let said: string;
         try {
           const d = driver;
-          said = await recorder.act(d, s.action, j.assessment.risk, () => d.act(s.action));
+          said = await counted(d.info.id, () => recorder.act(d, s.action, j.assessment.risk, () => d.act(s.action)));
         } catch (e) {
           end = { why: "failed", text: `${what} failed: ${(e as Error).message}`, error: true, next: n + 1 };
           view = undefined;
@@ -1120,10 +1143,13 @@ ${writeRule(policy)}`,
     },
     ({ session: raw }) =>
       answer(() =>
-        leniently(raw, async (ref) => {
-          const png = await (await registry.driver(ref)).screenshot();
-          return { content: [{ type: "image", data: png.toString("base64"), mimeType: "image/png" }] };
-        }),
+        leniently(raw, (ref) =>
+          // In the session's turn, as every other tool: never mid-action, never beside another call on the driver.
+          serial(ref, "screenshot", async () => {
+            const png = await (await registry.driver(ref)).screenshot();
+            return { content: [{ type: "image", data: png.toString("base64"), mimeType: "image/png" }] };
+          }),
+        ),
       ),
   );
 

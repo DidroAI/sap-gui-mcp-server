@@ -31,6 +31,25 @@ const list = (v: string | undefined) =>
     .map((s) => s.trim().toUpperCase())
     .filter(Boolean);
 
+/** A transaction ("VA03", "/SAPAPO/SDP94") or a Fiori app ("SALESORDER-MANAGE"), as the lists spell them. */
+const TCODE_ENTRY = /^(\/[A-Z0-9_]+\/)?[A-Z0-9_.]+$|^[A-Z0-9_]+-[A-Z0-9_]+$/;
+/** A system ("ABA") or a system and client ("ABA/800"). */
+const SYSTEM_ENTRY = /^[A-Z0-9_]+(\/\d{1,3})?$/;
+
+/**
+ * The entries of a list setting, checked: a mistyped entry ("SE*", "/nSE38") would match nothing, and
+ * a block list that blocks nothing fails open. A Fiori app may be written "#SalesOrder-manage".
+ */
+export function checkedList(name: string, entries: string[], kind: "tcode" | "system" = "tcode"): string[] {
+  const out = entries.map((e) => (kind === "tcode" ? e.replace(/^#/, "") : e));
+  const bad = out.filter((e) => !(kind === "tcode" ? TCODE_ENTRY : SYSTEM_ENTRY).test(e));
+  if (bad.length)
+    throw new Error(
+      `${name}: ${bad.map((b) => `"${b}"`).join(", ")} ${bad.length === 1 ? "is" : "are"} not ${kind === "tcode" ? "a transaction code (VA03, /SAPAPO/SDP94) or a Fiori app (SalesOrder-manage); no wildcards or /n" : "a system (ABA) or system/client (ABA/800)"}`,
+    );
+  return out;
+}
+
 export function policyFromEnv(env: Record<string, string | undefined> = process.env): Policy {
   // An empty value counts as unset: clients such as Claude Desktop pass "" for a setting left blank.
   const w = (env.SAP_WRITE?.trim() || "off").toLowerCase();
@@ -40,9 +59,9 @@ export function policyFromEnv(env: Record<string, string | undefined> = process.
   return {
     write: w,
     allowLogoff: off === "on",
-    allowSystems: list(env.SAP_ALLOW_SYSTEMS),
-    allowTcodes: list(env.SAP_ALLOW_TCODES),
-    blockTcodes: list(env.SAP_BLOCK_TCODES),
+    allowSystems: checkedList("SAP_ALLOW_SYSTEMS", list(env.SAP_ALLOW_SYSTEMS), "system"),
+    allowTcodes: checkedList("SAP_ALLOW_TCODES", list(env.SAP_ALLOW_TCODES)),
+    blockTcodes: checkedList("SAP_BLOCK_TCODES", list(env.SAP_BLOCK_TCODES)),
   };
 }
 
