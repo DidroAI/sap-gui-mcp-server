@@ -237,4 +237,11 @@ describe("the messy run as code, through the runner", () => {
     const statements = (s: string) => s.split("\n").filter((l) => /^\s+(await|const|if) /.test(l)).length;
     expect(statements(code)).toBeLessThan(statements(raw));
   });
+
+  test("a popup title with a line break stays inside its comment", () => {
+    const step: Step = { action: { do: "key", key: 0 }, on: on("P", "1", { popup: "wnd[1]", message: true, title: 'Info\nprocess.exit(1); // x' }) };
+    const code = exportSapTs(made([step]));
+    expect(code).toContain('// a popup that only informs ("Info process.exit(1); // x"): SAP may not show it again');
+    expect(code.split("\n").filter((l) => l.includes("process.exit"))).toHaveLength(1);
+  });
 });

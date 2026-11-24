@@ -138,7 +138,7 @@ function actionLines(s: Step, refs: Refs): string[] {
   if (!s.on?.message || !s.on.popup) return [line];
   const id = typeof s.action.id === "string" ? s.action.id : "";
   const there = id.startsWith(`${s.on.popup}/`) ? `await sap.control(${q(id)}).exists()` : `(await sap.screen()).windows.some((w) => w.id === ${q(s.on.popup)})`;
-  return [`// a popup that only informs${s.on.title ? ` ("${s.on.title}")` : ""}: SAP may not show it again`, `if (${there}) ${line}`];
+  return [`// a popup that only informs${s.on.title ? ` ("${s.on.title.replace(/[\r\n\u2028\u2029]+/g, " ")}")` : ""}: SAP may not show it again`, `if (${there}) ${line}`];
 }
 
 export const comment = (text: string) => text.split(/\r?\n/).map((l) => `// ${l}`.trimEnd());

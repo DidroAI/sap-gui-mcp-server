@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { diffViews, popupOver, sameScreen } from "../src/core/diff.js";
+import { diffViews, popupOver, sameScreen, whereLine } from "../src/core/diff.js";
 import { Views, viewModeFromEnv } from "../src/core/views.js";
 
 // A synthetic compact view: no SAP data.
@@ -158,5 +158,17 @@ describe("fields that a message closed", () => {
     const lines = diffViews(view({ type: "AB" }), next).text.split("\n");
     expect(lines).toContain('~ ctxtZHDR-ORG  field  Sales Organization = "2000"  (read-only)');
     expect(lines.filter((l) => l.includes("closed for input"))).toEqual([]);
+  });
+});
+
+describe("whereLine on a Fiori view", () => {
+  test("the page title ends before its id", () => {
+    expect(whereLine('FIORI\nPAGE Manage Orders (#app--page)\nbtn "Go"')).toBe('"Manage Orders"');
+    expect(whereLine("FIORI\nPAGE Manage Orders")).toBe('"Manage Orders"');
+  });
+  test("a long title line full of ' (#' is read in linear time", () => {
+    const t0 = performance.now();
+    expect(whereLine(`FIORI\nPAGE x${" (#".repeat(50_000)}`)).toBe('"x"');
+    expect(performance.now() - t0).toBeLessThan(200);
   });
 });

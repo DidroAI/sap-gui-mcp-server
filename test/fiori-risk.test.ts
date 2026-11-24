@@ -79,6 +79,8 @@ const TABLE: [string, ControlFacts, "read" | "navigate" | "commit", string][] = 
   ["OK of a sign-out question", button("OK", { buttonType: "Emphasized", ...dialog("Sign Out", "Are you sure you want to sign out?", "sap.m.MessageBox") }), "commit", "agrees to a dialog that writes"],
   ["OK of a message", button("OK", { buttonType: "Emphasized", ...dialog("Information", "The list was refreshed.", "sap.m.MessageBox") }), "navigate", "agrees to a dialog"],
   ["OK of a value help", button("OK", { buttonType: "Emphasized", inValueHelp: true, ...dialog("Sold-to Party", "Items (215) Create Date") }), "navigate", "agrees to a dialog"],
+  ["OK of a view settings dialog, by its type", button("OK", { buttonType: "Emphasized", ...dialog("Ansicht", "", "sap.m.ViewSettingsDialog") }), "navigate", "agrees to a filter, sort or layout dialog"],
+  ["OK of a p13n popup, by its type", button("OK", { buttonType: "Emphasized", ...dialog("Ansicht", "", "sap.m.p13n.Popup") }), "navigate", "agrees to a filter, sort or layout dialog"],
   ["a button of a value help", button("Advanced Search", { inValueHelp: true, ...dialog("Sold-to Party") }), "read", "button of a filter bar or value help"],
   ["Save in a filter bar (a view)", button("Save View", { inFilterBar: true }), "commit", "text says it writes"],
   // things that are not buttons

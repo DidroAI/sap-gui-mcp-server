@@ -90,11 +90,11 @@ const leavesWithLoss = (f: ControlFacts) => isButton(f) && !!f.dialog && /Dialog
  * in any language), or by a title that says so in a covered language and holds no commit word. Its field
  * list is no question: "Release Status" among the filters does not make its OK a release.
  */
-const P13N_TYPE = /\.p13n\.|P13n|ViewSettingsDialog$/;
+const p13nType = (type: string) => /\.p13n\.|P13n/.test(type) || type.endsWith("ViewSettingsDialog");
 const personalizes = (f: ControlFacts, ctx: RuleContext) => {
   const d = f.dialog;
   if (!d || commitText(d.title)) return false;
-  if (P13N_TYPE.test(d.type) || ID_READ.test(d.openedBy ?? "")) return true;
+  if (p13nType(d.type) || ID_READ.test(d.openedBy ?? "")) return true;
   const means = safeWord(ctx.language, d.title);
   return means === "filter" || means === "sort" || means === "list layout";
 };

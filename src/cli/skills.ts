@@ -81,13 +81,26 @@ export interface InstallOptions {
   overwrite?: boolean;
 }
 
+/** The file's content, or undefined when there is no such file. Read once, with no check before. */
+export function readIfThere(path: string): Buffer | undefined;
+export function readIfThere(path: string, encoding: "utf8"): string | undefined;
+export function readIfThere(path: string, encoding?: "utf8"): Buffer | string | undefined {
+  try {
+    return encoding ? readFileSync(path, encoding) : readFileSync(path);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw e;
+  }
+}
+
 function put(path: string, content: string | Buffer, dryRun: boolean, overwrite: boolean): FileState {
-  const old = existsSync(path) ? readFileSync(path) : undefined;
+  const old = readIfThere(path);
   if (old?.equals(Buffer.from(content))) return "unchanged";
   if (old !== undefined && !overwrite) return "kept";
   if (!dryRun) {
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, content);
+    // A file that was not there is only created: one made meanwhile is not overwritten.
+    writeFileSync(path, content, { flag: old === undefined ? "wx" : "w" });
   }
   return old === undefined ? "created" : "updated";
 }

@@ -102,7 +102,7 @@ export function parseGrid(text: string, id: string): GridState {
   const lines = text.split("\n");
   const head = lines.find((l) => / {2}(grid|table|tree|list)\b/.test(l) && !l.startsWith(" ")) ?? "";
   if (!head) return { found: false, id, columns: [], titles: [], rows: [], text };
-  const total = Number(/(\d+) (?:rows|lines)\b|\brows (\d+)/.exec(head)?.slice(1).find((x) => x !== undefined) ?? Number.NaN);
+  const total = Number(/(?<!\d)(\d+) (?:rows|lines)\b|\brows (\d+)/.exec(head)?.slice(1).find((x) => x !== undefined) ?? Number.NaN);
   const rows: GridState["rows"] = [];
   let columns: string[] = [];
   let titles: string[] = [];
@@ -112,7 +112,10 @@ export function parseGrid(text: string, id: string): GridState {
   if (legend) {
     // Table control: "0 Item=txtVBAP-POSNR (read-only)": the title, then the cell id without its type prefix.
     // The legend may end with "; 41 more to the right (scroll ...): ..." (columns scrolled out): not columns.
-    const drawn = legend.slice("  columns: ".length).replace(/; \d+ more to the (?:left|right) \(.*$/, "");
+    // Cut where that starts: a regex running on to the end of the line is slow on a long one.
+    const all = legend.slice("  columns: ".length);
+    const more = all.search(/; \d+ more to the (?:left|right) \(/);
+    const drawn = more < 0 ? all : all.slice(0, more);
     for (const c of drawn.split(/, (?=\d+ )/)) {
       const m = /^(\d+) (.*?)=(\S+)/.exec(c);
       numbers.push(Number(m?.[1] ?? Number.NaN));
@@ -120,7 +123,8 @@ export function parseGrid(text: string, id: string): GridState {
       columns.push((m?.[3] ?? c).replace(/^[a-z]+/, ""));
     }
   } else {
-    const cols = /columns: (.*)$/.exec(head)?.[1]?.split(" | ").map((c) => c.trim()) ?? [];
+    const at = head.indexOf("columns: ");
+    const cols = at < 0 ? [] : head.slice(at + "columns: ".length).split(" | ").map((c) => c.trim());
     columns = cols.map((c) => c.split("=")[0] ?? c);
     titles = cols.map((c) => c.split("=").slice(1).join("=") || c);
   }
@@ -133,10 +137,10 @@ export function parseGrid(text: string, id: string): GridState {
       // "Title=value" or "Title [x]" per cell, in column order; an empty cell is left out of the row.
       const named = new Map<string, string>();
       for (const part of body.split("; ")) {
-        const eq = /^(.*?)=(.*)$/.exec(part);
+        const eq = part.indexOf("=");
         const box = /^(.*) \[(x| )\]$/.exec(part);
         if (box) named.set(box[1] ?? "", box[2] === "x" ? "true" : "false");
-        else if (eq) named.set(eq[1] ?? "", eq[2] ?? "");
+        else if (eq >= 0) named.set(part.slice(0, eq), part.slice(eq + 1));
       }
       // Two columns with one title are written "Description [col 4]=...": matched by number.
       cells = titles.map((t, i) => named.get(`${t} [col ${numbers[i]}]`) ?? named.get(t) ?? "");
@@ -236,7 +240,7 @@ export class StatusLocator {
 }
 
 /** "Continue (Enter)" -> "Continue": a button's label without the key SAP shows after it. */
-export const bareLabel = (label: string): string => label.replace(/\s*\([^()]*\)\s*$/, "").trim();
+export const bareLabel = (label: string): string => label.trimEnd().replace(/\([^()]*\)$/, "").trim();
 
 /**
  * The button a label names on a screen: in the window in front first (a

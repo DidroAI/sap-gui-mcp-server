@@ -28,6 +28,7 @@ import {
   startUrl,
   type Starter,
   stateFile,
+  trimEndOf,
 } from "../src/browser/launch.js";
 import { policyFromEnv } from "../src/core/guard.js";
 import { Registry } from "../src/core/registry.js";
@@ -133,6 +134,15 @@ describe("the profile directory of the SAP window", () => {
   test("the state file lies next to it", () => {
     expect(stateFile("/data/sap-ui-automation/chrome")).toBe("/data/sap-ui-automation/chrome.json");
     expect(stateFile("C:\\x\\chrome\\")).toBe("C:\\x\\chrome.json");
+  });
+  test("trailing separators go in linear time, even a long run that does not end the path", () => {
+    expect(trimEndOf("http://h:9222//", "/")).toBe("http://h:9222");
+    expect(trimEndOf("///", "/")).toBe("");
+    const long = `${"/".repeat(100_000)}x`;
+    const t0 = performance.now();
+    expect(trimEndOf(long, "/")).toBe(long);
+    expect(stateFile(long)).toBe(`${long}.json`);
+    expect(performance.now() - t0).toBeLessThan(100);
   });
 });
 
