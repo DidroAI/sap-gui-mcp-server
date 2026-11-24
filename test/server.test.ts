@@ -261,7 +261,7 @@ describe("progress and cancellation of a batch (agent-practice review, 2026-11-2
   test("each action that ran is a progress notification when the client asks for them", async () => {
     const { surface, client } = await setup();
     surface.add({ id: "chrome:1", system: "ABA" });
-    const seen: { progress: number; total?: number }[] = [];
+    const seen: { progress: number; total?: number | undefined }[] = [];
     await client.callTool(
       { name: "sap_act", arguments: { actions: [{ do: "set", id: "a", value: "1" }, { do: "set", id: "b", value: "2" }] } },
       undefined,
