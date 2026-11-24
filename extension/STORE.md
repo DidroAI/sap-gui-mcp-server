@@ -16,7 +16,7 @@ The extension is distributed unpacked until the first store release.
   >
   > The agent never sees your password: the extension types it into SAP's logon page itself, in a tab the agent cannot see, and keeps it in your operating system's keychain. Nothing leaves your computer: the extension talks only to the local server on 127.0.0.1 and to your SAP systems.
   >
-  > Requires the free helper and server: `npx -y sap-ui-automation extension install` (Node.js 20+).
+  > Requires the free helper and server: `npx -y sap-ui-automation extension helper` (Node.js 22 or later).
   >
   > Not affiliated with or endorsed by SAP SE. SAP, SAP Fiori and SAP S/4HANA are trademarks of SAP SE.
 
@@ -70,6 +70,9 @@ local automation (such as Playwright's MCP bridge) follow the same model.
   or a real customer system.
 - Small promo tile (440×280): the mark and the name, no SAP blue gradient or
   SAP logo.
+- Both are made by `SAP_TEST_CHROME=<chrome> node scripts/extension-screenshots.mjs`
+  into `store-assets/` (not committed): the real popup, fed made-up systems on
+  `sap.example.com`.
 
 ## The extension id
 
@@ -82,6 +85,17 @@ local automation (such as Playwright's MCP bridge) follow the same model.
   If the store gives another id (or for Edge Add-ons, which always does),
   add it to `EXTENSION_IDS` and release the npm package before the store
   version.
+
+## Building the upload
+
+```sh
+npm run pack:extension                      # agent-connector-<version>.zip
+npm run pack:extension -- --key key.pem     # first upload only: keeps the id
+```
+
+The zip holds what the extension runs, `LICENSE` and `PRIVACY.md`; the
+manifest goes without `"key"`. Store users install only the helper:
+`npx -y sap-ui-automation extension helper`.
 
 ## Versions
 

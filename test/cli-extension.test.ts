@@ -21,6 +21,16 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
+describe("extension helper (the Chrome Web Store extension)", () => {
+  test("installs the helper only, no copy of the extension", async () => {
+    mkdirSync(join(o.env.XDG_CONFIG_HOME as string, "google-chrome"), { recursive: true });
+    expect(await run("helper")).toBe(0);
+    expect(out.join("\n")).toContain("Installed the extension's helper");
+    expect(out.join("\n")).toContain("Pair with This Computer");
+    expect(existsSync(join(o.home, "sap-ui-automation-extension"))).toBe(false);
+  });
+});
+
 describe("extension install and uninstall", () => {
   test("install copies into a new folder, replaces an older copy, and uninstall removes it", async () => {
     const to = join(root, "ext");
