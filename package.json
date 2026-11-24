@@ -75,6 +75,7 @@
     "prepublishOnly": "bun run typecheck && bun run test && bun run build",
     "docs:dev": "cd docs && bun install --frozen-lockfile && bun run dev",
     "docs:build": "cd docs && bun install --frozen-lockfile && bun run build",
+    "pack:extension": "node scripts/pack-extension.mjs",
     "build:mcpb": "node scripts/build-mcpb.mjs"
   },
   "publishConfig": {

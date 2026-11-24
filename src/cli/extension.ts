@@ -18,6 +18,9 @@ export const EXTENSION_HELP = `  sap-ui-automation extension install [dir]
                                 copy the Chrome extension to dir (default ~/sap-ui-automation-extension) to load it
                                 in chrome://extensions > Load unpacked, and install its helper: the extension
                                 then pairs in one click and keeps saved SAP passwords in the keychain
+  sap-ui-automation extension helper
+                                install only the helper, for the extension from the Chrome Web Store: it then
+                                pairs in one click and keeps saved SAP passwords in the keychain
   sap-ui-automation extension pair
                                 print the pairing code, to pair the extension by hand (SAP_BROWSER=extension)
   sap-ui-automation extension uninstall [dir]
@@ -91,6 +94,24 @@ export async function extensionCommand(args: string[], out: (l: string) => void 
   if (sub === "pair") {
     const { extensionPairCommand } = await import("../browser/extension/index.js");
     for (const l of await extensionPairCommand()) out(l);
+    return 0;
+  }
+  // The extension from the Chrome Web Store needs only its helper: no unpacked copy.
+  if (sub === "helper") {
+    const { installNativeHost } = await import("../browser/extension/native.js");
+    try {
+      const host = installNativeHost({ home, env: o.env ?? process.env });
+      if (!host.registered.length) {
+        err(`Copied the helper to ${host.hostDir}, but no browser profile folder took it (is Chrome installed?). Pair by hand: run "npx -y sap-ui-automation extension pair" and paste the code into the extension's popup.`);
+        return 1;
+      }
+      out(`Installed the extension's helper in ${host.hostDir} (for ${host.registered.length} browser profile folder(s)).`);
+    } catch (e) {
+      err(`Could not install the helper: ${(e as Error).message}. Pair by hand: run "npx -y sap-ui-automation extension pair" and paste the code into the extension's popup.`);
+      return 1;
+    }
+    out("");
+    out(`Restart Chrome, then click the Agent Connector icon (under the puzzle piece in Chrome's toolbar; pin it there) and "Pair with This Computer".`);
     return 0;
   }
   if (sub === "install" || sub === "unpack") {
