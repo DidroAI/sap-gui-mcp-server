@@ -20,6 +20,14 @@ const NAMED: Record<string, number> = {
   "control+pagedown": 83,
 };
 
+/**
+ * The virtual keys the DIAG method's input host can type (Send-VKey in
+ * src/sapgui-diag/ps/input-lib.ps1): Enter, the 48 function keys, Ctrl+E,
+ * Ctrl+F, the page keys, Ctrl+G and Ctrl+P. Scripting sends any key.
+ * Keep it in step with Send-VKey.
+ */
+export const TYPED_VKEYS: ReadonlySet<number> = new Set([...Array.from({ length: 49 }, (_, i) => i), 70, 71, 80, 81, 82, 83, 84, 86]);
+
 /** The virtual key number of a key given as a number or a name; undefined when SAP GUI has no such key. */
 export function vkeyNumber(key: unknown): number | undefined {
   if (typeof key === "number") return Number.isInteger(key) && key >= 0 && key <= 99 ? key : undefined;

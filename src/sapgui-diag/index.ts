@@ -41,7 +41,7 @@ import { HostError, MAX_TIMEOUT_MS, powershellExe, PsHost, READ_TIMEOUT_MS } fro
 import type { Transport } from "../sapgui/facts.js";
 import { vkeyNumber } from "../sapgui/keys.js";
 import { type Cells, cellMetrics, cellsFromEnv, type HostWindow, pickWindow, type Rect } from "./geometry.js";
-import { type Geometry, type Named, namedControl, type Plan, plainMisuse, planCombo, planGrid, planGridScroll, planPage, planPlain, planTableRow, planToolbar, planTree, position, scrollables, scrollTarget, type Step, type TreeChange, toolbarKey } from "./plan.js";
+import { type Geometry, type Named, namedControl, type Plan, plainMisuse, planCombo, planGrid, planGridScroll, planPage, planPlain, planTableRow, planToolbar, planTree, position, scrollables, scrollTarget, type Step, type TreeChange, toolbarKey, untypedKey } from "./plan.js";
 import { type Hop, startRouter } from "./router.js";
 import { lookControl } from "./rows.js";
 import { MAYBE_REQUEST_MS, Traffic, type WaitOptions, waitNote, waitOptions } from "./traffic.js";
@@ -642,6 +642,10 @@ export class DiagDriver implements Driver {
     // focus, f4, set or check where their first click would press, tick or open something: refused, not confirmed.
     const misuse = target && !((action.row !== undefined || action.node !== undefined) && namedControl(s, action.id)) ? plainMisuse(action, target) : undefined;
     if (misuse) throw new ActionError(misuse);
+    // A key the input host cannot type: refused here, not after the user confirmed it.
+    const vkey = action.do === "key" ? vkeyNumber(action.key ?? action.value) : target?.kind === "key" ? target.key.vkey : undefined;
+    const untyped = vkey === undefined ? undefined : untypedKey(vkey);
+    if (untyped) throw new ActionError(untyped);
     return assessDiag(s, action, target);
   }
 
