@@ -248,5 +248,3 @@ The first public version.
 
 - `skills/sap-gui-drive`, a skill for agents working in SAP screens, also
   shipped in the npm package and as a Claude Code plugin.
-- `bench/`, a benchmark harness with 72 tasks (not in the npm package; no
-  results yet).
