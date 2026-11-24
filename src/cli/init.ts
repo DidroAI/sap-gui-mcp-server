@@ -160,7 +160,7 @@ export async function init(opts: InitOptions = {}): Promise<InitResult> {
   if (answers.clients.length) {
     const r = setup({ dryRun, only: answers.clients, cwd, onPath: opts.onPath }, env, platform, home);
     lines.push(...r.lines.filter((l) => /^[✓✗•–] /.test(l)));
-  } else lines.push("– MCP clients: none chosen (run sap-ui-automation setup later)");
+  } else lines.push("– MCP clients: none chosen (run npx -y sap-ui-automation setup later)");
 
   const gitignore = join(cwd, ".gitignore");
   // A git project without a .gitignore gets one: traces and results hold business data.

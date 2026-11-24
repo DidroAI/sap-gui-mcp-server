@@ -65,3 +65,15 @@ describe("doctor report", () => {
     expect(r.text).toContain("Ready.");
   });
 });
+
+describe("setup finds entries left from before the rename", () => {
+  test("in JSON configs and in Codex's config.toml", async () => {
+    const { oldJsonEntries, oldCodexEntries } = await import("../src/cli/setup.js");
+    expect(oldJsonEntries(JSON.stringify({ mcpServers: { "sap-gui-mcp-server": {}, "sap-ui-automation": {} } }), "mcpServers")).toEqual(["sap-gui-mcp-server"]);
+    expect(oldJsonEntries(JSON.stringify({ servers: { "sap-gui": {} } }), "servers")).toEqual(["sap-gui"]);
+    expect(oldJsonEntries("not json", "mcpServers")).toEqual([]);
+    expect(oldCodexEntries('[mcp_servers.sap-ui-automation]\n\n[mcp_servers."sap-gui-mcp-server"]\ncommand = "node"\n')).toEqual(["sap-gui-mcp-server"]);
+    expect(oldCodexEntries("[mcp_servers.sap-gui]\n")).toEqual(["sap-gui"]);
+    expect(oldCodexEntries("[mcp_servers.sap-ui-automation]\n")).toEqual([]);
+  });
+});

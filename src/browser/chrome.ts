@@ -498,7 +498,7 @@ export async function chromeDoctor(env: Record<string, string | undefined>): Pro
       }
       return [
         { ok: true, check, detail: `found at ${status.exe}` },
-        { ok: true, check: "SAP window", detail: `not running yet: it opens the first time the agent needs SAP, or run sap-ui-automation browser. Log on to SAP there once (profile ${status.profileDir})` },
+        { ok: true, check: "SAP window", detail: `not running yet: it opens the first time the agent needs SAP, or run npx -y sap-ui-automation browser. Log on to SAP there once (profile ${status.profileDir})` },
       ];
     }
   }
@@ -510,7 +510,7 @@ export async function chromeDoctor(env: Record<string, string | undefined>): Pro
     if (extensionMode(env)) return [{ ok: false, check, detail: message }];
     if (env.SAP_CHROME_CDP)
       return [{ ok: false, check, detail: message.split(/(?<=\.) /)[0] ?? message, fix: "Check that this Chrome runs with --remote-debugging-port and --user-data-dir, or unset SAP_CHROME_CDP to use your everyday Chrome." }];
-    if (usesSapWindow(env)) return [{ ok: false, check, detail: message, fix: "Close the SAP window (the Chrome that this server opened), then run sap-ui-automation browser." }];
+    if (usesSapWindow(env)) return [{ ok: false, check, detail: message, fix: "Close the SAP window (the Chrome that this server opened), then run npx -y sap-ui-automation browser." }];
     if (blocked.length)
       return [
         {

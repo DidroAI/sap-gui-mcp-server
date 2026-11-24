@@ -31,7 +31,6 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { posix, win32 } from "node:path";
-import { pathToFileURL } from "node:url";
 import { NotOpenYet } from "../core/types.js";
 import { originOf } from "./classify.js";
 
@@ -102,26 +101,6 @@ export function trimEndOf(s: string, chars: string): string {
 
 /** The small JSON file next to the profile directory: the last SAP address seen in the window. */
 export const stateFile = (profileDir: string): string => `${trimEndOf(profileDir, "\\/")}.json`;
-/** The local start page, next to the profile directory. */
-export const startPageFile = (profileDir: string): string => `${trimEndOf(profileDir, "\\/")}-start.html`;
-
-export const START_PAGE = `<!doctype html>
-<html lang="en">
-<meta charset="utf-8">
-<title>SAP window</title>
-<style>
-  body { font: 16px/1.5 system-ui, sans-serif; margin: 12vh auto; max-width: 34em; padding: 0 1.5em; color: #1d2d3e; }
-  h1 { font-size: 1.4em; }
-  p { margin: 0.8em 0; }
-  small { color: #556b82; }
-</style>
-<h1>SAP window</h1>
-<p>Open your SAP system here (Web GUI or Fiori launchpad address) and log on.</p>
-<p>The agent works on the SAP screen in this window.</p>
-<p><small>Opened by sap-ui-automation. It never logs on and never types a password. You can close this window when you are done.</small></p>
-</html>
-`;
-
 /**
  * The part of a SAP address worth opening again: origin and path, with the
  * client and the language. The rest of the query and the hash are dropped
@@ -163,7 +142,7 @@ export async function rememberSapAddress(profileDir: string, url: string): Promi
   }
 }
 
-/** What the window opens on: the last SAP address, else SAP_START_URL, else the local start page (written here). */
+/** What the window opens on: the last SAP address, else SAP_START_URL, else an empty tab for the user to type the address in. */
 export async function startUrl(env: Env, profileDir: string): Promise<string> {
   const last = await lastSapAddress(profileDir);
   if (last) return last;
@@ -172,10 +151,7 @@ export async function startUrl(env: Env, profileDir: string): Promise<string> {
     if (!originOf(named)) throw new Error(`SAP_START_URL must be an http or https address (got "${named}")`);
     return named;
   }
-  const file = startPageFile(profileDir);
-  await mkdir(paths(process.platform).dirname(file), { recursive: true });
-  await writeFile(file, START_PAGE);
-  return pathToFileURL(file).href;
+  return "about:blank";
 }
 
 /** `DevToolsActivePort`: the port on the first line, the browser's WebSocket path on the second. */
