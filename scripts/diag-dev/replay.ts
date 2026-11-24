@@ -15,18 +15,22 @@
  *
  *   bun scripts/diag-dev/replay.ts <capture.bin> <ranges.json> [outdir]
  *
- * outdir defaults to diag-obs in the temp directory.
+ * outdir defaults to a new diag-obs-* folder in the temp directory, that only
+ * this user can open (the screens hold SAP data). Its path is printed.
  */
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DiagDecoder, diagView } from "../../src/diag/index.js";
 
-const [capture, rangesFile, outdir = join(tmpdir(), "diag-obs")] = process.argv.slice(2);
+const [capture, rangesFile, outArg] = process.argv.slice(2);
 if (!capture || !rangesFile) {
   console.error("usage: bun scripts/diag-dev/replay.ts <capture.bin> <ranges.json> [outdir]");
   process.exit(2);
 }
+// mkdtemp makes the folder 0700 with a name no one else can guess beforehand.
+const outdir = outArg ?? mkdtempSync(join(tmpdir(), "diag-obs-"));
+console.log(`writing to ${outdir}`);
 const data = readFileSync(capture);
 const ranges = JSON.parse(readFileSync(rangesFile, "utf8")) as Record<string, [number, number]>;
 
