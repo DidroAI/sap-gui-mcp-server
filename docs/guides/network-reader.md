@@ -39,7 +39,7 @@ gets `/H/127.0.0.1/S/3298/H/router.example.com/S/3299`.
 In Claude Code:
 
 ```sh
-claude mcp add sap-gui --scope user -e SAP_GUI_METHOD=diag -- npx -y sap-ui-automation
+claude mcp add sap-ui-automation --scope user -e SAP_GUI_METHOD=diag -- npx -y sap-ui-automation
 ```
 
 Then check with `doctor`:

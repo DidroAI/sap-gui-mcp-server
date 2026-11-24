@@ -4,7 +4,7 @@ Every setting is an environment variable of the server process. Set it in
 your MCP client's `env` block, or in the shell before a CLI command:
 
 ```sh
-claude mcp add sap-gui --scope user -e SAP_WRITE=confirm -- npx -y sap-ui-automation
+claude mcp add sap-ui-automation --scope user -e SAP_WRITE=confirm -- npx -y sap-ui-automation
 SAP_ALLOW_SYSTEMS=ABA/800 npx -y sap-ui-automation sessions
 ```
 

@@ -76,7 +76,7 @@ To let the agent save, set `SAP_WRITE` in the server's environment:
 For example, in Claude Code:
 
 ```sh
-claude mcp add sap-gui --scope user -e SAP_WRITE=confirm -- npx -y sap-ui-automation
+claude mcp add sap-ui-automation --scope user -e SAP_WRITE=confirm -- npx -y sap-ui-automation
 ```
 
 Other clients take it in their `env` block ([Install in your

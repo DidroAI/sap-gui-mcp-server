@@ -61,7 +61,7 @@ Adds the server, as `sap-ui-automation`, to the MCP clients it finds:
 
 | Client | How | Found when |
 | --- | --- | --- |
-| Claude Code | `claude mcp add sap-gui --scope user -- <command>` | the `claude` command is on the PATH |
+| Claude Code | `claude mcp add sap-ui-automation --scope user -- <command>` | the `claude` command is on the PATH |
 | Codex | a `[mcp_servers.sap-ui-automation]` table in `~/.codex/config.toml` (`$CODEX_HOME/config.toml`) | the `codex` command is on the PATH, or the folder exists |
 | Claude Desktop | an `mcpServers["sap-ui-automation"]` entry in `claude_desktop_config.json` | its folder exists (macOS: `~/Library/Application Support/Claude`; Windows: `%APPDATA%\Claude`) |
 | Cursor | an `mcpServers["sap-ui-automation"]` entry in the project's `.cursor/mcp.json` when that file exists, else in `~/.cursor/mcp.json` | one of those exists |

@@ -239,3 +239,12 @@ export function decide(policy: Policy, action: Action, assessment: Assessment, a
     refused: `this action may write to SAP (${assessment.reason}) and writes are off. Tell the user what you would have saved; do not look for another way. ${fiori ? LEAVE_UNSAVED_FIORI : LEAVE_UNSAVED} Only the user can allow writes (SAP_WRITE=confirm or on).`,
   };
 }
+
+/**
+ * The destructiveHint of the tools that act: false only when the guard refuses every write and every
+ * log off (SAP_WRITE=off, SAP_ALLOW_LOGOFF off). Clients such as Codex ask before each call of a tool
+ * marked destructive: with writes off that is a question per navigation for nothing the guard lets through.
+ */
+export function mayDestroy(policy: Policy): boolean {
+  return policy.write !== "off" || policy.allowLogoff === true;
+}

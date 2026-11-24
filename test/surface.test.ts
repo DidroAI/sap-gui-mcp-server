@@ -51,7 +51,22 @@ describe("tools/list", () => {
     for (const t of tools) expect([t.name, t.annotations?.openWorldHint]).toEqual([t.name, false]);
     for (const name of ["sap_look", "sap_sessions", "sap_screenshot"]) expect([name, of(name).readOnlyHint, of(name).idempotentHint]).toEqual([name, true, true]);
     for (const name of ["sap_act", "sap_replay"]) expect([name, of(name).destructiveHint]).toEqual([name, true]);
-    expect(of("sap_use").readOnlyHint).toBe(true);
+    expect([of("sap_use").readOnlyHint, of("sap_use").idempotentHint]).toEqual([true, true]);
+  });
+  test("acting is destructive only when the guard lets a write or a log off through", async () => {
+    for (const [env, want] of [
+      [{}, false],
+      [{ SAP_WRITE: "off", SAP_ALLOW_LOGOFF: "on" }, true],
+      [{ SAP_WRITE: "on" }, true],
+    ] as const) {
+      const { client } = await setup(env);
+      const { tools } = await client.listTools();
+      expect([env, tools.find((t) => t.name === "sap_act")?.annotations?.destructiveHint]).toEqual([env, want]);
+    }
+  });
+  test("the server says who it is", async () => {
+    const { client } = await setup({});
+    expect(client.getServerVersion()).toMatchObject({ name: "sap-ui-automation", title: "SAP UI Automation", websiteUrl: "https://github.com/DidroAI/sap-ui-automation" });
   });
 });
 

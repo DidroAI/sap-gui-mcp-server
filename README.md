@@ -22,7 +22,6 @@ VS Code and any other MCP client.
 - **Runs become tests.** Record what the agent did, replay it with no
   model, export it.
 
-<!-- TODO(launch): a 20-second GIF: the agent reads VA03 in Web GUI and answers a question. -->
 
 ```
 TRANSACTION VA01  PROGRAM SAPMV45A  SCREEN 101  SYSTEM ABA (800)
@@ -46,7 +45,7 @@ your client:
 **Claude Code**
 
 ```sh
-claude mcp add sap-gui --scope user -- npx -y sap-ui-automation
+claude mcp add sap-ui-automation --scope user -- npx -y sap-ui-automation
 ```
 
 or, with the skill, as a plugin: `/plugin marketplace add DidroAI/sap-ui-automation`

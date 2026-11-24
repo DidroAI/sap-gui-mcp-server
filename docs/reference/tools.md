@@ -33,16 +33,20 @@ ask the user before a call; the server's own guard does not read them.
 | Tool | `readOnlyHint` | `destructiveHint` | `idempotentHint` | `openWorldHint` |
 | --- | --- | --- | --- | --- |
 | `sap_sessions` | true | | true | false |
-| `sap_use` | true | | | false |
+| `sap_use` | true | | true | false |
 | `sap_look` | true | | true | false |
-| `sap_act` | false | true | | false |
+| `sap_act` | false | see below | | false |
 | `sap_screenshot` | true | | true | false |
 | `sap_record` | false | false | | false |
-| `sap_replay` | false | true | | false |
+| `sap_replay` | false | see below | | false |
 | `sap_code_save` | false | false | | false |
-| `sap_code_test` | false | true | | false |
+| `sap_code_test` | false | see below | | false |
 
-An empty cell means the tool does not set that hint. `sap_use` is
+An empty cell means the tool does not set that hint. `destructiveHint` on
+`sap_act`, `sap_replay` and `sap_code_test` follows the settings: false with
+`SAP_WRITE=off` and `SAP_ALLOW_LOGOFF` off, where the guard refuses every write
+and every log off; true otherwise. Clients that ask before each call of a
+destructive tool (Codex, for one) then ask only when a write can go through. `sap_use` is
 read-only for SAP: it changes only which session the other tools use by
 default. `openWorldHint` is false because the tools work in one closed SAP
 system, not the open web.

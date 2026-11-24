@@ -64,10 +64,10 @@ variables of the server; all of them are in
 
 ```sh [CLI]
 # read-only (SAP_WRITE=off):
-claude mcp add sap-gui --scope user -- npx -y sap-ui-automation
+claude mcp add sap-ui-automation --scope user -- npx -y sap-ui-automation
 
 # asks you before each write:
-claude mcp add --scope user --env SAP_WRITE=confirm --transport stdio sap-gui -- npx -y sap-ui-automation
+claude mcp add --scope user --env SAP_WRITE=confirm --transport stdio sap-ui-automation -- npx -y sap-ui-automation
 ```
 
 ```text [Plugin]
@@ -82,14 +82,16 @@ to the current project only. Check it with `claude mcp get sap-ui-automation`, o
 in a session. Claude Code asks in interactive sessions; in `claude -p` a
 write under `confirm` does not run unless a hook answers.
 
-The **plugin** brings the server and the `sap-gui-drive` skill, which teaches
-the agent how to work in SAP transactions. From your shell, the same is
+The **plugin** brings the server and two skills: `sap-gui-drive`, which teaches
+the agent how to work in SAP transactions with the tools, and `sap-gui-cli`,
+the same work from the shell with the CLI. From your shell, the same is
 `claude plugin marketplace add DidroAI/sap-ui-automation` then
 `claude plugin install sap-ui-automation@sap-ui-automation`. The plugin starts the
 server with `SAP_WRITE` from your environment (default `off`). Its files:
 [`.claude-plugin/plugin.json`](https://github.com/DidroAI/sap-ui-automation/blob/main/.claude-plugin/plugin.json),
 [`.mcp.json`](https://github.com/DidroAI/sap-ui-automation/blob/main/.mcp.json),
-[`skills/sap-gui-drive`](https://github.com/DidroAI/sap-ui-automation/blob/main/skills/sap-gui-drive/SKILL.md).
+[`skills/sap-gui-drive`](https://github.com/DidroAI/sap-ui-automation/blob/main/skills/sap-gui-drive/SKILL.md),
+[`skills/sap-gui-cli`](https://github.com/DidroAI/sap-ui-automation/blob/main/skills/sap-gui-cli/SKILL.md).
 
 ## Claude Desktop
 
@@ -148,10 +150,10 @@ you rely on it.
 
 ```sh [CLI]
 # read-only (SAP_WRITE=off):
-codex mcp add sap-gui -- npx -y sap-ui-automation
+codex mcp add sap-ui-automation -- npx -y sap-ui-automation
 
 # asks you before each write:
-codex mcp add sap-gui --env SAP_WRITE=confirm -- npx -y sap-ui-automation
+codex mcp add sap-ui-automation --env SAP_WRITE=confirm -- npx -y sap-ui-automation
 ```
 
 ```toml [~/.codex/config.toml]

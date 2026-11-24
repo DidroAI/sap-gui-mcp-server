@@ -17,7 +17,7 @@ import { createHash } from "node:crypto";
 import { actionText, normalizeAction, type NormalizedAction, STEP_VERBS } from "./core/action.js";
 import { type BatchStep, idOn, isLook, MAX_BATCH, parseBatch, popupPart, shortNote, staleWrite, stopAfter, unseenWrite } from "./batch.js";
 import { dateFormatOf, type Notation, notationIn, withNumbers } from "./core/notation.js";
-import { commandFieldRefusal, decide, LEAVE_UNSAVED, leavesTransaction, type Policy, sessionRefusal, tcodeOf, tcodeRefusal } from "./core/guard.js";
+import { commandFieldRefusal, decide, LEAVE_UNSAVED, leavesTransaction, mayDestroy, type Policy, sessionRefusal, tcodeOf, tcodeRefusal } from "./core/guard.js";
 import { type Turn, SessionQueue, waitedLine } from "./core/queue.js";
 import { Registry } from "./core/registry.js";
 import type { ExtensionSystem, LogonOptions, LogonResult } from "./browser/extension/relay.js";
@@ -297,7 +297,15 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   const registry = new Registry(surfaces, policy);
   const views = new Views(view);
   const recorder = new Recorder(record ?? recorderOptionsFromEnv(process.env, `${SERVER_NAME} ${SERVER_VERSION}`));
-  const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, { instructions: instructions(policy, !!systems) });
+  const server = new McpServer(
+    {
+      name: SERVER_NAME,
+      version: SERVER_VERSION,
+      title: "SAP UI Automation",
+      description: "See and drive the SAP screens open on this machine (SAP GUI for Windows, Web GUI, Fiori), with guardrails on writes",
+      websiteUrl: "https://github.com/DidroAI/sap-ui-automation",
+    },
+    { instructions: instructions(policy, !!systems) });
   const session = z.string().optional().describe("number, id, system, transaction or sapgui|webgui|fiori; default: the active one");
   const queue = new SessionQueue();
   /** The data of an answer, when structured output is on; undefined (nothing added) when it is off. */
@@ -583,7 +591,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       description: 'Makes another session the active one and answers with its screen. Only to switch between several sessions; every other tool also takes "session" for one call.',
       inputSchema: { session: z.string().describe("number, id, system, transaction or sapgui|webgui|fiori") },
       // Read-only for SAP: it changes only which session this server's other tools use by default, then reads that session's screen.
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     },
     ({ session: raw }) =>
       answer(() =>
@@ -1134,7 +1142,7 @@ ${writeRule(policy)}`,
         .passthrough(),
       ...(structured ? { outputSchema: actOutput } : {}),
       // A closed SAP system, not the open web: openWorldHint is false on every tool.
-      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: mayDestroy(policy), openWorldHint: false },
     },
     (input) =>
       answer(async () => {
