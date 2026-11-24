@@ -76,6 +76,31 @@ The first public version.
 - `SAP_BROWSER=attach` uses the browser you already work in instead
   (Chrome or Edge, once remote debugging is allowed at `chrome://inspect`).
   A DevTools endpoint named in `SAP_CHROME_CDP` wins over both.
+- `SAP_BROWSER=extension` reaches your everyday Chrome through the **Agent
+  Connector for SAP Systems** extension (`extension/`) instead: no remote
+  debugging switch, only the tabs of the SAP systems registered in the
+  extension are shared. The extension is a list of your systems (name, Web
+  GUI or launchpad address, client, language, user) in SAP Fiori's Horizon
+  look, with its own mark (no SAP artwork): *Add This SAP Page* fills one in
+  from the current tab, *Log On* (or *Open*, *Show Tab*) opens it, and the
+  More menu edits, forgets the password or removes it. With a saved password
+  it logs on by itself, filling SAP's logon page like a password manager in
+  a new private tab, from an isolated script world, on the system's own host
+  only: the server and the agent never see the password. The agent gets
+  `sap_systems` and `sap_logon`; `sap_logon` answers each outcome with what
+  to ask the user (wrong password, locked user, new password needed, SAP's
+  question about other logons, an identity provider, SAP's error page,
+  paused, not registered, Chrome closed), never retries a refused password,
+  and never ends the user's other logons (only `otherLogons: "keep"`, after
+  the user said so). A tab that shows a password field is never shared with
+  the server. On macOS and Windows the server starts Chrome when it is
+  closed. `sap-gui-mcp-server extension install` copies the extension and
+  installs its helper (a native messaging host): the extension pairs in one
+  click and keeps passwords only in the macOS Keychain, the Secret Service
+  or Windows DPAPI; `extension uninstall` removes it all. The link to the
+  server is a local WebSocket, paired with a code and encrypted (AES-GCM).
+  See `extension/PROTOCOL.md`, `extension/PRIVACY.md` and the design and
+  security review in `extension/REVIEW.md`.
 - **SAP GUI without scripting (experimental)**: `SAP_GUI_METHOD=diag` reads
   the screen from SAP GUI's DIAG traffic through a local SAProuter, and acts
   with the keyboard and mouse (see below).

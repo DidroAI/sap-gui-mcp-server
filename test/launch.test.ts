@@ -59,11 +59,12 @@ function fakeChrome(path = "/devtools/browser/fake"): { port: number; path: stri
 const never = new Promise<number | null>(() => {});
 
 describe("SAP_BROWSER", () => {
-  test("launch is the default; attach is the other mode; anything else is refused", () => {
+  test("launch is the default; attach and extension are the other modes; anything else is refused", () => {
     expect(browserMode({})).toBe("launch");
     expect(browserMode({ SAP_BROWSER: " Launch " })).toBe("launch");
     expect(browserMode({ SAP_BROWSER: "attach" })).toBe("attach");
-    expect(() => browserMode({ SAP_BROWSER: "firefox" })).toThrow("SAP_BROWSER must be launch or attach");
+    expect(browserMode({ SAP_BROWSER: "Extension" })).toBe("extension");
+    expect(() => browserMode({ SAP_BROWSER: "firefox" })).toThrow("SAP_BROWSER must be launch, attach or extension");
   });
 });
 

@@ -8,11 +8,13 @@
  *   sap-gui-mcp-server sessions   lists the SAP sessions it finds, then exits
  *   sap-gui-mcp-server browser    opens the SAP window (the Chrome the server starts for Web GUI and Fiori)
  *   sap-gui-mcp-server test       runs *.sap.ts tests (src/runner)
+ *   sap-gui-mcp-server extension  unpacks and pairs the Chrome extension (src/cli/extension.ts)
  */
-import { disconnectChrome, openSapWindow } from "./browser/chrome.js";
+import { disconnectChrome, extensionMode, openSapWindow } from "./browser/chrome.js";
 import { browserMode } from "./browser/launch.js";
 import { AGENT_COMMANDS, AGENT_HELP, agentCommand, daemonRunning } from "./cli/agent.js";
 import { doctorReport } from "./cli/doctor.js";
+import { EXTENSION_HELP, extensionCommand } from "./cli/extension.js";
 import { init } from "./cli/init.js";
 import { setup } from "./cli/setup.js";
 import { installSkills, SKILL_TARGETS, type SkillTarget } from "./cli/skills.js";
@@ -39,6 +41,7 @@ Usage:
                                 (--global: ~/.claude/skills, ~/.codex/skills)
   sap-gui-mcp-server doctor     check SAP GUI scripting and Chrome access on this machine
   sap-gui-mcp-server sessions   list the SAP sessions found now
+${EXTENSION_HELP}
   sap-gui-mcp-server browser    open the SAP window: the Chrome window the server starts for Web GUI and Fiori.
                                 Log on to SAP there once; the agent opens it by itself when it needs SAP.
 ${RECORD_HELP}
@@ -55,9 +58,10 @@ Environment:
   SAP_ALLOW_TCODES / SAP_BLOCK_TCODES   transactions the agent may / may not open or work in
   SAP_ALLOW_ORIGINS=https://myhost:44300  only browser tabs of these origins (comma list)
   SAP_SURFACES=sapgui,webgui,fiori      which kinds of session to look for
-  SAP_BROWSER=launch|attach             launch (default): the server starts Google Chrome with a profile of its own (the SAP
+  SAP_BROWSER=launch|attach|extension   launch (default): the server starts Google Chrome with a profile of its own (the SAP
                                         window) and works only there. attach: your running Chrome or Edge that allows
-                                        remote debugging (chrome://inspect/#remote-debugging).
+                                        remote debugging (chrome://inspect/#remote-debugging). extension:
+                                        your everyday Chrome through the sap-gui-mcp-server extension (see extension pair).
   SAP_CHROME_PATH=/path/to/chrome       the Chrome to start, when the server does not find it
   SAP_START_URL=https://myhost/sap/...  the address a new SAP window opens on (after its first use: the last SAP address)
   SAP_CHROME_CDP=http://127.0.0.1:9222  a Chrome DevTools endpoint to attach to; it wins over SAP_BROWSER. A Chrome started
@@ -80,6 +84,7 @@ async function main(argv: string[]): Promise<number> {
   if (cmd === "init") return await initCommand(argv.slice(1));
   if (cmd === "install") return installCommand(argv.slice(1));
   if (cmd === "test") return testCommand(argv.slice(1));
+  if (cmd === "extension") return extensionCommand(argv.slice(1));
   const agent = { env: process.env, cwd: process.cwd(), out: (l: string) => console.log(l), err: (l: string) => console.error(l) };
   if (AGENT_COMMANDS.has(cmd)) return agentCommand(argv, agent);
   // With a daemon running, the agent CLI's list: the same numbers, and * on its active session.
@@ -87,7 +92,14 @@ async function main(argv: string[]): Promise<number> {
   const surfaces = surfacesFromEnv();
   if (cmd === "doctor") {
     const attaching = !process.env.SAP_CHROME_CDP?.trim() && browserMode(process.env) === "attach";
-    if (surfaces.some((s) => s.name !== "sapgui")) console.error(attaching ? "Checking… (if Chrome asks whether to allow remote debugging, click Allow)\n" : "Checking…\n");
+    if (surfaces.some((s) => s.name !== "sapgui"))
+      console.error(
+        extensionMode(process.env)
+          ? "Checking… (waiting up to 35 s for the sap-gui-mcp-server extension in Chrome)\n"
+          : attaching
+            ? "Checking… (if Chrome asks whether to allow remote debugging, click Allow)\n"
+            : "Checking…\n",
+      );
     const report = await doctorReport(surfaces, SERVER_VERSION);
     console.log(report.text);
     return report.ok ? 0 : 1;

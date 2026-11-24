@@ -12,8 +12,10 @@ VS Code and any other MCP client.
 - **Writes off by default.** Actions that may save to SAP are refused
   unless you allow them, or asked about in your client first.
 - **Your sessions, your authorisations.** It finds the sessions you have
-  open and works in them as you. It never logs on and never stores a
-  password.
+  open and works in them as you. The server never logs on by itself and
+  never sees a password: with the optional Chrome extension, the extension
+  logs on to the systems you registered in it and keeps their passwords to
+  itself ([Chrome](docs/guides/chrome.md#use-your-everyday-chrome-with-the-extension)).
 - **Runs on your machine.** No telemetry, no hosted service. Screen content
   goes only to your MCP client, and from there to the model provider you
   chose.

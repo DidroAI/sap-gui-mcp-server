@@ -37,14 +37,15 @@ import { originOf } from "./classify.js";
 
 type Env = Record<string, string | undefined>;
 
-export type BrowserMode = "launch" | "attach";
+export type BrowserMode = "launch" | "attach" | "extension";
 
-/** `SAP_BROWSER`: launch (default) or attach. */
+/** `SAP_BROWSER`: launch (default), attach, or extension (src/browser/extension/). */
 export function browserMode(env: Env): BrowserMode {
   const raw = (env.SAP_BROWSER ?? "").trim().toLowerCase();
   if (!raw || raw === "launch") return "launch";
   if (raw === "attach") return "attach";
-  throw new Error(`SAP_BROWSER must be launch or attach (got "${env.SAP_BROWSER}")`);
+  if (raw === "extension") return "extension";
+  throw new Error(`SAP_BROWSER must be launch, attach or extension (got "${env.SAP_BROWSER}")`);
 }
 
 const paths = (platform: NodeJS.Platform) => (platform === "win32" ? win32 : posix);

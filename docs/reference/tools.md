@@ -13,6 +13,8 @@ So a server with the default settings lists seven tools.
 | [`sap_look`](#sap-look) | the screen as text | always |
 | [`sap_act`](#sap-act) | one action, or several (`actions`), then the new screen | always |
 | [`sap_screenshot`](#sap-screenshot) | a PNG of the window or tab | always |
+| `sap_systems` | lists the SAP systems registered in the Chrome extension (name, address, client, user, how it logs on) | `SAP_BROWSER=extension` |
+| `sap_logon` | opens a registered system and logs on; the extension fills SAP's logon page, the server never sees the password | `SAP_BROWSER=extension` |
 | [`sap_record`](#sap-record) | records the run as a test | always |
 | [`sap_replay`](#sap-replay) | runs a recorded test again, with no model | always |
 | [`sap_code_save`](#sap-code-save) | checks and saves a `*.sap.ts` test | `SAP_CODE_TOOLS=on` |
