@@ -115,6 +115,6 @@ describe("files SAP writes to the local machine in Web GUI", () => {
   test("the directory: SAP_DOWNLOAD_DIR, else downloads in the recordings directory, else ./sap-downloads", () => {
     expect(downloadDir({ SAP_DOWNLOAD_DIR: "/data/out" }, "/w")).toBe(resolve("/data/out"));
     expect(downloadDir({ SAP_RECORD_DIR: "/srv/sap-tests" }, "/w")).toBe(resolve("/srv/sap-tests", "downloads"));
-    expect(downloadDir({}, "/w")).toBe(resolve("/w", "sap-downloads"));
+    expect(downloadDir({}, "/w")).toBe(join("/w", "sap-downloads"));
   });
 });
