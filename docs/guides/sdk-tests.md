@@ -257,8 +257,7 @@ Flags: `--config <file>`, `--project <p>`, `--reporter list,junit,json,html`,
 
 Tests run one at a time (one SAP session is one user's screen). Each test's
 trace goes to `sap-results/<test>/`; open it with the
-[trace viewer](trace-viewer.md). `npx sap-gui init` writes a config and an
-example test to start from ([CLI](../reference/cli.md)).
+[trace viewer](trace-viewer.md).
 
 In CI, the machine running the tests needs an SAP session open (a Web GUI
 tab in Chrome, or SAP GUI on a Windows runner). Keep `write` at `off` unless

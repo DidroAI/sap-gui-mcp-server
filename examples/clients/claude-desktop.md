@@ -1,11 +1,6 @@
 # Claude Desktop
 
-One click: download `sap-gui-mcp-server-<version>.mcpb` from the
-[latest release](https://github.com/DidroAI/sap-gui-mcp-server/releases/latest)
-and open it. Claude Desktop asks for the settings (writes, allowed systems,
-transactions, origins).
-
-By hand, in `claude_desktop_config.json` (Settings > Developer > Edit Config):
+In `claude_desktop_config.json` (Settings > Developer > Edit Config):
 
 ```json
 {

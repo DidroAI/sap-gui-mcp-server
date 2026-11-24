@@ -13,7 +13,7 @@ sap-gui-mcp-server <command> [options]
 | --- | --- | --- |
 | (none) | starts the stdio MCP server: what MCP clients run | runs until the client closes it |
 | [`setup`](#setup) | adds the server to the MCP clients found on this machine | 0 |
-| `init`, `install`, `test`, `show-trace`, agent CLI | see the table below | |
+| `test`, `show-trace`, agent CLI | see the table below | |
 | [`doctor`](#doctor) | checks what the server can reach, and says what to change | 0 ready, 1 not ready |
 | [`sessions`](#sessions) | lists the SAP sessions found now | 0; 1 when every surface failed |
 | [`replay`](#replay) | runs recorded tests on an open session, with no model | 0 all passed, 1 otherwise |
@@ -34,8 +34,6 @@ runner come these commands, described in their guides:
 
 | Command | Does | Guide |
 | --- | --- | --- |
-| `init [--yes] [--force] [--dry-run]` | sets a project up: `sap.config.ts`, `sap-tests/example.sap.ts`, agent skills, MCP clients, `.gitignore` | [Writing tests](../guides/sdk-tests.md) |
-| `install --skills [--target claude\|codex\|cursor\|all] [--global] [--dry-run]` | copies the bundled agent skills | [CLI for coding agents](../guides/cli-for-agents.md) |
 | `test [files] [--config f] [--project p] [--reporter list,junit,json,html] [--grep re] [--retries n] [--list] [--update-locks]` | runs `*.sap.ts` tests | [Writing tests](../guides/sdk-tests.md) |
 | `show-trace <file> [--out <file.html>] [--open]` | writes a recording or trace as one HTML page | [Trace viewer](../guides/trace-viewer.md) |
 | `sessions`, `look`, `act`, `use`, `screenshot`, `record`, `daemon` | the agent CLI | [CLI for coding agents](../guides/cli-for-agents.md) |
@@ -54,7 +52,7 @@ from Chrome without closing it.
 ## setup
 
 ```sh
-sap-gui-mcp-server setup [claude-code|codex|claude-desktop|cursor|windsurf|vscode]... [--dry-run]
+sap-gui-mcp-server setup [claude-code|codex|claude-desktop]... [--dry-run]
 ```
 
 Adds the server, as `sap-gui`, to the MCP clients it finds:
@@ -64,13 +62,10 @@ Adds the server, as `sap-gui`, to the MCP clients it finds:
 | Claude Code | `claude mcp add sap-gui --scope user -- <command>` | the `claude` command is on the PATH |
 | Codex | a `[mcp_servers.sap-gui]` table in `~/.codex/config.toml` (`$CODEX_HOME/config.toml`) | the `codex` command is on the PATH, or the folder exists |
 | Claude Desktop | an `mcpServers["sap-gui"]` entry in `claude_desktop_config.json` | its folder exists (macOS: `~/Library/Application Support/Claude`; Windows: `%APPDATA%\Claude`) |
-| Cursor | an `mcpServers["sap-gui"]` entry in the project's `.cursor/mcp.json` when that file exists, else in `~/.cursor/mcp.json` | one of those exists |
-| Windsurf (Devin Desktop) | an `mcpServers["sap-gui"]` entry in `~/.config/devin/mcp_config.json` (`$XDG_CONFIG_HOME/devin`; Windows: `%APPDATA%\devin`) | that folder or `~/.codeium/windsurf` exists |
-| VS Code (Copilot) | a `servers["sap-gui"]` entry in the project's `.vscode/mcp.json` | that file exists, or `vscode` is named |
 
 | Option | Effect |
 | --- | --- |
-| `claude-code`, `codex`, `claude-desktop`, `cursor`, `windsurf`, `vscode` | only these clients; default every one found |
+| `claude-code`, `codex`, `claude-desktop` | only these clients; default every one found |
 | `--dry-run` | say what would change, change nothing |
 
 - It never overwrites an existing `sap-gui` entry.
