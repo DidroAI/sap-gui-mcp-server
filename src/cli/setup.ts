@@ -24,6 +24,25 @@ import { dirname, join } from "node:path";
 
 export const NAME = "sap-ui-automation";
 const PACKAGE = "sap-ui-automation";
+/** Names this server had before the rename (2026-11-24): an entry left under one gives the agent the tools twice. */
+export const OLD_NAMES = ["sap-gui-mcp-server", "sap-gui"] as const;
+
+/** The old names a JSON config holds under `key`. */
+export function oldJsonEntries(text: string, key: string): string[] {
+  try {
+    const servers = (JSON.parse(text) as Record<string, unknown> | null)?.[key];
+    return isPlainObject(servers) ? OLD_NAMES.filter((n) => n in servers) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** The old names a Codex config.toml has a table for. */
+export function oldCodexEntries(text: string): string[] {
+  return OLD_NAMES.filter((n) => new RegExp(`^\\s*\\[mcp_servers\\.(?:${n}|"${n}"|'${n}')\\]`, "m").test(text));
+}
+
+const oldLine = (name: string, how: string) => `  ! Also found "${name}", this server's name before 0.1.0: the agent gets its tools twice. Remove it: ${how}`;
 
 type Env = Record<string, string | undefined>;
 
@@ -192,6 +211,12 @@ function addJsonServer(file: string, key: string, entry: Record<string, unknown>
   return { line: `✓ ${label}: added "${NAME}" to ${file}. ${after}`, changed: true };
 }
 
+/** A line per old entry in a JSON config: removed by hand, never by setup. */
+function oldInJson(file: string, key: string): string[] {
+  const text = existsSync(file) ? readFileSync(file, "utf8") : "";
+  return oldJsonEntries(text, key).map((old) => oldLine(old, `delete "${old}" under "${key}" in ${file}`));
+}
+
 export function setup(opts: SetupOptions, env: Env = process.env, platform: NodeJS.Platform = process.platform, home: string = homedir()): SetupResult {
   const argv1 = (() => {
     try {
@@ -222,6 +247,7 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
           lines.push(`✓ Claude Code: added "${NAME}" for your user. Restart Claude Code to load it.`);
         } else lines.push(`✗ Claude Code: claude mcp add failed: ${(r.stderr || r.stdout).trim().split("\n")[0]}`);
       }
+      for (const old of OLD_NAMES) if (runClaude(["mcp", "get", old], platform, home).status === 0) lines.push(oldLine(old, `claude mcp remove ${old}`));
     } else lines.push("– Claude Code: not found (no claude command).");
   }
 
@@ -243,6 +269,7 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
         changed++;
         lines.push(`✓ Codex: added "${NAME}" to ${file}. Start a new Codex session to load it.`);
       }
+      for (const old of oldCodexEntries(text)) lines.push(oldLine(old, `codex mcp remove ${old}`));
     } else lines.push("– Codex: not found (no codex command, no ~/.codex).");
   }
 
@@ -252,7 +279,7 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
       found++;
       const r = addJsonServer(file, "mcpServers", { command: command[0], args: command.slice(1) }, "Claude Desktop", "Quit and reopen Claude Desktop to load it.", opts.dryRun);
       if (r.changed) changed++;
-      lines.push(r.line);
+      lines.push(r.line, ...oldInJson(file, "mcpServers"));
     } else lines.push("– Claude Desktop: not found.");
   }
 
@@ -262,7 +289,7 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
       found++;
       const r = addJsonServer(file, "mcpServers", { command: command[0], args: command.slice(1) }, "Cursor", "Reload Cursor's MCP servers (Settings → MCP) to load it.", opts.dryRun);
       if (r.changed) changed++;
-      lines.push(r.line);
+      lines.push(r.line, ...oldInJson(file, "mcpServers"));
     } else lines.push("– Cursor: not found (no ~/.cursor, no .cursor/mcp.json here).");
   }
 
@@ -272,7 +299,7 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
       found++;
       const r = addJsonServer(file, "mcpServers", { command: command[0], args: command.slice(1) }, "Windsurf (Devin Desktop)", "Refresh its MCP servers (Cascade → MCP) to load it.", opts.dryRun);
       if (r.changed) changed++;
-      lines.push(r.line);
+      lines.push(r.line, ...oldInJson(file, "mcpServers"));
     } else lines.push("– Windsurf (Devin Desktop): not found.");
   }
 
@@ -282,7 +309,7 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
     const file = join(cwd, ".vscode", "mcp.json");
     const r = addJsonServer(file, "servers", { type: "stdio", command: command[0], args: command.slice(1) }, "VS Code", "Start it from the MCP view (or reload the window).", opts.dryRun);
     if (r.changed) changed++;
-    lines.push(r.line);
+    lines.push(r.line, ...oldInJson(file, "servers"));
   }
 
   if (!found) lines.push("", `No MCP client found. Add this command to your client's MCP settings by hand: ${command.join(" ")}`);
@@ -290,7 +317,7 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
     "",
     changed ? "Next: restart the clients marked above, and ask your agent to look at your SAP screen." : "Next: ask your agent to look at your SAP screen.",
     "For Web GUI and Fiori, a Chrome window opens: open your SAP address there and log on, once.",
-    "If it cannot see SAP, run sap-ui-automation doctor.",
+    "If it cannot see SAP, run npx -y sap-ui-automation doctor.",
   );
   return { lines, changed };
 }
