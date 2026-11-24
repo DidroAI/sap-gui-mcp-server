@@ -37,6 +37,13 @@ describe("Claude Desktop extension manifest", () => {
     expect(manifest.server.mcp_config.args).toEqual(["${__dirname}/dist/cli.js"]);
   });
 
+  test("server.json (the MCP Registry entry) names this package and its version", () => {
+    const server = JSON.parse(readFileSync(join(import.meta.dir, "..", "server.json"), "utf8"));
+    expect(server.name).toBe(pkg.mcpName);
+    expect(server.version).toBe(pkg.version);
+    expect(server.packages[0]).toMatchObject({ registryType: "npm", identifier: pkg.name, version: pkg.version });
+  });
+
   test("settings left blank mean the same as unset", () => {
     const env = envFor();
     expect(env.SAP_WRITE).toBe("off");
