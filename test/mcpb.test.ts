@@ -42,6 +42,8 @@ describe("Claude Desktop extension manifest", () => {
     expect(server.name).toBe(pkg.mcpName);
     expect(server.version).toBe(pkg.version);
     expect(server.packages[0]).toMatchObject({ registryType: "npm", identifier: pkg.name, version: pkg.version });
+    // The registry refuses a longer description (422, v0.1.0).
+    expect(server.description.length).toBeLessThanOrEqual(100);
   });
 
   test("settings left blank mean the same as unset", () => {
