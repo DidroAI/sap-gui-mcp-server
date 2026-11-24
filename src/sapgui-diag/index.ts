@@ -27,8 +27,10 @@
  * The actions are planned in plan.ts and wait for SAP's answer in the
  * traffic (traffic.ts); pixels and windows are in geometry.ts.
  */
+import { execFileSync } from "node:child_process";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import type { Server } from "node:net";
+import { userInfo } from "node:os";
 import { join } from "node:path";
 import { ONE_LINE_NOTE, oneLine } from "../core/action.js";
 import { ActionError, type Action, type Assessment, type DoctorCheck, type Driver, type LookOptions, type SessionInfo, type Surface } from "../core/types.js";
@@ -1002,17 +1004,29 @@ const stderrLog = (m: string): void => {
 /** The most router messages doctor shows. */
 const KEPT_EVENTS = 5;
 
+/** Said whenever a capture is on: the files hold the logon. */
+export const CAPTURE_WARNING = "SAP_DIAG_CAPTURE is on: its files hold the raw SAP traffic, including the logon (user and password). Keep them private, delete them when done, and unset SAP_DIAG_CAPTURE.";
+
+/** Windows ignores the file mode: gives the file to the current user alone with icacls. */
+function restrictOnWindows(file: string): void {
+  if (process.platform !== "win32") return;
+  execFileSync("icacls", [file, "/inheritance:r", "/grant:r", `${userInfo().username}:F`], { stdio: "ignore", timeout: 10_000, windowsHide: true });
+}
+
 /**
  * SAP_DIAG_CAPTURE=<folder>: a copy of the raw traffic, to debug the
  * decoder. Opt-in; it holds SAP data and the logon, so the file is made
- * readable by its owner only (0600, where the OS honours it). A capture that
- * fails is stopped and said (`failed`), never the decoding nor the logon.
+ * readable by its owner only: mode 0600, and on Windows an icacls grant to
+ * the current user alone. If that fails the capture goes on and `warning`
+ * says so. A capture that fails is stopped and said (`failed`), never the
+ * decoding nor the logon.
  */
 export class Capture {
   failed: string | undefined;
+  warning: string | undefined;
   private file: string | undefined;
 
-  constructor(folder: string | undefined, name: string) {
+  constructor(folder: string | undefined, name: string, restrict: (file: string) => void = restrictOnWindows) {
     if (!folder) return;
     try {
       mkdirSync(folder, { recursive: true });
@@ -1020,6 +1034,12 @@ export class Capture {
       writeFileSync(this.file, Buffer.alloc(0), { mode: 0o600, flag: "wx" });
     } catch (e) {
       this.stop(e);
+      return;
+    }
+    try {
+      restrict(this.file);
+    } catch (e) {
+      this.warning = `the capture file ${this.file} could not be made private to this user (${(e as Error).message}): other users of this machine may read the logon in it`;
     }
   }
 
@@ -1046,8 +1066,31 @@ export class Capture {
   }
 }
 
+/** SAP_DIAG_PORT as a port number. Unset or empty is 3298. */
+export function diagPort(value: string | undefined): number {
+  const v = (value ?? "").trim();
+  if (!v) return 3298;
+  const n = Number(v);
+  if (!/^\d+$/.test(v) || n < 1 || n > 65535) throw new Error(`SAP_DIAG_PORT is "${value}": it must be a port number from 1 to 65535`);
+  return n;
+}
+
+/** What to do about a router that could not listen. */
+function listenFix(e: unknown, port: number): string {
+  const code = (e as NodeJS.ErrnoException).code;
+  if (code === "EADDRINUSE") return `Port ${port} is taken: set SAP_DIAG_PORT to a free port.`;
+  if (code === "EACCES") return `Port ${port} is not allowed for this user: set SAP_DIAG_PORT to another port.`;
+  return "Set SAP_DIAG_PORT to a free port number from 1 to 65535 (default 3298).";
+}
+
 export function sapguiDiagSurface(env: Record<string, string | undefined>, options: DiagSurfaceOptions = {}): Surface & { router: Promise<Server> } {
-  const port = options.port ?? Number(env.SAP_DIAG_PORT ?? 3298);
+  let port = 3298;
+  let badPort: Error | undefined;
+  try {
+    port = options.port ?? diagPort(env.SAP_DIAG_PORT);
+  } catch (e) {
+    badPort = e as Error;
+  }
   const conns: Connection[] = [];
   let n = 0;
   // What the router said that went wrong (route refused, reading failed, capture failed), for doctor.
@@ -1064,7 +1107,8 @@ export function sapguiDiagSurface(env: Record<string, string | undefined>, optio
       // a log that fails never stops the traffic
     }
   };
-  const router = startRouter({
+  if (env.SAP_DIAG_CAPTURE) log(CAPTURE_WARNING);
+  const router = badPort ? Promise.reject(badPort) : startRouter({
     port,
     log,
     onConnection(target) {
@@ -1078,6 +1122,7 @@ export function sapguiDiagSurface(env: Record<string, string | undefined>, optio
       conns.push(c);
       const capture = new Capture(env.SAP_DIAG_CAPTURE, `diag-${Date.now()}-${c.n}.bin`);
       let said = false;
+      if (capture.warning) log(capture.warning);
       const sayCapture = () => {
         if (capture.failed && !said) {
           said = true;
@@ -1145,7 +1190,7 @@ export function sapguiDiagSurface(env: Record<string, string | undefined>, optio
         await router;
         checks.push({ ok: true, check: "DIAG router", detail: `listening on 127.0.0.1:${port}` });
       } catch (e) {
-        checks.push({ ok: false, check: "DIAG router", detail: (e as Error).message, fix: `Port ${port} is taken: set SAP_DIAG_PORT to a free port.` });
+        checks.push({ ok: false, check: "DIAG router", detail: (e as Error).message, fix: listenFix(e, port) });
       }
       const live = conns.filter((c) => c.open).length;
       checks.push(
