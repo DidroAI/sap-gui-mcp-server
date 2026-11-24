@@ -1,7 +1,7 @@
 /**
  * Cached verified steps: run a recording that is known to work with no model
  * at all, and call a model (or a person, or any function) only at the step
- * where the screen is not what the recording expects. See docs/cached-steps.md.
+ * where the screen is not what the recording expects.
  *
  *   const r = await runVerified(sap, "sap-tests/create-order.saptest.json", {
  *     variables: { customer: "2200" },

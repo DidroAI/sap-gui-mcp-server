@@ -5,7 +5,7 @@
 Please do not open a public issue. Report it privately through GitHub:
 [Security → Report a vulnerability](https://github.com/DidroAI/sap-gui-mcp-server/security/advisories/new).
 
-<!-- TODO (Pierre): add a security contact email here, for reporters without a GitHub account. -->
+Without a GitHub account, email pierre@didro.ai.
 
 Say what you did, what happened, and which version, surface (SAP GUI for
 Windows, the `diag` method, Web GUI, Fiori) and MCP client you used. Leave

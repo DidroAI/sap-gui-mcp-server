@@ -89,7 +89,6 @@ in `surfacesFromEnv`.
 | `skills/` | the agent skill |
 | `docs/` | the documentation site (VitePress); the markdown also ships in the npm package |
 | `examples/` | client configurations, prompts and a recorded test |
-| `bench/` | the benchmark harness (its own package; not published) |
 
 ## Run it without an SAP system
 
@@ -101,7 +100,6 @@ Everything CI runs needs no SAP system and no SAP GUI:
 | Web GUI reader and actions in a browser, on synthetic pages (`test/webgui-*.test.ts`, `test/chrome.test.ts`) | `SAP_TEST_CHROME=/path/to/chrome bun run test` | a Chrome or Chromium binary; skipped without it |
 | PowerShell scripts parse, and the SAP GUI host and window tests | part of `bun run test` | Windows; skipped elsewhere |
 | The built server, its PowerShell host and COM, against a fake SAP GUI | `bun run build && node test/sapgui/e2e.mjs` | Windows |
-| The benchmark's task files and checkers | `bun run test:bench` | nothing |
 | The documentation site | `bun run docs:build` | nothing |
 
 The fakes:
@@ -250,8 +248,6 @@ bun run docs:build   # what CI builds; fails on a dead link
 The same markdown files ship in the npm package, so agents can read them
 offline. Links between pages are relative and end in `.md`
 (`concepts/safety.md`); links to repository files use full GitHub URLs.
-`docs/launch-checklist.md` is internal: it is excluded from the site and the
-package.
 
 ## Commit messages
 
