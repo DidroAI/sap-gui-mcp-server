@@ -17,7 +17,7 @@ import { loadTestFilesAsModules } from "./esm.js";
 import type { Surface } from "../core/types.js";
 import { slug } from "../record/format.js";
 import { lockPathFor } from "../sdk/lock.js";
-import { connect, type Sap } from "../sdk/session.js";
+import { connect, type ConnectOptions, type Sap } from "../sdk/session.js";
 import type { DriftInfo, LockMode, VerifySummary } from "../sdk/verify.js";
 import { beginFile, endFile, isSkip, registry, suitesOf, type TestCase, type TestInfo, titlePath } from "./collect.js";
 import { explainTypeScriptLoad, type ProjectConfig, type ResolvedConfig, type UseOptions } from "./config.js";
@@ -248,13 +248,20 @@ interface Locking {
   file?: ((testFile: string) => string) | undefined;
 }
 
+/** The options of `use` that go to connect. */
+const PASSED = ["surface", "system", "session", "write", "allowTcodes", "blockTcodes"] as const satisfies readonly (keyof UseOptions & keyof ConnectOptions)[];
+
 async function attempt(p: Planned, retry: number, slugDir: string, config: ResolvedConfig, surfaces: Surface[] | undefined, clamp: UseOptions = {}, locking: Locking = {}): Promise<Attempt> {
   const suites = suitesOf(p.test);
   const use: UseOptions = Object.assign({}, config.use, p.project?.use, ...suites.map((s) => s.use), p.test.details.use, clamp);
   const timeout = p.test.details.timeout ?? suites.reduce<number | undefined>((t, s) => s.timeout ?? t, undefined) ?? config.timeout;
   const outputDir = join(config.outputDir, retry ? `${slugDir}-retry${retry}` : slugDir);
   const info: TestInfo = { title: p.test.title, titlePath: p.titlePath, file: p.test.file, project: p.project?.name, retry, outputDir, timeout };
-  const { screenshots, lock: lockUse, ...connectUse } = use;
+  const { screenshots, lock: lockUse } = use;
+  // Only what UseOptions names reaches connect: a test's test.use({ onConfirm, allowLogoff, allowSystems, env })
+  // would undo the clamp (a test has nobody to ask, and its policy is the server's).
+  const connectUse: Pick<ConnectOptions, (typeof PASSED)[number]> = {};
+  for (const k of PASSED) if (use[k] !== undefined) Object.assign(connectUse, { [k]: use[k] });
   const lockMode: LockMode = locking.mode ?? lockUse ?? "verify";
   const lockFile = (locking.file ?? lockPathFor)(p.test.file);
   const t0 = Date.now();

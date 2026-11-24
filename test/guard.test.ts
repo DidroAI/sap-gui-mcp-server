@@ -64,6 +64,27 @@ describe("okcodes", () => {
   });
 });
 
+describe("a Fiori app sent as an okcode meets the lists (review, 2026-11-24)", () => {
+  test("the intent is read as open reads it", () => {
+    for (const [v, t] of [
+      ["#SalesOrder-manage", "SALESORDER-MANAGE"],
+      ["/n#SalesOrder-manage", "SALESORDER-MANAGE"],
+      ["/N #SalesOrder-manage?sap-ui-tech-hint=GUI", "SALESORDER-MANAGE"],
+      ["/nSalesOrder-manage", "SALESORDER-MANAGE"],
+      ["/nVA01?x=1", "VA01"],
+      ["/nVA01&x", "VA01"],
+    ] as const)
+      expect([v, tcodeOf({ do: "okcode", value: v })]).toEqual([v, t]);
+  });
+  test("the block list refuses it, and the allow list must name it", () => {
+    const block = policyFromEnv({ SAP_BLOCK_TCODES: "SalesOrder-manage,VA01" });
+    for (const v of ["#SalesOrder-manage", "/n#SalesOrder-manage", "/nVA01?x=1"])
+      expect([v, decide(block, { do: "okcode", value: v }, { risk: "navigate", reason: "" })]).toEqual([v, { run: false, refused: expect.stringContaining("blocked") }]);
+    const allow = policyFromEnv({ SAP_ALLOW_TCODES: "VA03" });
+    expect(decide(allow, { do: "okcode", value: "/n#SalesOrder-manage" }, { risk: "navigate", reason: "" })).toMatchObject({ run: false });
+  });
+});
+
 describe("the command field", () => {
   test("is recognised in every spelling", () => {
     for (const id of ["okcd", "wnd[0]/tbar[0]/okcd", "tbar[0]/okcd", "/app/con[0]/ses[0]/wnd[0]/tbar[0]/okcd", "wnd[1]/tbar[0]/okcd", " OKCD ", "#ToolbarOkCode", "ToolbarOkCode", "okcode"])

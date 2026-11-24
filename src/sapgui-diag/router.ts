@@ -207,6 +207,14 @@ export function startRouter(opts: RouterOptions = {}): Promise<Server> {
   const dial = opts.dial ?? ((host: string, port: number) => connect({ host, port }));
   const server = createServer({ pauseOnConnect: false }, async (client) => {
     let onward: Socket | undefined;
+    // SAP GUI may reset its connection while the onward one is still being dialled: without a listener
+    // that error would end the server. A client gone before the relay starts takes the onward socket with it.
+    let gone = false;
+    client.on("error", () => {});
+    client.once("close", () => {
+      gone = true;
+      onward?.destroy();
+    });
     try {
       const { payload, rest } = await readFirst(client, 10_000);
       const route = parseRoute(payload);
@@ -217,7 +225,9 @@ export function startRouter(opts: RouterOptions = {}): Promise<Server> {
       await new Promise<void>((res, rej) => {
         dialled.once("connect", () => res());
         dialled.once("error", rej);
+        dialled.once("close", () => rej(new Error("the onward connection closed")));
       });
+      if (gone) throw new Error("SAP GUI closed its connection before the route was up");
       const more = route.next + 1 < route.hops.length;
       // A tap that cannot start never refuses the logon: the connection goes on unread.
       let tap: Tap | undefined;

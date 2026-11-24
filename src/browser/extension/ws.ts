@@ -42,3 +42,15 @@ const bundle = createRequire(import.meta.url)("playwright-core/lib/utilsBundle")
 
 export const WebSocket: WebSocketClass = bundle.ws;
 export const WebSocketServer: WebSocketServerClass = bundle.wsServer;
+
+/**
+ * Raises the largest frame a socket takes. The extension's socket is opened with a small limit, so a
+ * connection that has not paired cannot make the server hold a large frame; once paired it takes the
+ * relay's full size. ws keeps the limit on the socket's receiver and reads it for each frame header.
+ */
+export function raiseMaxPayload(ws: WebSocket, bytes: number): boolean {
+  const receiver = (ws as unknown as { _receiver?: { _maxPayload?: unknown } | null })._receiver;
+  if (!receiver || typeof receiver._maxPayload !== "number") return false;
+  receiver._maxPayload = bytes;
+  return true;
+}

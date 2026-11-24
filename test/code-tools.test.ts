@@ -78,6 +78,10 @@ describe("static checks", () => {
       ['const f = (sap as never)["con" + "structor"];', "x["],
       ['const n = "constructor";', 'the string "constructor"'],
       ["Object.getPrototypeOf(sap);", "Object"],
+      // A word spelled with \u escapes is the same identifier (review, 2026-11-24).
+      ["const e = \\u0070rocess.env.HOME;", "\\u escape"],
+      ["const f = sap.\\u{63}onstructor;", "\\u escape"],
+      ['const s = "a\\u0041"; const e = pr\\u006fcess;', "\\u escape"],
     ];
     for (const [code, word] of bad) {
       const p = staticProblems(wrap(code));

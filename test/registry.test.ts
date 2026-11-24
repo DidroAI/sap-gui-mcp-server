@@ -118,6 +118,24 @@ describe("messages and references", () => {
     fiori.failWith = "boom";
     expect((await registry.discover()).allFailed).toBe(false);
   });
+  test("the active session stays put when its surface fails once (review, 2026-11-24)", async () => {
+    const { webgui, fiori, registry } = setup();
+    webgui.add({ id: "chrome:1", system: "QAS" });
+    fiori.add({ id: "chrome:2", system: "PRD" });
+    expect((await registry.session()).info.system).toBe("QAS");
+    webgui.failWith = "CDP timeout";
+    await registry.discover();
+    expect(registry.active).toBe("chrome:1");
+    // No session named: the error, never the PRD tab in its place.
+    const e = await registry.driver().catch((x: Error) => x.message);
+    expect(e).toContain("chrome:1 could not be read");
+    expect(e).toContain("CDP timeout");
+    expect(fiori.opened).toBe(0);
+    // The surface answers again: the same session, the same driver.
+    webgui.failWith = undefined;
+    expect((await registry.session()).info.system).toBe("QAS");
+    expect(webgui.opened).toBe(1);
+  });
   test("a surface name is a reference", async () => {
     const { webgui, fiori, registry } = setup();
     webgui.add({ id: "chrome:1", system: "ABA", transaction: "VA03" });
