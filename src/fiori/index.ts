@@ -47,7 +47,7 @@
  * Environment: SAP_FIORI_WAIT=busy turns RecordReplay.waitForUI5 off (the
  * driver then reads UI5's busy state only, and loads nothing into the page).
  */
-import { chromeAttached, chromeDoctor, chromeTabs, noSessionHint, sapTabs, stillOwned } from "../browser/chrome.js";
+import { chromeAttached, chromeDoctor, chromeTabs, sapTabs, stillOwned } from "../browser/chrome.js";
 import { classify, tabSigns, tabWhere } from "../browser/classify.js";
 import type { DiscoverOptions, Driver, SessionInfo, Surface } from "../core/types.js";
 import { FioriDriver, pageInfo, sessionOf } from "./driver.js";
@@ -118,7 +118,7 @@ export function fioriSurface(env: Env): Surface {
     },
     doctor: async () => {
       const out = await chromeDoctor(env);
-      // No browser connected (the SAP window is not open yet): nothing to read, and doctor opens nothing.
+      // No browser connected: nothing to read.
       if (out.some((c) => !c.ok) || !chromeAttached()) return out;
       try {
         const tabs = await fioriTabs(env);
@@ -134,6 +134,5 @@ export function fioriSurface(env: Env): Surface {
       }
       return out;
     },
-    whenEmpty: () => noSessionHint(env),
   };
 }

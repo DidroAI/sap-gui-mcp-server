@@ -8,7 +8,7 @@
  * surface, which reads and drives it with the three `...InFrame` functions.
  */
 import type { Frame, Page } from "playwright-core";
-import { chromeAttached, chromeDoctor, chromeTabs, type ChromeTab, noSessionHint, sapTabs, stillOwned } from "../browser/chrome.js";
+import { chromeAttached, chromeDoctor, chromeTabs, type ChromeTab, sapTabs, stillOwned } from "../browser/chrome.js";
 import { isWebguiUrl, tabWhere, WEBGUI_PATH } from "../browser/classify.js";
 import { compact } from "../core/compact.js";
 import { type Action, ActionError, type Assessment, type DiscoverOptions, type Driver, type LookOptions, type SessionInfo, type Surface } from "../core/types.js";
@@ -206,7 +206,7 @@ export function webguiSurface(env: Record<string, string | undefined>): Surface 
     },
     doctor: async () => {
       const checks = await chromeDoctor(env);
-      // No browser connected (the SAP window is not open yet): nothing to read, and doctor opens nothing.
+      // No browser connected: nothing to read.
       if (checks.some((c) => !c.ok) || !chromeAttached()) return checks;
       const found = await discover(env).catch(() => []);
       checks.push({
@@ -218,6 +218,5 @@ export function webguiSurface(env: Record<string, string | undefined>): Surface 
       });
       return checks;
     },
-    whenEmpty: () => noSessionHint(env),
   };
 }
