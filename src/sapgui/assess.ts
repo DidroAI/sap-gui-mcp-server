@@ -164,7 +164,8 @@ function mainTwin(screen: Screen, b: Control): Control | undefined {
 
 function button(screen: Screen, windowId: string, n: number): Control | undefined {
   const w = screen.windows.find((x) => x.id === windowId);
-  return w?.controls.find((c) => c.type === "GuiButton" && new RegExp(`^${windowId.replace(/[[\]]/g, "\\$&")}/tbar\\[[01]\\]/btn\\[${n}\\]$`).test(c.id));
+  const ids = [`${windowId}/tbar[0]/btn[${n}]`, `${windowId}/tbar[1]/btn[${n}]`];
+  return w?.controls.find((c) => c.type === "GuiButton" && ids.includes(c.id));
 }
 
 /** A control's SAP name: the id's last part without its type prefix and cell index (`.../btnBT_PEIN` -> BT_PEIN). */
