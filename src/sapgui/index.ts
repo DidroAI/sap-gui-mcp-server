@@ -53,6 +53,9 @@ export function actTimeoutMs(action: Action): number {
 const isPassword = (c: Control) => c.type === "GuiPasswordField" || /(^|\/)pwd[^/]*$/.test(c.id);
 
 /** Types "set" may write a text into. */
+/** A row number of a grid or a table control: a whole number from 0. */
+export const isRow = (row: unknown): row is number => Number.isInteger(row) && (row as number) >= 0;
+
 const SET_TYPES = new Set(["GuiTextField", "GuiCTextField"]);
 
 /** Types SAP GUI scripting can "Select" (a tab, a radio button, a menu entry). */
@@ -302,7 +305,7 @@ class SapguiDriver implements Driver {
             return this.act({ ...rest, id: cell.id });
           }, timeoutMs);
         if (target.type === "GuiShell" && target.sub === "GridView") {
-          if (!Number.isInteger(action.row) || action.col === undefined) throw new ActionError(`${id} is an ALV grid: "set" into one of its cells needs "row" (number, from "row N:") and "col" (column id).`);
+          if (!isRow(action.row) || action.col === undefined) throw new ActionError(`${id} is an ALV grid: "set" into one of its cells needs "row" (a number from 0, from "row N:") and "col" (column id).`);
           const col = gridColumn(target, action.col);
           const single = oneLine(String(action.value ?? ""));
           return this.run({ do: "cell", id, row: action.row, col, value: single.text }, `set row ${action.row}, column ${col} of ${id} = "${single.text}"${single.had ? ` (${ONE_LINE_NOTE})` : ""}`, timeoutMs);
@@ -321,8 +324,9 @@ class SapguiDriver implements Driver {
           const on = action.value === undefined || !(action.value === false || action.value === "false" || action.value === "" || action.value === 0);
           if (target.type === "GuiTableControl") return this.selectRow(target, action.row, on, timeoutMs);
           if (target.type === "GuiShell" && target.sub === "GridView") {
-            if (!Number.isInteger(action.row)) throw new ActionError('"row" is a row number from 0, as the grid shows it ("row N:")');
-            return this.run({ do: "grid", id, row: action.row, col: "", how: on ? "select" : "unselect" }, `${on ? "selected" : "unselected"} row ${action.row} of ${id}`, timeoutMs);
+            if (!isRow(action.row)) throw new ActionError('"row" is a row number from 0, as the grid shows it ("row N:")');
+            // Unselecting clears the grid's whole selection (ClearSelection): the answer says so.
+            return this.run({ do: "grid", id, row: action.row, col: "", how: on ? "select" : "unselect" }, on ? `selected row ${action.row} of ${id}` : `cleared the selection of ${id} (all rows)`, timeoutMs);
           }
         }
         if (target.type === "GuiButton") return this.act({ ...action, do: "press" });
@@ -373,7 +377,7 @@ class SapguiDriver implements Driver {
           if (!["double", "cell"].includes(how)) throw new ActionError('grid "how" is double, select or cell');
           return this.tableAct(target, action, (cell) => this.run({ do: how === "cell" ? "focus" : "dblclick", id: cell.id }, `${how === "cell" ? "cursor on" : "double-click"} ${cell.id}`, timeoutMs), timeoutMs);
         }
-        if (!Number.isInteger(action.row) || typeof action.col !== "string") throw new ActionError('grid needs "row" (number, from "row N:") and "col" (column id, e.g. "VBELN")');
+        if (!isRow(action.row) || typeof action.col !== "string") throw new ActionError('grid needs "row" (a number from 0, from "row N:") and "col" (column id, e.g. "VBELN")');
         const how = action.how ?? "double";
         if (!["double", "select"].includes(how)) throw new ActionError('grid "how" is double or select');
         const col = target.type === "GuiShell" && target.sub === "GridView" ? gridColumn(target, action.col) : action.col;
@@ -391,7 +395,7 @@ class SapguiDriver implements Driver {
 
   /** Selects (or unselects) a table control's row, by its number from the table's first row. */
   private async selectRow(table: Control, row: unknown, on: boolean, timeoutMs: number): Promise<string> {
-    if (!Number.isInteger(row) || (row as number) < 0) throw new ActionError(`"row" is a row number from 0, counted from the table's first row, e.g. {"do":"select","id":"${table.id}","row":0}`);
+    if (!isRow(row)) throw new ActionError(`"row" is a row number from 0, counted from the table's first row, e.g. {"do":"select","id":"${table.id}","row":0}`);
     const total = table.rowCount;
     if (typeof total === "number" && (row as number) >= total) throw new ActionError(`row ${row}: ${table.id} has ${total} rows (0 to ${total - 1}).`);
     return this.run({ do: "selectrow", id: table.id, row, value: on }, `${on ? "selected" : "unselected"} row ${row} of ${table.id}`, timeoutMs);
