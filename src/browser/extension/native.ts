@@ -208,6 +208,8 @@ export function nativeHostAnswers(platform: NodeJS.Platform = process.platform, 
   }
   if (platform === "win32") launcher = win32.join(win32.dirname(pairingFile(platform, env, home)), "native-host", "host.bat");
   if (!launcher || !existsSync(launcher)) return { ok: false, error: "not installed" };
+  // The launcher's path comes from a manifest or the profile folder: a path cmd would read as more than a path is refused.
+  if (!(win32.isAbsolute(launcher) || posix.isAbsolute(launcher)) || /["&|<>^%\r\n]/.test(launcher)) return { ok: false, error: `the helper's path cannot be run safely: ${launcher}` };
   const body = Buffer.from(JSON.stringify({ cmd: "hello" }));
   const head = Buffer.alloc(4);
   head.writeUInt32LE(body.length);

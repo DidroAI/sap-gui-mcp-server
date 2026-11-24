@@ -14,7 +14,7 @@
  * and exits after SAP_CLI_IDLE minutes without a call (default 30).
  */
 import { createHash, randomBytes } from "node:crypto";
-import { chmodSync, closeSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { chmodSync, closeSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { connect, createServer as createNetServer, type Server as NetServer, type Socket } from "node:net";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { join, resolve } from "node:path";
@@ -415,8 +415,14 @@ export async function underLock<T>(file: string | undefined, fn: () => Promise<T
       if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
       let stale = false;
       try {
-        const pid = Number(readFileSync(file, "utf8"));
-        stale = (pid > 0 && !alive(pid)) || Date.now() - statSync(file).mtimeMs > 60_000;
+        // Read and dated through one descriptor: the lock looked at is the lock judged.
+        const fd = openSync(file, "r");
+        try {
+          const pid = Number(readFileSync(fd, "utf8"));
+          stale = (pid > 0 && !alive(pid)) || Date.now() - fstatSync(fd).mtimeMs > 60_000;
+        } finally {
+          closeSync(fd);
+        }
       } catch {}
       if (stale) rmSync(file, { force: true });
       else if (Date.now() > until) throw new Error(`${file} is held by another daemon that is starting.`);
