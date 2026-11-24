@@ -233,6 +233,17 @@ describe("a call keeps to the session it queued for (review, 2026-11-24)", () =>
   });
 });
 
+describe("fields of a batch step on a single action (review, 2026-11-24)", () => {
+  test("are refused, with the batch form, and nothing runs", async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA" });
+    const r = await call("sap_act", { action: { do: "key", key: 0, expect: { screen: "4001" } } });
+    expect(r.error).toBe(true);
+    expect(r.text).toContain('"expect" belongs to a step of "actions"');
+    expect(surface.acts()).toEqual([]);
+  });
+});
+
 describe("confirm mode with elicitation", () => {
   const env = { SAP_WRITE: "confirm" };
   test("the user accepts in the client: the action runs", async () => {

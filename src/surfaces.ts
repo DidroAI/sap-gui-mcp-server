@@ -7,10 +7,14 @@ import { webguiSurface } from "./webgui/index.js";
 
 export function surfacesFromEnv(env: Record<string, string | undefined> = process.env): Surface[] {
   const all: SurfaceName[] = process.platform === "win32" ? ["sapgui", "webgui", "fiori"] : ["webgui", "fiori"];
-  const wanted = env.SAP_SURFACES ? (env.SAP_SURFACES.split(",").map((s) => s.trim()) as SurfaceName[]) : all;
+  // Any case, spaces and empty entries ignored, each once: "WebGUI, fiori," is webgui and fiori.
+  const named = [...new Set((env.SAP_SURFACES ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean))] as SurfaceName[];
+  const wanted = named.length ? named : all;
+  const method = (env.SAP_GUI_METHOD ?? "").trim().toLowerCase() || "scripting";
+  if (method !== "scripting" && method !== "diag") throw new Error(`SAP_GUI_METHOD must be scripting or diag (got "${env.SAP_GUI_METHOD}")`);
   const out: Surface[] = [];
   for (const n of wanted) {
-    if (n === "sapgui") out.push(env.SAP_GUI_METHOD === "diag" ? sapguiDiagSurface(env) : sapguiSurface(env));
+    if (n === "sapgui") out.push(method === "diag" ? sapguiDiagSurface(env) : sapguiSurface(env));
     else if (n === "webgui") out.push(webguiSurface(env));
     else if (n === "fiori") out.push(fioriSurface(env));
     else throw new Error(`Unknown surface "${n}" in SAP_SURFACES (sapgui, webgui, fiori)`);

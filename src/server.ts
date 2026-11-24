@@ -799,6 +799,9 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       wanted = timing === true || timingsOn;
       raw = rest;
     }
+    // Fields of a batch step mean nothing on one action: said, not silently dropped.
+    const stepOnly = raw && typeof raw === "object" && !Array.isArray(raw) ? ["expect", "show", "unseen"].filter((k) => k in raw) : [];
+    if (stepOnly.length) return fail(`Refused: ${stepOnly.map((k) => `"${k}"`).join(", ")} belong${stepOnly.length === 1 ? "s" : ""} to a step of "actions" (a batch), not to a single action. Send {"actions":[{...action, ${stepOnly.map((k) => `"${k}": ...`).join(", ")}}]}, or leave ${stepOnly.length === 1 ? "it" : "them"} out.`);
     // One normalised action for the guard, for assess and for act.
     const action = normalizeAction(raw);
     const field = commandFieldRefusal(action);
