@@ -136,9 +136,9 @@ describe("closing the host", () => {
 
 describe("PowerShell policy probe", () => {
   test("reads the language mode and the AppLocker service", () => {
-    expect(parsePolicy("sapgui-mcp|FullLanguage|\r\n")).toEqual({ languageMode: "FullLanguage", appLocker: false });
-    expect(parsePolicy("noise\nsapgui-mcp|ConstrainedLanguage|Running\n")).toEqual({ languageMode: "ConstrainedLanguage", appLocker: true });
-    expect(parsePolicy("sapgui-mcp|FullLanguage|Stopped")).toEqual({ languageMode: "FullLanguage", appLocker: false });
+    expect(parsePolicy("sap-ui-automation|FullLanguage|\r\n")).toEqual({ languageMode: "FullLanguage", appLocker: false });
+    expect(parsePolicy("noise\nsap-ui-automation|ConstrainedLanguage|Running\n")).toEqual({ languageMode: "ConstrainedLanguage", appLocker: true });
+    expect(parsePolicy("sap-ui-automation|FullLanguage|Stopped")).toEqual({ languageMode: "FullLanguage", appLocker: false });
   });
   test("no answer keeps the reason", () => {
     expect(parsePolicy("", "spawn powershell.exe ENOENT")).toEqual({ languageMode: "", appLocker: false, error: "spawn powershell.exe ENOENT" });

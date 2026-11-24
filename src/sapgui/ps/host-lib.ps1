@@ -648,7 +648,7 @@ function Op-Screenshot($req) {
   Wait-Ready $ses
   $w = T $ses 'ActiveWindow'
   if ($null -eq $w) { $w = G $ses 'FindById' @('wnd[0]') }
-  [string]$file = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), 'sapgui-mcp-' + [guid]::NewGuid().ToString('N') + '.png')
+  [string]$file = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), 'sap-ui-automation-' + [guid]::NewGuid().ToString('N') + '.png')
   $ret = G $w 'HardCopy' @($file, 2)   # 2 = PNG
   $path = $file
   if ($ret -is [string] -and $ret -and (Test-Path -LiteralPath $ret)) { $path = $ret }

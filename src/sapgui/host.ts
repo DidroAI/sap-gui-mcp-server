@@ -213,11 +213,11 @@ export interface PowershellPolicy {
   error?: string;
 }
 
-const POLICY_COMMAND = "$m = $ExecutionContext.SessionState.LanguageMode; $s = Get-Service -Name AppIDSvc -ErrorAction SilentlyContinue; \"sapgui-mcp|$m|$($s.Status)\"";
+const POLICY_COMMAND = "$m = $ExecutionContext.SessionState.LanguageMode; $s = Get-Service -Name AppIDSvc -ErrorAction SilentlyContinue; \"sap-ui-automation|$m|$($s.Status)\"";
 
 /** Reads the policy line PowerShell printed. */
 export function parsePolicy(stdout: string, error?: string): PowershellPolicy {
-  const m = /sapgui-mcp\|([A-Za-z]*)\|([A-Za-z]*)/.exec(stdout);
+  const m = /sap-ui-automation\|([A-Za-z]*)\|([A-Za-z]*)/.exec(stdout);
   if (!m) return { languageMode: "", appLocker: false, error: error || stdout.trim().split(/\r?\n/)[0] || "PowerShell gave no answer" };
   return { languageMode: m[1] ?? "", appLocker: /^running$/i.test(m[2] ?? "") };
 }
