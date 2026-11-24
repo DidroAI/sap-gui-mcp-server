@@ -19,7 +19,8 @@ describe("PowerShell scripts parse", () => {
     const r = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], { encoding: "utf8" });
     expect(r.stdout.trim()).toBe("");
     expect(r.status).toBe(0);
-  });
+    // A cold powershell.exe on a CI runner can take longer than bun's 5 s default.
+  }, 60_000);
 
   test("the list of scripts is not empty", () => {
     expect(scripts.length).toBeGreaterThan(0);

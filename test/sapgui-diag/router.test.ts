@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { connect, createServer, type Server, type Socket } from "node:net";
+import { connect, createServer, type Server, Socket } from "node:net";
 import { buildRoute, niFrame, parseRoute, servicePort, startRouter } from "../../src/sapgui-diag/router.js";
 
 // The request SAP GUI 8.00 sent for /H/127.0.0.1/S/3298/H/vhcalabaci/S/3200 (synthetic host names).
@@ -173,6 +173,27 @@ describe("the router", () => {
     expect(logged.some((m) => m.includes("could not start") && m.includes("EACCES"))).toBe(true);
   });
 
+  test("a client that resets while the onward connection is dialled ends only that connection (review, 2026-11-24)", async () => {
+    let onward: Socket | undefined;
+    let dialled!: () => void;
+    const dialling = new Promise<void>((r) => (dialled = r));
+    // An onward connection that never comes up.
+    const router = await startRouter({ port: 0, dial: () => ((onward = new Socket()), dialled(), onward) });
+    open.push(router);
+    let inside: Socket | undefined;
+    router.on("connection", (c: Socket) => (inside = c));
+    const { sock } = await client((router.address() as { port: number }).port);
+    sock.write(request([["127.0.0.1", 3200], ["127.0.0.1", 3200]]));
+    await dialling;
+    // While it waits, an error on SAP GUI's side has a listener (Node ends the process on one without).
+    expect(inside?.listenerCount("error")).toBeGreaterThan(0);
+    sock.destroy();
+    await new Promise((r) => inside?.once("close", r));
+    expect(onward?.destroyed).toBe(true);
+    // The router still takes connections.
+    const c = await client((router.address() as { port: number }).port);
+    expect(c.sock.destroyed).toBe(false);
+  });
   test("drops a client that does not route", async () => {
     const router = await startRouter({ port: 0 });
     open.push(router);

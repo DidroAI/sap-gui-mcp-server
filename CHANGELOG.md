@@ -8,6 +8,21 @@ change the tools or the view format.
 
 Preparing the first public release.
 
+### Security
+
+- A Fiori app sent as an okcode (`#SalesOrder-manage`,
+  `/n#SalesOrder-manage`) now meets `SAP_ALLOW_TCODES` and
+  `SAP_BLOCK_TCODES`, as `open` does.
+- The active session stays where it is when its surface fails one
+  discovery; before, the next call without a session named could run in
+  another tab, on another system.
+- Code tools refuse `\u` escapes outside strings, and `test.use` can no
+  longer set `onConfirm`, `allowLogoff`, `allowSystems` or `env`.
+- The extension relay answers a malformed request path with 400 instead
+  of ending the server, and takes only small frames before pairing.
+- The DIAG router no longer ends the server when SAP GUI resets its
+  connection while the onward one is being dialled.
+
 ### Documentation
 
 - A documentation site in `docs/` (VitePress): getting started, concepts,

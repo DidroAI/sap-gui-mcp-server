@@ -370,6 +370,19 @@ describe("projects", () => {
   });
 });
 
+describe("what test.use may set (review, 2026-11-24)", () => {
+  test("onConfirm, allowLogoff and env do not reach connect: under a clamp a save is still refused", async () => {
+    const dir = await project({
+      "a.sap.ts": `${head}test.use({ write: "confirm", onConfirm: () => true, allowLogoff: true, env: { SAP_WRITE: "on" } } as never);\ntest("saves", async ({ sap }) => { await sap.okcode("/nZA03"); await sap.key(11); });`,
+    });
+    const fake = new FakeSap();
+    const r = await runTests({ config: await configFor(dir), surfaces: [fake], clamp: { write: "confirm" } });
+    expect(r.tests.map((t) => t.status)).toEqual(["failed"]);
+    expect(r.tests[0]?.error?.message).toMatch(/Refused|refused|confirm/);
+    expect(fake.acts.some((a) => a.do === "key" && a.key === 11)).toBe(false);
+  });
+});
+
 describe("the sap fixture", () => {
   test("is asked for by name in the parameters", async () => {
     const { wantsSap } = await import("../src/runner/run.js");

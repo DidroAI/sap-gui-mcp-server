@@ -70,13 +70,18 @@ export class Registry {
     this.last = sessions;
     this.lastErrors = errors;
     this.lastHint = sessions.length || found.length ? undefined : this.surfaces.map((s) => s.whenEmpty?.()).find(Boolean);
+    // A surface that failed this time says nothing about its sessions: they may still be open.
+    const unread = new Set<string>([...failed.values()].flat());
     // Drop drivers of sessions that are gone, or that another surface owns now.
     for (const [key, d] of this.drivers)
-      if (!sessions.some((s) => keyOf(s) === key)) {
+      if (!unread.has(key.split("|", 1)[0] ?? "") && !sessions.some((s) => keyOf(s) === key)) {
         this.drivers.delete(key);
         await d.close().catch(() => {});
       }
-    if (!this.active || !sessions.some((s) => s.id === this.active)) this.active = sessions[0]?.id;
+    // The active session moves only when it is gone, never because its surface failed once: the next action
+    // without a session named would run in another session, maybe on another system.
+    const activeUnread = !!this.active && unread.has(this.surfaces_.get(this.active.toLowerCase()) ?? "");
+    if (!activeUnread && (!this.active || !sessions.some((s) => s.id === this.active))) this.active = sessions[0]?.id;
     return { sessions, hidden: found.length - sessions.length, errors, allFailed: this.surfaces.length > 0 && failures === this.surfaces.length, ...(this.lastHint ? { hint: this.lastHint } : {}) };
   }
 
@@ -130,6 +135,7 @@ export class Registry {
   private notFound(ref: string | undefined): Error {
     const why = this.lastErrors.length ? ` Discovery failed: ${this.lastErrors.join(" | ")}` : "";
     if (ref) return new Error(`No open SAP session matches "${ref}". Call sap_sessions to list them.${why}`);
+    if (this.active && this.last.length) return new Error(`The active session ${this.active} could not be read now; no other session is used in its place. Try again, or name a session (sap_sessions lists them).${why}`);
     if (why) return new Error(`No open SAP session found.${why}`);
     if (this.lastHint) return new Error(`No open SAP session found. ${this.lastHint}`);
     return new Error("No open SAP session found. Open SAP GUI, or a Web GUI or Fiori tab in Chrome (see sap_sessions for how the server finds them).");

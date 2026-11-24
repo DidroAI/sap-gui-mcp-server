@@ -200,6 +200,8 @@ export function staticProblems(src: string): string[] {
   if (src.length > MAX_CODE) return [`the code is ${src.length} characters; at most ${MAX_CODE}`];
   const { code, strings } = scan(src);
   const stringAt = (from: number) => strings.find((s) => s.at >= from);
+  // "\u0070rocess" is the identifier "process": a word spelled with escapes would pass every check below.
+  for (const m of code.matchAll(/\\u/g)) problems.push(`line ${lineOf(src, m.index ?? 0)}: a \\u escape outside a string is not allowed in a test`);
   for (const m of code.matchAll(/[A-Za-z_$][\w$]*/g)) {
     const word = m[0];
     const at = m.index ?? 0;
