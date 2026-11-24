@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "sap-gui-mcp-server-docs",
+      "name": "sap-ui-automation-docs",
       "devDependencies": {
         "vitepress": "1.6.4",
       },

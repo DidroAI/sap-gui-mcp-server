@@ -1,5 +1,5 @@
 {
-  "name": "sap-gui-mcp-server",
+  "name": "sap-ui-automation",
   "version": "0.1.0",
   "description": "MCP server that lets an agent see and drive SAP screens: SAP GUI for Windows, SAP GUI for HTML (Web GUI) and SAP Fiori, in a compact, complete text view",
   "license": "MIT",
@@ -24,13 +24,13 @@
     "codex",
     "cursor"
   ],
-  "homepage": "https://github.com/DidroAI/sap-gui-mcp-server#readme",
+  "homepage": "https://github.com/DidroAI/sap-ui-automation#readme",
   "bugs": {
-    "url": "https://github.com/DidroAI/sap-gui-mcp-server/issues"
+    "url": "https://github.com/DidroAI/sap-ui-automation/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/DidroAI/sap-gui-mcp-server.git"
+    "url": "git+https://github.com/DidroAI/sap-ui-automation.git"
   },
   "type": "module",
   "main": "./dist/index.js",
@@ -47,7 +47,7 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "sap-gui-mcp-server": "dist/cli.js",
+    "sap-ui-automation": "dist/cli.js",
     "sap-gui": "dist/cli.js"
   },
   "files": [

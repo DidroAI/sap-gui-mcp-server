@@ -11,7 +11,7 @@
  * that reach the code it writes. The static checks here are defense in
  * depth, not a sandbox:
  *   - a syntax check (TypeScript types stripped: node:module, else Bun's transpiler);
- *   - imports: only `expect`, `test` (and types) from "sap-gui-mcp-server/test" or "sap-gui-mcp-server";
+ *   - imports: only `expect`, `test` (and types) from "sap-ui-automation/test" or "sap-ui-automation";
  *   - no `process`, `require`, `import()`, `eval`, `Function`, `globalThis`,
  *     `fetch`, `Bun`, `Deno`, `child_process`, nor the ways around them
  *     (`constructor`, `Reflect`, `Object`, the `registry`/`policy`/`driver`
@@ -188,8 +188,8 @@ const KEYWORDS_BEFORE_ARRAY = new Set(["return", "await", "of", "in", "case", "t
 
 /** What each allowed module may give. Types (`import type`, `type X`) are always allowed. */
 const ALLOWED: Record<string, Set<string>> = {
-  "sap-gui-mcp-server/test": new Set(["expect", "test", "ExpectError"]),
-  "sap-gui-mcp-server": new Set(["expect", "ExpectError", "Refused"]),
+  "sap-ui-automation/test": new Set(["expect", "test", "ExpectError"]),
+  "sap-ui-automation": new Set(["expect", "ExpectError", "Refused"]),
 };
 
 const lineOf = (src: string, at: number) => src.slice(0, at).split("\n").length;
@@ -355,7 +355,7 @@ function entry(rel: string): string {
  * same line (line numbers stay), types stripped where Node runs it.
  */
 async function runnable(src: string, variables: Record<string, string> | undefined): Promise<{ code: string; ext: string }> {
-  let code = src.replace(/(["'])sap-gui-mcp-server\/test\1/g, JSON.stringify(entry("../runner/index.js"))).replace(/(["'])sap-gui-mcp-server\1/g, JSON.stringify(entry("../index.js")));
+  let code = src.replace(/(["'])sap-ui-automation\/test\1/g, JSON.stringify(entry("../runner/index.js"))).replace(/(["'])sap-ui-automation\1/g, JSON.stringify(entry("../index.js")));
   if (variables && Object.keys(variables).length) {
     const lines = code.split("\n");
     const open = lines.findIndex((l) => /^\s*const vars = \{\s*$/.test(l));
@@ -404,7 +404,7 @@ export function registerCodeTools(server: McpServer, registry: Registry, policy:
     "sap_code_save",
     {
       title: "Save a *.sap.ts test",
-      description: `Writes a test written with the scripting API (import { expect, test } from "sap-gui-mcp-server/test") to <name>${CODE_SUFFIX} in the recordings directory, after checks: syntax, imports (only expect and test from the package), no process/require/import()/eval/fetch and the like, and no call that may write (a save, key 11, a Save button) unless the recording of the same name has a write. Start from sap_record {"op":"code","tidy":true}. ${DESCRIPTION_RISK}`,
+      description: `Writes a test written with the scripting API (import { expect, test } from "sap-ui-automation/test") to <name>${CODE_SUFFIX} in the recordings directory, after checks: syntax, imports (only expect and test from the package), no process/require/import()/eval/fetch and the like, and no call that may write (a save, key 11, a Save button) unless the recording of the same name has a write. Start from sap_record {"op":"code","tidy":true}. ${DESCRIPTION_RISK}`,
       inputSchema: {
         name: z.string().min(1).describe("the test's name, as the recording's (never a path)"),
         code: z.string().min(1).describe("the whole *.sap.ts file"),

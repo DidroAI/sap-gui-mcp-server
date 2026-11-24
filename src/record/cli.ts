@@ -1,8 +1,8 @@
 /**
  * The command line of record and replay:
  *
- *   sap-gui-mcp-server replay <file>... [--var name=value]... [--session <ref>] [--loose] [--continue] [--stay] [--json] [--junit <file>]
- *   sap-gui-mcp-server export <file> --to <target> [--out <file>]
+ *   sap-ui-automation replay <file>... [--var name=value]... [--session <ref>] [--loose] [--continue] [--stay] [--json] [--junit <file>]
+ *   sap-ui-automation export <file> --to <target> [--out <file>]
  *
  * `replay` runs on a session the user has open, as the server does: it
  * never logs on. Exit code 0 when every test passed, 1 otherwise.
@@ -15,9 +15,9 @@ import { exportTest, TARGET_NAMES, TARGETS } from "./export/index.js";
 import { FILE_SUFFIX, parseTest } from "./format.js";
 import { junit, replayAll, resultText } from "./replay.js";
 
-export const RECORD_HELP = `  sap-gui-mcp-server replay <file>... [--var name=value] [--session <ref>] [--loose] [--continue] [--stay] [--json] [--junit <file>]
+export const RECORD_HELP = `  sap-ui-automation replay <file>... [--var name=value] [--session <ref>] [--loose] [--continue] [--stay] [--json] [--junit <file>]
                                 run recorded tests (${FILE_SUFFIX}) on an open session, with no model; exit code 1 on a failure
-  sap-gui-mcp-server export <file> --to ${TARGET_NAMES.join("|")} [--out <file>]
+  sap-ui-automation export <file> --to ${TARGET_NAMES.join("|")} [--out <file>]
                                 write a recorded test in another format`;
 
 interface Args {

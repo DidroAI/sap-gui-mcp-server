@@ -98,7 +98,7 @@ export function junitReport(run: RunResult): string {
     return `  <testsuite name="${xml(file)}" tests="${tests.length}" failures="${n("failed")}" errors="0" skipped="${n("skipped")}" time="${(tests.reduce((a, t) => a + t.ms, 0) / 1000).toFixed(3)}">\n${cases.join("\n")}\n  </testsuite>`;
   });
   const total = run.tests.length;
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<testsuites name="sap-gui-mcp-server test" tests="${total}" failures="${run.stats.failed}" skipped="${run.stats.skipped}" time="${(run.ms / 1000).toFixed(3)}">\n${suites.join("\n")}\n</testsuites>\n`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<testsuites name="sap-ui-automation test" tests="${total}" failures="${run.stats.failed}" skipped="${run.stats.skipped}" time="${(run.ms / 1000).toFixed(3)}">\n${suites.join("\n")}\n</testsuites>\n`;
 }
 
 export function jsonReport(run: RunResult): string {

@@ -1,6 +1,6 @@
 # MCP tools
 
-The server registers its tools under the server name `sap-gui`. Five work
+The server registers its tools under the server name `sap-ui-automation`. Five work
 on the open SAP sessions, two turn a session into a repeatable test, and
 two more save and run test code when you turn them on
 (`SAP_CODE_TOOLS=on`, [Configuration](configuration.md#recording-and-files)).
@@ -20,9 +20,9 @@ So a server with the default settings lists seven tools.
 | [`sap_code_save`](#sap-code-save) | checks and saves a `*.sap.ts` test | `SAP_CODE_TOOLS=on` |
 | [`sap_code_test`](#sap-code-test) | runs a saved `*.sap.ts` test | `SAP_CODE_TOOLS=on` |
 
-Source: [`src/server.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/server.ts),
-[`src/record/tools.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/record/tools.ts)
-and [`src/record/code-tools.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/record/code-tools.ts).
+Source: [`src/server.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/server.ts),
+[`src/record/tools.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/record/tools.ts)
+and [`src/record/code-tools.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/record/code-tools.ts).
 The parameter tables below follow the tools' input schemas.
 
 ## Annotations

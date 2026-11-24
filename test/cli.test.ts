@@ -14,13 +14,13 @@ const surface = (name: "webgui" | "fiori" | "sapgui", checks: Awaited<ReturnType
 
 describe("setup", () => {
   test("the command follows how the server is installed", () => {
-    expect(launchCommand("/home/u/.npm/_npx/abc/node_modules/sap-gui-mcp-server/dist/cli.js", "darwin", false, "/usr/bin/node")).toEqual(["npx", "-y", "sap-gui-mcp-server"]);
-    expect(launchCommand("C:\\Users\\u\\AppData\\Local\\npm-cache\\_npx\\x\\cli.js", "win32", false, "node.exe")).toEqual(["cmd", "/c", "npx", "-y", "sap-gui-mcp-server"]);
-    expect(launchCommand("/usr/local/lib/node_modules/sap-gui-mcp-server/dist/cli.js", "darwin", true, "/usr/bin/node")).toEqual(["sap-gui-mcp-server"]);
+    expect(launchCommand("/home/u/.npm/_npx/abc/node_modules/sap-ui-automation/dist/cli.js", "darwin", false, "/usr/bin/node")).toEqual(["npx", "-y", "sap-ui-automation"]);
+    expect(launchCommand("C:\\Users\\u\\AppData\\Local\\npm-cache\\_npx\\x\\cli.js", "win32", false, "node.exe")).toEqual(["cmd", "/c", "npx", "-y", "sap-ui-automation"]);
+    expect(launchCommand("/usr/local/lib/node_modules/sap-ui-automation/dist/cli.js", "darwin", true, "/usr/bin/node")).toEqual(["sap-ui-automation"]);
     expect(launchCommand("/repo/dist/cli.js", "linux", false, "/usr/bin/node")).toEqual(["/usr/bin/node", "/repo/dist/cli.js"]);
   });
   test("Codex gets a TOML table", () => {
-    expect(codexTable(["npx", "-y", "sap-gui-mcp-server"])).toBe('\n[mcp_servers.sap-gui]\ncommand = "npx"\nargs = ["-y", "sap-gui-mcp-server"]\n');
+    expect(codexTable(["npx", "-y", "sap-ui-automation"])).toBe('\n[mcp_servers.sap-ui-automation]\ncommand = "npx"\nargs = ["-y", "sap-ui-automation"]\n');
   });
 });
 

@@ -16,7 +16,7 @@ import { createServer } from "../src/server.js";
 import { FakeSap } from "./record-fakes.js";
 import { messyRun, quirkyFake, unmarkedRun } from "./tidy-fixtures.js";
 
-const HEAD = 'import { expect, test } from "sap-gui-mcp-server/test";\n';
+const HEAD = 'import { expect, test } from "sap-ui-automation/test";\n';
 const wrap = (body: string) => `${HEAD}\ntest("t", async ({ sap }) => {\n${body}\n});\n`;
 
 async function connected(server: McpServer) {
@@ -104,15 +104,15 @@ describe("static checks", () => {
 
   test("imports: only expect and test from the package, named", () => {
     const one = (line: string) => staticProblems(`${line}\ntest("t", async ({ sap }) => {});\n`);
-    expect(one('import { expect, test } from "sap-gui-mcp-server/test";')).toEqual([]);
-    expect(one('import { test } from "sap-gui-mcp-server/test";\nimport type { Sap } from "sap-gui-mcp-server";')).toEqual([]);
-    expect(one('import { test, type TestInfo } from "sap-gui-mcp-server/test";')).toEqual([]);
-    expect(one('import { readFileSync } from "node:fs";')[0]).toContain('imports only from "sap-gui-mcp-server/test" or "sap-gui-mcp-server" (not "node:fs")');
+    expect(one('import { expect, test } from "sap-ui-automation/test";')).toEqual([]);
+    expect(one('import { test } from "sap-ui-automation/test";\nimport type { Sap } from "sap-ui-automation";')).toEqual([]);
+    expect(one('import { test, type TestInfo } from "sap-ui-automation/test";')).toEqual([]);
+    expect(one('import { readFileSync } from "node:fs";')[0]).toContain('imports only from "sap-ui-automation/test" or "sap-ui-automation" (not "node:fs")');
     expect(one('import { exec } from "child_process";').length).toBeGreaterThan(0);
-    expect(one('import { connect } from "sap-gui-mcp-server";')[0]).toContain('"connect" from "sap-gui-mcp-server" is not allowed');
-    expect(one('import { test, runTests } from "sap-gui-mcp-server/test";')[0]).toContain('"runTests"');
-    expect(one('import * as t from "sap-gui-mcp-server/test";')[0]).toContain("named exports only");
-    expect(one('export { test } from "sap-gui-mcp-server/test";')[0]).toContain("does not re-export");
+    expect(one('import { connect } from "sap-ui-automation";')[0]).toContain('"connect" from "sap-ui-automation" is not allowed');
+    expect(one('import { test, runTests } from "sap-ui-automation/test";')[0]).toContain('"runTests"');
+    expect(one('import * as t from "sap-ui-automation/test";')[0]).toContain("named exports only");
+    expect(one('export { test } from "sap-ui-automation/test";')[0]).toContain("does not re-export");
     expect(one('import "./other.js";')[0]).toContain("imports only from");
   });
 
@@ -125,8 +125,8 @@ describe("static checks", () => {
 
   test("names, never paths", () => {
     for (const bad of ["../x", "a/b", "a\\b", ".hidden", "C:x", "x/../../y"]) expect(() => codePath("/r", bad)).toThrow("is not a name");
-    expect(codePath("/r", "VA01 create order")).toBe("/r/va01-create-order.sap.ts");
-    expect(codePath("/r", "messy create.sap.ts")).toBe("/r/messy-create.sap.ts");
+    expect(codePath("/r", "VA01 create order")).toBe(join("/r", "va01-create-order.sap.ts"));
+    expect(codePath("/r", "messy create.sap.ts")).toBe(join("/r", "messy-create.sap.ts"));
   });
 });
 

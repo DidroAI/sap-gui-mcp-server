@@ -35,7 +35,7 @@ describe("init", () => {
     expect(read(join(cwd, "sap-tests", "example.sap.ts"))).toContain('okcode("/nSU3")');
     // no client found: Claude Code's project skills still get installed
     expect(existsSync(join(cwd, ".claude", "skills", "sap-gui-drive", "SKILL.md"))).toBe(true);
-    expect(read(join(cwd, ".gitignore"))).toBe("node_modules\n# sap-gui-mcp-server: traces and test results hold screens of business data\n.sap-gui/\nsap-results/\n");
+    expect(read(join(cwd, ".gitignore"))).toBe("node_modules\n# sap-ui-automation: traces and test results hold screens of business data\n.sap-gui/\nsap-results/\n");
     expect(r.lines.some((l) => l.includes("MCP clients: none chosen"))).toBe(true);
     expect(r.lines.every((l) => !l.includes("\n"))).toBe(true);
     // a second run changes nothing
@@ -50,7 +50,7 @@ describe("init", () => {
     expect(existsSync(join(cwd, ".gitignore"))).toBe(false);
     mkdirSync(join(cwd, ".git"));
     const r = await init({ ...base(), yes: true });
-    expect(read(join(cwd, ".gitignore"))).toBe("# sap-gui-mcp-server: traces and test results hold screens of business data\n.sap-gui/\nsap-results/\n");
+    expect(read(join(cwd, ".gitignore"))).toBe("# sap-ui-automation: traces and test results hold screens of business data\n.sap-gui/\nsap-results/\n");
     expect(r.lines).toContain("✓ .gitignore: added .sap-gui/, sap-results/");
   });
 
@@ -96,7 +96,7 @@ describe("init", () => {
     expect(config).toContain('write: "confirm"');
     expect(existsSync(join(cwd, ".cursor", "rules", "sap-gui-drive.mdc"))).toBe(true);
     expect(existsSync(join(cwd, ".claude"))).toBe(false);
-    expect(json(join(home, ".cursor", "mcp.json")).mcpServers["sap-gui"].command).toBeString();
+    expect(json(join(home, ".cursor", "mcp.json")).mcpServers["sap-ui-automation"].command).toBeString();
   });
 
   test("Enter keeps every default", async () => {
@@ -121,7 +121,7 @@ describe("install --skills", () => {
     const first = installSkills({ targets: ["claude"], cwd, home, env: {} });
     const file = join(cwd, ".claude", "skills", "sap-gui-drive", "SKILL.md");
     expect(read(file)).toBe(read(join(packageRoot(), "skills", "sap-gui-drive", "SKILL.md")));
-    expect(first.lines.find((l) => l.includes("sap-gui-drive"))).toContain("created (.claude/skills/sap-gui-drive)");
+    expect(first.lines.find((l) => l.includes("sap-gui-drive"))).toContain(`created (${join(".claude", "skills", "sap-gui-drive")})`);
     expect(installSkills({ targets: ["claude"], cwd, home, env: {} }).lines.find((l) => l.includes("sap-gui-drive"))).toContain("unchanged");
     writeFileSync(file, "old");
     expect(installSkills({ targets: ["claude"], cwd, home, env: {} }).lines.find((l) => l.includes("sap-gui-drive"))).toContain("updated");
@@ -168,14 +168,14 @@ describe("setup: Cursor, Windsurf, VS Code", () => {
     expect(detectClients({ cwd, onPath: none }, {}, "linux", home)).toEqual(["cursor"]);
     const r = setup({ dryRun: false, only: ["cursor"], cwd, onPath: none }, {}, "linux", home);
     expect(r.changed).toBe(1);
-    expect(Object.keys(json(join(home, ".cursor", "mcp.json")).mcpServers)).toEqual(["sap-gui"]);
+    expect(Object.keys(json(join(home, ".cursor", "mcp.json")).mcpServers)).toEqual(["sap-ui-automation"]);
     expect(setup({ dryRun: false, only: ["cursor"], cwd, onPath: none }, {}, "linux", home).lines.some((l) => l.includes("already in"))).toBe(true);
 
     mkdirSync(join(cwd, ".cursor"));
     writeFileSync(join(cwd, ".cursor", "mcp.json"), JSON.stringify({ mcpServers: { other: { command: "x" } } }));
     setup({ dryRun: false, only: ["cursor"], cwd, onPath: none }, {}, "linux", home);
     const project = json(join(cwd, ".cursor", "mcp.json"));
-    expect(Object.keys(project.mcpServers)).toEqual(["other", "sap-gui"]);
+    expect(Object.keys(project.mcpServers)).toEqual(["other", "sap-ui-automation"]);
     expect(existsSync(join(cwd, ".cursor", "mcp.json.bak"))).toBe(true);
   });
 
@@ -204,17 +204,17 @@ describe("setup: Cursor, Windsurf, VS Code", () => {
     expect(setup({ dryRun: true, cwd, onPath: none }, {}, "linux", home).lines.some((l) => l.startsWith("• Windsurf (Devin Desktop): would add"))).toBe(true);
     expect(existsSync(file)).toBe(false);
     const r = await init({ ...base(), yes: true });
-    expect(r.lines.some((l) => l.startsWith('✓ Windsurf (Devin Desktop): added "sap-gui"'))).toBe(true);
-    expect(json(file).mcpServers["sap-gui"].args).toBeArray();
+    expect(r.lines.some((l) => l.startsWith('✓ Windsurf (Devin Desktop): added "sap-ui-automation"'))).toBe(true);
+    expect(json(file).mcpServers["sap-ui-automation"].args).toBeArray();
     expect(existsSync(join(home, ".codeium", "windsurf", "mcp_config.json"))).toBe(false);
   });
 
   test("Windsurf (Devin Desktop): XDG_CONFIG_HOME and %APPDATA%", () => {
     mkdirSync(join(home, "xdg", "devin"), { recursive: true });
     setup({ dryRun: false, cwd, onPath: none, only: ["windsurf"] }, { XDG_CONFIG_HOME: join(home, "xdg") }, "linux", home);
-    expect(json(join(home, "xdg", "devin", "mcp_config.json")).mcpServers["sap-gui"]).toBeDefined();
+    expect(json(join(home, "xdg", "devin", "mcp_config.json")).mcpServers["sap-ui-automation"]).toBeDefined();
     setup({ dryRun: false, cwd, onPath: none, only: ["windsurf"] }, { APPDATA: join(home, "AppData") }, "win32", home);
-    expect(json(join(home, "AppData", "devin", "mcp_config.json")).mcpServers["sap-gui"]).toBeDefined();
+    expect(json(join(home, "AppData", "devin", "mcp_config.json")).mcpServers["sap-ui-automation"]).toBeDefined();
   });
 
   test("VS Code: only a project that has .vscode/mcp.json, under `servers`", () => {
@@ -222,6 +222,6 @@ describe("setup: Cursor, Windsurf, VS Code", () => {
     mkdirSync(join(cwd, ".vscode"));
     writeFileSync(join(cwd, ".vscode", "mcp.json"), "{}");
     setup({ dryRun: false, cwd, onPath: none }, {}, "linux", home);
-    expect(json(join(cwd, ".vscode", "mcp.json")).servers["sap-gui"].type).toBe("stdio");
+    expect(json(join(cwd, ".vscode", "mcp.json")).servers["sap-ui-automation"].type).toBe("stdio");
   });
 });

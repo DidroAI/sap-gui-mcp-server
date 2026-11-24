@@ -1,8 +1,8 @@
 /**
- * `sap-gui-mcp-server/test`: what `*.sap.ts` files import, and the runner as
+ * `sap-ui-automation/test`: what `*.sap.ts` files import, and the runner as
  * a library.
  *
- *   import { expect, test } from "sap-gui-mcp-server/test";
+ *   import { expect, test } from "sap-ui-automation/test";
  *   test("display an order", async ({ sap }) => { ... });
  */
 export { expect, ExpectError, type ExpectOptions } from "../sdk/expect.js";

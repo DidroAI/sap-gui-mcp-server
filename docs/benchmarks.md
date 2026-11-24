@@ -28,7 +28,7 @@ the SAP database after the run, not by what the agent says.
 
 | Method | Surfaces |
 | --- | --- |
-| sap-gui-mcp-server (this repository): MCP tools and the agent CLI | all three |
+| sap-ui-automation (this repository): MCP tools and the agent CLI | all three |
 | Playwright MCP, Playwright CLI | Web GUI, Fiori |
 | Chrome DevTools MCP | Web GUI, Fiori |
 | Claude computer use and browser use | Web GUI, Fiori, SAP GUI for Windows |

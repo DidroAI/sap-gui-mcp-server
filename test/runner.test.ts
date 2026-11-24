@@ -23,7 +23,7 @@ async function project(files: Record<string, string>): Promise<string> {
   return dir;
 }
 
-/** Runs `sap-gui-mcp-server test` in `dir` on a FakeSap; returns the exit code and what it printed. */
+/** Runs `sap-ui-automation test` in `dir` on a FakeSap; returns the exit code and what it printed. */
 async function cli(dir: string, argv: string[] = [], fake = new FakeSap()) {
   const lines: string[] = [];
   const code = await testCommand(argv, { cwd: dir, surfaces: [fake], print: (l) => lines.push(l) });
@@ -139,8 +139,8 @@ test("always fails", async () => { throw new Error("no"); });`,
     const [flaky, failed] = r.tests;
     expect(flaky?.status).toBe("flaky");
     expect(flaky?.attempts.map((a) => a.status)).toEqual(["failed", "passed"]);
-    expect(flaky?.attempts[0]?.trace).toContain("a-flaky-one/");
-    expect(flaky?.attempts[1]?.trace).toContain("a-flaky-one-retry1/");
+    expect(flaky?.attempts[0]?.trace).toMatch(/a-flaky-one[\\/]/);
+    expect(flaky?.attempts[1]?.trace).toMatch(/a-flaky-one-retry1[\\/]/);
     expect(failed?.status).toBe("failed");
     expect(failed?.attempts.length).toBe(3);
     expect(r.ok).toBe(false);
@@ -195,7 +195,7 @@ test.skip("skipped", async () => {});`,
     expect(out).toContain(`report: ${join(dir, "out/junit.xml")}`);
 
     const xml = await readFile(join(dir, "out/junit.xml"), "utf8");
-    expect(xml).toContain('<testsuites name="sap-gui-mcp-server test" tests="3" failures="1" skipped="1"');
+    expect(xml).toContain('<testsuites name="sap-ui-automation test" tests="3" failures="1" skipped="1"');
     expect(xml).toContain('<testsuite name="orders.sap.ts" tests="3" failures="1" errors="0" skipped="1"');
     expect(xml).toContain('<testcase name="fails &lt;here&gt;" classname="orders.sap.ts"');
     expect(xml).toContain("<failure message=");

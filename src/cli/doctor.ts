@@ -52,7 +52,7 @@ export async function doctorReport(surfaces: Surface[], version: string, platfor
       list.push(c);
     }
   }
-  const out: string[] = [`sap-gui-mcp-server ${version}`, ""];
+  const out: string[] = [`sap-ui-automation ${version}`, ""];
   let ok = true;
   for (const [area, checks] of areas) {
     out.push(area);
@@ -64,6 +64,6 @@ export async function doctorReport(surfaces: Surface[], version: string, platfor
     out.push("");
   }
   if (platform !== "win32" && !areas.has(AREAS.sapgui ?? "")) out.push("SAP GUI for Windows", "  – not checked: it runs only on Windows. On this machine, use Web GUI or Fiori in Chrome.", "");
-  out.push(ok ? "Ready. Ask your agent to look at your SAP screen; for Web GUI and Fiori, log on in the Chrome window the server opens. (Agent does not list the sap-gui tools? Run sap-gui-mcp-server setup, then restart the agent.)" : "Not ready yet: fix the ✗ above, then run doctor again.");
+  out.push(ok ? "Ready. Ask your agent to look at your SAP screen; for Web GUI and Fiori, log on in the Chrome window the server opens. (Agent does not list the sap-ui-automation tools? Run sap-ui-automation setup, then restart the agent.)" : "Not ready yet: fix the ✗ above, then run doctor again.");
   return { text: out.join("\n"), ok };
 }

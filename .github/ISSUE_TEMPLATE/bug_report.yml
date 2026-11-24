@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thank you for the report. **Leave real SAP data out**: replace customer names, numbers, texts, host names and user names in views and logs with made-up ones. Security issues go through [SECURITY.md](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/SECURITY.md), not here.
+        Thank you for the report. **Leave real SAP data out**: replace customer names, numbers, texts, host names and user names in views and logs with made-up ones. Security issues go through [SECURITY.md](https://github.com/DidroAI/sap-ui-automation/blob/main/SECURITY.md), not here.
   - type: textarea
     id: what
     attributes:
@@ -42,8 +42,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: sap-gui-mcp-server version
-      description: "`npx -y sap-gui-mcp-server --version`"
+      label: sap-ui-automation version
+      description: "`npx -y sap-ui-automation --version`"
     validations:
       required: true
   - type: input
@@ -81,7 +81,7 @@ body:
     id: doctor
     attributes:
       label: Output of doctor
-      description: "`npx -y sap-gui-mcp-server doctor`. Replace host names and user names."
+      description: "`npx -y sap-ui-automation doctor`. Replace host names and user names."
       render: text
   - type: textarea
     id: settings

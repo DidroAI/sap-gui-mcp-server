@@ -1,7 +1,7 @@
 # Claude Desktop
 
-One click: download `sap-gui-mcp-server-<version>.mcpb` from the
-[latest release](https://github.com/DidroAI/sap-gui-mcp-server/releases/latest)
+One click: download `sap-ui-automation-<version>.mcpb` from the
+[latest release](https://github.com/DidroAI/sap-ui-automation/releases/latest)
 and open it. Claude Desktop asks for the settings (writes, allowed systems,
 transactions, origins).
 
@@ -10,16 +10,16 @@ By hand, in `claude_desktop_config.json` (Settings > Developer > Edit Config):
 ```json
 {
   "mcpServers": {
-    "sap-gui": {
+    "sap-ui-automation": {
       "command": "npx",
-      "args": ["-y", "sap-gui-mcp-server"],
+      "args": ["-y", "sap-ui-automation"],
       "env": { "SAP_WRITE": "off" }
     }
   }
 }
 ```
 
-On Windows use `"command": "cmd"` and `"args": ["/c", "npx", "-y", "sap-gui-mcp-server"]`.
+On Windows use `"command": "cmd"` and `"args": ["/c", "npx", "-y", "sap-ui-automation"]`.
 Writes stay `off`: Claude Desktop does not document whether it can ask
 you about a write (MCP elicitation), so with `confirm` a write may be
 refused. Quit and reopen Claude Desktop. More: [installation](../../docs/getting-started/installation.md#claude-desktop).

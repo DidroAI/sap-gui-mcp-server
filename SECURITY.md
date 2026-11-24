@@ -3,7 +3,7 @@
 ## Report a vulnerability
 
 Please do not open a public issue. Report it privately through GitHub:
-[Security → Report a vulnerability](https://github.com/DidroAI/sap-gui-mcp-server/security/advisories/new).
+[Security → Report a vulnerability](https://github.com/DidroAI/sap-ui-automation/security/advisories/new).
 
 Without a GitHub account, email pierre@didro.ai.
 
@@ -182,7 +182,7 @@ SAP's own authorisations.
 - **The server process runs as you.** On Windows it starts Windows
   PowerShell to reach SAP GUI; `setup` edits your MCP clients'
   configuration files (keeping a `.bak`).
-- **Installing it.** `npx -y sap-gui-mcp-server` fetches the package from
+- **Installing it.** `npx -y sap-ui-automation` fetches the package from
   the npm registry when it is not cached. That is npm, not the server. Pin
   a version in your client configuration if you want the same code every
   time.

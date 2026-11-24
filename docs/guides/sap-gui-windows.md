@@ -15,7 +15,7 @@ Two settings must allow scripting, one in SAP GUI on your PC and one on the
 SAP system. `doctor` checks both:
 
 ```sh
-npx -y sap-gui-mcp-server doctor
+npx -y sap-ui-automation doctor
 ```
 
 If scripting cannot be turned on for a system, the [network

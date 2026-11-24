@@ -1,6 +1,6 @@
 # Introduction
 
-sap-gui-mcp-server is an [MCP](https://modelcontextprotocol.io) server that
+sap-ui-automation is an [MCP](https://modelcontextprotocol.io) server that
 lets an agent (Claude, Codex, Cursor and other MCP clients) **see and drive
 the SAP screens you already have open**:
 

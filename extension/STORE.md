@@ -10,18 +10,18 @@ The extension is distributed unpacked until the first store release.
 - **Category:** Developer Tools (alternative: Workflow & Planning)
 - **Description:**
 
-  > Agent Connector lets an AI agent that runs on your own computer (through the open-source sap-gui-mcp-server) work in your SAP systems in the Chrome you use every day.
+  > Agent Connector lets an AI agent that runs on your own computer (through the open-source sap-ui-automation) work in your SAP systems in the Chrome you use every day.
   >
   > Register each SAP system once (Web GUI or Fiori launchpad address, client, language, user). Your agent can then list them, open one and log on, and work in its tabs: with your SAP authorizations, and only in the systems you registered.
   >
   > The agent never sees your password: the extension types it into SAP's logon page itself, in a tab the agent cannot see, and keeps it in your operating system's keychain. Nothing leaves your computer: the extension talks only to the local server on 127.0.0.1 and to your SAP systems.
   >
-  > Requires the free helper and server: `npx -y sap-gui-mcp-server extension install` (Node.js 20+).
+  > Requires the free helper and server: `npx -y sap-ui-automation extension install` (Node.js 20+).
   >
   > Not affiliated with or endorsed by SAP SE. SAP, SAP Fiori and SAP S/4HANA are trademarks of SAP SE.
 
-- **Privacy policy URL:** https://github.com/DidroAI/sap-gui-mcp-server/blob/main/extension/PRIVACY.md
-- **Homepage / support:** https://github.com/DidroAI/sap-gui-mcp-server (issues for support)
+- **Privacy policy URL:** https://github.com/DidroAI/sap-ui-automation/blob/main/extension/PRIVACY.md
+- **Homepage / support:** https://github.com/DidroAI/sap-ui-automation (issues for support)
 
 ## Single purpose
 

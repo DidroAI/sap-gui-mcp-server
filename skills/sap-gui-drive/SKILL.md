@@ -1,11 +1,11 @@
 ---
 name: sap-gui-drive
-description: Work in SAP screens with the sap-gui MCP tools — run a transaction, fill a screen, read a list, check a document in SAP GUI, Web GUI or Fiori. Use whenever a task means doing or checking something in an SAP system the user has open.
+description: Work in SAP screens with the sap-ui-automation MCP tools — run a transaction, fill a screen, read a list, check a document in SAP GUI, Web GUI or Fiori. Use whenever a task means doing or checking something in an SAP system the user has open.
 ---
 
 # Working in SAP screens
 
-The `sap-gui` server ([sap-gui-mcp-server](https://github.com/DidroAI/sap-gui-mcp-server);
+The `sap-ui-automation` server ([sap-ui-automation](https://github.com/DidroAI/sap-ui-automation);
 its tools are named `sap_*`, whatever name the server was added under) works
 in the SAP sessions the user already has open, as that user. It never logs on, except with `sap_logon` to a system the user
 registered in the Chrome extension (`sap_systems` lists them; the extension types the password). Everything you do is what the user could

@@ -60,7 +60,7 @@ jobs:
         run: |
           mkdir -p release-assets
           # npm pack and scripts/build-mcpb.mjs both write to the repository root.
-          mv "sap-gui-mcp-server-$VERSION.tgz" "sap-gui-mcp-server-$VERSION.mcpb" release-assets/
+          mv "sap-ui-automation-$VERSION.tgz" "sap-ui-automation-$VERSION.mcpb" release-assets/
           ls -l release-assets
 
       # Publishes exactly the tarball attached to the release below (lifecycle scripts do not run
@@ -68,7 +68,7 @@ jobs:
       #
       # Authentication: an npm automation/granular token in the NPM_TOKEN secret of the "npm" environment.
       # Alternative: npm trusted publishing (OIDC). Once the maintainer configures it on npmjs.com
-      # (package Settings > Trusted publishing > GitHub Actions: DidroAI/sap-gui-mcp-server,
+      # (package Settings > Trusted publishing > GitHub Actions: DidroAI/sap-ui-automation,
       # workflow release.yml, environment npm), npm (11.5+, bundled with Node 24) authenticates
       # with the id-token permission above and needs no token: drop NODE_AUTH_TOKEN and the secret.
       # Trusted publishing also records provenance automatically.
@@ -77,7 +77,7 @@ jobs:
         run: |
           tag=latest
           case "$VERSION" in *-*) tag=next ;; esac
-          npm publish "release-assets/sap-gui-mcp-server-$VERSION.tgz" --provenance --access public --tag "$tag"
+          npm publish "release-assets/sap-ui-automation-$VERSION.tgz" --provenance --access public --tag "$tag"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

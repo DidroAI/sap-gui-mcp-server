@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- *   sap-gui-mcp-server            the stdio MCP server (default)
- *   sap-gui-mcp-server setup      adds the server to Claude Code, Codex, Claude Desktop, Cursor, Windsurf and VS Code
- *   sap-gui-mcp-server init       sets a project up: sap.config.ts, an example test, skills, MCP clients
- *   sap-gui-mcp-server install --skills   copies the bundled agent skills into a project (or --global)
- *   sap-gui-mcp-server doctor     checks what the server can reach on this machine
- *   sap-gui-mcp-server sessions   lists the SAP sessions it finds, then exits
- *   sap-gui-mcp-server browser    opens the SAP window (the Chrome the server starts for Web GUI and Fiori)
- *   sap-gui-mcp-server test       runs *.sap.ts tests (src/runner)
- *   sap-gui-mcp-server extension  unpacks and pairs the Chrome extension (src/cli/extension.ts)
+ *   sap-ui-automation            the stdio MCP server (default)
+ *   sap-ui-automation setup      adds the server to Claude Code, Codex, Claude Desktop, Cursor, Windsurf and VS Code
+ *   sap-ui-automation init       sets a project up: sap.config.ts, an example test, skills, MCP clients
+ *   sap-ui-automation install --skills   copies the bundled agent skills into a project (or --global)
+ *   sap-ui-automation doctor     checks what the server can reach on this machine
+ *   sap-ui-automation sessions   lists the SAP sessions it finds, then exits
+ *   sap-ui-automation browser    opens the SAP window (the Chrome the server starts for Web GUI and Fiori)
+ *   sap-ui-automation test       runs *.sap.ts tests (src/runner)
+ *   sap-ui-automation extension  unpacks and pairs the Chrome extension (src/cli/extension.ts)
  */
 import { disconnectChrome, extensionMode, openSapWindow } from "./browser/chrome.js";
 import { browserMode } from "./browser/launch.js";
@@ -27,27 +27,27 @@ import { serveStdio } from "./stdio.js";
 import { showTraceCommand, TRACE_HELP } from "./trace/cli.js";
 import { surfacesFromEnv } from "./surfaces.js";
 
-const HELP = `sap-gui-mcp-server ${SERVER_VERSION}: an MCP server that sees and drives SAP screens you have open.
+const HELP = `sap-ui-automation ${SERVER_VERSION}: an MCP server that sees and drives SAP screens you have open.
 
 Usage:
-  sap-gui-mcp-server            start the stdio server (what MCP clients run)
-  sap-gui-mcp-server setup [claude-code|codex|claude-desktop|cursor|windsurf|vscode] [--dry-run]
+  sap-ui-automation            start the stdio server (what MCP clients run)
+  sap-ui-automation setup [claude-code|codex|claude-desktop|cursor|windsurf|vscode] [--dry-run]
                                 add the server to the MCP clients found on this machine
-  sap-gui-mcp-server init [--yes] [--force] [--dry-run]
+  sap-ui-automation init [--yes] [--force] [--dry-run]
                                 set this project up: sap.config.ts, sap-tests/example.sap.ts, agent skills,
                                 MCP clients, .gitignore (asks a few questions; --yes takes the defaults)
-  sap-gui-mcp-server install --skills [--target claude|codex|cursor|all] [--global] [--dry-run]
+  sap-ui-automation install --skills [--target claude|codex|cursor|all] [--global] [--dry-run]
                                 copy the bundled agent skills to .claude/skills, .agents/skills, .cursor/rules
                                 (--global: ~/.claude/skills, ~/.codex/skills)
-  sap-gui-mcp-server doctor     check SAP GUI scripting and Chrome access on this machine
-  sap-gui-mcp-server sessions   list the SAP sessions found now
+  sap-ui-automation doctor     check SAP GUI scripting and Chrome access on this machine
+  sap-ui-automation sessions   list the SAP sessions found now
 ${EXTENSION_HELP}
-  sap-gui-mcp-server browser    open the SAP window: the Chrome window the server starts for Web GUI and Fiori.
+  sap-ui-automation browser    open the SAP window: the Chrome window the server starts for Web GUI and Fiori.
                                 Log on to SAP there once; the agent opens it by itself when it needs SAP.
 ${RECORD_HELP}
 ${TRACE_HELP}
 ${TEST_HELP}
-  sap-gui-mcp-server --version | --help
+  sap-ui-automation --version | --help
 
 ${AGENT_HELP}
 
@@ -61,7 +61,7 @@ Environment:
   SAP_BROWSER=launch|attach|extension   launch (default): the server starts Google Chrome with a profile of its own (the SAP
                                         window) and works only there. attach: your running Chrome or Edge that allows
                                         remote debugging (chrome://inspect/#remote-debugging). extension:
-                                        your everyday Chrome through the sap-gui-mcp-server extension (see extension pair).
+                                        your everyday Chrome through the sap-ui-automation extension (see extension pair).
   SAP_CHROME_PATH=/path/to/chrome       the Chrome to start, when the server does not find it
   SAP_START_URL=https://myhost/sap/...  the address a new SAP window opens on (after its first use: the last SAP address)
   SAP_CHROME_CDP=http://127.0.0.1:9222  a Chrome DevTools endpoint to attach to; it wins over SAP_BROWSER. A Chrome started
@@ -95,7 +95,7 @@ async function main(argv: string[]): Promise<number> {
     if (surfaces.some((s) => s.name !== "sapgui"))
       console.error(
         extensionMode(process.env)
-          ? "Checking… (waiting up to 35 s for the sap-gui-mcp-server extension in Chrome)\n"
+          ? "Checking… (waiting up to 35 s for the sap-ui-automation extension in Chrome)\n"
           : attaching
             ? "Checking… (if Chrome asks whether to allow remote debugging, click Allow)\n"
             : "Checking…\n",
@@ -164,7 +164,7 @@ async function initCommand(args: string[]): Promise<number> {
 
 function installCommand(args: string[]): number {
   if (!args.includes("--skills")) {
-    console.error("Usage: sap-gui-mcp-server install --skills [--target claude|codex|cursor|all] [--global] [--dry-run]");
+    console.error("Usage: sap-ui-automation install --skills [--target claude|codex|cursor|all] [--global] [--dry-run]");
     return 2;
   }
   const i = args.indexOf("--target");

@@ -84,7 +84,7 @@ export interface DraftOptions {
 }
 
 /** A whole `*.sap.ts` file with one test made of these lines. */
-export function draftTest({ name, lines, from = "sap-gui-mcp-server/test" }: DraftOptions): string {
+export function draftTest({ name, lines, from = "sap-ui-automation/test" }: DraftOptions): string {
   const body = lines.map((l) => (l ? `  ${l}` : "")).join("\n");
   return `import { expect, test } from ${q(from)};\n\ntest(${title(name)}, async ({ sap }) => {\n${body}\n});\n`;
 }
