@@ -1,7 +1,7 @@
 /**
  * `setup`: adds this server to the MCP clients found on this machine.
  *
- * - Claude Code: `claude mcp add sap-gui --scope user -- <command>`;
+ * - Claude Code: `claude mcp add sap-ui-automation --scope user -- <command>`;
  * - Codex: a `[mcp_servers.sap-ui-automation]` table in ~/.codex/config.toml;
  * - Claude Desktop: an `mcpServers["sap-ui-automation"]` entry in claude_desktop_config.json;
  * - Cursor: an `mcpServers["sap-ui-automation"]` entry in the project's .cursor/mcp.json when
@@ -13,10 +13,12 @@
  *   only when that file exists or `vscode` is named.
  *
  * It never overwrites an existing sap-ui-automation entry, keeps a .bak copy of a
- * config file it changes, and with --dry-run only says what it would do.
+ * config file it changes (the first one: a later run does not replace it), and
+ * with --dry-run only says what it would do. A config it cannot read safely is
+ * left alone, with the entry to add by hand.
  */
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -50,8 +52,71 @@ function claudeDesktopConfig(platform: NodeJS.Platform, env: Env, home: string):
   return undefined;
 }
 
+/** Keeps a copy of the file as it was before setup first changed it. */
 function backup(file: string): void {
-  if (existsSync(file)) copyFileSync(file, `${file}.bak`);
+  if (existsSync(file) && !existsSync(`${file}.bak`)) copyFileSync(file, `${file}.bak`);
+}
+
+/** Writes through a temporary file and a rename, so a crash never leaves half a config. */
+function writeAtomic(file: string, text: string): void {
+  const tmp = `${file}.${process.pid}.tmp`;
+  try {
+    writeFileSync(tmp, text);
+    renameSync(tmp, file);
+  } catch (e) {
+    rmSync(tmp, { force: true });
+    throw e;
+  }
+}
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/**
+ * Whether Codex's config.toml already has this server: "yes" for a
+ * `[mcp_servers.<name>]` table (bare or quoted key, or one of its sub-tables)
+ * or an inline `<name> = {...}` entry; "unsure" when the name appears in some
+ * other form, where appending a table could make the file invalid.
+ */
+export function codexHas(text: string): "yes" | "no" | "unsure" {
+  const key = `(?:${NAME}|"${NAME}"|'${NAME}')`;
+  // [mcp_servers.<name>], [mcp_servers."<name>"], [mcp_servers.<name>.env], [ mcp_servers . <name> ]
+  if (new RegExp(`^\\s*\\[\\s*mcp_servers\\s*\\.\\s*${key}\\s*[.\\]]`, "m").test(text)) return "yes";
+  // mcp_servers.<name> = {...}, <name> = {...} under [mcp_servers], or inside an inline mcp_servers table
+  if (new RegExp(`(?:^|[\\s{,.])${key}\\s*=`, "m").test(text)) return "yes";
+  return text.includes(NAME) ? "unsure" : "no";
+}
+
+/**
+ * One argument for a cmd.exe command line, as cross-spawn does it: quoted for
+ * the program's own argument parser, then every cmd metacharacter escaped with
+ * ^ (twice for a .cmd/.bat shim, whose %* is read by cmd once more).
+ */
+export function cmdArg(arg: string, shim: boolean): string {
+  let a = arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, "$1$1");
+  a = `"${a}"`;
+  const meta = /([()\][%!^"`<>&|;, *?])/g;
+  a = a.replace(meta, "^$1");
+  return shim ? a.replace(meta, "^$1") : a;
+}
+
+/** The command line cmd.exe runs for `file args...` (file is a resolved path). */
+export function cmdLine(file: string, args: string[]): string {
+  const shim = /\.(cmd|bat)$/i.test(file);
+  return [file.replace(/([()\][%!^"`<>&|;, *?])/g, "^$1"), ...args.map((a) => cmdArg(a, shim))].join(" ");
+}
+
+/**
+ * Runs the claude command. On Windows it is a claude.exe, run directly, or an
+ * npm claude.cmd shim, which needs cmd.exe: its arguments are then quoted for
+ * cmd, so a path with a space or an & stays one argument.
+ */
+function runClaude(args: string[], platform: NodeJS.Platform, cwd: string) {
+  if (platform !== "win32") return spawnSync("claude", args, { encoding: "utf8", cwd });
+  const found = spawnSync("where", ["claude"], { encoding: "utf8" }).stdout ?? "";
+  const file = found.split(/\r?\n/).map((l) => l.trim()).find((l) => /\.(exe|cmd|bat)$/i.test(l));
+  if (!file) return spawnSync("claude", args, { encoding: "utf8", cwd });
+  if (/\.exe$/i.test(file)) return spawnSync(file, args, { encoding: "utf8", cwd });
+  return spawnSync(cmdLine(file, args), { encoding: "utf8", cwd, shell: true });
 }
 
 export interface SetupResult {
@@ -108,19 +173,22 @@ export function detectClients(opts: { cwd?: string | undefined; onPath?: ((cmd: 
  * unless it is there already. Returns the line to print and whether it changed the file.
  */
 function addJsonServer(file: string, key: string, entry: Record<string, unknown>, label: string, after: string, dryRun: boolean): { line: string; changed: boolean } {
-  let config: Record<string, unknown> = {};
+  let config: unknown = {};
   try {
-    config = existsSync(file) ? (JSON.parse(readFileSync(file, "utf8") || "{}") as Record<string, unknown>) : {};
+    config = existsSync(file) ? JSON.parse(readFileSync(file, "utf8") || "{}") : {};
   } catch {
     return { line: `✗ ${label}: ${file} is not valid JSON; add "${NAME}" by hand.`, changed: false };
   }
-  const servers = (config[key] ?? {}) as Record<string, unknown>;
+  const byHand = `add this under "${key}" by hand: "${NAME}": ${JSON.stringify(entry)}`;
+  if (!isPlainObject(config)) return { line: `✗ ${label}: ${file} does not hold a JSON object; ${byHand}`, changed: false };
+  const servers = config[key] ?? {};
+  if (!isPlainObject(servers)) return { line: `✗ ${label}: "${key}" in ${file} is not an object; ${byHand}`, changed: false };
   if (servers[NAME]) return { line: `✓ ${label}: "${NAME}" is already in ${file}.`, changed: false };
   if (dryRun) return { line: `• ${label}: would add "${NAME}" to ${file}.`, changed: false };
   mkdirSync(dirname(file), { recursive: true });
   backup(file);
   config[key] = { ...servers, [NAME]: entry };
-  writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
+  writeAtomic(file, `${JSON.stringify(config, null, 2)}\n`);
   return { line: `✓ ${label}: added "${NAME}" to ${file}. ${after}`, changed: true };
 }
 
@@ -144,11 +212,11 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
     if (has("claude")) {
       found++;
       // From the home folder: a project's own .mcp.json must not count as installed.
-      const has = spawnSync("claude", ["mcp", "get", NAME], { encoding: "utf8", shell: platform === "win32", cwd: home }).status === 0;
+      const has = runClaude(["mcp", "get", NAME], platform, home).status === 0;
       if (has) lines.push(`✓ Claude Code: "${NAME}" is already configured (claude mcp get ${NAME}).`);
       else if (opts.dryRun) lines.push(`• Claude Code: would run claude mcp add ${NAME} --scope user -- ${command.join(" ")}`);
       else {
-        const r = spawnSync("claude", ["mcp", "add", NAME, "--scope", "user", "--", ...command], { encoding: "utf8", shell: platform === "win32", cwd: home });
+        const r = runClaude(["mcp", "add", NAME, "--scope", "user", "--", ...command], platform, home);
         if (r.status === 0) {
           changed++;
           lines.push(`✓ Claude Code: added "${NAME}" for your user. Restart Claude Code to load it.`);
@@ -162,12 +230,16 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
     if (has("codex") || existsSync(dirname(file))) {
       found++;
       const text = existsSync(file) ? readFileSync(file, "utf8") : "";
-      if (new RegExp(`^\\[mcp_servers\\.${NAME}\\]`, "m").test(text)) lines.push(`✓ Codex: "${NAME}" is already in ${file}.`);
-      else if (opts.dryRun) lines.push(`• Codex: would add to ${file}:${codexTable(command)}`);
+      const present = codexHas(text);
+      if (present === "yes") lines.push(`✓ Codex: "${NAME}" is already in ${file}.`);
+      else if (present === "unsure") {
+        lines.push(`✗ Codex: ${file} names "${NAME}" in a form setup does not read; check it, or add this table by hand:`);
+        lines.push(...codexTable(command).trim().split("\n").map((l) => `    ${l}`));
+      } else if (opts.dryRun) lines.push(`• Codex: would add to ${file}:${codexTable(command)}`);
       else {
         mkdirSync(dirname(file), { recursive: true });
         backup(file);
-        writeFileSync(file, text + codexTable(command));
+        writeAtomic(file, text + codexTable(command));
         changed++;
         lines.push(`✓ Codex: added "${NAME}" to ${file}. Start a new Codex session to load it.`);
       }
