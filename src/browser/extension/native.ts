@@ -183,6 +183,20 @@ export function uninstallNativeHost(options: { platform?: NodeJS.Platform; home?
   return { removed, keychainItems };
 }
 
+/**
+ * How to run the launcher with `args`. A .bat file runs only through cmd.exe,
+ * and a profile path with a space ("C:\Users\Jane Doe\...") broke the
+ * unquoted command line: `cmd /d /s /c ""<launcher>" "<arg>""` keeps every
+ * part whole (with /s, cmd drops the outer quotes and runs the rest as it
+ * is). Node must pass that line unchanged (`verbatim`). Elsewhere the
+ * launcher runs directly.
+ */
+export function launcherCommand(launcher: string, args: string[], platform: NodeJS.Platform = process.platform, env: Env = process.env): { cmd: string; args: string[]; verbatim: boolean } {
+  if (platform !== "win32") return { cmd: launcher, args, verbatim: false };
+  const quoted = [launcher, ...args].map((a) => `"${a.replace(/"/g, '""')}"`).join(" ");
+  return { cmd: env.ComSpec || "cmd.exe", args: ["/d", "/s", "/c", `"${quoted}"`], verbatim: true };
+}
+
 /** Does the installed helper answer? Runs its launcher with a "hello" message, as Chrome would. */
 export function nativeHostAnswers(platform: NodeJS.Platform = process.platform, home: string = homedir(), env: Env = process.env): { ok: boolean; keychain?: string | null; error?: string } {
   let launcher: string | undefined;
@@ -197,7 +211,8 @@ export function nativeHostAnswers(platform: NodeJS.Platform = process.platform, 
   const body = Buffer.from(JSON.stringify({ cmd: "hello" }));
   const head = Buffer.alloc(4);
   head.writeUInt32LE(body.length);
-  const r = spawnSync(launcher, ["chrome-extension://doctor/"], { input: Buffer.concat([head, body]), timeout: 10_000, windowsHide: true, shell: platform === "win32" });
+  const run = launcherCommand(launcher, ["chrome-extension://doctor/"], platform, env);
+  const r = spawnSync(run.cmd, run.args, { input: Buffer.concat([head, body]), timeout: 10_000, windowsHide: true, windowsVerbatimArguments: run.verbatim });
   try {
     const out = r.stdout as Buffer;
     const answer = JSON.parse(out.subarray(4, 4 + out.readUInt32LE(0)).toString("utf8")) as { ok?: boolean; keychain?: string | null };

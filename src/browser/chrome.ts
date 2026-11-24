@@ -37,6 +37,7 @@ import { posix, win32 } from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { allowedOrigins, classify, originAllowed, originOf, type TabOwner, type TabSigns, tabSigns } from "./classify.js";
 import { browserMode, ensureSapWindow, rememberSapAddress, sapWindowStatus, startUrl } from "./launch.js";
+import { keepFocused, within } from "./tab.js";
 import type { DoctorCheck } from "../core/types.js";
 
 export interface ChromeTab {
@@ -108,8 +109,12 @@ function portOpen(host: string, port: number, timeoutMs = 400): Promise<boolean>
   });
 }
 
+/** Where an endpoint came from: SAP_CHROME_CDP, the extension's relay, the SAP window, or a running Chrome's DevToolsActivePort. */
+export type EndpointKind = "explicit" | "extension" | "sap-window" | "active-port";
+
 export interface ChromeEndpoint {
   url: string;
+  kind: EndpointKind;
   /** How it was found, for doctor and error messages. */
   from: string;
 }
@@ -119,23 +124,22 @@ function explicitEndpoint(env: Env): ChromeEndpoint | undefined {
   const explicit = env.SAP_CHROME_CDP?.trim();
   if (!explicit) return undefined;
   if (!/^(https?|wss?):\/\//.test(explicit)) throw new Error(`SAP_CHROME_CDP must be an http or ws URL (got "${explicit}")`);
-  return { url: explicit, from: "SAP_CHROME_CDP" };
+  return { url: explicit, kind: "explicit", from: "SAP_CHROME_CDP" };
 }
 
 /**
  * Running browsers that allow remote debugging, from the `DevToolsActivePort`
  * file of Chrome stable, Chrome beta and Microsoft Edge, in that order. Reads
  * files and checks that the port listens; connects to nothing. `tried` says
- * what was looked at, for messages.
+ * what was looked at, for messages; `blocked` gets the files that exist but
+ * that this app may not read (macOS privacy protection).
  */
-/** DevToolsActivePort files that exist but that this app may not read (macOS privacy protection). */
-export const blockedFiles: string[] = [];
-
 export async function activePortEndpoints(
   env: Env,
   tried: string[] = [],
   platform: NodeJS.Platform = process.platform,
   home: string = homedir(),
+  blocked: string[] = [],
 ): Promise<ChromeEndpoint[]> {
   const found: ChromeEndpoint[] = [];
   const browsers: { name: string; dir: string | undefined }[] = [
@@ -156,7 +160,7 @@ export async function activePortEndpoints(
         // it there is no way in: a Chrome that allows remote debugging from chrome://inspect answers only on
         // the WebSocket path the file names, and its /json/version is a 404 (live on macOS, 2026-11-22: the
         // fallback to http://127.0.0.1:9222 that stood here got that 404, and Playwright's error ended the process).
-        blockedFiles.push(file);
+        blocked.push(file);
         tried.push(`${file}: macOS does not let this app read it`);
         continue;
       }
@@ -174,7 +178,7 @@ export async function activePortEndpoints(
       continue;
     }
     tried.push(`${file}: port ${new URL(url).port}`);
-    found.push({ url, from: `${name} with remote debugging allowed (${file})` });
+    found.push({ url, kind: "active-port", from: `${name} with remote debugging allowed (${file})` });
   }
   return found;
 }
@@ -209,6 +213,19 @@ function keepDialogs(browser: Browser): void {
     if (quietContexts.has(context)) continue;
     quietContexts.add(context);
     context.on("dialog", () => {});
+  }
+}
+
+/** The relay was started for this process (SAP_BROWSER=extension): disconnectChrome stops it. */
+let relayStarted = false;
+
+/** No Chrome could be reached. `blocked`: the DevToolsActivePort files macOS did not let this app read, for doctor. */
+class NoChromeError extends Error {
+  constructor(
+    message: string,
+    readonly blocked: string[] = [],
+  ) {
+    super(message);
   }
 }
 
@@ -253,6 +270,7 @@ async function open(env: Env, key: string, options: OpenOptions = {}): Promise<C
   // >>> SAP_BROWSER=extension: the extension's relay is the endpoint (src/browser/extension/); nothing else is tried (SAP_CHROME_CDP wins, as over the other modes).
   if (extensionMode(env)) {
     const { extensionEndpoint } = await import("./extension/index.js");
+    relayStarted = true;
     const endpoint = await extensionEndpoint(env);
     const c = await attach(endpoint);
     if (c) return c;
@@ -262,7 +280,7 @@ async function open(env: Env, key: string, options: OpenOptions = {}): Promise<C
   // 2. The SAP window: the one that runs, else a Chrome started now.
   if (browserMode(env) === "launch") {
     const window = await ensureSapWindow(env, options.launch === false ? { launch: false } : {});
-    const c = await attach({ url: window.url, from: `the SAP window (${window.launched ? "started now" : "already open"}, profile ${window.profileDir})` });
+    const c = await attach({ url: window.url, kind: "sap-window", from: `the SAP window (${window.launched ? "started now" : "already open"}, profile ${window.profileDir})` });
     if (c) {
       c.sapWindow = { profileDir: window.profileDir, launched: window.launched };
       return c;
@@ -270,14 +288,16 @@ async function open(env: Env, key: string, options: OpenOptions = {}): Promise<C
     throw new Error(`The SAP window runs, but the connection to it failed (${errors.join("; ")}). Close that Chrome window and try again.`);
   }
   // 3. The running Chrome that allows remote debugging.
-  for (const endpoint of await activePortEndpoints(env, tried)) {
+  const blocked: string[] = [];
+  for (const endpoint of await activePortEndpoints(env, tried, process.platform, homedir(), blocked)) {
     const c = await attach(endpoint);
     if (c) return c;
   }
-  throw new Error(
+  throw new NoChromeError(
     errors.length
       ? `Chrome was found but the connection failed (${errors.join("; ")}). If Chrome asks "Allow remote debugging?", click Allow, then try again.`
       : `No Chrome to attach to. ${HOW_TO_ALLOW} Looked at: ${tried.join("; ")}.`,
+    blocked,
   );
 }
 
@@ -331,11 +351,7 @@ const TITLE_TIMEOUT_MS = 800;
 
 /** The tab's title; "" for a tab Chrome has frozen or discarded, which never answers. */
 function titleOf(page: Page): Promise<string> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const late = new Promise<string>((resolve) => {
-    timer = setTimeout(() => resolve(""), TITLE_TIMEOUT_MS);
-  });
-  return Promise.race([page.title().catch(() => ""), late]).finally(() => clearTimeout(timer));
+  return within(page.title(), TITLE_TIMEOUT_MS, "");
 }
 
 const allPages = (browser: Browser): Page[] => browser.contexts().flatMap((context) => context.pages());
@@ -406,25 +422,6 @@ export interface SapTab {
   signs: TabSigns;
 }
 
-/**
- * Key presses reach a page only while it has focus. Playwright's defaults turn
- * on focus emulation, but `noDefaults` (which keeps the user's viewport and
- * settings as they are) leaves it off, so Enter on a popup in a background or
- * headless tab went nowhere while clicks worked. Focus emulation changes
- * nothing the user sees; it lasts as long as this CDP session.
- */
-const focused = new WeakSet<Page>();
-async function emulateFocus(page: Page): Promise<void> {
-  if (focused.has(page)) return;
-  try {
-    const cdp = await page.context().newCDPSession(page);
-    await cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true });
-    focused.add(page);
-  } catch {
-    // A page that cannot take a CDP session still works for reading and clicking.
-  }
-}
-
 /** The tabs that are SAP's, each with the one surface that owns it (see classify.ts). */
 export async function sapTabs(env: Record<string, string | undefined>, options: TabsOptions = {}): Promise<SapTab[]> {
   const tabs = await chromeTabs(env, options);
@@ -433,7 +430,8 @@ export async function sapTabs(env: Record<string, string | undefined>, options: 
     tabs.map(async (tab): Promise<SapTab | undefined> => {
       const signs = await tabSigns(tab.page);
       const owner = classify(tab.page.url(), signs);
-      if (owner) await emulateFocus(tab.page);
+      // Key presses reach a page only while it has focus (see keepFocused).
+      if (owner) await keepFocused(tab.page);
       return owner ? { tab, owner, signs } : undefined;
     }),
   );
@@ -466,8 +464,11 @@ export async function disconnectChrome(): Promise<void> {
   connection = undefined;
   // On a browser reached with connectOverCDP, close() disconnects; it does not end the browser.
   if (c?.browser.isConnected()) await c.browser.close().catch(() => {});
-  // >>> SAP_BROWSER=extension: the relay's port is closed too, so the process can end.
-  if (c?.endpoint.from.includes("extension")) await (await import("./extension/index.js")).stopExtensionRelay().catch(() => {});
+  // >>> SAP_BROWSER=extension: the relay's port is closed too, so the process can end; also when the attach through it failed.
+  if (relayStarted || c?.endpoint.kind === "extension") {
+    relayStarted = false;
+    await (await import("./extension/index.js")).stopExtensionRelay().catch(() => {});
+  }
   // <<< SAP_BROWSER=extension
 }
 
@@ -480,6 +481,7 @@ export async function chromeDoctor(env: Record<string, string | undefined>): Pro
   // >>> SAP_BROWSER=extension: is the extension installed, paired and connected; then the same checks as below.
   if (extensionMode(env)) {
     const { extensionDoctor } = await import("./extension/index.js");
+    relayStarted = true;
     const checks = await extensionDoctor(env, EXTENSION_DOCTOR_WAIT_MS);
     if (!checks.every((x) => x.ok)) return checks;
   }
@@ -504,11 +506,12 @@ export async function chromeDoctor(env: Record<string, string | undefined>): Pro
     c = await chrome(env, { launch: false });
   } catch (e) {
     const message = (e as Error).message;
+    const blocked = e instanceof NoChromeError ? e.blocked : [];
     if (extensionMode(env)) return [{ ok: false, check, detail: message }];
     if (env.SAP_CHROME_CDP)
       return [{ ok: false, check, detail: message.split(/(?<=\.) /)[0] ?? message, fix: "Check that this Chrome runs with --remote-debugging-port and --user-data-dir, or unset SAP_CHROME_CDP to use your everyday Chrome." }];
     if (usesSapWindow(env)) return [{ ok: false, check, detail: message, fix: "Close the SAP window (the Chrome that this server opened), then run sap-ui-automation browser." }];
-    if (blockedFiles.length)
+    if (blocked.length)
       return [
         {
           ok: false,
