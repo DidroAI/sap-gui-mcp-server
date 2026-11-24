@@ -308,6 +308,10 @@ own; the answer is then that action's result, or `Not run: the user
 declined ...`.
 While a recording is on, each action of a batch is its own step.
 
+When the client sends a `progressToken`, each action that ran is a
+`notifications/progress` (`progress` of `total`). When the client cancels
+the call, the action running ends and the ones after it do not run.
+
 ## sap_screenshot
 
 A PNG of the session's window or tab, for charts, HTML panels and visual
