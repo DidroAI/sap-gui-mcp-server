@@ -1203,5 +1203,11 @@ export function sapguiDiagSurface(env: Record<string, string | undefined>, optio
       if (events.length) checks.push({ ok: false, check: "DIAG router messages", detail: events.join("; "), fix: "A refused route is a connection entry whose SAProuter string does not lead on from this router; a failed capture is a folder that cannot be written (SAP_DIAG_CAPTURE)." });
       return checks;
     },
+    async close() {
+      // Stops listening; the routed connections end with the process.
+      const server = await router.catch(() => undefined);
+      server?.close();
+      await host?.close();
+    },
   };
 }

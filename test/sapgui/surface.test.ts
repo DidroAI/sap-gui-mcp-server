@@ -384,3 +384,15 @@ describe("sapgui doctor", () => {
     expect(checks[4]?.detail).toContain("administrator");
   });
 });
+
+describe("closing the surface", () => {
+  test("closes its host", async () => {
+    let closed = 0;
+    const host: Transport = { request: async <T>() => ({}) as T, close: () => void closed++ };
+    await sapguiSurface({}, { platform: "win32", transport: host }).close?.();
+    expect(closed).toBe(1);
+  });
+  test("a host never started: nothing to do", async () => {
+    await sapguiSurface({}, { platform: "win32" }).close?.();
+  });
+});

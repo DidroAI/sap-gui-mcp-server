@@ -572,5 +572,8 @@ export function sapguiSurface(env: Record<string, string | undefined>, options: 
         return [{ ok: false, check: "SAP GUI for Windows", detail: "needs Windows: run the server on the Windows machine where SAP GUI is open (Web GUI and Fiori work everywhere)" }];
       return doctor(transport(), () => powershellPolicy(env));
     },
+    async close() {
+      await host?.close();
+    },
   };
 }

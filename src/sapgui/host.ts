@@ -172,10 +172,13 @@ export class PsHost implements Transport {
     });
   }
 
-  close(): void {
+  /**
+   * Ends stdin, so a free host exits by itself. A host stuck in a COM call
+   * never reads it: it is killed after `graceMs`. Resolves when it is gone.
+   */
+  close(graceMs = 1000): Promise<void> {
     const c = this.child;
     this.child = undefined;
-    c?.stdin.end();
     const closed = new Error("The SAP GUI host was closed.");
     const waiting = this.queue.splice(0);
     const job = this.current;
@@ -185,6 +188,18 @@ export class PsHost implements Transport {
       job.reject(closed);
     }
     for (const w of waiting) w.reject(closed);
+    if (!c || c.exitCode !== null || c.signalCode !== null) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        c.kill();
+        resolve();
+      }, graceMs);
+      c.once("exit", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      c.stdin.end();
+    });
   }
 }
 

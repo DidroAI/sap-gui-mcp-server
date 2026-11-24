@@ -306,3 +306,15 @@ describe("SAP_DIAG_PORT", () => {
     expect(check?.fix).toContain(`Port ${port} is taken`);
   });
 });
+
+describe("closing the surface", () => {
+  test("the router stops listening, and the input host is closed", async () => {
+    let closed = 0;
+    const surface = sapguiDiagSurface({}, { port: 0, transport: { request: async () => ({}) as never, close: () => void closed++ }, log: () => {} });
+    const router = await surface.router;
+    expect(router.listening).toBe(true);
+    await surface.close?.();
+    expect(router.listening).toBe(false);
+    expect(closed).toBe(1);
+  });
+});

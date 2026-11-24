@@ -168,6 +168,8 @@ export interface Surface {
   doctor(): Promise<DoctorCheck[]>;
   /** What the agent should tell the user when no session is found at all, where the surface knows better than the general answer. */
   whenEmpty?(): string | undefined;
+  /** Stops what the surface started (host processes, listeners) when the server shuts down. */
+  close?(): Promise<void>;
 }
 
 /** An action that could not run: the message is meant for the model. */

@@ -9,17 +9,25 @@ import { surfacesFromEnv } from "./surfaces.js";
 export async function serveStdio(env: Record<string, string | undefined> = process.env): Promise<void> {
   // SAP_BROWSER=extension: the systems registered in the extension, for sap_systems and sap_logon.
   const systems = extensionMode(env) ? (await import("./browser/extension/index.js")).systemsAccess : undefined;
+  const surfaces = surfacesFromEnv(env);
   const { server, registry } = createServer({
     policy: policyFromEnv(env),
-    surfaces: surfacesFromEnv(env),
+    surfaces,
     view: viewModeFromEnv(env),
     ...(systems ? { systems: systems(env) } : {}),
   });
-  const close = async () => {
-    await registry.closeAll();
-    await disconnectChrome().catch(() => {});
-    process.exit(0);
-  };
+  // Runs once, and gives up after 3 s: a host that hangs never keeps the server alive.
+  let closing: Promise<void> | undefined;
+  const close = () =>
+    (closing ??= (async () => {
+      const work = (async () => {
+        await registry.closeAll().catch(() => {});
+        await disconnectChrome().catch(() => {});
+        await Promise.allSettled(surfaces.map((s) => s.close?.()));
+      })();
+      await Promise.race([work, new Promise((r) => setTimeout(r, 3000).unref())]);
+      process.exit(0);
+    })());
   process.on("SIGINT", close);
   process.on("SIGTERM", close);
   process.stdin.on("close", close);

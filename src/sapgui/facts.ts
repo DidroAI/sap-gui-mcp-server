@@ -114,5 +114,6 @@ export interface DoctorEngine {
 /** The channel to the host: one request, one answer. */
 export interface Transport {
   request<T>(op: string, params?: Record<string, unknown>, timeoutMs?: number): Promise<T>;
-  close(): void;
+  /** Stops the host. A promise, when it waits for the process to end. */
+  close(): void | Promise<void>;
 }
