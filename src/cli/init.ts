@@ -16,7 +16,7 @@ import { homedir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import type { SurfaceName } from "../core/types.js";
 import { type Client, CLIENTS, detectClients, setup } from "./setup.js";
-import { installSkills, type SkillTarget } from "./skills.js";
+import { installSkills, readIfThere, type SkillTarget } from "./skills.js";
 
 type Env = Record<string, string | undefined>;
 type WriteMode = "off" | "confirm" | "on";
@@ -140,12 +140,14 @@ export async function init(opts: InitOptions = {}): Promise<InitResult> {
   const rel = (p: string) => relative(cwd, p) || p;
 
   const write = (path: string, content: string) => {
-    const exists = existsSync(path);
+    const old = readIfThere(path, "utf8");
+    const exists = old !== undefined;
     if (exists && !opts.force) return lines.push(`– ${rel(path)}: exists, skipped (--force overwrites it)`);
-    if (exists && readFileSync(path, "utf8") === content) return lines.push(`✓ ${rel(path)}: unchanged`);
+    if (old === content) return lines.push(`✓ ${rel(path)}: unchanged`);
     if (!dryRun) {
       mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, content);
+      // A file that was not there is only created: one made meanwhile is not overwritten.
+      writeFileSync(path, content, { flag: exists ? "w" : "wx" });
     }
     lines.push(`${dryRun ? "•" : "✓"} ${rel(path)}: ${dryRun ? "would be " : ""}${exists ? "overwritten" : "written"}`);
   };

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configFile, exampleTest, init } from "../src/cli/init.js";
 import { detectClients, setup } from "../src/cli/setup.js";
-import { cursorRule, installSkills, packageRoot, shippedSkills } from "../src/cli/skills.js";
+import { cursorRule, installSkills, packageRoot, readIfThere, shippedSkills } from "../src/cli/skills.js";
 
 // Every test gets its own HOME and project folder, and sees no command on PATH:
 // nothing here may touch the real ~/.claude, ~/.codex or run `claude mcp add`.
@@ -182,6 +182,14 @@ describe("install --skills", () => {
 
   test("cursorRule keeps the body of a file without frontmatter", () => {
     expect(cursorRule("# Hi\n")).toBe("---\ndescription: \nglobs:\nalwaysApply: false\n---\n# Hi\n");
+  });
+  test("readIfThere: undefined when there is no file, the content when there is, other errors thrown", () => {
+    const file = join(cwd, "a.txt");
+    expect(readIfThere(file)).toBeUndefined();
+    writeFileSync(file, "hi");
+    expect(readIfThere(file, "utf8")).toBe("hi");
+    expect(readIfThere(file)?.equals(Buffer.from("hi"))).toBe(true);
+    expect(() => readIfThere(cwd)).toThrow();
   });
 });
 
