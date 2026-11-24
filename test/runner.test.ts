@@ -139,8 +139,8 @@ test("always fails", async () => { throw new Error("no"); });`,
     const [flaky, failed] = r.tests;
     expect(flaky?.status).toBe("flaky");
     expect(flaky?.attempts.map((a) => a.status)).toEqual(["failed", "passed"]);
-    expect(flaky?.attempts[0]?.trace).toContain("a-flaky-one/");
-    expect(flaky?.attempts[1]?.trace).toContain("a-flaky-one-retry1/");
+    expect(flaky?.attempts[0]?.trace).toMatch(/a-flaky-one[\\/]/);
+    expect(flaky?.attempts[1]?.trace).toMatch(/a-flaky-one-retry1[\\/]/);
     expect(failed?.status).toBe("failed");
     expect(failed?.attempts.length).toBe(3);
     expect(r.ok).toBe(false);

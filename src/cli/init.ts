@@ -11,7 +11,7 @@
  * or a stdin that is not a terminal, takes every default. Existing files are
  * left alone unless `--force`. `--dry-run` says what it would do.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import type { SurfaceName } from "../core/types.js";
@@ -162,13 +162,20 @@ export async function init(opts: InitOptions = {}): Promise<InitResult> {
 
   const gitignore = join(cwd, ".gitignore");
   // A git project without a .gitignore gets one: traces and results hold business data.
-  if (existsSync(gitignore) || existsSync(join(cwd, ".git"))) {
-    const text = existsSync(gitignore) ? readFileSync(gitignore, "utf8") : "";
+  let found: string | undefined;
+  try {
+    found = readFileSync(gitignore, "utf8");
+  } catch {
+    // no .gitignore yet
+  }
+  if (found !== undefined || existsSync(join(cwd, ".git"))) {
+    const text = found ?? "";
     const have = new Set(text.split(/\r?\n/).map((l) => l.trim()));
     const missing = [".sap-gui/", "sap-results/"].filter((e) => !have.has(e) && !have.has(e.slice(0, -1)));
     if (!missing.length) lines.push("✓ .gitignore: already ignores .sap-gui/ and sap-results/");
     else {
-      if (!dryRun) writeFileSync(gitignore, `${text}${text && !text.endsWith("\n") ? "\n" : ""}# sap-ui-automation: traces and test results hold screens of business data\n${missing.join("\n")}\n`);
+      // Appended, not rewritten: lines another program adds meanwhile are kept.
+      if (!dryRun) appendFileSync(gitignore, `${text && !text.endsWith("\n") ? "\n" : ""}# sap-ui-automation: traces and test results hold screens of business data\n${missing.join("\n")}\n`);
       lines.push(`${dryRun ? "• .gitignore: would add" : "✓ .gitignore: added"} ${missing.join(", ")}`);
     }
   }

@@ -332,9 +332,10 @@ export function writeAnswer(dir: string, tag: string, ext: string, data: string 
   }
 }
 
+/** A path inside cwd as a relative path with forward slashes (the same on Windows, and fine in its shells); else the path as is. */
 function shown(path: string, cwd: string): string {
   const rel = relative(cwd, path);
-  return rel && !rel.startsWith("..") && !isAbsolute(rel) ? rel : path;
+  return rel && !rel.startsWith("..") && !isAbsolute(rel) ? rel.split("\\").join("/") : path;
 }
 
 const MAX_LINE = 240;

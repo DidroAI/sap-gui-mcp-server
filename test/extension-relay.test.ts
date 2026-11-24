@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { chromium } from "playwright-core";
 import { extensionDoctor, extensionEndpoint, extensionPairCommand, extensionRelay, stopExtensionRelay } from "../src/browser/extension/index.js";
 import { CODE_LENGTH, FrameCipher, formatCode, generateCode, hmac, normalizeCode, pairingFile, readOrCreateCode, sameSecret, sessionKey } from "../src/browser/extension/pairing.js";
@@ -220,9 +220,11 @@ describe("pairing code", () => {
     cleanup.push(() => rm(home, { recursive: true, force: true }));
     const env = { XDG_CONFIG_HOME: join(home, "cfg") };
     const first = readOrCreateCode(env, "linux", home);
-    expect(first.file).toBe(join(home, "cfg", "sap-ui-automation", "extension-pairing"));
+    // "linux" paths are joined with "/", whatever this machine is.
+    expect(first.file).toBe(posix.join(join(home, "cfg"), "sap-ui-automation", "extension-pairing"));
     expect(first.code.length).toBe(26);
-    expect((await stat(first.file as string)).mode & 0o777).toBe(0o600);
+    // Windows has no POSIX modes.
+    if (process.platform !== "win32") expect((await stat(first.file as string)).mode & 0o777).toBe(0o600);
     expect((await readFile(first.file as string, "utf8")).trim()).toBe(formatCode(first.code));
     expect(readOrCreateCode(env, "linux", home)).toEqual(first);
     expect(readOrCreateCode({ ...env, SAP_EXTENSION_CODE: CODE.toLowerCase() }, "linux", home)).toEqual({ code: normalizeCode(CODE), file: undefined });

@@ -121,7 +121,7 @@ describe("install --skills", () => {
     const first = installSkills({ targets: ["claude"], cwd, home, env: {} });
     const file = join(cwd, ".claude", "skills", "sap-gui-drive", "SKILL.md");
     expect(read(file)).toBe(read(join(packageRoot(), "skills", "sap-gui-drive", "SKILL.md")));
-    expect(first.lines.find((l) => l.includes("sap-gui-drive"))).toContain("created (.claude/skills/sap-gui-drive)");
+    expect(first.lines.find((l) => l.includes("sap-gui-drive"))).toContain(`created (${join(".claude", "skills", "sap-gui-drive")})`);
     expect(installSkills({ targets: ["claude"], cwd, home, env: {} }).lines.find((l) => l.includes("sap-gui-drive"))).toContain("unchanged");
     writeFileSync(file, "old");
     expect(installSkills({ targets: ["claude"], cwd, home, env: {} }).lines.find((l) => l.includes("sap-gui-drive"))).toContain("updated");

@@ -125,8 +125,8 @@ describe("static checks", () => {
 
   test("names, never paths", () => {
     for (const bad of ["../x", "a/b", "a\\b", ".hidden", "C:x", "x/../../y"]) expect(() => codePath("/r", bad)).toThrow("is not a name");
-    expect(codePath("/r", "VA01 create order")).toBe("/r/va01-create-order.sap.ts");
-    expect(codePath("/r", "messy create.sap.ts")).toBe("/r/messy-create.sap.ts");
+    expect(codePath("/r", "VA01 create order")).toBe(join("/r", "va01-create-order.sap.ts"));
+    expect(codePath("/r", "messy create.sap.ts")).toBe(join("/r", "messy-create.sap.ts"));
   });
 });
 

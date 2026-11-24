@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { collectFiles, downloadDir, listStoredFiles, localName, readStoredFile, type StoredFile, watchFiles } from "../src/webgui/files.js";
 import type { WebGuiSession } from "../src/webgui/session.js";
 
@@ -113,8 +113,8 @@ describe("files SAP writes to the local machine in Web GUI", () => {
   });
 
   test("the directory: SAP_DOWNLOAD_DIR, else downloads in the recordings directory, else ./sap-downloads", () => {
-    expect(downloadDir({ SAP_DOWNLOAD_DIR: "/data/out" }, "/w")).toBe("/data/out");
-    expect(downloadDir({ SAP_RECORD_DIR: "/srv/sap-tests" }, "/w")).toBe("/srv/sap-tests/downloads");
-    expect(downloadDir({}, "/w")).toBe("/w/sap-downloads");
+    expect(downloadDir({ SAP_DOWNLOAD_DIR: "/data/out" }, "/w")).toBe(resolve("/data/out"));
+    expect(downloadDir({ SAP_RECORD_DIR: "/srv/sap-tests" }, "/w")).toBe(resolve("/srv/sap-tests", "downloads"));
+    expect(downloadDir({}, "/w")).toBe(resolve("/w", "sap-downloads"));
   });
 });

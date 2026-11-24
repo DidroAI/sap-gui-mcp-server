@@ -64,7 +64,7 @@ jobs:
               /(^|\/)\.env(\.|$)/,
               /\.saptest\.json$/,
               /(^|\/)captures\//,
-              /^(?!extension\/icons\/).*\.png$/i, // the extension's own icons are the one exception
+              /^(?!extension\/icons\/).*\.png$/i, // PNGs, except the extension icons
             ];
             const bad = files.filter((p) => !allowed.test(p) || forbidden.some((re) => re.test(p)));
             for (const need of [
