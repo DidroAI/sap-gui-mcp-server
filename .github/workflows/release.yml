@@ -124,7 +124,8 @@ jobs:
         run: |
           tag=latest
           case "$VERSION" in *-*) tag=next ;; esac
-          npm publish "release-assets/sap-ui-automation-$VERSION.tgz" --provenance --access public --tag "$tag"
+          # "./" makes it a file: npm 11 reads "release-assets/x.tgz" as the GitHub repository release-assets/x.
+          npm publish "./release-assets/sap-ui-automation-$VERSION.tgz" --provenance --access public --tag "$tag"
 
       - name: Create the GitHub release
         shell: bash
