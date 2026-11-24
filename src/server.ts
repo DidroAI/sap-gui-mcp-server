@@ -953,7 +953,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
    * foresee (`stopAfter`). The answer says what ran and why it ended, then
    * the screen once.
    */
-  async function runBatch(ref: string | undefined, input: unknown, whole = false): Promise<CallToolResult> {
+  async function runBatch(ref: string | undefined, input: unknown, whole = false, call?: CallContext): Promise<CallToolResult> {
+    const token = call?._meta?.progressToken;
     const steps = parseBatch(input);
     const total = Array.isArray(input) ? input.length : steps.length;
     if (!steps.length) return current(ref, total ? "No action to run: this is the screen." : 'No actions sent ("actions" is empty): this is the screen.');
@@ -987,6 +988,11 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
         const n = s.n;
         const last = i === steps.length - 1;
         const what = `action ${n} (${actionText(s.action)})`;
+        // The client cancelled the call (the user pressed Esc): the actions after the one running end here.
+        if (call?.signal.aborted) {
+          end = { why: "cancelled", text: `the client cancelled the call before ${what}`, error: false, next: n };
+          break;
+        }
         let j: Awaited<ReturnType<typeof judge>>;
         try {
           // The session the first action ran on is the session of all of them.
@@ -1039,6 +1045,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
         }
         ran = n;
         remember(id, s.action);
+        if (token !== undefined)
+          await call?.sendNotification({ method: "notifications/progress", params: { progressToken: token, progress: i + 1, total: steps.length, message: `${what} done` } }).catch(() => {});
         lines.push(`${n}. ${shortNote(said)}${s.note ? ` ${s.note}` : ""}`);
         codes.push(codeOf(s.action));
         // A menu entry, a favourite or a tree node can open a transaction no okcode named.
@@ -1150,21 +1158,21 @@ ${writeRule(policy)}`,
       // Claude Code loads MCP tools on demand; the two every task needs are there from the start.
       _meta: ALWAYS_LOAD,
     },
-    (input) =>
+    (input, extra) =>
       answer(async () => {
         const { actions, action, session: raw, full } = input as { actions?: unknown; action?: unknown; session?: string; full?: boolean };
-        return leniently(raw, (ref) => act(ref, input, actions, action, full));
+        return leniently(raw, (ref) => act(ref, input, actions, action, full, extra));
       }).then(confirmNotice),
   );
 
   /** sap_act, once the session reference is settled. */
-  async function act(ref: string | undefined, input: Record<string, unknown>, actions: unknown, action: unknown, full: boolean | undefined): Promise<CallToolResult> {
+  async function act(ref: string | undefined, input: Record<string, unknown>, actions: unknown, action: unknown, full: boolean | undefined, call?: CallContext): Promise<CallToolResult> {
     // The action's fields at the top level, as the schema lists them; anything but the call's own keys goes with them.
     const flat = Object.fromEntries(Object.entries(input).filter(([k, v]) => !CALL_KEYS.has(k) && v !== undefined));
     const one = Object.keys(flat).length > 0;
     if (actions !== undefined && (one || action !== undefined)) return fail('Send one action ("do" and its fields) or "actions", not both.');
     if (one && action !== undefined) return fail('Send the action\'s fields ("do", "id", ...) at the top level, not also inside "action".');
-    if (actions !== undefined) return withAnyData(await runBatch(ref, actions, full === true), actions);
+    if (actions !== undefined) return withAnyData(await runBatch(ref, actions, full === true, call), actions);
     // {"do":"look"}: not an action; the screen.
     if (isLook(one ? flat : action)) return withAnyData(await current(ref, "look is not an action: this is the screen."));
     return withAnyData(await run(ref, one ? flat : action, full === true));
@@ -1198,6 +1206,13 @@ ${writeRule(policy)}`,
 }
 
 type ListTools = (request: unknown, extra: unknown) => Promise<{ tools: { inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; execution?: { taskSupport?: string } }[] }>;
+/** What the SDK hands a tool beside its arguments, as far as sap_act uses it: cancellation and progress. */
+interface CallContext {
+  signal: AbortSignal;
+  _meta?: { progressToken?: string | number | undefined } | undefined;
+  sendNotification: (n: { method: "notifications/progress"; params: { progressToken: string | number; progress: number; total: number; message: string } }) => Promise<void>;
+}
+
 type CallTool = (
   request: { params: { name: string; arguments?: Record<string, unknown> } },
   extra: unknown,

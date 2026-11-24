@@ -257,6 +257,36 @@ describe("a new logon in the same session id starts afresh (review, 2026-11-24)"
   });
 });
 
+describe("progress and cancellation of a batch (agent-practice review, 2026-11-24)", () => {
+  test("each action that ran is a progress notification when the client asks for them", async () => {
+    const { surface, client } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA" });
+    const seen: { progress: number; total?: number }[] = [];
+    await client.callTool(
+      { name: "sap_act", arguments: { actions: [{ do: "set", id: "a", value: "1" }, { do: "set", id: "b", value: "2" }] } },
+      undefined,
+      { onprogress: (p) => void seen.push({ progress: p.progress, total: p.total }) },
+    );
+    expect(seen).toEqual([
+      { progress: 1, total: 2 },
+      { progress: 2, total: 2 },
+    ]);
+  });
+  test("a cancelled call runs no action after the one running", async () => {
+    const { surface, client } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA" }, { actMs: 80 });
+    const stop = new AbortController();
+    const call = client
+      .callTool({ name: "sap_act", arguments: { actions: [{ do: "set", id: "a", value: "1" }, { do: "set", id: "b", value: "2" }, { do: "set", id: "c", value: "3" }] } }, undefined, { signal: stop.signal })
+      .catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 30));
+    stop.abort();
+    await call;
+    await new Promise((r) => setTimeout(r, 200));
+    expect(surface.acts().map((a) => a.id)).toEqual(["a"]);
+  });
+});
+
 describe("confirm mode with elicitation", () => {
   const env = { SAP_WRITE: "confirm" };
   test("the user accepts in the client: the action runs", async () => {
