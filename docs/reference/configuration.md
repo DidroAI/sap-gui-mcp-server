@@ -107,7 +107,6 @@ You do not normally set them for this server.
 
 | Variable | Effect |
 | --- | --- |
-| `SAP_SCREEN_DEBUG` | network reader: a folder where the Windows input host saves the image it reads cell sizes from (`sheet.png`) |
 | `SAP_TEST_CHROME` | the repository's tests: a Chrome to run browser tests against |
 
 `sap-ui-automation --help` lists the commands and the main settings
