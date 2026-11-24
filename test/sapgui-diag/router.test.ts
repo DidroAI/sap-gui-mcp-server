@@ -44,7 +44,7 @@ function listen(s: Server): Promise<number> {
 
 /** A fake application server: answers each chunk with "re:" + chunk. */
 function fakeSap(): Promise<number> {
-  return listen(createServer((c) => c.on("data", (d) => c.write(Buffer.concat([Buffer.from("re:"), d])))));
+  return listen(createServer((c) => c.on("data", (d: Buffer) => c.write(Buffer.concat([Buffer.from("re:"), d])))));
 }
 
 function request(hops: [string, number][]): Buffer {
@@ -57,7 +57,7 @@ function client(port: number): Promise<{ sock: Socket; read: (n: number) => Prom
       open.push(sock);
       let buf = Buffer.alloc(0);
       const waiters: (() => void)[] = [];
-      sock.on("data", (d) => {
+      sock.on("data", (d: Buffer) => {
         buf = Buffer.concat([buf, d]);
         for (const w of waiters.splice(0)) w();
       });
