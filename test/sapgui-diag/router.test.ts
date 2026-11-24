@@ -194,6 +194,20 @@ describe("the router", () => {
     const c = await client((router.address() as { port: number }).port);
     expect(c.sock.destroyed).toBe(false);
   });
+  test("an onward connection that never comes up times out and ends SAP GUI's connection", async () => {
+    let onward: Socket | undefined;
+    const logged: string[] = [];
+    // A dial that never connects.
+    const router = await startRouter({ port: 0, dialTimeoutMs: 50, log: (m) => logged.push(m), dial: () => (onward = new Socket()) });
+    open.push(router);
+    const { sock } = await client((router.address() as { port: number }).port);
+    const closed = new Promise((r) => sock.on("close", r));
+    sock.write(request([["127.0.0.1", 3200], ["127.0.0.1", 3200]]));
+    await closed;
+    expect(onward?.destroyed).toBe(true);
+    expect(logged.some((m) => m.includes("did not answer"))).toBe(true);
+  });
+
   test("drops a client that does not route", async () => {
     const router = await startRouter({ port: 0 });
     open.push(router);

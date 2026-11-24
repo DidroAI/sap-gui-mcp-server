@@ -123,6 +123,8 @@ export interface RouterOptions {
   onConnection?: (target: Hop, route: RouteRequest) => Tap | undefined;
   /** For tests: how to open the onward connection. */
   dial?: (host: string, port: number) => Socket;
+  /** How long the onward connection may take to come up. Default 15 s. */
+  dialTimeoutMs?: number;
   log?: (msg: string) => void;
 }
 
@@ -222,11 +224,19 @@ export function startRouter(opts: RouterOptions = {}): Promise<Server> {
       if (!target) throw new Error("the route has no hop after this router");
       const dialled = dial(target.host, servicePort(target.service));
       onward = dialled;
-      await new Promise<void>((res, rej) => {
-        dialled.once("connect", () => res());
-        dialled.once("error", rej);
-        dialled.once("close", () => rej(new Error("the onward connection closed")));
-      });
+      // A host that never answers must not hold SAP GUI's connection open forever.
+      const waitMs = opts.dialTimeoutMs ?? 15_000;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await new Promise<void>((res, rej) => {
+          timer = setTimeout(() => rej(new Error(`${target.host}:${target.service} did not answer within ${waitMs / 1000} s`)), waitMs);
+          dialled.once("connect", () => res());
+          dialled.once("error", rej);
+          dialled.once("close", () => rej(new Error("the onward connection closed")));
+        });
+      } finally {
+        clearTimeout(timer);
+      }
       if (gone) throw new Error("SAP GUI closed its connection before the route was up");
       const more = route.next + 1 < route.hops.length;
       // A tap that cannot start never refuses the logon: the connection goes on unread.
