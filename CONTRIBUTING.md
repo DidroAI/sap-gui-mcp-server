@@ -280,3 +280,14 @@ says why.
 
 The [pull request template](.github/PULL_REQUEST_TEMPLATE.md) holds the same
 list.
+
+## Releasing (maintainers)
+
+1. Set the version in `package.json` and `server.json` (twice; a test checks
+   they agree), and move the "Unreleased" changelog entries under it.
+2. Merge that to `main`, then tag it there: `git tag v0.2.0 && git push origin v0.2.0`.
+3. `release.yml` builds and tests, then waits for approval in the `npm`
+   environment. Once approved it publishes to npm through trusted publishing
+   (no token: npm trusts this workflow and that environment), creates the
+   GitHub release with the `.mcpb`, and lists the version in the MCP Registry.
+   If the registry step fails, run the "MCP Registry" workflow by hand.
