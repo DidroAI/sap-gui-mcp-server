@@ -6,7 +6,7 @@ leaves the machine, what is written to disk, and what the agent can do
 under each setting.
 
 To report a vulnerability, see
-[SECURITY.md](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/SECURITY.md).
+[SECURITY.md](https://github.com/DidroAI/sap-ui-automation/blob/main/SECURITY.md).
 
 ## In short
 
@@ -35,7 +35,7 @@ To report a vulnerability, see
 ```
  User's machine                                                  │  Elsewhere
                                                                  │
- MCP client ──stdio──▶ sap-gui-mcp-server ──▶ SAP GUI (scripting)│──▶ SAP system (as today)
+ MCP client ──stdio──▶ sap-ui-automation ──▶ SAP GUI (scripting)│──▶ SAP system (as today)
      │                       │                                   │
      │                       ├──▶ Chrome / Edge (DevTools, local)│──▶ SAP system (as today)
      │                       │                                   │
@@ -172,7 +172,7 @@ Start with a test or sandbox system. For a production system:
   `SAP_RECORD` off unless a test is being recorded.
 - **Leave `SAP_CODE_TOOLS` off**: it lets the agent run code on the machine.
 - **Pin the package version** in the client configuration
-  (`sap-gui-mcp-server@0.1.0`), so that the code that runs is the code you
+  (`sap-ui-automation@0.1.0`), so that the code that runs is the code you
   reviewed.
 
 Example, for a read-only investigation:
@@ -210,4 +210,4 @@ SAP user's authorisations allow once writes are on. The guard is a safety
 net for an agent that makes mistakes, not a security boundary.
 
 The full threat model is in
-[SECURITY.md](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/SECURITY.md).
+[SECURITY.md](https://github.com/DidroAI/sap-ui-automation/blob/main/SECURITY.md).

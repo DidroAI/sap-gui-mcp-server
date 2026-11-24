@@ -1,5 +1,5 @@
 /**
- *   sap-gui-mcp-server test [files or filters] [--config f] [--project p] [--reporter list,junit]
+ *   sap-ui-automation test [files or filters] [--config f] [--project p] [--reporter list,junit]
  *                           [--grep re] [--retries n] [--list] [--update-locks]
  *
  * Exit code 0 when no test failed (flaky ones count as passed), 1 otherwise.
@@ -14,7 +14,7 @@ import { configFor, type ReporterName, type ResolvedConfig } from "./config.js";
 import { reporters, type TraceHtml } from "./reporters.js";
 import { collect, findTestFiles, plan, runTests } from "./run.js";
 
-export const TEST_HELP = `  sap-gui-mcp-server test [files or filters] [--config f] [--project p] [--reporter list,junit,json,html]
+export const TEST_HELP = `  sap-ui-automation test [files or filters] [--config f] [--project p] [--reporter list,junit,json,html]
                          [--grep re] [--retries n] [--list] [--update-locks]
                                 run *.sap.ts tests (sap.config.ts) on open sessions; exit code 1 on a failure.
                                 Each test is verified against x.sap.lock.json next to it (written by a passing run);

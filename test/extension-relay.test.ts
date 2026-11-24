@@ -210,17 +210,17 @@ describe("pairing code", () => {
     expect(sameSecret(a, "short")).toBe(false);
   });
   test("file path per OS", () => {
-    expect(pairingFile("linux", {}, "/home/u")).toBe("/home/u/.config/sap-gui-mcp-server/extension-pairing");
-    expect(pairingFile("linux", { XDG_CONFIG_HOME: "/x" }, "/home/u")).toBe("/x/sap-gui-mcp-server/extension-pairing");
-    expect(pairingFile("darwin", {}, "/Users/u")).toBe("/Users/u/Library/Application Support/sap-gui-mcp-server/extension-pairing");
-    expect(pairingFile("win32", { APPDATA: "C:\\Users\\u\\AppData\\Roaming" }, "C:\\Users\\u")).toBe("C:\\Users\\u\\AppData\\Roaming\\sap-gui-mcp-server\\extension-pairing");
+    expect(pairingFile("linux", {}, "/home/u")).toBe("/home/u/.config/sap-ui-automation/extension-pairing");
+    expect(pairingFile("linux", { XDG_CONFIG_HOME: "/x" }, "/home/u")).toBe("/x/sap-ui-automation/extension-pairing");
+    expect(pairingFile("darwin", {}, "/Users/u")).toBe("/Users/u/Library/Application Support/sap-ui-automation/extension-pairing");
+    expect(pairingFile("win32", { APPDATA: "C:\\Users\\u\\AppData\\Roaming" }, "C:\\Users\\u")).toBe("C:\\Users\\u\\AppData\\Roaming\\sap-ui-automation\\extension-pairing");
   });
   test("made once with mode 0600, then read back; SAP_EXTENSION_CODE wins", async () => {
     const home = await mkdtemp(join(tmpdir(), "sap-gui-pair-"));
     cleanup.push(() => rm(home, { recursive: true, force: true }));
     const env = { XDG_CONFIG_HOME: join(home, "cfg") };
     const first = readOrCreateCode(env, "linux", home);
-    expect(first.file).toBe(join(home, "cfg", "sap-gui-mcp-server", "extension-pairing"));
+    expect(first.file).toBe(join(home, "cfg", "sap-ui-automation", "extension-pairing"));
     expect(first.code.length).toBe(26);
     expect((await stat(first.file as string)).mode & 0o777).toBe(0o600);
     expect((await readFile(first.file as string, "utf8")).trim()).toBe(formatCode(first.code));

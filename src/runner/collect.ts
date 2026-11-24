@@ -2,7 +2,7 @@
  * What a test file calls: `test`, `test.describe`, `test.skip`, `test.only`,
  * `test.beforeEach`, `test.afterEach`, `test.use`, `test.setTimeout`.
  *
- *   import { expect, test } from "sap-gui-mcp-server/test";
+ *   import { expect, test } from "sap-ui-automation/test";
  *   test.describe("sales orders", () => {
  *     test.beforeEach(async ({ sap }) => { await sap.okcode("/nVA03"); });
  *     test("shows an order", async ({ sap }) => {
@@ -15,7 +15,7 @@
  * Importing a test file only declares its tests; the runner runs them after.
  * The declarations go to one registry on `globalThis`, not in this module:
  * a test file may load another copy of this module than the runner's (a
- * global `sap-gui-mcp-server` running a project's local install), and both
+ * global `sap-ui-automation` running a project's local install), and both
  * must fill the same list.
  */
 import type { Sap } from "../sdk/session.js";
@@ -84,7 +84,7 @@ interface Registry {
   running: Running | undefined;
 }
 
-const KEY = Symbol.for("sap-gui-mcp-server/test-registry");
+const KEY = Symbol.for("sap-ui-automation/test-registry");
 
 export function registry(): Registry {
   const g = globalThis as { [KEY]?: Registry };
@@ -109,7 +109,7 @@ export function endFile(): void {
 
 function current(): Suite {
   const s = registry().suite;
-  if (!s) throw new Error("test() declares a test for the runner: run the file with `sap-gui-mcp-server test`.");
+  if (!s) throw new Error("test() declares a test for the runner: run the file with `sap-ui-automation test`.");
   return s;
 }
 

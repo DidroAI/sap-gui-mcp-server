@@ -8,7 +8,7 @@ with assertions that wait. It goes through the same guard as the MCP server:
 ## A script
 
 ```ts
-import { connect, expect } from "sap-gui-mcp-server";
+import { connect, expect } from "sap-ui-automation";
 
 const sap = await connect({ surface: "webgui", system: "ABA" });
 
@@ -193,7 +193,7 @@ against the saved test's lock and reports drift.
 Test files end in `.sap.ts`:
 
 ```ts
-import { test, expect } from "sap-gui-mcp-server/test";
+import { test, expect } from "sap-ui-automation/test";
 
 test("order 4711 is complete", async ({ sap }) => {
   await sap.okcode("/nVA03");
@@ -207,7 +207,7 @@ test("order 4711 is complete", async ({ sap }) => {
 `test.afterEach` work as in Playwright. A `sap.config.ts` sets the defaults:
 
 ```ts
-import { defineConfig } from "sap-gui-mcp-server/test";
+import { defineConfig } from "sap-ui-automation/test";
 
 export default defineConfig({
   testDir: "sap-tests",

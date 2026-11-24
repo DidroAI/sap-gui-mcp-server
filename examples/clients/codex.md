@@ -1,17 +1,17 @@
 # Codex
 
 ```sh
-codex mcp add sap-gui -- npx -y sap-gui-mcp-server
+codex mcp add sap-gui -- npx -y sap-ui-automation
 ```
 
 Or in `~/.codex/config.toml`:
 
 ```toml
-[mcp_servers.sap-gui]
+[mcp_servers.sap-ui-automation]
 command = "npx"
-args = ["-y", "sap-gui-mcp-server"]
+args = ["-y", "sap-ui-automation"]
 
-[mcp_servers.sap-gui.env]
+[mcp_servers.sap-ui-automation.env]
 SAP_WRITE = "confirm"   # off (default) | confirm | on
 ```
 

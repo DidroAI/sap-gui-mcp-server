@@ -4,7 +4,7 @@ How this server relates to other tools an agent or a test team can use on
 SAP screens. Facts about other tools are as of November 2026, from their
 public docs and READMEs, linked in each row. They change; check the source
 before you rely on a row. Facts about this server come from its code and
-its [README](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/README.md).
+its [README](https://github.com/DidroAI/sap-ui-automation/blob/main/README.md).
 
 No measured comparison exists yet: the [benchmark](benchmarks.md) has not
 had a full run.
@@ -16,7 +16,7 @@ browser MCP server. Per its README, it lets a model work with web pages
 "through structured accessibility snapshots", without screenshots or
 vision models (a `vision` capability adds coordinate-based input).
 
-| | Playwright MCP | sap-gui-mcp-server |
+| | Playwright MCP | sap-ui-automation |
 | --- | --- | --- |
 | What it drives | any web page | SAP screens: SAP GUI for Windows, Web GUI, Fiori |
 | What the model reads | the page's accessibility tree | SAP's model of the screen: SAP control ids, labels, values, edit state, status bar, popups as windows, grid and table rows ([The screen view](concepts/screen-view.md)) |

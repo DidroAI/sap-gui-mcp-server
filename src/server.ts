@@ -30,7 +30,7 @@ import { registerCodeTools } from "./record/code-tools.js";
 import { codeOf } from "./sdk/code.js";
 import { type ActOutput, actOutput, screenOf, screenOfInfo, sessionsData, sessionsOutput, structuredFromEnv, withData } from "./structured.js";
 
-export const SERVER_NAME = "sap-gui";
+export const SERVER_NAME = "sap-ui-automation";
 export const SERVER_VERSION = "0.1.0";
 
 /**
@@ -292,7 +292,7 @@ export function codeFromEnv(value: string | undefined): boolean | undefined {
 export function createServer({ policy, surfaces, view = "diff", record, code = codeFromEnv(process.env.SAP_CODE), structured = structuredFromEnv(process.env.SAP_STRUCTURED), systems }: ServerOptions) {
   const registry = new Registry(surfaces, policy);
   const views = new Views(view);
-  const recorder = new Recorder(record ?? recorderOptionsFromEnv(process.env, `${SERVER_NAME}-mcp-server ${SERVER_VERSION}`));
+  const recorder = new Recorder(record ?? recorderOptionsFromEnv(process.env, `${SERVER_NAME} ${SERVER_VERSION}`));
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, { instructions: instructions(policy, !!systems) });
   const session = z.string().optional().describe("number, id, system, transaction or sapgui|webgui|fiori; default: the active one");
   const queue = new SessionQueue();

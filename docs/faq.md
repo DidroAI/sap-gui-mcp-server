@@ -4,7 +4,7 @@ Start with `doctor`. It checks what the server can reach on this machine
 and says what to change:
 
 ```sh
-npx -y sap-gui-mcp-server doctor
+npx -y sap-ui-automation doctor
 ```
 
 The first part of this page has one entry per check `doctor` can fail
@@ -235,11 +235,11 @@ those origins are looked at.
 
 **Fix.** Open the tab and log on. Check `SAP_ALLOW_ORIGINS`.
 
-### The agent does not list the sap-gui tools
+### The agent does not list the sap-ui-automation tools
 
 **Symptom.** `doctor` says `Ready.`, but the agent has no `sap_` tools.
 
-**Fix.** Run `sap-gui-mcp-server setup`, then restart the agent. See
+**Fix.** Run `sap-ui-automation setup`, then restart the agent. See
 [Install in your client](getting-started/installation.md).
 
 ## Common questions

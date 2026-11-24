@@ -2,7 +2,7 @@
 
 This page assumes the server is added to your MCP client
 ([Install in your client](installation.md)) and that
-`npx -y sap-gui-mcp-server doctor` says Ready.
+`npx -y sap-ui-automation doctor` says Ready.
 
 ## 1. Open SAP and log on
 
@@ -14,7 +14,7 @@ screen.
 To check what the server finds, outside the agent:
 
 ```sh
-npx -y sap-gui-mcp-server sessions
+npx -y sap-ui-automation sessions
 ```
 
 ## 2. Ask the agent
@@ -76,7 +76,7 @@ To let the agent save, set `SAP_WRITE` in the server's environment:
 For example, in Claude Code:
 
 ```sh
-claude mcp add sap-gui --scope user -e SAP_WRITE=confirm -- npx -y sap-gui-mcp-server
+claude mcp add sap-gui --scope user -e SAP_WRITE=confirm -- npx -y sap-ui-automation
 ```
 
 Other clients take it in their `env` block ([Install in your
@@ -87,7 +87,7 @@ they do not.
 
 ## Tips for the agent
 
-The [`sap-gui-drive` skill](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/skills/sap-gui-drive/SKILL.md)
+The [`sap-gui-drive` skill](https://github.com/DidroAI/sap-ui-automation/blob/main/skills/sap-gui-drive/SKILL.md)
 teaches an agent how SAP screens behave: fields take effect on Enter,
 popups first, value help (F4) instead of guessed codes, F3 or F12 to leave
 without saving, and never working around the write setting. The Claude Code

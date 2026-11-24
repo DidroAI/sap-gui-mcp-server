@@ -42,9 +42,9 @@ export function normalizeCode(code: string): string {
 
 /** Where the code is kept: the per-user config directory of each OS. */
 export function pairingFile(platform: NodeJS.Platform = process.platform, env: Env = process.env, home: string = homedir()): string {
-  if (platform === "win32") return win32.join(env.APPDATA || win32.join(home, "AppData", "Roaming"), "sap-gui-mcp-server", "extension-pairing");
-  if (platform === "darwin") return posix.join(home, "Library", "Application Support", "sap-gui-mcp-server", "extension-pairing");
-  return posix.join(env.XDG_CONFIG_HOME || posix.join(home, ".config"), "sap-gui-mcp-server", "extension-pairing");
+  if (platform === "win32") return win32.join(env.APPDATA || win32.join(home, "AppData", "Roaming"), "sap-ui-automation", "extension-pairing");
+  if (platform === "darwin") return posix.join(home, "Library", "Application Support", "sap-ui-automation", "extension-pairing");
+  return posix.join(env.XDG_CONFIG_HOME || posix.join(home, ".config"), "sap-ui-automation", "extension-pairing");
 }
 
 export interface PairingCode {
@@ -65,7 +65,7 @@ export function readOrCreateCode(env: Env = process.env, platform: NodeJS.Platfo
   if (fromEnv) {
     const code = normalizeCode(fromEnv);
     // A short code could be found offline from the MACs a fake relay collects: the extension refuses one too.
-    if (code.length !== CODE_LENGTH) throw new Error(`SAP_EXTENSION_CODE must be a pairing code of ${CODE_LENGTH} letters and digits (got ${code.length}); \`sap-gui-mcp-server extension pair\` makes one`);
+    if (code.length !== CODE_LENGTH) throw new Error(`SAP_EXTENSION_CODE must be a pairing code of ${CODE_LENGTH} letters and digits (got ${code.length}); \`sap-ui-automation extension pair\` makes one`);
     return { code, file: undefined };
   }
   const file = pairingFile(platform, env, home);

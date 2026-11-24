@@ -1,10 +1,10 @@
 # Install in your client
 
-The server is the npm package `sap-gui-mcp-server`. Every client starts it
+The server is the npm package `sap-ui-automation`. Every client starts it
 the same way, as a local (stdio) MCP server:
 
 ```sh
-npx -y sap-gui-mcp-server
+npx -y sap-ui-automation
 ```
 
 You need **Node.js 22 or later** on the machine where the client runs
@@ -16,19 +16,19 @@ command also works from 22.6 (it re-runs itself with
 Node they say to use 22.18 instead of failing with "Unknown file
 extension".
 
-Pick your client below. Each one names the server `sap-gui`.
+Pick your client below. Each one names the server `sap-ui-automation`.
 
 ::: tip The quick way
 `setup` finds Claude Code, Codex, Claude Desktop, Cursor, Windsurf and
 VS Code on this machine and adds the server to each, without touching an
-existing `sap-gui` entry:
+existing `sap-ui-automation` entry:
 
 ```sh
-npx -y sap-gui-mcp-server setup --dry-run   # show what it would change
-npx -y sap-gui-mcp-server setup             # change it
+npx -y sap-ui-automation setup --dry-run   # show what it would change
+npx -y sap-ui-automation setup             # change it
 ```
 
-It adds no settings, so writes stay off. Then run `npx -y sap-gui-mcp-server doctor` to
+It adds no settings, so writes stay off. Then run `npx -y sap-ui-automation doctor` to
 check what the server can reach (SAP GUI scripting, Chrome). Or have your
 agent do all of it: [Set up with your agent](setup-prompt.md).
 :::
@@ -36,10 +36,10 @@ agent do all of it: [Set up with your agent](setup-prompt.md).
 ::: warning Windows
 Some clients cannot start `npx` directly on Windows (it is `npx.cmd`) and
 show the server as failed or "connection closed". Then use `cmd` as the
-command and `/c npx -y sap-gui-mcp-server` as its arguments:
+command and `/c npx -y sap-ui-automation` as its arguments:
 
 ```json
-{ "command": "cmd", "args": ["/c", "npx", "-y", "sap-gui-mcp-server"] }
+{ "command": "cmd", "args": ["/c", "npx", "-y", "sap-ui-automation"] }
 ```
 
 `setup` does this for you on Windows.
@@ -64,37 +64,37 @@ variables of the server; all of them are in
 
 ```sh [CLI]
 # read-only (SAP_WRITE=off):
-claude mcp add sap-gui --scope user -- npx -y sap-gui-mcp-server
+claude mcp add sap-gui --scope user -- npx -y sap-ui-automation
 
 # asks you before each write:
-claude mcp add --scope user --env SAP_WRITE=confirm --transport stdio sap-gui -- npx -y sap-gui-mcp-server
+claude mcp add --scope user --env SAP_WRITE=confirm --transport stdio sap-gui -- npx -y sap-ui-automation
 ```
 
 ```text [Plugin]
-/plugin marketplace add DidroAI/sap-gui-mcp-server
-/plugin install sap-gui@sap-gui-mcp-server
+/plugin marketplace add DidroAI/sap-ui-automation
+/plugin install sap-ui-automation@sap-ui-automation
 ```
 
 :::
 
 `--scope user` makes it available in every project; leave it out to add it
-to the current project only. Check it with `claude mcp get sap-gui`, or `/mcp`
+to the current project only. Check it with `claude mcp get sap-ui-automation`, or `/mcp`
 in a session. Claude Code asks in interactive sessions; in `claude -p` a
 write under `confirm` does not run unless a hook answers.
 
 The **plugin** brings the server and the `sap-gui-drive` skill, which teaches
 the agent how to work in SAP transactions. From your shell, the same is
-`claude plugin marketplace add DidroAI/sap-gui-mcp-server` then
-`claude plugin install sap-gui@sap-gui-mcp-server`. The plugin starts the
+`claude plugin marketplace add DidroAI/sap-ui-automation` then
+`claude plugin install sap-ui-automation@sap-ui-automation`. The plugin starts the
 server with `SAP_WRITE` from your environment (default `off`). Its files:
-[`.claude-plugin/plugin.json`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/.claude-plugin/plugin.json),
-[`.mcp.json`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/.mcp.json),
-[`skills/sap-gui-drive`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/skills/sap-gui-drive/SKILL.md).
+[`.claude-plugin/plugin.json`](https://github.com/DidroAI/sap-ui-automation/blob/main/.claude-plugin/plugin.json),
+[`.mcp.json`](https://github.com/DidroAI/sap-ui-automation/blob/main/.mcp.json),
+[`skills/sap-gui-drive`](https://github.com/DidroAI/sap-ui-automation/blob/main/skills/sap-gui-drive/SKILL.md).
 
 ## Claude Desktop
 
-**One click:** download `sap-gui-mcp-server-<version>.mcpb` from the
-[latest release](https://github.com/DidroAI/sap-gui-mcp-server/releases/latest)
+**One click:** download `sap-ui-automation-<version>.mcpb` from the
+[latest release](https://github.com/DidroAI/sap-ui-automation/releases/latest)
 and open it (double-click, or drag it onto Claude Desktop, or **Settings >
 Extensions > Advanced settings > Install Extension…**). Claude Desktop shows
 the settings: writes (`off`, `confirm` or `on`), allowed systems and
@@ -111,9 +111,9 @@ Desktop.
 ```json [macOS]
 {
   "mcpServers": {
-    "sap-gui": {
+    "sap-ui-automation": {
       "command": "npx",
-      "args": ["-y", "sap-gui-mcp-server"],
+      "args": ["-y", "sap-ui-automation"],
       "env": { "SAP_WRITE": "off" }
     }
   }
@@ -123,9 +123,9 @@ Desktop.
 ```json [Windows]
 {
   "mcpServers": {
-    "sap-gui": {
+    "sap-ui-automation": {
       "command": "cmd",
-      "args": ["/c", "npx", "-y", "sap-gui-mcp-server"],
+      "args": ["/c", "npx", "-y", "sap-ui-automation"],
       "env": { "SAP_WRITE": "off" }
     }
   }
@@ -148,18 +148,18 @@ you rely on it.
 
 ```sh [CLI]
 # read-only (SAP_WRITE=off):
-codex mcp add sap-gui -- npx -y sap-gui-mcp-server
+codex mcp add sap-gui -- npx -y sap-ui-automation
 
 # asks you before each write:
-codex mcp add sap-gui --env SAP_WRITE=confirm -- npx -y sap-gui-mcp-server
+codex mcp add sap-gui --env SAP_WRITE=confirm -- npx -y sap-ui-automation
 ```
 
 ```toml [~/.codex/config.toml]
-[mcp_servers.sap-gui]
+[mcp_servers.sap-ui-automation]
 command = "npx"
-args = ["-y", "sap-gui-mcp-server"]
+args = ["-y", "sap-ui-automation"]
 
-[mcp_servers.sap-gui.env]
+[mcp_servers.sap-ui-automation.env]
 SAP_WRITE = "confirm"   # off | confirm | on
 ```
 
@@ -174,11 +174,11 @@ question without showing it, so `confirm` protects nothing there: use
 
 ## Cursor
 
-<a href="https://cursor.com/install-mcp?name=sap-gui&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsInNhcC1ndWktbWNwLXNlcnZlciJdfQ%3D%3D"><img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Add sap-gui MCP server to Cursor" height="32"></a>
+<a href="https://cursor.com/install-mcp?name=sap-ui-automation&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsInNhcC11aS1hdXRvbWF0aW9uIl19%3D%3D"><img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Add sap-ui-automation MCP server to Cursor" height="32"></a>
 
 The button opens Cursor and asks you to confirm. Its link is
-`cursor://anysphere.cursor-deeplink/mcp/install?name=sap-gui&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsInNhcC1ndWktbWNwLXNlcnZlciJdfQ==`,
-where `config` is the base64 of `{"command":"npx","args":["-y","sap-gui-mcp-server"]}`.
+`cursor://anysphere.cursor-deeplink/mcp/install?name=sap-ui-automation&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsInNhcC11aS1hdXRvbWF0aW9uIl19==`,
+where `config` is the base64 of `{"command":"npx","args":["-y","sap-ui-automation"]}`.
 
 By hand, add it to `~/.cursor/mcp.json` (every project) or `.cursor/mcp.json`
 in a project:
@@ -186,9 +186,9 @@ in a project:
 ```json
 {
   "mcpServers": {
-    "sap-gui": {
+    "sap-ui-automation": {
       "command": "npx",
-      "args": ["-y", "sap-gui-mcp-server"],
+      "args": ["-y", "sap-ui-automation"],
       "env": { "SAP_WRITE": "off" }
     }
   }
@@ -204,8 +204,8 @@ set `confirm`, try a harmless write on a test system first.
 
 ## VS Code (GitHub Copilot)
 
-[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_sap--gui-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522sap-gui%2522%252C%2522type%2522%253A%2522stdio%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522sap-gui-mcp-server%2522%255D%257D)
-[![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_sap--gui-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode-insiders%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522sap-gui%2522%252C%2522type%2522%253A%2522stdio%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522sap-gui-mcp-server%2522%255D%257D)
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_sap--ui--automation-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522sap-ui-automation%2522%252C%2522type%2522%253A%2522stdio%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522sap-ui-automation%2522%255D%257D)
+[![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_sap--ui--automation-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode-insiders%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522sap-ui-automation%2522%252C%2522type%2522%253A%2522stdio%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522sap-ui-automation%2522%255D%257D)
 
 The button opens the server's details in VS Code to review before you
 install. Recent VS Code versions recommend the **Copilot user file** for a
@@ -218,10 +218,10 @@ team, put the same `mcpServers` block in `.mcp.json` at the workspace root.
 ```json [~/.copilot/mcp-config.json]
 {
   "mcpServers": {
-    "sap-gui": {
+    "sap-ui-automation": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "sap-gui-mcp-server"],
+      "args": ["-y", "sap-ui-automation"],
       "env": { "SAP_WRITE": "confirm" },
       "tools": ["*"]
     }
@@ -230,16 +230,16 @@ team, put the same `mcpServers` block in `.mcp.json` at the workspace root.
 ```
 
 ```sh [code --add-mcp]
-code --add-mcp '{"name":"sap-gui","type":"stdio","command":"npx","args":["-y","sap-gui-mcp-server"]}'
+code --add-mcp '{"name":"sap-ui-automation","type":"stdio","command":"npx","args":["-y","sap-ui-automation"]}'
 ```
 
 ```json [.vscode/mcp.json]
 {
   "servers": {
-    "sap-gui": {
+    "sap-ui-automation": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "sap-gui-mcp-server"]
+      "args": ["-y", "sap-ui-automation"]
     }
   }
 }
@@ -269,9 +269,9 @@ MCP panel:
 ```json
 {
   "mcpServers": {
-    "sap-gui": {
+    "sap-ui-automation": {
       "command": "npx",
-      "args": ["-y", "sap-gui-mcp-server"],
+      "args": ["-y", "sap-ui-automation"],
       "env": { "SAP_WRITE": "off" }
     }
   }
@@ -287,10 +287,10 @@ Any MCP client that starts local (stdio) servers can run it. Give it:
 
 | Field | Value |
 | --- | --- |
-| name | `sap-gui` |
+| name | `sap-ui-automation` |
 | transport | stdio |
 | command | `npx` (Windows: `cmd`) |
-| arguments | `-y sap-gui-mcp-server` (Windows: `/c npx -y sap-gui-mcp-server`) |
+| arguments | `-y sap-ui-automation` (Windows: `/c npx -y sap-ui-automation`) |
 | environment | optional: `SAP_WRITE`, `SAP_ALLOW_SYSTEMS` and the others in [Configuration](../reference/configuration.md) |
 
 Most clients take the same JSON block as Claude Desktop and Cursor:
@@ -298,18 +298,18 @@ Most clients take the same JSON block as Claude Desktop and Cursor:
 ```json
 {
   "mcpServers": {
-    "sap-gui": { "command": "npx", "args": ["-y", "sap-gui-mcp-server"] }
+    "sap-ui-automation": { "command": "npx", "args": ["-y", "sap-ui-automation"] }
   }
 }
 ```
 
 To skip the `npx` download at each start, install it once with
-`npm i -g sap-gui-mcp-server` and use `sap-gui-mcp-server` as the command,
+`npm i -g sap-ui-automation` and use `sap-ui-automation` as the command,
 with no arguments.
 
 ## Check it
 
-1. Run `npx -y sap-gui-mcp-server doctor`. It checks SAP GUI scripting (on
+1. Run `npx -y sap-ui-automation doctor`. It checks SAP GUI scripting (on
    Windows) and Chrome, and says what to do for each ✗.
 2. Restart your client, open an SAP screen, and ask: *"Look at my SAP screen
    and tell me what you see."* The agent should call `sap_sessions` and
@@ -317,15 +317,15 @@ with no arguments.
 
 Next: [Your first session](first-session.md). Ready-made snippets and example
 prompts for each client are in
-[examples/clients](https://github.com/DidroAI/sap-gui-mcp-server/tree/main/examples/clients).
+[examples/clients](https://github.com/DidroAI/sap-ui-automation/tree/main/examples/clients).
 
 ## Badges for the README
 
 ```md
-[![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=sap-gui&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsInNhcC1ndWktbWNwLXNlcnZlciJdfQ%3D%3D)
-[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_sap--gui-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522sap-gui%2522%252C%2522type%2522%253A%2522stdio%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522sap-gui-mcp-server%2522%255D%257D)
-[![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_sap--gui-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode-insiders%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522sap-gui%2522%252C%2522type%2522%253A%2522stdio%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522sap-gui-mcp-server%2522%255D%257D)
-[![Claude Desktop extension](https://img.shields.io/badge/Claude_Desktop-Download_.mcpb-D97757?style=flat-square&logo=claude&logoColor=white)](https://github.com/DidroAI/sap-gui-mcp-server/releases/latest)
+[![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=sap-ui-automation&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsInNhcC11aS1hdXRvbWF0aW9uIl19%3D%3D)
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_sap--ui--automation-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522sap-ui-automation%2522%252C%2522type%2522%253A%2522stdio%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522sap-ui-automation%2522%255D%257D)
+[![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_sap--ui--automation-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode-insiders%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522sap-ui-automation%2522%252C%2522type%2522%253A%2522stdio%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522sap-ui-automation%2522%255D%257D)
+[![Claude Desktop extension](https://img.shields.io/badge/Claude_Desktop-Download_.mcpb-D97757?style=flat-square&logo=claude&logoColor=white)](https://github.com/DidroAI/sap-ui-automation/releases/latest)
 ```
 
 GitHub does not follow `cursor://` or `vscode:` links in a README, so the

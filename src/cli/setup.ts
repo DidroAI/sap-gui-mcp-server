@@ -2,17 +2,17 @@
  * `setup`: adds this server to the MCP clients found on this machine.
  *
  * - Claude Code: `claude mcp add sap-gui --scope user -- <command>`;
- * - Codex: a `[mcp_servers.sap-gui]` table in ~/.codex/config.toml;
- * - Claude Desktop: an `mcpServers["sap-gui"]` entry in claude_desktop_config.json;
- * - Cursor: an `mcpServers["sap-gui"]` entry in the project's .cursor/mcp.json when
+ * - Codex: a `[mcp_servers.sap-ui-automation]` table in ~/.codex/config.toml;
+ * - Claude Desktop: an `mcpServers["sap-ui-automation"]` entry in claude_desktop_config.json;
+ * - Cursor: an `mcpServers["sap-ui-automation"]` entry in the project's .cursor/mcp.json when
  *   that file exists, else in ~/.cursor/mcp.json;
- * - Windsurf (now Devin Desktop): an `mcpServers["sap-gui"]` entry in ~/.config/devin/mcp_config.json
+ * - Windsurf (now Devin Desktop): an `mcpServers["sap-ui-automation"]` entry in ~/.config/devin/mcp_config.json
  *   ($XDG_CONFIG_HOME/devin; %APPDATA%\\devin on Windows). The old ~/.codeium/windsurf file is only
  *   read by its discovery now, so it is never written; that folder still counts as Windsurf being installed;
- * - VS Code (Copilot): a `servers["sap-gui"]` entry in the project's .vscode/mcp.json,
+ * - VS Code (Copilot): a `servers["sap-ui-automation"]` entry in the project's .vscode/mcp.json,
  *   only when that file exists or `vscode` is named.
  *
- * It never overwrites an existing sap-gui entry, keeps a .bak copy of a
+ * It never overwrites an existing sap-ui-automation entry, keeps a .bak copy of a
  * config file it changes, and with --dry-run only says what it would do.
  */
 import { spawnSync } from "node:child_process";
@@ -20,8 +20,8 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, writeF
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-export const NAME = "sap-gui";
-const PACKAGE = "sap-gui-mcp-server";
+export const NAME = "sap-ui-automation";
+const PACKAGE = "sap-ui-automation";
 
 type Env = Record<string, string | undefined>;
 
@@ -218,7 +218,7 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
     "",
     changed ? "Next: restart the clients marked above, and ask your agent to look at your SAP screen." : "Next: ask your agent to look at your SAP screen.",
     "For Web GUI and Fiori, a Chrome window opens: open your SAP address there and log on, once.",
-    "If it cannot see SAP, run sap-gui-mcp-server doctor.",
+    "If it cannot see SAP, run sap-ui-automation doctor.",
   );
   return { lines, changed };
 }

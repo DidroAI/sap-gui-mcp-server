@@ -5,8 +5,8 @@ description: Work in SAP screens from the shell with the sap-gui CLI — run a t
 
 # Working in SAP screens with the `sap-gui` CLI
 
-`sap-gui` (from [sap-gui-mcp-server](https://github.com/DidroAI/sap-gui-mcp-server);
-`npx sap-gui-mcp-server <command>` works too) works in the SAP sessions the
+`sap-gui` (from [sap-ui-automation](https://github.com/DidroAI/sap-ui-automation);
+`npx sap-ui-automation <command>` works too) works in the SAP sessions the
 user already has open, as that user. It never logs on.
 
 `look` prints a few short lines (header, status bar) and the path of a file

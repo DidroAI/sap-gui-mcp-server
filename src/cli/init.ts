@@ -55,7 +55,7 @@ const q = (s: string) => JSON.stringify(s);
 
 export function configFile(a: InitAnswers): string {
   const surface = a.surfaces.length === 1 ? q(a.surfaces[0] ?? "webgui") : `[${a.surfaces.map(q).join(", ")}]`;
-  return `import { defineConfig } from "sap-gui-mcp-server/test";
+  return `import { defineConfig } from "sap-ui-automation/test";
 
 export default defineConfig({
   testDir: "sap-tests",
@@ -76,7 +76,7 @@ ${a.system ? `    system: ${q(a.system)},\n` : `    // system: "ABA/800",  // de
 
 export function exampleTest(surface: SurfaceName): string {
   if (surface === "fiori")
-    return `import { expect, test } from "sap-gui-mcp-server/test";
+    return `import { expect, test } from "sap-ui-automation/test";
 
 // Read-only: opens the launchpad home page and checks that no error shows.
 test("the launchpad opens", async ({ sap }) => {
@@ -84,7 +84,7 @@ test("the launchpad opens", async ({ sap }) => {
   await expect(sap.status()).not.toBeError();
 });
 `;
-  return `import { expect, test } from "sap-gui-mcp-server/test";
+  return `import { expect, test } from "sap-ui-automation/test";
 
 // Read-only: opens SU3 (your own user data) and checks where it landed.
 // It saves nothing, so it runs under write: "off".
@@ -158,7 +158,7 @@ export async function init(opts: InitOptions = {}): Promise<InitResult> {
   if (answers.clients.length) {
     const r = setup({ dryRun, only: answers.clients, cwd, onPath: opts.onPath }, env, platform, home);
     lines.push(...r.lines.filter((l) => /^[✓✗•–] /.test(l)));
-  } else lines.push("– MCP clients: none chosen (run sap-gui-mcp-server setup later)");
+  } else lines.push("– MCP clients: none chosen (run sap-ui-automation setup later)");
 
   const gitignore = join(cwd, ".gitignore");
   // A git project without a .gitignore gets one: traces and results hold business data.
@@ -168,7 +168,7 @@ export async function init(opts: InitOptions = {}): Promise<InitResult> {
     const missing = [".sap-gui/", "sap-results/"].filter((e) => !have.has(e) && !have.has(e.slice(0, -1)));
     if (!missing.length) lines.push("✓ .gitignore: already ignores .sap-gui/ and sap-results/");
     else {
-      if (!dryRun) writeFileSync(gitignore, `${text}${text && !text.endsWith("\n") ? "\n" : ""}# sap-gui-mcp-server: traces and test results hold screens of business data\n${missing.join("\n")}\n`);
+      if (!dryRun) writeFileSync(gitignore, `${text}${text && !text.endsWith("\n") ? "\n" : ""}# sap-ui-automation: traces and test results hold screens of business data\n${missing.join("\n")}\n`);
       lines.push(`${dryRun ? "• .gitignore: would add" : "✓ .gitignore: added"} ${missing.join(", ")}`);
     }
   }

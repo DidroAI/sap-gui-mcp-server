@@ -109,7 +109,7 @@ describe("code lines", () => {
   });
   test("a draft is a test file", () => {
     bunExpect(draftTest({ name: "va03", lines: ['await sap.okcode("/nVA03");'] })).toBe(
-      'import { expect, test } from "sap-gui-mcp-server/test";\n\ntest("va03", async ({ sap }) => {\n  await sap.okcode("/nVA03");\n});\n',
+      'import { expect, test } from "sap-ui-automation/test";\n\ntest("va03", async ({ sap }) => {\n  await sap.okcode("/nVA03");\n});\n',
     );
   });
 });

@@ -1,15 +1,15 @@
 # Cursor
 
-[![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=sap-gui&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsInNhcC1ndWktbWNwLXNlcnZlciJdfQ%3D%3D)
+[![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=sap-ui-automation&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsInNhcC11aS1hdXRvbWF0aW9uIl19%3D%3D)
 
 Or in `~/.cursor/mcp.json` (every project) or `.cursor/mcp.json` (one project):
 
 ```json
 {
   "mcpServers": {
-    "sap-gui": {
+    "sap-ui-automation": {
       "command": "npx",
-      "args": ["-y", "sap-gui-mcp-server"],
+      "args": ["-y", "sap-ui-automation"],
       "env": { "SAP_WRITE": "off" }
     }
   }

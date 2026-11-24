@@ -117,11 +117,11 @@ describe("finding the installed Chrome", () => {
 
 describe("the profile directory of the SAP window", () => {
   test("per platform", () => {
-    expect(sapProfileDir("darwin", {}, "/Users/u")).toBe("/Users/u/Library/Application Support/sap-gui-mcp-server/chrome");
-    expect(sapProfileDir("win32", { LOCALAPPDATA: "C:\\Users\\u\\AppData\\Local" }, "C:\\Users\\u")).toBe("C:\\Users\\u\\AppData\\Local\\sap-gui-mcp-server\\chrome");
-    expect(sapProfileDir("win32", {}, "C:\\Users\\u")).toBe("C:\\Users\\u\\AppData\\Local\\sap-gui-mcp-server\\chrome");
-    expect(sapProfileDir("linux", {}, "/home/u")).toBe("/home/u/.local/share/sap-gui-mcp-server/chrome");
-    expect(sapProfileDir("linux", { XDG_DATA_HOME: "/data" }, "/home/u")).toBe("/data/sap-gui-mcp-server/chrome");
+    expect(sapProfileDir("darwin", {}, "/Users/u")).toBe("/Users/u/Library/Application Support/sap-ui-automation/chrome");
+    expect(sapProfileDir("win32", { LOCALAPPDATA: "C:\\Users\\u\\AppData\\Local" }, "C:\\Users\\u")).toBe("C:\\Users\\u\\AppData\\Local\\sap-ui-automation\\chrome");
+    expect(sapProfileDir("win32", {}, "C:\\Users\\u")).toBe("C:\\Users\\u\\AppData\\Local\\sap-ui-automation\\chrome");
+    expect(sapProfileDir("linux", {}, "/home/u")).toBe("/home/u/.local/share/sap-ui-automation/chrome");
+    expect(sapProfileDir("linux", { XDG_DATA_HOME: "/data" }, "/home/u")).toBe("/data/sap-ui-automation/chrome");
   });
   test("SAP_CHROME_PROFILE names another one", () => {
     expect(sapProfileDir("linux", { SAP_CHROME_PROFILE: "/tmp/p" }, "/home/u")).toBe("/tmp/p");
@@ -131,7 +131,7 @@ describe("the profile directory of the SAP window", () => {
     expect(sapProfileDir("linux", {}, "/home/u")).not.toContain("google-chrome");
   });
   test("the state file lies next to it", () => {
-    expect(stateFile("/data/sap-gui-mcp-server/chrome")).toBe("/data/sap-gui-mcp-server/chrome.json");
+    expect(stateFile("/data/sap-ui-automation/chrome")).toBe("/data/sap-ui-automation/chrome.json");
     expect(stateFile("C:\\x\\chrome\\")).toBe("C:\\x\\chrome.json");
   });
 });
@@ -308,7 +308,7 @@ describe("what starts no Chrome", () => {
     expect(checks.every((c) => c.ok)).toBe(true);
     expect(checks[0]?.detail).toBe(`found at ${m.exe}`);
     expect(checks[1]?.check).toBe("SAP window");
-    expect(checks[1]?.detail).toContain("not running yet: it opens the first time the agent needs SAP, or run sap-gui-mcp-server browser");
+    expect(checks[1]?.detail).toContain("not running yet: it opens the first time the agent needs SAP, or run sap-ui-automation browser");
     expect(m.ran()).toBe(false);
     expect(existsSync(m.profile)).toBe(false);
     expect((await sapWindowStatus(env)).running).toBeUndefined();

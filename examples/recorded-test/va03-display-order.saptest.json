@@ -4,7 +4,7 @@
   "description": "Synthetic example: open a sales order in VA03 and check its header. Read-only. The system, order and customer numbers are made up.",
   "recorded": {
     "at": "2026-11-02T09:15:00.000Z",
-    "by": "sap-gui-mcp-server 0.1.0",
+    "by": "sap-ui-automation 0.1.0",
     "surface": "webgui",
     "system": "DEM",
     "client": "100"

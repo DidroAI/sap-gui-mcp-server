@@ -9,7 +9,7 @@ agents that have no MCP support.
 ## Commands
 
 The package installs two names for the same program: `sap-gui` and
-`sap-gui-mcp-server`. With no arguments it serves MCP over stdio.
+`sap-ui-automation`. With no arguments it serves MCP over stdio.
 
 | Command | Does | Same as |
 | --- | --- | --- |
@@ -64,7 +64,7 @@ that ([Security](../security.md#what-the-agent-can-do)).
 ## Teaching the agent
 
 `sap-gui install --skills` copies the bundled skills, among them
-[`sap-gui-drive`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/skills/sap-gui-drive/SKILL.md)
+[`sap-gui-drive`](https://github.com/DidroAI/sap-ui-automation/blob/main/skills/sap-gui-drive/SKILL.md)
 and a `sap-gui-cli` skill on driving SAP through these commands, into the
 agent's folder: `.claude/skills` (Claude), `.agents/skills` (Codex) or
 `.cursor/rules/<name>.mdc` (Cursor), chosen with

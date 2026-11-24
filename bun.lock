@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "sap-gui-mcp-server",
+      "name": "sap-ui-automation",
       "dependencies": {
         "@modelcontextprotocol/sdk": "1.32.2",
         "playwright-core": "1.65.0",

@@ -1,4 +1,4 @@
-// Builds the Claude Desktop extension: sap-gui-mcp-server-<version>.mcpb at the repository root.
+// Builds the Claude Desktop extension: sap-ui-automation-<version>.mcpb at the repository root.
 //
 //   bun run build && bun run build:mcpb
 //
@@ -22,7 +22,7 @@ if (!existsSync(join(root, "dist", "cli.js"))) {
 const win = process.platform === "win32";
 const run = (cmd, args, cwd) => execFileSync(win ? `${cmd}.cmd` : cmd, args, { cwd, stdio: "inherit", shell: win });
 
-const stage = mkdtempSync(join(tmpdir(), "sap-gui-mcpb-"));
+const stage = mkdtempSync(join(tmpdir(), "sap-ui-automation-mcpb-"));
 const out = join(root, `${pkg.name}-${pkg.version}.mcpb`);
 try {
   // The compiled server, without source maps.

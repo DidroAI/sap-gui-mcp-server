@@ -29,7 +29,7 @@ Severity: B blocker, M major, m minor.
 | D1 | No privacy policy. | B | **Fixed:** `PRIVACY.md` (data table, local only, Limited Use statement), linked from the popup's Settings, the manifest's homepage and `STORE.md`. |
 | D2 | Passwords in clear text without the helper. | B | **Fixed:** see S1. |
 | D3 | The store id is not allowed by the native host; who holds the key. | B | **Fixed as a procedure:** `STORE.md` "The extension id" (upload with the key to keep the id, or add the store id to `EXTENSION_IDS` and release npm first). The key itself stays with the maintainers. |
-| D4 | No uninstall. | B | **Fixed:** `npx -y sap-gui-mcp-server extension uninstall` removes the host manifests and registry keys, the helper, the keychain items and the copied folder (`uninstallNativeHost`), documented in both READMEs. Test: install, run, uninstall. |
+| D4 | No uninstall. | B | **Fixed:** `npx -y sap-ui-automation extension uninstall` removes the host manifests and registry keys, the helper, the keychain items and the copied folder (`uninstallNativeHost`), documented in both READMEs. Test: install, run, uninstall. |
 | D5 | `debugger` needs a justification; consider an allow-list of methods. | M | **Fixed:** justifications for every permission in `STORE.md`. **Rejected:** a method allow-list: Playwright uses a wide, version-dependent set of methods; the deny-list plus scope checks (PROTOCOL.md "Scope") is what is enforced and tested. |
 | D6 | Single purpose may read as two. | M | **Fixed:** the single-purpose statement in `STORE.md` puts saved logons inside the one purpose. |
 | D7 | Trademark. | M | **Fixed:** "Not affiliated with SAP SE" in the manifest, "SAP is a trademark of SAP SE" in the READMEs and listing; the mark is now a flat tile with no gradient (see F12). |
@@ -54,8 +54,8 @@ Severity: B blocker, M major, m minor.
 | U5 | Four names for the product. | M | **Fixed:** "Agent Connector for SAP Systems" in the manifest, docs, CLI and the agent's messages ("the Agent Connector icon"). |
 | U6 | The yellow bar's text in the docs is wrong. | M | **Fixed.** |
 | U7 | The README says the extension keeps other logons; it now asks. | M | **Fixed.** |
-| U8 | `sap-gui-mcp-server extension pair` without `npx`. | M | **Fixed** everywhere. |
-| U9 | Updating may reuse a cached old version. | M | **Fixed:** `npx -y sap-gui-mcp-server@latest extension install`, then reload. |
+| U8 | `sap-ui-automation extension pair` without `npx`. | M | **Fixed** everywhere. |
+| U9 | Updating may reuse a cached old version. | M | **Fixed:** `npx -y sap-ui-automation@latest extension install`, then reload. |
 | U10 | Setting `SAP_BROWSER` is jargon. | M | **Fixed:** the full Claude Desktop block, and "quit and reopen". |
 | U11 | `doctor` in extension mode: how, and its wording. | M | **Fixed in docs** (`SAP_BROWSER=extension npx … doctor`, close the agent app first). **Rejected:** doctor telling "another server holds it" apart; the agent's own `sap_logon` says so (busy). |
 | U12, U13 | Pinning; finding the folder on a Mac. | m | **Fixed** in the README and the CLI's output. |
@@ -146,7 +146,7 @@ hold or hold in part except U8 (one command without `npx`), fixed below.
 | R22 | Edge users get Google Chrome started. | m | **Fixed in docs:** auto-start is for Google Chrome; others open their browser. |
 | R23 | Launcher without nvm or Volta. | m | **Fixed:** Volta's folder and the newest nvm version. |
 | R24 | Uninstall of a folder installed elsewhere; Linux message; copied README's links; `deliverables/` in STORE.md; main README's install steps. | m | **Fixed:** `install` remembers the folder; clearer messages; all docs but STORE.md copied; STORE.md and README updated. |
-| R25 | U5, U8 leftovers ("sap-gui-mcp-server extension", no `npx`). | m | **Fixed.** |
+| R25 | U5, U8 leftovers ("sap-ui-automation extension", no `npx`). | m | **Fixed.** |
 
 Open after both rounds, as follow-ups: a system-level helper install for
 managed fleets (D8, R19); the store's 1280×800 screenshots and promo tile

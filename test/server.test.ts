@@ -559,7 +559,7 @@ describe("the SDK line in the answer", () => {
     await call("sap_act", { action: { do: "key", key: 11 } });
     for (let i = 0; i < 205; i++) await call("sap_act", { action: { do: "set", id: "F", value: String(i) } });
     const draft = (await call("sap_record", { op: "code" })).text;
-    expect(draft).toStartWith('import { expect, test } from "sap-gui-mcp-server/test";\n\ntest("draft", async ({ sap }) => {\n  await sap.set("F", "5");');
+    expect(draft).toStartWith('import { expect, test } from "sap-ui-automation/test";\n\ntest("draft", async ({ sap }) => {\n  await sap.set("F", "5");');
     expect(draft).not.toContain("sap.key(11)");
     expect(draft.split("\n").filter((l) => l.includes("await sap.")).length).toBe(200);
     expect(draft).toEndWith('  await sap.set("F", "204");\n});\n');

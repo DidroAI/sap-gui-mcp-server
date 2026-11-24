@@ -2,7 +2,7 @@
  * The runner's configuration: `sap.config.ts` (or .js, .mjs, .json), found by
  * walking up from the working directory, or named with `--config`.
  *
- *   import { defineConfig } from "sap-gui-mcp-server/test";
+ *   import { defineConfig } from "sap-ui-automation/test";
  *   export default defineConfig({
  *     testDir: "tests",
  *     retries: 1,

@@ -1,14 +1,14 @@
 {
-  "name": "sap-gui-mcp-server",
-  "description": "The sap-gui plugin: an MCP server and a skill to see and drive SAP screens from Claude Code",
+  "name": "sap-ui-automation",
+  "description": "The sap-ui-automation plugin: an MCP server and a skill to see and drive SAP screens from Claude Code",
   "owner": {
     "name": "Didro"
   },
   "plugins": [
     {
-      "name": "sap-gui",
+      "name": "sap-ui-automation",
       "source": "./",
-      "description": "See and drive SAP screens you have open (SAP GUI for Windows, Web GUI, Fiori): the sap-gui MCP server and the sap-gui-drive skill"
+      "description": "See and drive SAP screens you have open (SAP GUI for Windows, Web GUI, Fiori): the sap-ui-automation MCP server and the sap-gui-drive skill"
     }
   ]
 }

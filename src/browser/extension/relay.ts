@@ -1,5 +1,5 @@
 /**
- * The relay between the sap-gui-mcp-server extension and Playwright (see extension/PROTOCOL.md).
+ * The relay between the sap-ui-automation extension and Playwright (see extension/PROTOCOL.md).
  *
  * `chrome.debugger` in an MV3 extension gives one CDP session per tab (plus
  * flat child sessions) and no browser target, while Playwright's
@@ -335,7 +335,7 @@ export class ExtensionRelay {
     const timer = setTimeout(() => {
       if (!authed) ws.close(4000, "no auth");
     }, this.authTimeoutMs);
-    ws.send(JSON.stringify({ type: "hello", v: 1, nonce: nS, server: "sap-gui-mcp-server", version: this.version }));
+    ws.send(JSON.stringify({ type: "hello", v: 1, nonce: nS, server: "sap-ui-automation", version: this.version }));
     ws.on("message", (bytes: Buffer, isBinary: boolean) => {
       if (authed) {
         // After `welcome` only encrypted binary frames: anything else is a process in the middle, or a bug.
@@ -419,7 +419,7 @@ export class ExtensionRelay {
   private onCdpSocket(ws: WebSocket): void {
     this.track(ws);
     if (!this.ext) {
-      ws.close(1011, "the sap-gui-mcp-server extension is not connected");
+      ws.close(1011, "the sap-ui-automation extension is not connected");
       return;
     }
     this.cdp = ws;
@@ -441,10 +441,10 @@ export class ExtensionRelay {
   private extensionGone(): void {
     const ext = this.ext;
     this.ext = undefined;
-    if (ext) for (const p of ext.pending.values()) p.reject(new CdpError("The sap-gui-mcp-server extension disconnected"));
+    if (ext) for (const p of ext.pending.values()) p.reject(new CdpError("The sap-ui-automation extension disconnected"));
     this.tabs.clear();
     this.aliases.clear();
-    this.cdp?.close(1011, "the sap-gui-mcp-server extension disconnected");
+    this.cdp?.close(1011, "the sap-ui-automation extension disconnected");
   }
 
   /** Playwright went away: detach every tab, so Chrome's "is debugging this browser" bar goes. */
@@ -480,11 +480,11 @@ export class ExtensionRelay {
   /** Sends a request to the extension; resolves with its `result`. */
   private request(type: string, fields: Params = {}, timeoutMs = this.requestTimeoutMs): Promise<unknown> {
     const ext = this.ext;
-    if (!ext) return Promise.reject(new CdpError("The sap-gui-mcp-server extension is not connected"));
+    if (!ext) return Promise.reject(new CdpError("The sap-ui-automation extension is not connected"));
     const id = ++ext.nextId;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        if (ext.pending.delete(id)) reject(new CdpError(`The sap-gui-mcp-server extension did not answer "${type}" within ${Math.round(timeoutMs / 1000)} s`));
+        if (ext.pending.delete(id)) reject(new CdpError(`The sap-ui-automation extension did not answer "${type}" within ${Math.round(timeoutMs / 1000)} s`));
       }, timeoutMs);
       timer.unref?.();
       const done = <T>(f: (v: T) => void) => (v: T) => {

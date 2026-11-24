@@ -91,22 +91,22 @@ jobs:
           mkdir -p "$smoke"
           npm pack --pack-destination "$smoke"
           cd "$smoke"
-          tarballs=(./sap-gui-mcp-server-*.tgz)
+          tarballs=(./sap-ui-automation-*.tgz)
           if [ "${#tarballs[@]}" -ne 1 ] || [ ! -f "${tarballs[0]}" ]; then
             echo "expected exactly one tarball, got: ${tarballs[*]}"; exit 1
           fi
           tgz="${tarballs[0]}"
           echo "::group::npx --package $tgz"
-          npx --yes --package="$tgz" sap-gui-mcp-server --version
-          npx --yes --package="$tgz" sap-gui-mcp-server --help
+          npx --yes --package="$tgz" sap-ui-automation --version
+          npx --yes --package="$tgz" sap-ui-automation --help
           echo "::endgroup::"
           echo "::group::npm install $tgz in a fresh project"
           mkdir project && cd project
           npm init -y > /dev/null
           npm install --no-audit --no-fund "../$tgz"
-          npx --no-install sap-gui-mcp-server --version
-          node --input-type=module -e 'await import("sap-gui-mcp-server"); console.log("library entry imports")'
-          node --input-type=module -e 'await import("sap-gui-mcp-server/test"); console.log("test entry imports")'
+          npx --no-install sap-ui-automation --version
+          node --input-type=module -e 'await import("sap-ui-automation"); console.log("library entry imports")'
+          node --input-type=module -e 'await import("sap-ui-automation/test"); console.log("test entry imports")'
           echo "::endgroup::"
           # npm init writes "type": "commonjs": the TypeScript config and tests must still load.
           echo "::group::init --yes, then the runner lists the example test"

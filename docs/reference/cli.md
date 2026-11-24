@@ -1,12 +1,12 @@
 # CLI commands
 
-The package installs one command, `sap-gui-mcp-server`. Without arguments it
+The package installs one command, `sap-ui-automation`. Without arguments it
 is the MCP server on stdio; with a command it does one job and exits.
 
 ```sh
-npx -y sap-gui-mcp-server <command> [options]
-# or, after npm i -g sap-gui-mcp-server:
-sap-gui-mcp-server <command> [options]
+npx -y sap-ui-automation <command> [options]
+# or, after npm i -g sap-ui-automation:
+sap-ui-automation <command> [options]
 ```
 
 | Command | Does | Exit code |
@@ -43,7 +43,7 @@ runner come these commands, described in their guides:
 ## The server
 
 ```sh
-sap-gui-mcp-server
+sap-ui-automation
 ```
 
 Starts the MCP server on stdin and stdout. MCP clients run this; you do not
@@ -54,29 +54,29 @@ from Chrome without closing it.
 ## setup
 
 ```sh
-sap-gui-mcp-server setup [claude-code|codex|claude-desktop|cursor|windsurf|vscode]... [--dry-run]
+sap-ui-automation setup [claude-code|codex|claude-desktop|cursor|windsurf|vscode]... [--dry-run]
 ```
 
-Adds the server, as `sap-gui`, to the MCP clients it finds:
+Adds the server, as `sap-ui-automation`, to the MCP clients it finds:
 
 | Client | How | Found when |
 | --- | --- | --- |
 | Claude Code | `claude mcp add sap-gui --scope user -- <command>` | the `claude` command is on the PATH |
-| Codex | a `[mcp_servers.sap-gui]` table in `~/.codex/config.toml` (`$CODEX_HOME/config.toml`) | the `codex` command is on the PATH, or the folder exists |
-| Claude Desktop | an `mcpServers["sap-gui"]` entry in `claude_desktop_config.json` | its folder exists (macOS: `~/Library/Application Support/Claude`; Windows: `%APPDATA%\Claude`) |
-| Cursor | an `mcpServers["sap-gui"]` entry in the project's `.cursor/mcp.json` when that file exists, else in `~/.cursor/mcp.json` | one of those exists |
-| Windsurf (Devin Desktop) | an `mcpServers["sap-gui"]` entry in `~/.config/devin/mcp_config.json` (`$XDG_CONFIG_HOME/devin`; Windows: `%APPDATA%\devin`) | that folder or `~/.codeium/windsurf` exists |
-| VS Code (Copilot) | a `servers["sap-gui"]` entry in the project's `.vscode/mcp.json` | that file exists, or `vscode` is named |
+| Codex | a `[mcp_servers.sap-ui-automation]` table in `~/.codex/config.toml` (`$CODEX_HOME/config.toml`) | the `codex` command is on the PATH, or the folder exists |
+| Claude Desktop | an `mcpServers["sap-ui-automation"]` entry in `claude_desktop_config.json` | its folder exists (macOS: `~/Library/Application Support/Claude`; Windows: `%APPDATA%\Claude`) |
+| Cursor | an `mcpServers["sap-ui-automation"]` entry in the project's `.cursor/mcp.json` when that file exists, else in `~/.cursor/mcp.json` | one of those exists |
+| Windsurf (Devin Desktop) | an `mcpServers["sap-ui-automation"]` entry in `~/.config/devin/mcp_config.json` (`$XDG_CONFIG_HOME/devin`; Windows: `%APPDATA%\devin`) | that folder or `~/.codeium/windsurf` exists |
+| VS Code (Copilot) | a `servers["sap-ui-automation"]` entry in the project's `.vscode/mcp.json` | that file exists, or `vscode` is named |
 
 | Option | Effect |
 | --- | --- |
 | `claude-code`, `codex`, `claude-desktop`, `cursor`, `windsurf`, `vscode` | only these clients; default every one found |
 | `--dry-run` | say what would change, change nothing |
 
-- It never overwrites an existing `sap-gui` entry.
+- It never overwrites an existing `sap-ui-automation` entry.
 - It keeps a `.bak` copy of a file before it changes it.
 - The command it writes depends on how it was started: `npx -y
-  sap-gui-mcp-server` when run through `npx`, `sap-gui-mcp-server` when
+  sap-ui-automation` when run through `npx`, `sap-ui-automation` when
   installed on the PATH, else Node with the path of the script. On Windows
   it is wrapped in `cmd /c`.
 - When it finds no client, it prints the command to add by hand.
@@ -86,7 +86,7 @@ Adds the server, as `sap-gui`, to the MCP clients it finds:
 ## doctor
 
 ```sh
-sap-gui-mcp-server doctor
+sap-ui-automation doctor
 ```
 
 Checks what the server can reach on this machine, one block per area, a
@@ -108,7 +108,7 @@ Every failed check, its cause and its fix: [FAQ and troubleshooting](../faq.md).
 ## sessions
 
 ```sh
-sap-gui-mcp-server sessions
+sap-ui-automation sessions
 ```
 
 Lists the SAP sessions the server finds now, in the format of the
@@ -120,7 +120,7 @@ exits with 1 only when every surface failed: that is a setup problem, not
 ## replay
 
 ```sh
-sap-gui-mcp-server replay <file>... [--var name=value]... [--session <ref>] [--loose] [--continue] [--stay] [--json] [--junit <file>]
+sap-ui-automation replay <file>... [--var name=value]... [--session <ref>] [--loose] [--continue] [--stay] [--json] [--junit <file>]
 ```
 
 Runs recorded tests (`.saptest.json`) on a session you have open, with no
@@ -143,7 +143,7 @@ A step that may write needs `SAP_WRITE=on`. Guide:
 ## export
 
 ```sh
-sap-gui-mcp-server export <file> --to <target> [--out <file>]
+sap-ui-automation export <file> --to <target> [--out <file>]
 ```
 
 Writes one recording in another format.

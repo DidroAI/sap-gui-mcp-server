@@ -1,10 +1,10 @@
-// Agent Connector for SAP Systems (sap-gui-mcp-server's Chrome extension): MV3 service worker.
+// Agent Connector for SAP Systems (sap-ui-automation's Chrome extension): MV3 service worker.
 //
 // Keeps the user's SAP systems (name, address, client, language, user) and
 // their saved passwords, and logs on to them by filling SAP's logon page
 // itself, like a password manager. Registered systems are the sites it shares.
 //
-// Connects to the sap-gui-mcp-server relay on 127.0.0.1 (see PROTOCOL.md),
+// Connects to the sap-ui-automation relay on 127.0.0.1 (see PROTOCOL.md),
 // proves both sides hold the pairing code, then runs the relay's requests with
 // chrome.debugger on shared tabs only. Every frame after the handshake is
 // encrypted and authenticated with keys derived from the code. Nothing here
@@ -15,7 +15,7 @@
 
 import { normalizeCode, CODE_LENGTH } from "./code.js";
 
-const NATIVE_HOST = "ai.didro.sap_gui_mcp";
+const NATIVE_HOST = "ai.didro.sap_ui_automation";
 const PORT_FIRST = 47823;
 const PORT_LAST = 47830;
 const EXT_VERSION = chrome.runtime.getManifest().version;
@@ -919,7 +919,7 @@ async function handleRequest(m) {
       const tabId = requireTabId(m);
       const { allowed } = await computeAllowed();
       const tab = allowed.get(tabId);
-      if (!tab) throw rpcError(`tab ${tabId} is not shared with sap-gui-mcp-server`);
+      if (!tab) throw rpcError(`tab ${tabId} is not shared with sap-ui-automation`);
       attachedTargets.set(tabId, tab.targetId);
       try {
         await attachTab(tabId);
@@ -947,7 +947,7 @@ async function handleRequest(m) {
       return await logonSystem(m.system, { by: "server", otherLogons: m.otherLogons === "keep" ? "keep" : null });
     case "cdp": {
       const tabId = requireTabId(m);
-      if (!allowedCache.has(tabId) || scope.paused) throw rpcError(`tab ${tabId} is not shared with sap-gui-mcp-server`);
+      if (!allowedCache.has(tabId) || scope.paused) throw rpcError(`tab ${tabId} is not shared with sap-ui-automation`);
       if (!attached.has(tabId)) throw rpcError(`tab ${tabId} is not attached`);
       if (typeof m.method !== "string") throw rpcError("method missing");
       await checkCdp(m, tabId);
@@ -956,7 +956,7 @@ async function handleRequest(m) {
       const t = (await currentTargets()).find((x) => x.tabId === tabId && x.type === "page");
       if (!t || !isAllowedUrl(t.url)) {
         if (attached.has(tabId)) leaveOrigin(tabId);
-        throw rpcError(`tab ${tabId} is not shared with sap-gui-mcp-server (it left the shared sites)`);
+        throw rpcError(`tab ${tabId} is not shared with sap-ui-automation (it left the shared sites)`);
       }
       if (!attached.has(tabId) || privateTabs.has(tabId)) throw rpcError(`tab ${tabId} is not attached`);
       const target = sessionTarget(tabId, m.sessionId);
@@ -1551,7 +1551,7 @@ async function pairWithHelper() {
 // they would sit unencrypted on disk. Without a keychain no password is saved (the user logs on in the tab).
 async function savePassword(sys, password) {
   const h = await helperInfo(true);
-  if (!h.ok) throw new Error("To save a password, install the helper first: in a terminal, run npx -y sap-gui-mcp-server extension install, then restart Chrome. Or leave the password empty and log on in the tab.");
+  if (!h.ok) throw new Error("To save a password, install the helper first: in a terminal, run npx -y sap-ui-automation extension install, then restart Chrome. Or leave the password empty and log on in the tab.");
   if (!h.keychain) throw new Error("This computer has no keychain the helper can use, so the password is not saved. Leave it empty and log on in the tab.");
   const r = await native({ cmd: "secret.set", id: sys.id, value: password, label: sys.name });
   if (!r || !r.ok) throw new Error(`The keychain did not take the password${r && r.error ? `: ${r.error}` : ""}.`);
@@ -1790,7 +1790,7 @@ const PROBE = `(() => {
   const text = (e) => (e.innerText || e.textContent || "").replace(/\\s+/g, " ").trim();
   const loaded = document.readyState === "complete";
   const host = location.hostname;
-  const mark = document.documentElement.hasAttribute("data-sap-gui-mcp-submitted");
+  const mark = document.documentElement.hasAttribute("data-sap-ui-automation-submitted");
   const user = q('input[name="sap-user"], input#sap-user, input[name="j_username"], #USERNAME_FIELD-inner')[0];
   const pw = q('input[name="sap-password"], input#sap-password, input[type="password"]');
   const newPw = q('input[name*="passwordnew" i], input[name*="password-new" i], input[name*="newpassword" i], input[id*="passwordnew" i], input[id*="NEW_PASSWORD" i]');
@@ -1888,7 +1888,7 @@ const SET_LANGUAGE = (lang) => `(() => {
 })()`;
 
 const SUBMIT = `(() => {
-  document.documentElement.setAttribute("data-sap-gui-mcp-submitted", "");
+  document.documentElement.setAttribute("data-sap-ui-automation-submitted", "");
   const vis = (e) => !!e && !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
   const b = document.querySelector("#LOGON_BUTTON, #LOGIN_LINK") || [...document.querySelectorAll('button[type="submit"], input[type="submit"], [role="button"]')].filter(vis).find((x) => /log ?on|log ?in|anmelden|sign in/i.test(x.innerText || x.value || x.title || ""));
   if (b) { b.click(); return "button"; }
@@ -1902,7 +1902,7 @@ const SUBMIT = `(() => {
 async function evalIn(tabId, expression) {
   const tree = await chrome.debugger.sendCommand({ tabId }, "Page.getFrameTree");
   const frameId = tree && tree.frameTree && tree.frameTree.frame && tree.frameTree.frame.id;
-  const world = await chrome.debugger.sendCommand({ tabId }, "Page.createIsolatedWorld", { frameId, worldName: "sap-gui-mcp", grantUniveralAccess: false });
+  const world = await chrome.debugger.sendCommand({ tabId }, "Page.createIsolatedWorld", { frameId, worldName: "sap-ui-automation", grantUniveralAccess: false });
   const r = await chrome.debugger.sendCommand({ tabId }, "Runtime.evaluate", { expression, contextId: world.executionContextId, returnByValue: true, awaitPromise: false });
   if (r && r.exceptionDetails) throw new Error("script failed");
   return r && r.result ? r.result.value : undefined;

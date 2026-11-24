@@ -87,7 +87,7 @@ export function findChrome(platform: NodeJS.Platform, env: Env, home: string = h
 export function sapProfileDir(platform: NodeJS.Platform, env: Env, home: string = homedir()): string {
   const named = env.SAP_CHROME_PROFILE?.trim();
   if (named) return named;
-  const app = "sap-gui-mcp-server";
+  const app = "sap-ui-automation";
   if (platform === "win32") return win32.join(env.LOCALAPPDATA || win32.join(home, "AppData", "Local"), app, "chrome");
   if (platform === "darwin") return posix.join(home, "Library", "Application Support", app, "chrome");
   return posix.join(env.XDG_DATA_HOME || posix.join(home, ".local", "share"), app, "chrome");
@@ -111,7 +111,7 @@ export const START_PAGE = `<!doctype html>
 <h1>SAP window</h1>
 <p>Open your SAP system here (Web GUI or Fiori launchpad address) and log on.</p>
 <p>The agent works on the SAP screen in this window.</p>
-<p><small>Opened by sap-gui-mcp-server. It never logs on and never types a password. You can close this window when you are done.</small></p>
+<p><small>Opened by sap-ui-automation. It never logs on and never types a password. You can close this window when you are done.</small></p>
 </html>
 `;
 

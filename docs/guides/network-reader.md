@@ -39,13 +39,13 @@ gets `/H/127.0.0.1/S/3298/H/router.example.com/S/3299`.
 In Claude Code:
 
 ```sh
-claude mcp add sap-gui --scope user -e SAP_GUI_METHOD=diag -- npx -y sap-gui-mcp-server
+claude mcp add sap-gui --scope user -e SAP_GUI_METHOD=diag -- npx -y sap-ui-automation
 ```
 
 Then check with `doctor`:
 
 ```sh
-SAP_GUI_METHOD=diag npx -y sap-gui-mcp-server doctor
+SAP_GUI_METHOD=diag npx -y sap-ui-automation doctor
 ```
 
 It checks that the router listens, how many SAP GUI connections go through
