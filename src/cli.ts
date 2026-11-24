@@ -4,11 +4,9 @@
  *   sap-gui-mcp-server setup      adds the server to Claude Code, Codex and Claude Desktop
  *   sap-gui-mcp-server doctor     checks what the server can reach on this machine
  *   sap-gui-mcp-server sessions   lists the SAP sessions it finds, then exits
- *   sap-gui-mcp-server browser    opens the SAP window (the Chrome the server starts for Web GUI and Fiori)
  *   sap-gui-mcp-server test       runs *.sap.ts tests (src/runner)
  */
-import { disconnectChrome, openSapWindow } from "./browser/chrome.js";
-import { browserMode } from "./browser/launch.js";
+import { disconnectChrome } from "./browser/chrome.js";
 import { AGENT_COMMANDS, AGENT_HELP, agentCommand, daemonRunning } from "./cli/agent.js";
 import { doctorReport } from "./cli/doctor.js";
 import { setup } from "./cli/setup.js";
@@ -29,8 +27,6 @@ Usage:
                                 add the server to the MCP clients found on this machine
   sap-gui-mcp-server doctor     check SAP GUI scripting and Chrome access on this machine
   sap-gui-mcp-server sessions   list the SAP sessions found now
-  sap-gui-mcp-server browser    open the SAP window: the Chrome window the server starts for Web GUI and Fiori.
-                                Log on to SAP there once; the agent opens it by itself when it needs SAP.
 ${RECORD_HELP}
 ${TRACE_HELP}
 ${TEST_HELP}
@@ -45,14 +41,10 @@ Environment:
   SAP_ALLOW_TCODES / SAP_BLOCK_TCODES   transactions the agent may / may not open or work in
   SAP_ALLOW_ORIGINS=https://myhost:44300  only browser tabs of these origins (comma list)
   SAP_SURFACES=sapgui,webgui,fiori      which kinds of session to look for
-  SAP_BROWSER=launch|attach             launch (default): the server starts Google Chrome with a profile of its own (the SAP
-                                        window) and works only there. attach: your running Chrome or Edge that allows
-                                        remote debugging (chrome://inspect/#remote-debugging).
-  SAP_CHROME_PATH=/path/to/chrome       the Chrome to start, when the server does not find it
-  SAP_START_URL=https://myhost/sap/...  the address a new SAP window opens on (after its first use: the last SAP address)
-  SAP_CHROME_CDP=http://127.0.0.1:9222  a Chrome DevTools endpoint to attach to; it wins over SAP_BROWSER. A Chrome started
-                                        with --remote-debugging-port is used only when named here; Chrome 136+ opens that
-                                        port only together with --user-data-dir.
+  SAP_CHROME_CDP=http://127.0.0.1:9222  a Chrome DevTools endpoint to attach to. Default: the running Chrome or Edge
+                                        that allows remote debugging (chrome://inspect/#remote-debugging). A Chrome
+                                        started with --remote-debugging-port is used only when named here; Chrome 136+
+                                        opens that port only together with --user-data-dir.
   SAP_VIEW=diff|full                    what an action answers with: only what changed when the screen is the same (default),
                                         or always the whole screen
   SAP_FIORI_WAIT=busy                   faster Fiori waits (busy indicators only, skips UI5 RecordReplay)
@@ -74,8 +66,7 @@ async function main(argv: string[]): Promise<number> {
   if (cmd === "sessions" && (await daemonRunning(agent))) return agentCommand(argv, agent);
   const surfaces = surfacesFromEnv();
   if (cmd === "doctor") {
-    const attaching = !process.env.SAP_CHROME_CDP?.trim() && browserMode(process.env) === "attach";
-    if (surfaces.some((s) => s.name !== "sapgui")) console.error(attaching ? "Checking… (if Chrome asks whether to allow remote debugging, click Allow)\n" : "Checking…\n");
+    if (surfaces.some((s) => s.name !== "sapgui")) console.error("Checking… (if Chrome asks whether to allow remote debugging, click Allow)\n");
     const report = await doctorReport(surfaces, SERVER_VERSION);
     console.log(report.text);
     return report.ok ? 0 : 1;
@@ -85,17 +76,6 @@ async function main(argv: string[]): Promise<number> {
     const r = setup({ dryRun: argv.includes("--dry-run"), only });
     console.log(r.lines.join("\n"));
     return 0;
-  }
-  if (cmd === "browser") {
-    try {
-      const w = await openSapWindow(process.env);
-      console.log(w.started ? `Opened the SAP window (Chrome ${w.version}).` : `The SAP window is already open (Chrome ${w.version}), ${w.tabs.length} tab(s).`);
-      console.log("Open your SAP system there (Web GUI or Fiori launchpad address) and log on. The agent works on the SAP screen in that window.");
-      console.log(`Profile: ${w.profileDir}`);
-      return 0;
-    } finally {
-      await disconnectChrome().catch(() => {});
-    }
   }
   if (cmd === "sessions") {
     const r = new Registry(surfaces, policyFromEnv());
