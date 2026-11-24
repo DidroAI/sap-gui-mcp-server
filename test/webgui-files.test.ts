@@ -105,6 +105,31 @@ describe("files SAP writes to the local machine in Web GUI", () => {
     expect((await collectFiles(session, env))[0]).toContain("the server could not save it (canceled)");
   });
 
+  test("a second file of the same name does not replace the first: it gets a number, and the answer names it", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "sapdl-"));
+    const env = { SAP_DOWNLOAD_DIR: dir };
+    let body = "first";
+    const { session, state, handlers } = fakeSession([], () => ({ base64: b64(body), size: body.length }));
+    await watchFiles(session, env);
+    state.files = [file("/export.xlsx", "1", 5)];
+    expect(await collectFiles(session, env)).toEqual([
+      `SAP wrote the file "export.xlsx" (5 bytes). Web GUI keeps such a file in its own store inside the browser, not on a disk: the server copied it to ${join(dir, "export.xlsx")}.`,
+    ]);
+    // The same export again: Web GUI replaces it in its store, the server keeps both.
+    body = "second";
+    state.files = [file("/export.xlsx", "2", 6)];
+    expect(await collectFiles(session, env)).toEqual([
+      `SAP wrote the file "export.xlsx" (6 bytes). Web GUI keeps such a file in its own store inside the browser, not on a disk: the server copied it to ${join(dir, "export (2).xlsx")} (a file "export.xlsx" was there already).`,
+    ]);
+    expect(await readFile(join(dir, "export.xlsx"), "utf8")).toBe("first");
+    expect(await readFile(join(dir, "export (2).xlsx"), "utf8")).toBe("second");
+    // A browser download of that name too.
+    const saved: string[] = [];
+    handlers.download?.({ suggestedFilename: () => "export.xlsx", saveAs: async (p: string) => void saved.push(p) });
+    expect(await collectFiles(session, env)).toEqual([`The browser downloaded a file, "export.xlsx": saved as ${join(dir, "export (3).xlsx")} (a file "export.xlsx" was there already).`]);
+    expect(saved).toEqual([join(dir, "export (3).xlsx")]);
+  });
+
   test("names stay inside the directory", () => {
     expect(localName("/mid.txt")).toBe("mid.txt");
     expect(localName("/a/b c.txt")).toBe("a_b c.txt");

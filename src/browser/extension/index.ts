@@ -7,6 +7,7 @@
  * handed to Playwright's `connectOverCDP` like any other Chrome endpoint.
  */
 import type { DoctorCheck } from "../../core/types.js";
+import type { ChromeEndpoint } from "../chrome.js";
 import { allowedOrigins, originAllowed } from "../classify.js";
 import { formatCode, readOrCreateCode } from "./pairing.js";
 import { execFile, spawn } from "node:child_process";
@@ -47,7 +48,9 @@ export async function extensionRelay(env: Env = process.env): Promise<ExtensionR
   if (starting) return starting;
   starting = (async () => {
     const port = wantedPort(env);
-    const r = new ExtensionRelay({ code: readOrCreateCode(env).code, ...(port !== undefined ? { port } : {}) });
+    // The server's version goes in the relay's hello. Loaded here, not at the top: server.ts is large.
+    const { SERVER_VERSION } = await import("../../server.js");
+    const r = new ExtensionRelay({ code: readOrCreateCode(env).code, version: SERVER_VERSION, ...(port !== undefined ? { port } : {}) });
     await r.start();
     startedAt = Date.now();
     relay = r;
@@ -135,13 +138,13 @@ function startChrome(platform: NodeJS.Platform = process.platform): boolean {
  * (waits up to `waitMs`, by default SAP_EXTENSION_WAIT seconds or 35 s, since
  * the extension's worker may be asleep). Throws with the one step to take.
  */
-export async function extensionEndpoint(env: Env = process.env, waitMs: number = defaultWaitMs(env)): Promise<{ url: string; from: string }> {
+export async function extensionEndpoint(env: Env = process.env, waitMs: number = defaultWaitMs(env)): Promise<ChromeEndpoint> {
   const r = await extensionRelay(env);
   // The first call waits for the worker to wake; later ones (another surface, the next tool call) do not wait it all again.
   const left = Math.max(MIN_WAIT_MS, startedAt + waitMs - Date.now());
   if (!(await connected(r, Math.min(waitMs, left)))) throw new Error(missingStep(r.extensionInfo(), Math.round((Date.now() - startedAt) / 1000)));
   const version = /(?:Chrome|Chromium)\/([\d.]+)/.exec(r.extensionInfo().userAgent ?? "")?.[1] ?? "";
-  return { url: r.cdpUrl, from: `the Agent Connector extension in Chrome${version ? ` ${version}` : ""} (port ${r.port})` };
+  return { url: r.cdpUrl, kind: "extension", from: `the Agent Connector extension in Chrome${version ? ` ${version}` : ""} (port ${r.port})` };
 }
 
 /**

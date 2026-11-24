@@ -5,6 +5,11 @@ for await (const line of createInterface({ input: process.stdin })) {
   const req = JSON.parse(line);
   if (req.op === "die") process.exit(3);
   if (req.op === "hang") continue;
+  // Never answers and outlives its stdin, as a host stuck in a COM call would.
+  if (req.op === "stuck") {
+    setInterval(() => {}, 1000);
+    continue;
+  }
   // Answers after `ms`, with the time it was received.
   if (req.op === "slow") {
     const at = Date.now();

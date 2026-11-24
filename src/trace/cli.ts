@@ -6,7 +6,7 @@
  */
 import { spawn } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, win32 } from "node:path";
 import { parseTest } from "../record/format.js";
 import { renderTraceHtml } from "./html.js";
 
@@ -16,10 +16,20 @@ export const TRACE_HELP = `  sap-ui-automation show-trace <file> [--out <file.ht
 /** The page's path for a test file: `x.saptest.json` -> `x.html`. */
 export const htmlPathFor = (file: string): string => `${file.replace(/\.saptest\.json$|\.json$/i, "")}.html`;
 
+/**
+ * The command that opens a file with its default program. On Windows it is
+ * explorer.exe, run without cmd: a path with & or ^ in it stays one path.
+ */
+export function openCommand(path: string, platform: NodeJS.Platform = process.platform): [string, string[]] {
+  if (platform === "darwin") return ["open", [path]];
+  if (platform === "win32") return ["explorer.exe", [win32.resolve(path)]];
+  return ["xdg-open", [path]];
+}
+
 /** Opens a file in the default browser, without waiting for it. */
 export function openInBrowser(path: string, platform: NodeJS.Platform = process.platform): void {
-  const [cmd, args] = platform === "darwin" ? ["open", [path]] : platform === "win32" ? ["cmd", ["/c", "start", "", path]] : ["xdg-open", [path]];
-  const child = spawn(cmd, args as string[], { detached: true, stdio: "ignore", windowsHide: true });
+  const [cmd, args] = openCommand(path, platform);
+  const child = spawn(cmd, args, { detached: true, stdio: "ignore", windowsHide: true });
   child.on("error", (e) => console.error(`Could not open a browser (${e.message}); open ${path} yourself.`));
   child.unref();
 }

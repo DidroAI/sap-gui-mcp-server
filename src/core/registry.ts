@@ -23,6 +23,13 @@ export interface Discovery {
   hint?: string;
 }
 
+/** A loose session reference ("ABA", "VA03") that fits several sessions. */
+export class AmbiguousRef extends Error {
+  constructor(ref: string, readonly candidates: string[]) {
+    super(`"${ref}" fits ${candidates.length} sessions: ${candidates.join("; ")}. Name one by its number or id.`);
+  }
+}
+
 export interface Attached {
   driver: Driver;
   info: SessionInfo;
@@ -101,7 +108,12 @@ export class Registry {
       const of = this.last.filter((s) => s.surface === r);
       return of.find((s) => s.id === this.active) ?? of[0];
     }
-    return this.last.find((s) => [s.system, s.transaction, s.title, s.where].some((x) => x?.toLowerCase().includes(r)));
+    const hits = this.last.filter((s) => [s.system, s.transaction, s.title, s.where].some((x) => x?.toLowerCase().includes(r)));
+    if (hits.length <= 1) return hits[0];
+    // Several fit: the active one if it is among them, else the agent names one; never the first by chance.
+    const active = hits.find((s) => s.id === this.active);
+    if (active) return active;
+    throw new AmbiguousRef(ref, hits.map((s) => `${this.last.indexOf(s) + 1}. ${s.id} (${[s.system && (s.client ? `${s.system}/${s.client}` : s.system), s.transaction, s.title].filter(Boolean).join(", ")})`));
   }
 
   /**
@@ -113,7 +125,11 @@ export class Registry {
     const r = ref.trim().toLowerCase();
     if (!r) return undefined;
     await this.discover().catch(() => undefined);
-    if (this.resolve(ref)) return undefined;
+    try {
+      if (this.resolve(ref)) return undefined;
+    } catch {
+      return undefined;
+    }
     const surface = this.surfaces_.get(r) ?? (SURFACE_NAMES.includes(r.split(":", 1)[0] ?? "") ? (r.split(":", 1)[0] as SurfaceName) : undefined);
     const chrome = r.startsWith("chrome:");
     if (!surface && !chrome) return undefined;

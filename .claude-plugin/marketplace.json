@@ -8,7 +8,7 @@
     {
       "name": "sap-ui-automation",
       "source": "./",
-      "description": "See and drive SAP screens you have open (SAP GUI for Windows, Web GUI, Fiori): the sap-ui-automation MCP server and the sap-gui-drive skill"
+      "description": "See and drive SAP screens you have open (SAP GUI for Windows, Web GUI, Fiori): the sap-ui-automation MCP server and the sap-gui-drive and sap-gui-cli skills"
     }
   ]
 }

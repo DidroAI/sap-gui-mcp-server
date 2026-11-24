@@ -51,7 +51,42 @@ describe("tools/list", () => {
     for (const t of tools) expect([t.name, t.annotations?.openWorldHint]).toEqual([t.name, false]);
     for (const name of ["sap_look", "sap_sessions", "sap_screenshot"]) expect([name, of(name).readOnlyHint, of(name).idempotentHint]).toEqual([name, true, true]);
     for (const name of ["sap_act", "sap_replay"]) expect([name, of(name).destructiveHint]).toEqual([name, true]);
-    expect(of("sap_use").readOnlyHint).toBe(true);
+    expect([of("sap_use").readOnlyHint, of("sap_use").idempotentHint]).toEqual([true, true]);
+  });
+  test("acting is destructive only when the guard lets a write or a log off through", async () => {
+    for (const [env, want] of [
+      [{}, false],
+      [{ SAP_WRITE: "off", SAP_ALLOW_LOGOFF: "on" }, true],
+      [{ SAP_WRITE: "on" }, true],
+    ] as const) {
+      const { client } = await setup(env);
+      const { tools } = await client.listTools();
+      expect([env, tools.find((t) => t.name === "sap_act")?.annotations?.destructiveHint]).toEqual([env, want]);
+    }
+  });
+  test("the server says who it is", async () => {
+    const { client } = await setup({});
+    expect(client.getServerVersion()).toMatchObject({ name: "sap-ui-automation", title: "SAP UI Automation", websiteUrl: "https://github.com/DidroAI/sap-ui-automation" });
+  });
+});
+
+describe("arguments that do not fit (agent-practice review, 2026-11-24)", () => {
+  test("are said in plain words, with the field", async () => {
+    const { client } = await setup({});
+    const r = (await client.callTool({ name: "sap_look", arguments: { full: "yes" } })) as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0]?.text).toBe('sap_look was called with arguments that do not fit: "full": expected boolean, received string. The tool\'s description lists its fields.');
+  });
+  test('sap_record takes "do" for "op"', async () => {
+    const { client } = await setup({});
+    const r = (await client.callTool({ name: "sap_record", arguments: { do: "help" } })) as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBeFalsy();
+    expect(r.content[0]?.text).toStartWith("sap_record ops");
+  });
+  test("a tool without parameters says it takes none", async () => {
+    const { client } = await setup({});
+    const { tools } = await client.listTools();
+    expect(tools.find((t) => t.name === "sap_sessions")?.inputSchema).toEqual({ type: "object", properties: {}, additionalProperties: false });
   });
 });
 

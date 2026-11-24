@@ -1,5 +1,28 @@
 import { describe, expect, test } from "bun:test";
-import { carriesStep } from "../src/webgui/session.js";
+import { carriesStep, fromWebGui } from "../src/webgui/session.js";
+
+describe("fromWebGui: which requests the waits count", () => {
+  const frame = (url: string, parent: unknown = null) => ({ url: () => url, parentFrame: () => parent });
+  const request = (f: unknown, url = "https://h/x") => ({ frame: () => f, url: () => url }) as unknown as Parameters<typeof fromWebGui>[0];
+  test("a Web GUI frame's request counts, whatever the case of its path (the classifier gives such a tab to Web GUI)", () => {
+    expect(fromWebGui(request(frame("https://h:44300/sap/bc/gui/sap/its/webgui?sap-client=100")))).toBe(true);
+    expect(fromWebGui(request(frame("https://h:44300/SAP/BC/GUI/SAP/ITS/WEBGUI?sap-client=100")))).toBe(true);
+    // A frame inside one (an HTML viewer) counts too; the launchpad around it does not.
+    expect(fromWebGui(request(frame("about:blank", frame("https://h/SAP/bc/gui/sap/its/WebGui"))))).toBe(true);
+    expect(fromWebGui(request(frame("https://h/sap/bc/ui2/flp")))).toBe(false);
+  });
+  test("a request without a frame (a service worker) is judged by its own address", () => {
+    const noFrame = (url: string) =>
+      ({
+        frame: () => {
+          throw new Error("no frame");
+        },
+        url: () => url,
+      }) as unknown as Parameters<typeof fromWebGui>[0];
+    expect(fromWebGui(noFrame("https://h/SAP/BC/GUI/SAP/ITS/WEBGUI/x.js"))).toBe(true);
+    expect(fromWebGui(noFrame("https://h/sap/bc/ui2/flp/x.js"))).toBe(false);
+  });
+});
 
 // Request bodies in the shape Web GUI posts them; the ids are made up.
 describe("carriesStep: is a Web GUI request a round trip, or sent on the side", () => {

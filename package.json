@@ -24,6 +24,7 @@
     "codex",
     "cursor"
   ],
+  "mcpName": "io.github.DidroAI/sap-ui-automation",
   "homepage": "https://github.com/DidroAI/sap-ui-automation#readme",
   "bugs": {
     "url": "https://github.com/DidroAI/sap-ui-automation/issues"

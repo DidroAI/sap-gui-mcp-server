@@ -31,6 +31,25 @@ const list = (v: string | undefined) =>
     .map((s) => s.trim().toUpperCase())
     .filter(Boolean);
 
+/** A transaction ("VA03", "/SAPAPO/SDP94") or a Fiori app ("SALESORDER-MANAGE"), as the lists spell them. */
+const TCODE_ENTRY = /^(\/[A-Z0-9_]+\/)?[A-Z0-9_.]+$|^[A-Z0-9_]+-[A-Z0-9_]+$/;
+/** A system ("ABA") or a system and client ("ABA/800"). */
+const SYSTEM_ENTRY = /^[A-Z0-9_]+(\/\d{1,3})?$/;
+
+/**
+ * The entries of a list setting, checked: a mistyped entry ("SE*", "/nSE38") would match nothing, and
+ * a block list that blocks nothing fails open. A Fiori app may be written "#SalesOrder-manage".
+ */
+export function checkedList(name: string, entries: string[], kind: "tcode" | "system" = "tcode"): string[] {
+  const out = entries.map((e) => (kind === "tcode" ? e.replace(/^#/, "") : e));
+  const bad = out.filter((e) => !(kind === "tcode" ? TCODE_ENTRY : SYSTEM_ENTRY).test(e));
+  if (bad.length)
+    throw new Error(
+      `${name}: ${bad.map((b) => `"${b}"`).join(", ")} ${bad.length === 1 ? "is" : "are"} not ${kind === "tcode" ? "a transaction code (VA03, /SAPAPO/SDP94) or a Fiori app (SalesOrder-manage); no wildcards or /n" : "a system (ABA) or system/client (ABA/800)"}`,
+    );
+  return out;
+}
+
 export function policyFromEnv(env: Record<string, string | undefined> = process.env): Policy {
   // An empty value counts as unset: clients such as Claude Desktop pass "" for a setting left blank.
   const w = (env.SAP_WRITE?.trim() || "off").toLowerCase();
@@ -40,9 +59,9 @@ export function policyFromEnv(env: Record<string, string | undefined> = process.
   return {
     write: w,
     allowLogoff: off === "on",
-    allowSystems: list(env.SAP_ALLOW_SYSTEMS),
-    allowTcodes: list(env.SAP_ALLOW_TCODES),
-    blockTcodes: list(env.SAP_BLOCK_TCODES),
+    allowSystems: checkedList("SAP_ALLOW_SYSTEMS", list(env.SAP_ALLOW_SYSTEMS), "system"),
+    allowTcodes: checkedList("SAP_ALLOW_TCODES", list(env.SAP_ALLOW_TCODES)),
+    blockTcodes: checkedList("SAP_BLOCK_TCODES", list(env.SAP_BLOCK_TCODES)),
   };
 }
 
@@ -219,4 +238,13 @@ export function decide(policy: Policy, action: Action, assessment: Assessment, a
     run: false,
     refused: `this action may write to SAP (${assessment.reason}) and writes are off. Tell the user what you would have saved; do not look for another way. ${fiori ? LEAVE_UNSAVED_FIORI : LEAVE_UNSAVED} Only the user can allow writes (SAP_WRITE=confirm or on).`,
   };
+}
+
+/**
+ * The destructiveHint of the tools that act: false only when the guard refuses every write and every
+ * log off (SAP_WRITE=off, SAP_ALLOW_LOGOFF off). Clients such as Codex ask before each call of a tool
+ * marked destructive: with writes off that is a question per navigation for nothing the guard lets through.
+ */
+export function mayDestroy(policy: Policy): boolean {
+  return policy.write !== "off" || policy.allowLogoff === true;
 }

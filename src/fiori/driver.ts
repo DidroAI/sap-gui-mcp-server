@@ -13,6 +13,8 @@
  */
 import type { Frame, Page } from "playwright-core";
 import type { ChromeTab } from "../browser/chrome.js";
+import { isWebguiUrl } from "../browser/classify.js";
+import { screenshotTab, within } from "../browser/tab.js";
 import { ONE_LINE_NOTE, oneLine } from "../core/action.js";
 import { type Action, ActionError, type Assessment, type Driver, type LookOptions, type SessionInfo } from "../core/types.js";
 import { webguiActInFrame, webguiAssessInFrame, webguiLookInFrame } from "../webgui/index.js";
@@ -21,8 +23,6 @@ import { assessAction, intentOf, keyOf } from "./risk.js";
 import { type ControlRequest, type ControlResult, TARGET_ATTR, ui5Back, ui5Control, ui5Draft, ui5Idle, ui5Info, type Ui5Info, ui5Logon, ui5Look, ui5Open } from "./ui5.js";
 
 export const WEBGUI_MARK = "WEBGUI FRAME";
-const WEBGUI_URL = /\/sap\/bc\/gui\/sap\/its\//i;
-const LAUNCHPAD_URL = /\/sap\/bc\/ui2\/flp|\/ui#|\/ui\?|cp\.portal|launchpad/i;
 /** Actions only SAP GUI screens have: they go to the Web GUI frame. */
 const WEBGUI_ONLY = new Set(["okcode", "tree", "grid", "toolbar"]);
 /** Shared action names -> what the UI5 reader does with the control. */
@@ -39,10 +39,6 @@ const OPS: Record<string, ControlRequest["op"]> = {
   f4: "f4",
   scroll: "scroll",
 };
-
-/** Is this URL a Web GUI page of its own (the Web GUI surface's tab, not ours)? */
-export const isWebguiUrl = (url: string) => WEBGUI_URL.test(url);
-export const isLaunchpadUrl = (url: string) => LAUNCHPAD_URL.test(url);
 
 const KEY_HELP = "Fiori keys: Enter, Space, Escape, Tab, Shift+Tab, F4, Delete, Backspace, ArrowDown, ArrowUp, ArrowLeft, ArrowRight, PageDown, PageUp, Home, End, Back, Control+S, Control+Enter (or SAP GUI's 0, 3, 4, 11, 12).";
 const unknownKey = (action: Action) => new ActionError(`Unknown key ${JSON.stringify(action.key ?? action.value ?? "")}. ${KEY_HELP}`);
@@ -82,6 +78,32 @@ export function fioriGridOp(action: Action): "select" | "press" | undefined {
   if (how === "select") return "select";
   if (how === "double" || how === "dblclick" || how === "open" || how === "press" || how === "click") return "press";
   return undefined;
+}
+
+const normText = (t: string) => t.replace(/\s+/g, " ").trim();
+
+/**
+ * Which entry of a dropdown list `wanted` names, by the entries' texts: the
+ * index of the one entry, else the texts of the entries it could mean (none:
+ * no entry matches). Tried in turn, and the first rule that finds entries
+ * decides: the whole text; the whole text in any case; whole words of the
+ * text ("10" is "10 Plant Ten", not "100"); a part of the text. Past the
+ * first rule only one entry may match, so "10" never picks "100" by chance.
+ */
+export function pickEntry(texts: string[], wanted: string): number | string[] {
+  const all = texts.map(normText);
+  const w = normText(wanted);
+  if (!w) return [];
+  const lw = w.toLowerCase();
+  const word = new RegExp(`(^|\\s)${lw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`);
+  const rules: ((t: string) => boolean)[] = [(t) => t === w, (t) => t.toLowerCase() === lw, (t) => word.test(t.toLowerCase()), (t) => t.toLowerCase().includes(lw)];
+  for (const [n, rule] of rules.entries()) {
+    const hits = all.flatMap((t, i) => (t && rule(t) ? [i] : []));
+    // Entries of the very same text cannot be told apart by any text: the first is taken.
+    if (hits.length === 1 || (n === 0 && hits.length > 1)) return hits[0] as number;
+    if (hits.length > 1) return hits.map((i) => all[i] as string);
+  }
+  return [];
 }
 
 /** The answer of `ui5RowOf`: the row's id, or why there is none. */
@@ -144,9 +166,6 @@ export function notationOfCodes(num: string | null, date: string | null): { sign
   if (d) out.date = d;
   return out.sign || out.date ? out : undefined;
 }
-
-const within = <T>(p: Promise<T>, ms: number, otherwise: T): Promise<T> =>
-  Promise.race([p.catch(() => otherwise), new Promise<T>((r) => setTimeout(() => r(otherwise), ms))]);
 
 /** Is the iframe of this frame drawn (not hidden by the launchpad, not of zero size)? A frame that cannot say counts as shown. */
 export async function frameShown(f: Pick<Frame, "frameElement">): Promise<boolean> {
@@ -563,13 +582,18 @@ export class FioriDriver implements Driver {
               await unmark();
               return `combo ${r.note}: nothing chosen. Entries: ${texts.slice(0, 60).join(" | ") || "(none shown)"}${texts.length > 60 ? ` ... (${texts.length} in all)` : ""}; ${await this.idle()}`;
             }
-            const entry = options.filter({ hasText: wanted }).first();
-            if (!(await entry.count())) {
-              const texts = (await options.allInnerTexts().catch(() => [])).map((t) => t.replace(/\s+/g, " ").trim()).filter(Boolean);
+            const texts = await options.allInnerTexts().catch(() => [] as string[]);
+            const picked = pickEntry(texts, wanted);
+            if (typeof picked !== "number") {
+              const shown = texts.map(normText).filter(Boolean);
               await this.page.keyboard.press("Escape");
-              throw new ActionError(`no entry "${wanted}" in ${r.note}. Entries: ${texts.slice(0, 60).join(" | ") || "(none shown)"}`);
+              throw new ActionError(
+                picked.length
+                  ? `"${wanted}" names more than one entry in ${r.note}: ${picked.slice(0, 20).join(" | ")}. Give the entry's whole text.`
+                  : `no entry "${wanted}" in ${r.note}. Entries: ${shown.slice(0, 60).join(" | ") || "(none shown)"}`,
+              );
             }
-            await entry.click({ timeout: 8000 });
+            await options.nth(picked).click({ timeout: 8000 });
           }
           break;
         case "FOCUSENTER":
@@ -661,15 +685,8 @@ export class FioriDriver implements Driver {
     return notationOfCodes(r.num, r.date);
   }
 
-  async screenshot(): Promise<Buffer> {
-    const shot = () => this.page.screenshot({ type: "png", timeout: 8000 });
-    try {
-      return await shot();
-    } catch {
-      // Chrome does not paint a tab in the background: bring it to the front and try once more.
-      await this.page.bringToFront();
-      return shot();
-    }
+  screenshot(): Promise<Buffer> {
+    return screenshotTab(this.page);
   }
 
   /** Nothing to release: the tab and the browser are the user's. */

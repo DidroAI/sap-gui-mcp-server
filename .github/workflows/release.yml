@@ -6,21 +6,23 @@ on:
   push:
     tags: ["v*"]
 
+# Two jobs: "build" installs, tests and builds with read-only rights and no secret;
+# "publish" only takes what build made and publishes it, with the rights that needs.
 permissions:
-  contents: write # create the GitHub release and upload its assets
-  id-token: write # npm provenance (and npm trusted publishing, see below)
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Settings > Environments > npm: add required reviewers there and every publish waits for approval.
-    # Keep NPM_TOKEN as an environment secret of "npm" so only this job can read it.
-    environment: npm
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -31,9 +33,9 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
 
       - name: The tag matches the package version
+        id: version
         shell: bash
         run: |
           version="$(node -p 'require("./package.json").version')"
@@ -42,6 +44,7 @@ jobs:
             exit 1
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
@@ -62,9 +65,43 @@ jobs:
           # npm pack and scripts/build-mcpb.mjs both write to the repository root.
           mv "sap-ui-automation-$VERSION.tgz" "sap-ui-automation-$VERSION.mcpb" release-assets/
           ls -l release-assets
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-assets
+          path: release-assets/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Settings > Environments > npm: add required reviewers there and every publish waits for approval.
+    # Keep NPM_TOKEN as an environment secret of "npm" so only this job can read it.
+    environment: npm
+    permissions:
+      contents: write # create the GitHub release and upload its assets
+      id-token: write # npm provenance (and npm trusted publishing, see below)
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-assets
+          path: release-assets
+      - name: The assets are the ones build made
+        shell: bash
+        run: |
+          ls -l release-assets
+          test -f "release-assets/sap-ui-automation-$VERSION.tgz"
+          test -f "release-assets/sap-ui-automation-$VERSION.mcpb"
 
       # Publishes exactly the tarball attached to the release below (lifecycle scripts do not run
-      # for a tarball; it was built and tested above).
+      # for a tarball; it was built and tested by the build job).
       #
       # Authentication: an npm automation/granular token in the NPM_TOKEN secret of the "npm" environment.
       # Alternative: npm trusted publishing (OIDC). Once the maintainer configures it on npmjs.com

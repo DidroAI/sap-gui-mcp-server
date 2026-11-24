@@ -65,7 +65,7 @@ once to its log (stderr) when the client connects.
 With such a client, use `SAP_WRITE=on` together with the client's own
 approval of each `sap_act` call (most clients ask before a tool that is
 marked destructive). That approval is then the check; the server does not
-add one of its own. In Claude Code, leave `mcp__sap-gui__sap_act` out of
+add one of its own. In Claude Code, leave `mcp__sap-ui-automation__sap_act` (installed as the plugin: `mcp__plugin_sap-ui-automation_sap-ui-automation__sap_act`) out of
 `permissions.allow` (or put it in `ask`); in Codex, set
 `approval_mode = "prompt"` for that tool. That approval covers every
 `sap_act` call, not only the ones that write.

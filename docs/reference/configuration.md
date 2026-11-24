@@ -4,7 +4,7 @@ Every setting is an environment variable of the server process. Set it in
 your MCP client's `env` block, or in the shell before a CLI command:
 
 ```sh
-claude mcp add sap-gui --scope user -e SAP_WRITE=confirm -- npx -y sap-ui-automation
+claude mcp add sap-ui-automation --scope user -e SAP_WRITE=confirm -- npx -y sap-ui-automation
 SAP_ALLOW_SYSTEMS=ABA/800 npx -y sap-ui-automation sessions
 ```
 
@@ -107,7 +107,6 @@ You do not normally set them for this server.
 
 | Variable | Effect |
 | --- | --- |
-| `SAP_SCREEN_DEBUG` | network reader: a folder where the Windows input host saves the image it reads cell sizes from (`sheet.png`) |
 | `SAP_TEST_CHROME` | the repository's tests: a Chrome to run browser tests against |
 
 `sap-ui-automation --help` lists the commands and the main settings

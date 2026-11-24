@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type AgentContext, actionOf, agentCommand, daemonRunning, screenSummary, writeAnswer } from "../src/cli/agent.js";
-import { type Daemon, daemonAddress, type Env, settingsDiff, settingsOf, startDaemon } from "../src/cli/daemon.js";
+import { type Daemon, daemonAddress, type Env, SETTINGS, settingsDiff, settingsOf, startDaemon, underLock } from "../src/cli/daemon.js";
 import { ActionError, type Action, type Assessment } from "../src/core/types.js";
 import { FakeSurface } from "./fakes.js";
 
@@ -263,9 +264,39 @@ describe("the daemon's settings", () => {
     expect(daemons[1]!.status().settings.SAP_WRITE).toBe("on");
     expect(surface.acts()).toEqual([{ do: "key", key: 11 }]);
   });
-  test("settingsOf keeps SAP_* (upper-cased) but not SAP_CLI_*; settingsDiff names each difference", () => {
-    expect(settingsOf({ SAP_WRITE: "on", sap_view: "full", SAP_CLI_DIR: "x", PATH: "/bin" })).toEqual({ SAP_VIEW: "full", SAP_WRITE: "on" });
+  test("settingsOf keeps the server's SAP_* settings (upper-cased), not SAP_CLI_* or others; settingsDiff names each difference", () => {
+    expect(settingsOf({ SAP_WRITE: "on", sap_view: "full", SAP_CLI_DIR: "x", PATH: "/bin", SAP_PASSWORD: "pw", SAP_USER: "me", SAP_VAR_X: "1" })).toEqual({ SAP_VIEW: "full", SAP_WRITE: "on" });
     expect(settingsDiff({ SAP_WRITE: "confirm" }, { SAP_WRITE: "on", SAP_VIEW: "full" })).toEqual(['SAP_VIEW: daemon unset, this call "full"', 'SAP_WRITE: daemon "confirm", this call "on"']);
+    expect(settingsDiff({ SAP_EXTENSION_CODE: "AAAA-BBBB" }, { SAP_EXTENSION_CODE: "CCCC-DDDD" })).toEqual(["SAP_EXTENSION_CODE: daemon set (hidden), this call set (hidden)"]);
+    expect(settingsDiff({}, { SAP_EXTENSION_CODE: "CCCC-DDDD" })).toEqual(["SAP_EXTENSION_CODE: daemon unset, this call set (hidden)"]);
+  });
+  test("the settings list holds every SAP_* variable the server reads", () => {
+    const seen = new Set<string>();
+    const walk = (d: string) => {
+      for (const e of readdirSync(d, { withFileTypes: true })) {
+        const p = join(d, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (p.endsWith(".ts")) for (const m of readFileSync(p, "utf8").matchAll(/\b(?:env|process\.env)\??\.(SAP_[A-Z0-9_]+)/g)) seen.add(m[1]!);
+      }
+    };
+    walk(join(import.meta.dir, "..", "src"));
+    // The CLI's own, the exported scripts' and the test runner's are not the server's settings.
+    const notSettings = /^SAP_(CLI_|VAR_|USER$|PASSWORD$|TEST_STRIP_TYPES$)/;
+    const missing = [...seen].filter((n) => !notSettings.test(n) && !(SETTINGS as readonly string[]).includes(n));
+    expect(missing).toEqual([]);
+  });
+  test("daemon status and the settings error never print a secret", async () => {
+    const { surface, run } = setup({ SAP_EXTENSION_CODE: "SECRET-CODE1" });
+    surface.add({ id: "chrome:1", system: "XYZ" });
+    expect((await run(["look"])).code).toBe(0);
+    const status = await run(["daemon", "status"]);
+    expect(status.out).toContain("SAP_EXTENSION_CODE=(hidden)");
+    expect(status.out).not.toContain("SECRET-CODE1");
+    const other = await run(["look"], { SAP_EXTENSION_CODE: "OTHER-CODE2" });
+    expect(other.code).toBe(1);
+    expect(other.err).toContain("SAP_EXTENSION_CODE");
+    expect(other.err).not.toContain("SECRET-CODE1");
+    expect(other.err).not.toContain("OTHER-CODE2");
   });
   test("one daemon per directory, or per SAP_CLI_SESSION", () => {
     const s = { SAP_CLI_STATE_DIR: join(tmpdir(), "sapcli-addr") };
@@ -290,6 +321,39 @@ describe("the daemon's life", () => {
     expect(closed).toBe(false);
     await daemons[0]!.closed;
     expect((await run(["daemon", "status"])).out).toBe("No sap-gui daemon runs for this directory.");
+  });
+  test("a line that is not JSON does not stop the idle exit", async () => {
+    const { surface, run, daemons, base, dir } = setup({}, 150);
+    surface.add({ id: "chrome:1", system: "XYZ" });
+    await run(["look"]);
+    const answer = await new Promise<string>((r) => {
+      const s = connect(daemonAddress(base, dir).path);
+      let buf = "";
+      s.setEncoding("utf8");
+      s.on("data", (c: string) => (buf += c));
+      s.on("close", () => r(buf));
+      s.on("connect", () => s.write("not json\n"));
+    });
+    expect(JSON.parse(answer)).toMatchObject({ ok: false, code: "bad-request" });
+    const closed = await Promise.race([daemons[0]!.closed.then(() => true), new Promise((r) => setTimeout(() => r(false), 2000))]);
+    expect(closed).toBe(true);
+  });
+  test("two daemons starting together: the lock lets one in at a time", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "saplock-"));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    const lock = join(dir, "x.lock");
+    const order: string[] = [];
+    const step = (n: string) => underLock(lock, async () => {
+      order.push(`${n} in`);
+      await new Promise((r) => setTimeout(r, 40));
+      order.push(`${n} out`);
+    });
+    await Promise.all([step("a"), step("b")]);
+    expect(order).toEqual(["a in", "a out", "b in", "b out"]);
+    expect(existsSync(lock)).toBe(false);
+    // A lock left by a process that is gone is taken over.
+    writeFileSync(lock, "999999999");
+    expect(await underLock(lock, async () => "ran")).toBe("ran");
   });
   test("calls made at the same time run one after the other, even on different sessions", async () => {
     const { surface, run, daemons } = setup();

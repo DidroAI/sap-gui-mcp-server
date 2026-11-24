@@ -101,11 +101,44 @@ describe("sapgui host process", () => {
   });
 });
 
+describe("closing the host", () => {
+  const alive = (pid: number) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  test("a host stuck in a call is killed after the grace", async () => {
+    const host = new PsHost(process.env, launch);
+    const { pid } = await host.request<Pong>("ping");
+    const stuck = host.request("stuck").catch((x: unknown) => (x as Error).message);
+    const t0 = Date.now();
+    await host.close(200);
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(150);
+    expect(await stuck).toBe("The SAP GUI host was closed.");
+    for (let i = 0; i < 50 && alive(pid); i++) await new Promise((r) => setTimeout(r, 20));
+    expect(alive(pid)).toBe(false);
+  });
+  test("a free host exits by itself, without waiting for the grace", async () => {
+    const host = new PsHost(process.env, launch);
+    const { pid } = await host.request<Pong>("ping");
+    const t0 = Date.now();
+    await host.close(5000);
+    expect(Date.now() - t0).toBeLessThan(2000);
+    expect(alive(pid)).toBe(false);
+  });
+  test("closing a host never started is done at once", async () => {
+    await new PsHost(process.env, launch).close();
+  });
+});
+
 describe("PowerShell policy probe", () => {
   test("reads the language mode and the AppLocker service", () => {
-    expect(parsePolicy("sapgui-mcp|FullLanguage|\r\n")).toEqual({ languageMode: "FullLanguage", appLocker: false });
-    expect(parsePolicy("noise\nsapgui-mcp|ConstrainedLanguage|Running\n")).toEqual({ languageMode: "ConstrainedLanguage", appLocker: true });
-    expect(parsePolicy("sapgui-mcp|FullLanguage|Stopped")).toEqual({ languageMode: "FullLanguage", appLocker: false });
+    expect(parsePolicy("sap-ui-automation|FullLanguage|\r\n")).toEqual({ languageMode: "FullLanguage", appLocker: false });
+    expect(parsePolicy("noise\nsap-ui-automation|ConstrainedLanguage|Running\n")).toEqual({ languageMode: "ConstrainedLanguage", appLocker: true });
+    expect(parsePolicy("sap-ui-automation|FullLanguage|Stopped")).toEqual({ languageMode: "FullLanguage", appLocker: false });
   });
   test("no answer keeps the reason", () => {
     expect(parsePolicy("", "spawn powershell.exe ENOENT")).toEqual({ languageMode: "", appLocker: false, error: "spawn powershell.exe ENOENT" });

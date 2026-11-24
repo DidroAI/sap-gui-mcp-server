@@ -11,7 +11,7 @@ import { dirname, join, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { ExtensionSystem, LogonResult } from "../src/browser/extension/relay.js";
-import { bundledHostScript, EXTENSION_IDS, hostManifest, installNativeHost, NATIVE_HOST, nativeHostInstalled } from "../src/browser/extension/native.js";
+import { bundledHostScript, EXTENSION_IDS, hostManifest, installNativeHost, launcherCommand, NATIVE_HOST, nativeHostInstalled } from "../src/browser/extension/native.js";
 import { readOrCreateCode } from "../src/browser/extension/pairing.js";
 import { policyFromEnv } from "../src/core/guard.js";
 import { createServer, type SystemsAccess } from "../src/server.js";
@@ -75,6 +75,25 @@ else if (cmd === "clear") { delete db[key]; fs.writeFileSync(f, JSON.stringify(d
 }
 
 const host = [process.execPath, bundledHostScript()];
+
+describe("running the helper's launcher (doctor)", () => {
+  test("on Windows the .bat runs through cmd.exe with every part quoted: a profile path with a space stays whole", () => {
+    const bat = "C:\\Users\\Jane Doe\\AppData\\Roaming\\sap-ui-automation\\native-host\\host.bat";
+    expect(launcherCommand(bat, ["chrome-extension://doctor/"], "win32", { ComSpec: "C:\\Windows\\system32\\cmd.exe" })).toEqual({
+      cmd: "C:\\Windows\\system32\\cmd.exe",
+      args: ["/d", "/s", "/c", `""C:\\Users\\Jane Doe\\AppData\\Roaming\\sap-ui-automation\\native-host\\host.bat" "chrome-extension://doctor/""`],
+      verbatim: true,
+    });
+    expect(launcherCommand(bat, [], "win32", {}).cmd).toBe("cmd.exe");
+  });
+  test("elsewhere the launcher runs directly, its path as one argument", () => {
+    expect(launcherCommand("/home/jane doe/.config/sap-ui-automation/native-host/host.sh", ["chrome-extension://doctor/"], "linux", {})).toEqual({
+      cmd: "/home/jane doe/.config/sap-ui-automation/native-host/host.sh",
+      args: ["chrome-extension://doctor/"],
+      verbatim: false,
+    });
+  });
+});
 
 describe.skipIf(process.platform !== "linux")("the helper (native messaging host)", () => {
   test("pair: the same code as the server's pairing file, made once", async () => {

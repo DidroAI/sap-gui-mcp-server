@@ -181,7 +181,7 @@ recording, with no model.
 | Mode | Does |
 | --- | --- |
 | `verify` (default) | compare; a passing run adds what the lock does not have |
-| `write` | compare nothing, add this run's screens (`npx sap-gui test --update-locks`) |
+| `write` | compare nothing, add this run's screens (`npx sap-ui-automation test --update-locks`) |
 | `off` | leave the lock alone |
 
 In a script, `connect({ verify: { lock: "x.sap.lock.json", key: "my test", mode: "verify" } })`
@@ -222,10 +222,10 @@ export default defineConfig({
 Run them:
 
 ```sh
-npx sap-gui test                     # every *.sap.ts under testDir
-npx sap-gui test sap-tests/va03.sap.ts --reporter junit
-npx sap-gui test --grep "order" --project s4
-npx sap-gui test --list                # what would run
+npx sap-ui-automation test                     # every *.sap.ts under testDir
+npx sap-ui-automation test sap-tests/va03.sap.ts --reporter junit
+npx sap-ui-automation test --grep "order" --project s4
+npx sap-ui-automation test --list                # what would run
 ```
 
 Node 22.18 or later loads the TypeScript files as they are; from 22.6 the
@@ -257,7 +257,7 @@ Flags: `--config <file>`, `--project <p>`, `--reporter list,junit,json,html`,
 
 Tests run one at a time (one SAP session is one user's screen). Each test's
 trace goes to `sap-results/<test>/`; open it with the
-[trace viewer](trace-viewer.md). `npx sap-gui init` writes a config and an
+[trace viewer](trace-viewer.md). `npx sap-ui-automation init` writes a config and an
 example test to start from ([CLI](../reference/cli.md)).
 
 In CI, the machine running the tests needs an SAP session open (a Web GUI

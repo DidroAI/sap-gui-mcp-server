@@ -14,6 +14,17 @@
 // SAP's logon page is gone or its password field is empty.
 
 import { normalizeCode, CODE_LENGTH } from "./code.js";
+import {
+  BODY_READS,
+  createNetworkLog,
+  isAllowedChildUrl as childAllowed,
+  isAllowedResourceUrl as resourceAllowed,
+  isAllowedUrl as urlAllowed,
+  isBareWildcard,
+  methodDenied,
+  siteUrls,
+  webPattern,
+} from "./policy.js";
 
 const NATIVE_HOST = "ai.didro.sap_ui_automation";
 const PORT_FIRST = 47823;
@@ -31,114 +42,6 @@ const MAX_BACKOFF_MS = 3000;
 const MAX_REFUSED_BACKOFF_MS = 30000;
 const ALARM = "bridge-wake";
 const TARGETS_CACHE_MS = 150; // how stale the tab URL checked before each cdp command may be
-const MAX_REQUESTS_PER_TAB = 5000; // requestId -> url entries kept per tab
-const MAX_PENDING_EXTRA_INFO = 500; // *ExtraInfo events held per tab until their request is known
-
-// Never forwarded, whatever chrome.debugger itself would allow: the server
-// must not open, close or reach beyond the user's tabs.
-const DENIED_METHODS = new Set([
-  "Target.createTarget",
-  "Target.closeTarget",
-  "Target.createBrowserContext",
-  "Target.disposeBrowserContext",
-  "Target.attachToBrowserTarget",
-  "Target.attachToTarget",
-  "Target.autoAttachRelated",
-  "Target.sendMessageToTarget", // non-flat sessions bypass the child-session checks
-  "Target.setDiscoverTargets",
-  "Target.getTargets",
-  "Target.activateTarget",
-  "Target.exposeDevToolsProtocol",
-  "Target.setRemoteLocations",
-  "Browser.close",
-  "Browser.crash",
-  // Browser-wide cookie jars: chrome.debugger allows these on a tab session,
-  // and they reach every site's cookies, not just the shared ones.
-  "Network.getAllCookies",
-  "Network.clearBrowserCookies",
-  "Page.getCookies",
-  // Reads of other sites' responses that bypass the page's own same-origin rules.
-  "Network.loadNetworkResource",
-  "Network.setRequestInterception",
-  "Network.continueInterceptedRequest",
-  "Network.getResponseBodyForInterception",
-  "Network.takeResponseBodyForInterceptionAsStream",
-  "Network.replayXHR",
-  "IO.read",
-]);
-const DENIED_PREFIXES = ["Fetch.", "CacheStorage."];
-
-// The Storage domain is mostly browser-wide (shared storage, interest groups,
-// trust tokens, cookies): only these pass, and only for allowed origins.
-const STORAGE_ALLOWED = new Set([
-  "Storage.getStorageKeyForFrame",
-  "Storage.getStorageKey",
-  "Storage.clearDataForOrigin",
-  "Storage.getUsageAndQuota",
-  "Storage.trackCacheStorageForOrigin",
-  "Storage.trackIndexedDBForOrigin",
-  "Storage.untrackCacheStorageForOrigin",
-  "Storage.untrackIndexedDBForOrigin",
-  "Storage.clearDataForStorageKey",
-  "Storage.trackCacheStorageForStorageKey",
-  "Storage.trackIndexedDBForStorageKey",
-  "Storage.untrackCacheStorageForStorageKey",
-  "Storage.untrackIndexedDBForStorageKey",
-]);
-
-// Commands that read a response by requestId: allowed only for requests to
-// allowed URLs this extension saw start.
-const BODY_READS = new Set(["Network.getResponseBody", "Network.getRequestPostData", "Network.searchInResponseBody", "Network.streamResourceContent"]);
-
-// "https://host/" or "https://host/^0https://top/" (partitioned) -> "https://host/"
-function storageKeyUrl(k) {
-  return typeof k === "string" ? k.split("^")[0] : null;
-}
-
-// Commands that name other sites in their parameters: allowed only when
-// every site they name is allowed. null = a required site is missing.
-function siteUrls(method, params = {}) {
-  const fromCookie = (c) => [c.url || (c.domain ? `https://${String(c.domain).replace(/^\./, "")}/` : null)];
-  const origin = (o) => (typeof o === "string" ? o + "/" : null);
-  switch (method) {
-    case "Network.getCookies":
-      // Without urls Chrome answers for the page and all its subframes, other sites included.
-      return Array.isArray(params.urls) && params.urls.length ? params.urls.map((u) => (typeof u === "string" ? u : null)) : [null];
-    case "Network.setCookie":
-    case "Network.deleteCookies":
-      return fromCookie(params);
-    case "Network.setCookies":
-      return (params.cookies || []).flatMap(fromCookie);
-    case "Page.getResourceContent":
-    case "Page.searchInResource":
-      return [typeof params.url === "string" ? params.url : null];
-    case "Page.navigate":
-      return [typeof params.url === "string" ? params.url : null];
-    case "Storage.clearDataForOrigin":
-    case "Storage.getUsageAndQuota":
-    case "Storage.trackCacheStorageForOrigin":
-    case "Storage.trackIndexedDBForOrigin":
-    case "Storage.untrackCacheStorageForOrigin":
-    case "Storage.untrackIndexedDBForOrigin":
-      return [origin(params.origin)];
-    case "Storage.clearDataForStorageKey":
-    case "Storage.trackCacheStorageForStorageKey":
-    case "Storage.trackIndexedDBForStorageKey":
-    case "Storage.untrackCacheStorageForStorageKey":
-    case "Storage.untrackIndexedDBForStorageKey":
-      return [storageKeyUrl(params.storageKey)];
-    default:
-      if (method.startsWith("DOMStorage.") && method !== "DOMStorage.enable" && method !== "DOMStorage.disable") {
-        const id = params.storageId || {};
-        return [id.storageKey ? storageKeyUrl(id.storageKey) : origin(id.securityOrigin)];
-      }
-      if (method.startsWith("IndexedDB.") && method !== "IndexedDB.enable" && method !== "IndexedDB.disable") {
-        const k = params.storageKey || (params.storageBucket && params.storageBucket.storageKey);
-        return [k ? storageKeyUrl(k) : origin(params.securityOrigin)];
-      }
-      return [];
-  }
-}
 
 // ---------------------------------------------------------------- state
 
@@ -168,8 +71,10 @@ let agentTab = null; // { tabId, at }
 // Per attached tab:
 const children = new Map(); // tabId -> Map<childSessionId, {targetId, type, url, parent?, clientPage}>
 const rootClientPage = new Set(); // tabIds whose root session the client enabled Page on
-const requests = new Map(); // tabId -> Map<"session|requestId", {url, ok}>
-const pendingExtra = new Map(); // tabId -> Map<"session|requestId", [[method, params]...]>
+// Network requests per tab, and the ExtraInfo events held until their request is known (policy.js).
+const network = createNetworkLog((u) => isAllowedResourceUrl(u));
+const requests = network.requests;
+const pendingExtra = network.pendingExtra;
 const frameNav = new Map(); // tabId -> Map<frameId, url the frame last started navigating to or committed>
 const MAX_FRAMES_PER_TAB = 1000;
 
@@ -344,66 +249,15 @@ function makeChannel(sock, keysP) {
 
 // ---------------------------------------------------------------- scope
 
-// Chrome match patterns: <scheme>://<host><path>, scheme * = http|https,
-// host * or *.domain or exact, optional :port (none = any port).
-function patternMatches(pattern, url) {
-  const m = /^(\*|https?):\/\/(\*|\*\.[^/:*]+|[^/:*]+)(?::(\d+|\*))?(\/.*)$/.exec(pattern);
-  if (!m) return false;
-  const [, scheme, host, port, path] = m;
-  if (scheme !== "*" && scheme + ":" !== url.protocol) return false;
-  const h = url.hostname.toLowerCase();
-  const ph = host.toLowerCase();
-  if (ph === "*") return false; // bare wildcards never count (see isBareWildcard)
-  if (ph.startsWith("*.")) {
-    const base = ph.slice(2);
-    if (h !== base && !h.endsWith("." + base)) return false;
-  } else if (h !== ph && h !== `[${ph}]` && `[${h}]` !== ph) return false;
-  if (port && port !== "*") {
-    const up = url.port || (url.protocol === "https:" ? "443" : "80");
-    if (up !== port) return false;
-  }
-  const re = new RegExp("^" + path.split("*").map((s) => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*") + "$");
-  return re.test(url.pathname + url.search);
-}
-
+// The checks of policy.js, against the scope last read.
 function isAllowedUrl(urlString, s = scope) {
-  if (s.paused) return false;
-  let url;
-  try {
-    url = new URL(urlString);
-  } catch {
-    return false;
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
-  return s.patterns.some((p) => patternMatches(p, url));
+  return urlAllowed(urlString, s);
 }
-
-// A resource the shared page loads: its own data: URLs and blobs of allowed origins count too.
 function isAllowedResourceUrl(u) {
-  if (typeof u !== "string") return false;
-  if (u.startsWith("data:")) return true;
-  if (u.startsWith("blob:")) return isAllowedUrl(u.slice(5));
-  return isAllowedUrl(u);
+  return resourceAllowed(u, scope);
 }
-
-// A child target (OOPIF, worker) of a shared tab: empty, about:blank and
-// about:srcdoc frames, or a URL (blob: by its origin) of an allowed site.
 function isAllowedChildUrl(u) {
-  if (u === undefined || u === null || u === "" || u === "about:blank" || u === "about:srcdoc") return true;
-  if (typeof u !== "string") return false;
-  if (u.startsWith("blob:")) return isAllowedUrl(u.slice(5));
-  return isAllowedUrl(u);
-}
-
-function webPattern(p) {
-  return p === "<all_urls>" || /^(\*|https?):\/\//.test(p);
-}
-
-// "On all sites" in Chrome grants https://*/*, http://*/*, *://*/* or
-// <all_urls>; IT could push the same. Such patterns never make every site
-// shared: only sites added one by one count.
-function isBareWildcard(p) {
-  return p === "<all_urls>" || /^(\*|https?):\/\/\*(?::(\d+|\*))?\//.test(p);
+  return childAllowed(u, scope);
 }
 
 async function readScope() {
@@ -717,144 +571,6 @@ function onChildAttached(tabId, parentSessionId, params) {
   return true;
 }
 
-// ---------------------------------------------------------------- network bookkeeping
-
-function reqMap(tabId) {
-  let m = requests.get(tabId);
-  if (!m) requests.set(tabId, (m = new Map()));
-  return m;
-}
-
-function rememberRequest(tabId, key, url, secret = false) {
-  const m = reqMap(tabId);
-  const ok = isAllowedResourceUrl(url);
-  m.delete(key); // re-insert: most recent last
-  m.set(key, { url, ok, secret });
-  while (m.size > MAX_REQUESTS_PER_TAB) m.delete(m.keys().next().value);
-  return ok;
-}
-
-function hostOfHeaders(headers) {
-  if (!headers || typeof headers !== "object") return null;
-  for (const [k, v] of Object.entries(headers)) {
-    const lk = k.toLowerCase();
-    if ((lk === "host" || lk === ":authority") && typeof v === "string") {
-      const h = v.trim().toLowerCase();
-      if (h.startsWith("[")) return h.slice(0, h.indexOf("]") + 1);
-      return h.split(":")[0];
-    }
-  }
-  return null;
-}
-
-function holdExtraInfo(tabId, key, method, params) {
-  let m = pendingExtra.get(tabId);
-  if (!m) pendingExtra.set(tabId, (m = new Map()));
-  let total = 0;
-  for (const v of m.values()) total += v.length;
-  if (total >= MAX_PENDING_EXTRA_INFO) m.delete(m.keys().next().value);
-  if (!m.has(key)) m.set(key, []);
-  m.get(key).push([method, params]);
-}
-
-function takeExtraInfo(tabId, key) {
-  const m = pendingExtra.get(tabId);
-  if (!m) return [];
-  const v = m.get(key) || [];
-  m.delete(key);
-  return v;
-}
-
-// Form fields that hold a password, as SAP's and other logon forms name them.
-const PASSWORD_FIELD = /(^|[&\s"'])(sap-password\w*|sap-system-login-password\w*|j_password|password|passwd|pwd)=/i;
-const PASSWORD_JSON = /"(sap-password\w*|password|passwd|pwd|j_password)"\s*:/i;
-
-function postBody(req) {
-  if (!req) return "";
-  if (typeof req.postData === "string") return req.postData;
-  if (Array.isArray(req.postDataEntries)) {
-    try {
-      return req.postDataEntries.map((e) => (typeof e.bytes === "string" ? atob(e.bytes) : "")).join("");
-    } catch {
-      return "";
-    }
-  }
-  return "";
-}
-
-function carriesPassword(req) {
-  if (!req || !req.hasPostData) return false;
-  const body = postBody(req);
-  // Chrome leaves out only large bodies (Web GUI's own JSON posts can be): a logon form is small.
-  if (!body) return false;
-  let decoded = body;
-  try {
-    decoded = decodeURIComponent(body.replace(/\+/g, " "));
-  } catch {}
-  return PASSWORD_FIELD.test(body) || PASSWORD_FIELD.test(decoded) || PASSWORD_JSON.test(body) || /name="(sap-password|password|j_password)"/i.test(body);
-}
-
-function withoutBody(p) {
-  const request = { ...p.request };
-  delete request.postData;
-  delete request.postDataEntries;
-  return { ...p, request };
-}
-
-// Decide what to do with a Network.* event: returns a list of [method, params]
-// to forward (possibly empty, possibly with held ExtraInfo events after it).
-function filterNetworkEvent(tabId, sid, method, p) {
-  const rid = p.requestId;
-  if (typeof rid !== "string") {
-    const urls = [p.url, p.documentURL, p.request && p.request.url, p.response && p.response.url].filter((u) => typeof u === "string");
-    return urls.every(isAllowedResourceUrl) ? [[method, p]] : [];
-  }
-  const key = (sid || "") + "|" + rid;
-  const m = reqMap(tabId);
-  if (method === "Network.requestWillBeSent" || method === "Network.webSocketCreated") {
-    const url = method === "Network.webSocketCreated" ? p.url : p.request && p.request.url;
-    const before = m.get(key);
-    // A form that sends a password (SAP's logon page resent by a reload or the history): its body stays here.
-    // A page's own post (a form, a reload of one) whose body Chrome left out cannot be checked: it stays here too.
-    const secret = method === "Network.requestWillBeSent" && (carriesPassword(p.request) || (p.request && p.request.hasPostData && !postBody(p.request)));
-    if (secret) p = withoutBody(p);
-    const ok = rememberRequest(tabId, key, url, secret);
-    const held = takeExtraInfo(tabId, key);
-    if (ok) return [[method, p], ...held];
-    if (before && before.ok) {
-      // A shared request redirected to a site that is not shared: the client
-      // saw it start, so end it rather than leave it pending for ever.
-      return [["Network.loadingFailed", { requestId: rid, timestamp: p.timestamp, type: p.type || "Other", errorText: "net::ERR_BLOCKED_BY_CLIENT", canceled: true }]];
-    }
-    return [];
-  }
-  const r = m.get(key);
-  const end = method === "Network.loadingFinished" || method === "Network.loadingFailed";
-  if (method.endsWith("ExtraInfo")) {
-    if (!r) {
-      holdExtraInfo(tabId, key, method, p);
-      return [];
-    }
-    // Request headers of the next hop of a redirect can arrive before its
-    // requestWillBeSent: hold them until the hop's URL is known.
-    if (method === "Network.requestWillBeSentExtraInfo") {
-      const h = hostOfHeaders(p.headers);
-      let cur = null;
-      try {
-        cur = new URL(r.url).hostname.toLowerCase();
-      } catch {}
-      if (h && cur && h !== cur) {
-        holdExtraInfo(tabId, key, method, p);
-        return [];
-      }
-    }
-    return r.ok ? [[method, p]] : [];
-  }
-  if (end) takeExtraInfo(tabId, key);
-  if (!r) return [];
-  return r.ok ? [[method, p]] : [];
-}
-
 // ---------------------------------------------------------------- requests from the relay
 
 async function checkCdp(m, tabId) {
@@ -862,9 +578,8 @@ async function checkCdp(m, tabId) {
   const params = m.params || {};
   const sid = typeof m.sessionId === "string" ? m.sessionId : undefined;
   if (m.sessionId !== undefined && typeof m.sessionId !== "string") throw rpcError("bad sessionId");
-  if (DENIED_METHODS.has(method) || DENIED_PREFIXES.some((p) => method.startsWith(p)) || (method.startsWith("Storage.") && !STORAGE_ALLOWED.has(method))) {
-    throw rpcError(`${method} is not available through the extension`);
-  }
+  const denied = methodDenied(method);
+  if (denied) throw rpcError(denied);
   if (sid !== undefined && !children.get(tabId)?.has(sid)) throw rpcError(`session ${sid} is not a shared child of tab ${tabId}`);
   switch (method) {
     case "Network.enable":
@@ -1093,7 +808,7 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
   if (method.startsWith("Page.") && !(sid ? child.clientPage : rootClientPage.has(tabId))) return;
 
   if (method.startsWith("Network.")) {
-    for (const [mth, p] of filterNetworkEvent(tabId, sid, method, params)) forward(tabId, sid, mth, p);
+    for (const [mth, p] of network.filterNetworkEvent(tabId, sid, method, params)) forward(tabId, sid, mth, p);
     return;
   }
   forward(tabId, sid, method, params);

@@ -29,7 +29,7 @@ import { fileURLToPath } from "node:url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import type { Policy } from "../core/guard.js";
+import { mayDestroy, type Policy } from "../core/guard.js";
 import type { Registry } from "../core/registry.js";
 import { commitWord } from "../core/words.js";
 import { resolveConfig } from "../runner/config.js";
@@ -434,7 +434,7 @@ export function registerCodeTools(server: McpServer, registry: Registry, policy:
         variables: z.record(z.string(), z.string()).optional(),
         session: z.string().optional().describe("session from sap_sessions; default: the active one"),
       },
-      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: mayDestroy(policy), openWorldHint: false },
     },
     (a) =>
       answer(async () => {

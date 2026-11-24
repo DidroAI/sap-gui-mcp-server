@@ -1,24 +1,14 @@
-# SAP GUI for Windows without SAP GUI scripting: the functions of the host.
-# Copied from the screen method (explore/no-scripting); the DIAG method uses
-# windows, area, act, buttons and screenshot: it reads screens from the traffic.
+# SAP GUI keyboard, mouse and window facts for the DIAG method, which reads
+# the screens from the traffic. The ops: windows, area, buttons, screenshot
+# and act (okcode, key, vk, press, click, dblclick, f4, set, type).
 #
-# Scripting is often switched off (sapgui/user_scripting = FALSE). SAP GUI then
-# gives a program very little: its screen area is drawn, not built from Windows
-# controls, so UI Automation and MSAA see the window frame only. This host
-# reads a SAP GUI window from what remains:
-#   - the frame through Win32 and MSAA: title, toolbar buttons and their keys;
-#   - the status bar and text editors through WM_GETTEXT;
-#   - the screen area from a picture of the window: Windows' own OCR
-#     (Windows.Media.Ocr) for the texts, and the frames SAP GUI draws around
-#     fields and checkboxes for where the fields are;
-#   - on request, SAP GUI's own copy functions for exact text: block selection
-#     (Ctrl+Y, drag, Ctrl+C) on the screen area, and Ctrl+A, Ctrl+C in an ALV
-#     grid. These move the mouse and use the clipboard, which is put back.
+# It reads a SAP GUI window from Win32 and MSAA: its title, its screen area,
+# the status bar text (WM_GETTEXT) and the toolbar buttons with their keys.
 # It acts with the keyboard and the mouse: the command field, function keys,
 # toolbar buttons (BM_CLICK), clicks and typing at a point.
 #
 # Protocol: the same as ../../sapgui/ps/host-lib.ps1. One JSON object per
-# line on stdin ({"id":1,"op":"screen",...}), one per line on stdout.
+# line on stdin ({"id":1,"op":"windows",...}), one per line on stdout.
 # Windows PowerShell 5.1 only; nothing to install.
 
 $ErrorActionPreference = 'Stop'
@@ -31,8 +21,6 @@ $writer.AutoFlush = $true
 
 Add-Type -AssemblyName System.Web.Extensions
 Add-Type -AssemblyName System.Drawing
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Runtime.WindowsRuntime
 $parser = New-Object System.Web.Script.Serialization.JavaScriptSerializer
 $parser.MaxJsonLength = 268435456
 
@@ -167,12 +155,6 @@ public static class SapScreen {
     SetCursorPos(x, y); System.Threading.Thread.Sleep(50);
     for (var i = 0; i < (twice ? 2 : 1); i++) { mouse_event(2, 0, 0, 0, UIntPtr.Zero); mouse_event(4, 0, 0, 0, UIntPtr.Zero); System.Threading.Thread.Sleep(60); }
   }
-  public static void Drag(int x0, int y0, int x1, int y1) {
-    SetCursorPos(x0, y0); System.Threading.Thread.Sleep(50);
-    mouse_event(2, 0, 0, 0, UIntPtr.Zero); System.Threading.Thread.Sleep(50);
-    for (var i = 1; i <= 10; i++) { SetCursorPos(x0 + (x1 - x0) * i / 10, y0 + (y1 - y0) * i / 10); System.Threading.Thread.Sleep(20); }
-    mouse_event(4, 0, 0, 0, UIntPtr.Zero); System.Threading.Thread.Sleep(100);
-  }
   /** Is a menu open (menu bar active or a drop-down shown) in this window's thread? */
   public static bool InMenu(IntPtr top) {
     uint pid; var gi = new GUITHREADINFO(); gi.cb = Marshal.SizeOf(typeof(GUITHREADINFO));
@@ -202,107 +184,6 @@ public static class SapScreen {
       if (!ok) g.CopyFromScreen(r.L, r.T, 0, 0, bmp.Size);
     }
     return bmp;
-  }
-  public static Bitmap Scale(Bitmap src, int factor) {
-    var dst = new Bitmap(src.Width * factor, src.Height * factor, PixelFormat.Format32bppArgb);
-    using (var g = Graphics.FromImage(dst)) { g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic; g.DrawImage(src, 0, 0, dst.Width, dst.Height); }
-    return dst;
-  }
-
-  /** Where the ink is inside a region: {x, y, w, h} of the pixels far from the region's most common colour, or null. */
-  public static int[] Ink(Bitmap bmp, int x0, int y0, int w, int h) {
-    var counts = new Dictionary<int, int>();
-    var px = new int[w * h];
-    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) { int c = bmp.GetPixel(x0 + x, y0 + y).ToArgb(); px[y * w + x] = c; int k; counts.TryGetValue(c & 0xF8F8F8, out k); counts[c & 0xF8F8F8] = k + 1; }
-    int fill = 0, best = -1;
-    foreach (var kv in counts) if (kv.Value > best) { best = kv.Value; fill = kv.Key; }
-    int l = w, t = h, r = -1, b = -1;
-    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) if (Dist(px[y * w + x], fill) > 90) { if (x < l) l = x; if (x > r) r = x; if (y < t) t = y; if (y > b) b = y; }
-    if (r < 0) return null;
-    return new[] { x0 + l, y0 + t, r - l + 1, b - t + 1 };
-  }
-
-  static int Dist(int a, int b) {
-    return Math.Abs(((a >> 16) & 255) - ((b >> 16) & 255)) + Math.Abs(((a >> 8) & 255) - ((b >> 8) & 255)) + Math.Abs((a & 255) - (b & 255));
-  }
-
-  /**
-   * The frames SAP GUI draws around fields and checkboxes: rectangles with a
-   * one-pixel border of one colour. Each is {x, y, w, h, fill brightness 0-255,
-   * share of marked pixels inside in percent}. Table grid lines and large
-   * panels are left out by size.
-   */
-  public static List<int[]> Boxes(Bitmap bmp) {
-    int W = bmp.Width, H = bmp.Height;
-    var data = bmp.LockBits(new Rectangle(0, 0, W, H), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
-    var px = new int[W * H];
-    Marshal.Copy(data.Scan0, px, 0, W * H);
-    bmp.UnlockBits(data);
-    // Horizontal border runs: one colour, different from the pixels above and below.
-    var runs = new List<int[]>[H];
-    for (int y = 1; y < H - 1; y++) {
-      runs[y] = new List<int[]>();
-      int x = 0;
-      while (x < W) {
-        int c = px[y * W + x];
-        if (Dist(c, px[(y - 1) * W + x]) < 24 || Dist(c, px[(y + 1) * W + x]) < 24) { x++; continue; }
-        int x0 = x;
-        while (x < W && Dist(px[y * W + x], c) < 16 && Dist(px[y * W + x], px[(y - 1) * W + x]) >= 24 && Dist(px[y * W + x], px[(y + 1) * W + x]) >= 24) x++;
-        if (x - x0 >= 8) runs[y].Add(new[] { x0, x - 1, c });
-      }
-    }
-    var boxes = new List<int[]>();
-    for (int y0 = 1; y0 < H - 12; y0++) {
-      foreach (var a in runs[y0]) {
-        int w = a[1] - a[0] + 1;
-        if (w > 520) continue;
-        for (int y1 = y0 + 10; y1 <= Math.Min(H - 2, y0 + 36); y1++) {
-          int[] b = null;
-          foreach (var r in runs[y1]) if (Math.Abs(r[0] - a[0]) <= 2 && Math.Abs(r[1] - a[1]) <= 2 && Dist(r[2], a[2]) < 40) { b = r; break; }
-          if (b == null) continue;
-          // A line of the same width inside means two frames, one above the other: this run is the lower edge of the first.
-          bool split = false;
-          for (int y = y0 + 3; y <= y1 - 3 && !split; y++)
-            foreach (var r in runs[y]) if (Math.Abs(r[0] - a[0]) <= 3 && Math.Abs(r[1] - a[1]) <= 3) { split = true; break; }
-          if (split) break;
-          // The left and right edges, a few pixels outside the runs when the corners are round; a side can be a shade lighter than the top.
-          int ok = 0, n = 0;
-          for (int y = y0 + 3; y <= y1 - 3; y++) {
-            n++;
-            bool left = false, right = false;
-            for (int d = -3; d <= 1; d++) {
-              int xl = a[0] + d, xr = a[1] - d;
-              if (xl >= 0 && Dist(px[y * W + xl], a[2]) < 64) left = true;
-              if (xr < W && Dist(px[y * W + xr], a[2]) < 64) right = true;
-            }
-            if (left && right) ok++;
-          }
-          if (n == 0 || ok * 10 < n * 8) continue;
-          // Fill: the most common colour inside; marks: pixels far from it.
-          var counts = new Dictionary<int, int>();
-          int total = 0;
-          for (int y = y0 + 3; y <= y1 - 3; y++) for (int x = a[0] + 3; x <= a[1] - 3; x++) { int c = px[y * W + x] & 0xF8F8F8; int k; counts.TryGetValue(c, out k); counts[c] = k + 1; total++; }
-          int fill = 0, best = -1;
-          foreach (var kv in counts) if (kv.Value > best) { best = kv.Value; fill = kv.Key; }
-          int marked = 0;
-          for (int y = y0 + 3; y <= y1 - 3; y++) for (int x = a[0] + 3; x <= a[1] - 3; x++) if (Dist(px[y * W + x], fill) > 150) marked++;
-          int bright = (((fill >> 16) & 255) + ((fill >> 8) & 255) + (fill & 255)) / 3;
-          boxes.Add(new[] { a[0], y0, w, y1 - y0 + 1, bright, total == 0 ? 0 : marked * 100 / total });
-          break;
-        }
-      }
-    }
-    // A double border gives two boxes: keep the outer one.
-    var keep = new List<int[]>();
-    foreach (var b in boxes) {
-      bool inside = false;
-      foreach (var o in boxes) {
-        if (o == b) continue;
-        if (o[0] <= b[0] && o[1] <= b[1] && o[0] + o[2] >= b[0] + b[2] && o[1] + o[3] >= b[1] + b[3] && (o[2] * o[3] > b[2] * b[3]) && o[2] - b[2] <= 8 && o[3] - b[3] <= 8) { inside = true; break; }
-      }
-      if (!inside) keep.Add(b);
-    }
-    return keep;
   }
 }
 '@
@@ -427,91 +308,6 @@ function Session-Windows([long]$hwnd) {
 
 # ---- reading --------------------------------------------------------------------
 
-$asTask = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' } | Select-Object -First 1
-function Await($op, [Type]$type) {
-  $task = $asTask.MakeGenericMethod($type).Invoke($null, @($op))
-  [void]$task.Wait(30000)
-  $task.Result
-}
-[void][Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime]
-[void][Windows.Graphics.Imaging.BitmapDecoder, Windows.Foundation, ContentType = WindowsRuntime]
-[void][Windows.Graphics.Imaging.SoftwareBitmap, Windows.Foundation, ContentType = WindowsRuntime]
-[void][Windows.Globalization.Language, Windows.Foundation, ContentType = WindowsRuntime]
-$script:ocr = $null
-function Get-Ocr {
-  if ($null -eq $script:ocr) {
-    $script:ocr = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
-    if ($null -eq $script:ocr) { $script:ocr = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage((New-Object Windows.Globalization.Language 'en-US')) }
-    if ($null -eq $script:ocr) { throw 'NO_OCR: Windows has no OCR language installed (Settings > Time & language > Language, add one with "Optical character recognition")' }
-  }
-  $script:ocr
-}
-
-# Words with their boxes, in the picture's own pixels. The picture is doubled
-# first: SAP GUI's 12-pixel text is too small for the recogniser otherwise.
-function Ocr-Words([System.Drawing.Bitmap]$bmp, [int]$scale = 2) {
-  $big = [SapScreen]::Scale($bmp, $scale)
-  $ms = New-Object System.IO.MemoryStream
-  $big.Save($ms, [System.Drawing.Imaging.ImageFormat]::Bmp)
-  $big.Dispose()
-  $ms.Position = 0
-  $stream = [System.IO.WindowsRuntimeStreamExtensions]::AsRandomAccessStream($ms)
-  $decoder = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
-  $soft = Await ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
-  $res = Await ((Get-Ocr).RecognizeAsync($soft)) ([Windows.Media.Ocr.OcrResult])
-  $words = New-List
-  foreach ($line in $res.Lines) {
-    foreach ($w in $line.Words) {
-      $r = $w.BoundingRect
-      [void]$words.Add(@{ t = $w.Text; x = [int]($r.X / $scale); y = [int]($r.Y / $scale); w = [int]($r.Width / $scale); h = [int]($r.Height / $scale) })
-    }
-  }
-  $ms.Dispose()
-  , $words
-}
-
-# A short value in a field ("RE", "KG") is often missed in the whole picture,
-# and also when the field is read alone: the recogniser wants a line of text.
-# So the fields that hold ink but no word are put on a sheet, one per line,
-# each between two known words, and the sheet is read once.
-function Ocr-Fields([System.Drawing.Bitmap]$bmp, $list) {
-  $rowH = 40; $left = 72
-  $inks = New-List
-  $maxW = 0
-  foreach ($b in $list) {
-    $ink = [SapScreen]::Ink($bmp, ($b[0] + 3), ($b[1] + 3), ($b[2] - 6), ($b[3] - 6))
-    [void]$inks.Add($ink)
-    if ($null -ne $ink -and $ink[2] -gt $maxW) { $maxW = $ink[2] }
-  }
-  $sheet = New-Object System.Drawing.Bitmap(($left + $maxW + 80), ($rowH * $list.Count + 10), [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-  $g = [System.Drawing.Graphics]::FromImage($sheet)
-  $g.Clear([System.Drawing.Color]::White)
-  $font = New-Object System.Drawing.Font('Arial', 14, [System.Drawing.GraphicsUnit]::Pixel)
-  for ($i = 0; $i -lt $list.Count; $i++) {
-    $ink = $inks[$i]; if ($null -eq $ink) { continue }
-    $y = $i * $rowH + 10
-    $g.DrawString('Value is', $font, [System.Drawing.Brushes]::Black, 6, $y)
-    # The ink only, two pixels of margin, its middle on the middle of the words.
-    $g.DrawImage($bmp, (New-Object System.Drawing.Rectangle($left, ($y + 9 - [int]($ink[3] / 2)), ($ink[2] + 4), ($ink[3] + 4))), (New-Object System.Drawing.Rectangle(($ink[0] - 2), ($ink[1] - 2), ($ink[2] + 4), ($ink[3] + 4))), [System.Drawing.GraphicsUnit]::Pixel)
-    $g.DrawString('end', $font, [System.Drawing.Brushes]::Black, ($left + $ink[2] + 10), $y)
-  }
-  $g.Dispose(); $font.Dispose()
-  # For looking at what the recogniser was given: SAP_SCREEN_DEBUG names a folder for the sheet.
-  if ($env:SAP_SCREEN_DEBUG) { $sheet.Save((Join-Path $env:SAP_SCREEN_DEBUG "sheet.png")) }
-  $out = New-List
-  try {
-    foreach ($x in (Ocr-Words $sheet 2)) {
-      $i = [int][Math]::Floor(($x.y + $x.h / 2) / $rowH)
-      if ($i -lt 0 -or $i -ge $list.Count -or $null -eq $inks[$i]) { continue }
-      $ink = $inks[$i]
-      $cx = $x.x + $x.w / 2
-      if ($cx -lt $left - 2 -or $cx -gt $left + $ink[2] + 6) { continue }
-      [void]$out.Add(@{ t = $x.t; x = [int]($x.x - $left + $ink[0]); y = $ink[1]; w = $x.w; h = $ink[3] })
-    }
-  } finally { $sheet.Dispose() }
-  , $out
-}
-
 # The frame: SAP GUI's toolbar buttons are real Windows buttons. Their name
 # and the key each is bound to ("Back   (F3)") come through MSAA.
 function Frame-Buttons([IntPtr]$top) {
@@ -527,50 +323,6 @@ function Frame-Buttons([IntPtr]$top) {
   , $out
 }
 
-function Window-Facts($w, [bool]$exact, [bool]$isTop) {
-  $h = [IntPtr]$w.hwnd
-  $rect = [SapScreen]::Rect($h)
-  $facts = @{ hwnd = $w.hwnd; kind = $w.kind; title = $w.title; rect = $rect; buttons = (Frame-Buttons $h); status = ''; editors = (New-List); grids = (New-List) }
-  foreach ($c in [SapScreen]::Descendants($h)) {
-    $cls = [SapScreen]::Class($c)
-    if ($cls -eq 'Edit') {
-      $t = [SapScreen]::Text($c)
-      $parent = [SapScreen]::Title($c)
-      if ($t -and $facts.status -eq '') { $r = [SapScreen]::Rect($c); if ($r[1] -gt $rect[1] + $rect[3] - 90) { $facts.status = $t } }
-    }
-    elseif ($cls -like '*TextEditBody*') { $r = [SapScreen]::Rect($c); [void]$facts.editors.Add(@{ text = [SapScreen]::Text($c); x = [int]($r[0] + $r[2] / 2); y = [int]($r[1] + $r[3] / 2) }) }
-    elseif ($cls -eq 'SAPALVGrid') { $r = [SapScreen]::Rect($c); [void]$facts.grids.Add(@{ x = $r[0]; y = $r[1]; w = $r[2]; h = $r[3] }) }
-  }
-  $area = Screen-Area $h
-  if ($area -ne [IntPtr]::Zero) { $facts.area = [SapScreen]::Rect($area) }
-  $bmp = [SapScreen]::Capture($h)
-  try {
-    # Two readings, at two sizes: the recogniser drops different words in each, and the second adds what the first missed.
-    $words = Ocr-Words $bmp 2
-    foreach ($x in (Ocr-Words $bmp 3)) {
-      $cx = $x.x + $x.w / 2; $cy = $x.y + $x.h / 2
-      $known = $false
-      foreach ($k in $words) { if ($cx -ge $k.x - 2 -and $cx -le $k.x + $k.w + 2 -and $cy -ge $k.y - 2 -and $cy -le $k.y + $k.h + 2) { $known = $true; break } }
-      if (-not $known) { [void]$words.Add($x) }
-    }
-    foreach ($x in $words) { $x.x += $rect[0]; $x.y += $rect[1] }
-    $facts.words = $words
-    $boxes = New-List
-    $unread = New-List
-    foreach ($b in [SapScreen]::Boxes($bmp)) {
-      [void]$boxes.Add(@{ x = $b[0] + $rect[0]; y = $b[1] + $rect[1]; w = $b[2]; h = $b[3]; fill = $b[4]; marked = $b[5] })
-      if ($b[2] -lt 18 -or $b[3] -lt 16 -or $b[5] -lt 2) { continue }
-      $has = $false
-      foreach ($x in $words) { $cx = $x.x - $rect[0] + $x.w / 2; $cy = $x.y - $rect[1] + $x.h / 2; if ($cx -ge $b[0] -and $cx -le $b[0] + $b[2] -and $cy -ge $b[1] -and $cy -le $b[1] + $b[3]) { $has = $true; break } }
-      if (-not $has) { [void]$unread.Add($b) }
-    }
-    if ($unread.Count) { try { foreach ($x in (Ocr-Fields $bmp $unread)) { $x.x += $rect[0]; $x.y += $rect[1]; [void]$words.Add($x) } } catch { $facts.ocrError = (Error-Text $_) } }
-    $facts.boxes = $boxes
-  } finally { $bmp.Dispose() }
-  if ($exact -and $isTop) { $facts.copied = (Copy-Exact $h $facts) }
-  $facts
-}
-
 # The screen area of a SAP window: its child of class "Afx:<instance>:<style>".
 function Screen-Area([IntPtr]$top) {
   foreach ($c in [SapScreen]::Children($top)) {
@@ -579,47 +331,6 @@ function Screen-Area([IntPtr]$top) {
     if ($cls -like 'Afx:*' -and ($cls.Split(':').Count -eq 3)) { return $c }
   }
   [IntPtr]::Zero
-}
-
-function Clipboard-Text { try { if ([System.Windows.Forms.Clipboard]::ContainsText()) { return [System.Windows.Forms.Clipboard]::GetText() } } catch { }; $null }
-
-# SAP GUI's own copy functions, for exact text. The user's clipboard is put back.
-function Copy-Exact([IntPtr]$top, $facts) {
-  $res = @{ screen = $null; grids = (New-List) }
-  $saved = $null
-  try { $saved = [System.Windows.Forms.Clipboard]::GetDataObject() } catch { }
-  if (-not [SapScreen]::Foreground($top)) { return $res }
-  $area = Screen-Area $top
-  if ($area -ne [IntPtr]::Zero) {
-    $r = [SapScreen]::Rect($area)
-    try { [System.Windows.Forms.Clipboard]::Clear() } catch { }
-    [SapScreen]::Key(0x59, $true, $false, $false)   # Ctrl+Y: block selection
-    Start-Sleep -Milliseconds 200
-    [SapScreen]::Drag($r[0] + 2, $r[1] + 2, $r[0] + $r[2] - 4, $r[1] + $r[3] - 4)
-    [SapScreen]::Key(0x43, $true, $false, $false)   # Ctrl+C
-    Start-Sleep -Milliseconds 300
-    $res.screen = Clipboard-Text
-  }
-  foreach ($g in $facts.grids) {
-    [SapScreen]::Click([int]($g.x + $g.w / 2), [int]($g.y + $g.h / 2), $false)
-    Start-Sleep -Milliseconds 300
-    try { [System.Windows.Forms.Clipboard]::Clear() } catch { }
-    [SapScreen]::Key(0x41, $true, $false, $false)   # Ctrl+A
-    Start-Sleep -Milliseconds 300
-    [SapScreen]::Key(0x43, $true, $false, $false)
-    Start-Sleep -Milliseconds 400
-    [void]$res.grids.Add((Clipboard-Text))
-  }
-  try { if ($null -ne $saved) { [System.Windows.Forms.Clipboard]::SetDataObject($saved, $true) } } catch { }
-  $res
-}
-
-function Op-Screen($req) {
-  $wins = Session-Windows ([long]$req['session'])
-  $exact = [bool]$req['exact']
-  $list = New-List
-  for ($i = 0; $i -lt $wins.Count; $i++) { [void]$list.Add((Window-Facts $wins[$i] $exact ($i -eq $wins.Count - 1))) }
-  @{ windows = $list }
 }
 
 # The dynpro area of each window of a session (the session window, then its
@@ -702,13 +413,11 @@ function Op-Act($req) {
     [SapScreen]::Key(0x0D, $false, $false, $false)
   }
   elseif ($do -eq 'key') { Send-VKey ([int]$a['key']) }
-  elseif ($do -eq 'top') { [SapScreen]::Key(0x24, $true, $false, $false) }  # Ctrl+Home: first cell of a grid
   elseif ($do -eq 'vk') {
     # A Windows key with modifiers, count times: Home, the arrows, Page Down, Enter, Shift+Space...
     $n = [Math]::Max(1, [int]$a['count'])
     for ($i = 0; $i -lt $n; $i++) { [SapScreen]::Key([byte][int]$a['vk'], [bool]$a['ctrl'], [bool]$a['shift'], [bool]$a['alt']) }
   }
-  elseif ($do -eq 'down') { for ($i = 0; $i -lt [int]$a['count']; $i++) { [SapScreen]::Key(0x28, $false, $false, $false) } }
   elseif ($do -eq 'press') {
     # A toolbar button by its name: a posted BM_CLICK, no mouse. "within": only a button whose middle is in that rect (a grid's toolbar).
     $name = [string]$a['name']
@@ -738,20 +447,9 @@ function Op-Act($req) {
     [SapScreen]::Type([string]$a['value'])
   }
   elseif ($do -eq 'type') { [SapScreen]::Type([string]$a['value']) }
-  elseif ($do -eq 'copy') {
-    $facts = @{ grids = (New-List) }
-    foreach ($c in [SapScreen]::Descendants($top)) { if ([SapScreen]::Class($c) -eq 'SAPALVGrid') { $r = [SapScreen]::Rect($c); [void]$facts.grids.Add(@{ x = $r[0]; y = $r[1]; w = $r[2]; h = $r[3] }) } }
-    return @{ done = $true; copied = (Copy-Exact $top $facts) }
-  }
   else { throw "UNKNOWN_ACTION: $do" }
   Start-Sleep -Milliseconds ([int]$(if ($null -ne $a['settle']) { $a['settle'] } else { 600 }))
   @{ done = $true }
-}
-
-function Op-Doctor {
-  $langs = New-List
-  try { foreach ($l in [Windows.Media.Ocr.OcrEngine]::AvailableRecognizerLanguages) { [void]$langs.Add($l.LanguageTag) } } catch { }
-  @{ languageMode = $ExecutionContext.SessionState.LanguageMode.ToString(); ocrLanguages = $langs; windows = (Sap-Windows) }
 }
 
 # ---- loop -----------------------------------------------------------------------
@@ -770,12 +468,10 @@ function Start-Host {
       $res = $null
       if ($op -eq 'ping') { $res = @{ pong = $true; powershell = $PSVersionTable.PSVersion.ToString() } }
       elseif ($op -eq 'windows') { $res = Op-Windows }
-      elseif ($op -eq 'screen') { $res = Op-Screen $req }
       elseif ($op -eq 'act') { $res = Op-Act $req }
       elseif ($op -eq 'area') { $res = Op-Area $req }
       elseif ($op -eq 'buttons') { $res = @{ buttons = (Frame-Buttons ([IntPtr][long]$req['session'])) } }
       elseif ($op -eq 'screenshot') { $res = Op-Screenshot $req }
-      elseif ($op -eq 'doctor') { $res = Op-Doctor }
       else { throw "UNKNOWN_OP: $op" }
       Write-Json @{ id = $id; ok = $true; result = $res } $sb
     } catch {

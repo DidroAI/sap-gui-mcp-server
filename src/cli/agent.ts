@@ -32,6 +32,7 @@ import {
   type Response,
   send,
   settingsOf,
+  shownSettings,
   startDaemon,
   idleMsFromEnv,
 } from "./daemon.js";
@@ -488,7 +489,7 @@ async function daemonCommand(argv: string[], ctx: AgentContext): Promise<number>
     if (!r) return ctx.out("No sap-gui daemon runs for this directory."), 0;
     if (!r.ok || !("status" in r)) return ctx.err(r.ok ? "Unexpected answer." : r.error), 1;
     const s = r.status;
-    const settings = Object.entries(s.settings).map(([k, v]) => `${k}=${v}`).join(" ") || "(no SAP_* setting: writes off)";
+    const settings = Object.entries(shownSettings(s.settings)).map(([k, v]) => `${k}=${v}`).join(" ") || "(no SAP_* setting: writes off)";
     ctx.out(`sap-gui daemon ${s.version}, pid ${s.pid}, for ${s.cwd}; since ${s.startedAt}, ${s.calls} call(s), last ${s.lastCallAt}; exits after ${s.idleExitMinutes} min without a call.`);
     ctx.out(`settings: ${settings}`);
     return 0;

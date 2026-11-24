@@ -260,7 +260,18 @@ describe("sapgui surface", () => {
     expect(asked.at(-1)?.params.action).toEqual({ do: "selectrow", id: "wnd[0]/usr/tblSAPLMGMMTC_VIEW", row: 1, value: true });
     const n = asked.length;
     await expect(d.act({ do: "select", id: "tblSAPLMGMMTC_VIEW", row: -1 })).rejects.toThrow('"row" is a row number');
+    // A negative grid row is refused here too, for select, set and grid.
+    await expect(d.act({ do: "select", id: "cntlGRID1/shell", row: -1 })).rejects.toThrow('"row" is a row number from 0');
+    await expect(d.act({ do: "set", id: "cntlGRID1/shell", row: -2, col: "VBELN", value: "x" })).rejects.toThrow("a number from 0");
+    await expect(d.act({ do: "grid", id: "cntlGRID1/shell", row: -1, col: "VBELN" })).rejects.toThrow("a number from 0");
     expect(asked.slice(n).some((x) => x.op === "act")).toBe(false);
+  });
+
+  test("unselecting a grid row says the whole selection was cleared", async () => {
+    const { asked, open } = oneScreen({ ...FORM, windows: win([{ id: "wnd[0]/usr/cntlGRID1/shellcont/shell", type: "GuiShell", name: "shell", sub: "GridView" }]) });
+    const d = await open();
+    expect(await d.act({ do: "select", id: "cntlGRID1/shell", row: 3, value: false })).toBe("cleared the selection of wnd[0]/usr/cntlGRID1/shellcont/shell (all rows)");
+    expect(asked.at(-1)?.params.action).toEqual({ do: "grid", id: "wnd[0]/usr/cntlGRID1/shellcont/shell", row: 3, col: "", how: "unselect" });
   });
 
   test("select with row on a tab selects the tab", async () => {
@@ -382,5 +393,17 @@ describe("sapgui doctor", () => {
     expect(checks[3]?.detail).toContain("Notify when a script attaches");
     expect(checks[4]?.ok).toBe(false);
     expect(checks[4]?.detail).toContain("administrator");
+  });
+});
+
+describe("closing the surface", () => {
+  test("closes its host", async () => {
+    let closed = 0;
+    const host: Transport = { request: async <T>() => ({}) as T, close: () => void closed++ };
+    await sapguiSurface({}, { platform: "win32", transport: host }).close?.();
+    expect(closed).toBe(1);
+  });
+  test("a host never started: nothing to do", async () => {
+    await sapguiSurface({}, { platform: "win32" }).close?.();
   });
 });

@@ -11,6 +11,7 @@ import { assessDiag, DiagDriver, findTarget, noTargetText, resolveTarget } from 
 import { DEFAULT_WAIT, Traffic, waitNote } from "../../src/sapgui-diag/traffic.js";
 import { idItem, message, windowStart } from "../diag/build.js";
 import { type Geometry, namedControl, planGrid, planPage, planPlain, planToolbar } from "../../src/sapgui-diag/plan.js";
+import { TYPED_VKEYS } from "../../src/sapgui/keys.js";
 
 function el(e: Partial<DiagElement> & { name: string; row: number; col: number }): DiagElement {
   return { kind: "field", text: "", width: 10, input: true, hidden: false, path: [], etype: 130, ...e } as DiagElement;
@@ -507,5 +508,23 @@ describe("live 2026-11-20: SE16's list moves sideways", () => {
   test("Ctrl+Shift+F11 on a toolbar button with only a tooltip, List Width Right: navigation, named by its tooltip", () => {
     const w = main({ toolbar: [{ vkey: 47, key: "Ctrl+Shift+F11", text: "", tooltip: "List Width Right", icon: "", enabled: true }], keys: [] });
     expect(assess(screen([w]), { do: "key", key: "Control+Shift+F11" })).toEqual({ risk: "navigate", reason: 'key 47 "List Width Right"' });
+  });
+});
+
+describe("a key the input host cannot type is refused before the guard", () => {
+  test("the keys Send-VKey knows: 0-48, 70, 71, 80-84, 86", () => {
+    for (let n = 0; n <= 48; n++) expect(TYPED_VKEYS.has(n)).toBe(true);
+    expect([...TYPED_VKEYS].filter((n) => n > 48)).toEqual([70, 71, 80, 81, 82, 83, 84, 86]);
+  });
+  test("key 77 (Ctrl+C): refused by assess and by act, nothing typed", async () => {
+    const f = fake(screen());
+    await expect(f.d.assess({ do: "key", key: 77 })).rejects.toThrow("Ctrl+C (virtual key 77) cannot be typed with the DIAG method");
+    await expect(f.d.act({ do: "key", key: 77 })).rejects.toThrow("cannot be typed");
+    expect(acts(f)).toEqual([]);
+  });
+  test("keys it can type still go through", async () => {
+    const f = fake(screen());
+    expect((await f.d.assess({ do: "key", key: "Control+F" })).risk).toBeDefined();
+    expect((await f.d.assess({ do: "key", key: 86 })).risk).toBeDefined();
   });
 });

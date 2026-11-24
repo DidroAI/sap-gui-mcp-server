@@ -28,7 +28,7 @@ recording. Each step can carry:
 ## Opening it
 
 ```sh
-npx sap-gui show-trace sap-results/order-4711/trace.saptest.json --open
+npx sap-ui-automation show-trace sap-results/order-4711/trace.saptest.json --open
 ```
 
 `show-trace` writes one self-contained HTML file next to the JSON (or to

@@ -19,7 +19,7 @@
  * of that until their timeout.
  */
 import { actionText, normalizeAction, type NormalizedAction } from "../core/action.js";
-import { commandFieldRefusal, decide, leavesTransaction, type Policy, policyFromEnv, sessionRefusal, type WriteMode } from "../core/guard.js";
+import { checkedList, commandFieldRefusal, decide, leavesTransaction, type Policy, policyFromEnv, sessionRefusal, type WriteMode } from "../core/guard.js";
 import { Registry } from "../core/registry.js";
 import { type Action, ActionError, type Assessment, type Driver, type SessionInfo, type Surface, type SurfaceName } from "../core/types.js";
 import { Recorder } from "../record/recorder.js";
@@ -117,9 +117,9 @@ export function policyOf(o: ConnectOptions): Policy {
   return {
     write: o.write ?? base.write,
     allowLogoff: o.allowLogoff ?? base.allowLogoff ?? false,
-    allowSystems: up(o.allowSystems) ?? base.allowSystems,
-    allowTcodes: up(o.allowTcodes) ?? base.allowTcodes,
-    blockTcodes: up(o.blockTcodes) ?? base.blockTcodes,
+    allowSystems: checkedList("allowSystems", up(o.allowSystems) ?? base.allowSystems, "system"),
+    allowTcodes: checkedList("allowTcodes", up(o.allowTcodes) ?? base.allowTcodes),
+    blockTcodes: checkedList("blockTcodes", up(o.blockTcodes) ?? base.blockTcodes),
   };
 }
 

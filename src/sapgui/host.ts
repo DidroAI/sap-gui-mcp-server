@@ -172,10 +172,13 @@ export class PsHost implements Transport {
     });
   }
 
-  close(): void {
+  /**
+   * Ends stdin, so a free host exits by itself. A host stuck in a COM call
+   * never reads it: it is killed after `graceMs`. Resolves when it is gone.
+   */
+  close(graceMs = 1000): Promise<void> {
     const c = this.child;
     this.child = undefined;
-    c?.stdin.end();
     const closed = new Error("The SAP GUI host was closed.");
     const waiting = this.queue.splice(0);
     const job = this.current;
@@ -185,6 +188,18 @@ export class PsHost implements Transport {
       job.reject(closed);
     }
     for (const w of waiting) w.reject(closed);
+    if (!c || c.exitCode !== null || c.signalCode !== null) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        c.kill();
+        resolve();
+      }, graceMs);
+      c.once("exit", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      c.stdin.end();
+    });
   }
 }
 
@@ -198,11 +213,11 @@ export interface PowershellPolicy {
   error?: string;
 }
 
-const POLICY_COMMAND = "$m = $ExecutionContext.SessionState.LanguageMode; $s = Get-Service -Name AppIDSvc -ErrorAction SilentlyContinue; \"sapgui-mcp|$m|$($s.Status)\"";
+const POLICY_COMMAND = "$m = $ExecutionContext.SessionState.LanguageMode; $s = Get-Service -Name AppIDSvc -ErrorAction SilentlyContinue; \"sap-ui-automation|$m|$($s.Status)\"";
 
 /** Reads the policy line PowerShell printed. */
 export function parsePolicy(stdout: string, error?: string): PowershellPolicy {
-  const m = /sapgui-mcp\|([A-Za-z]*)\|([A-Za-z]*)/.exec(stdout);
+  const m = /sap-ui-automation\|([A-Za-z]*)\|([A-Za-z]*)/.exec(stdout);
   if (!m) return { languageMode: "", appLocker: false, error: error || stdout.trim().split(/\r?\n/)[0] || "PowerShell gave no answer" };
   return { languageMode: m[1] ?? "", appLocker: /^running$/i.test(m[2] ?? "") };
 }

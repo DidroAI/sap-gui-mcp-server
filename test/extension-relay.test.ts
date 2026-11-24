@@ -1,15 +1,16 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
-import { join, posix } from "node:path";
+import { dirname, join, posix } from "node:path";
 import { chromium } from "playwright-core";
 import { extensionDoctor, extensionEndpoint, extensionPairCommand, extensionRelay, stopExtensionRelay } from "../src/browser/extension/index.js";
 import { CODE_LENGTH, FrameCipher, formatCode, generateCode, hmac, normalizeCode, pairingFile, readOrCreateCode, sameSecret, sessionKey } from "../src/browser/extension/pairing.js";
 import { ExtensionRelay, type ExtensionTab } from "../src/browser/extension/relay.js";
 import { WebSocket } from "../src/browser/extension/ws.js";
+import { SERVER_VERSION } from "../src/server.js";
 
 const CODE = "ABCDE-FGHJK-MNPQR-STVWX-YZ012-3";
 const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.7444.59 Safari/537.36";
@@ -235,6 +236,24 @@ describe("pairing code", () => {
     const lines = extensionPairCommand({ SAP_EXTENSION_CODE: CODE });
     expect(lines.join("\n")).toContain("ABCDE-FGHJK-MNPQR-STVWX-YZ012-3");
   });
+  test.skipIf(process.platform === "win32")("a pairing file open to others is set back to 0600 when it is read", async () => {
+    const home = await mkdtemp(join(tmpdir(), "sap-gui-pair-"));
+    cleanup.push(() => rm(home, { recursive: true, force: true }));
+    const env = { XDG_CONFIG_HOME: join(home, "cfg") };
+    const file = pairingFile("linux", env, home);
+    await mkdir(dirname(file), { recursive: true });
+    // Copied in, or made by hand: readable by everyone.
+    await writeFile(file, `${CODE}\n`, { mode: 0o644 });
+    await chmod(file, 0o644);
+    expect(readOrCreateCode(env, "linux", home)).toEqual({ code: normalizeCode(CODE), file });
+    expect((await stat(file)).mode & 0o777).toBe(0o600);
+    // A file whose content is no code is written anew, and also ends at 0600.
+    await writeFile(file, "not a code\n");
+    await chmod(file, 0o666);
+    const made = readOrCreateCode(env, "linux", home);
+    expect(made.code).not.toBe(normalizeCode(CODE));
+    expect((await stat(file)).mode & 0o777).toBe(0o600);
+  });
 });
 
 describe("waiting for the extension (index.ts)", () => {
@@ -246,6 +265,10 @@ describe("waiting for the extension (index.ts)", () => {
     const env = { SAP_EXTENSION_CODE: CODE, SAP_EXTENSION_PORT: String(port) };
     try {
       const relay = await extensionRelay(env);
+      // The relay's hello names this server's version, not a fixed one.
+      const raw = await Client.connect(`ws://127.0.0.1:${port}/extension`, EXT_ORIGIN);
+      expect((await raw.next((m) => m.type === "hello")).version).toBe(SERVER_VERSION);
+      raw.ws.close();
       const t0 = Date.now();
       const doctor = extensionDoctor(env, 20_000);
       // Any local program can send a bad auth: the server's own wait goes on.
@@ -258,6 +281,7 @@ describe("waiting for the extension (index.ts)", () => {
       const endpoint = await server;
       expect(endpoint.url).toBe(relay.cdpUrl);
       expect(endpoint.from).toContain(`port ${port}`);
+      expect(endpoint.kind).toBe("extension");
       ext.client.close();
     } finally {
       await stopExtensionRelay();

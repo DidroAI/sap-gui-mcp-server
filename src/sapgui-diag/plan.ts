@@ -17,11 +17,25 @@
 import { ONE_LINE_NOTE, oneLine } from "../core/action.js";
 import { ActionError, type Action } from "../core/types.js";
 import type { DiagControl, DiagElement, DiagElementKind, DiagKey, DiagScreen, DiagTable, DiagTreeNode, DiagWindow } from "../diag/index.js";
-import { vkeyNumber } from "../sapgui/keys.js";
+import { keyName } from "../diag/text.js";
+import { TYPED_VKEYS, vkeyNumber } from "../sapgui/keys.js";
 import { type Cells, gridPitch, type Rect, treePitch } from "./geometry.js";
 
 /** Windows virtual-key codes of the keys used here. */
 export const VK = { ENTER: 0x0d, ESCAPE: 0x1b, SPACE: 0x20, PAGEUP: 0x21, PAGEDOWN: 0x22, END: 0x23, HOME: 0x24, LEFT: 0x25, UP: 0x26, RIGHT: 0x27, DOWN: 0x28, F2: 0x71, F4: 0x73 } as const;
+
+/** Why a virtual key cannot be sent with this method, or undefined when it can. */
+export function untypedKey(n: number): string | undefined {
+  if (TYPED_VKEYS.has(n)) return undefined;
+  return `${keyName(n)} (virtual key ${n}) cannot be typed with the DIAG method: it types Enter, F1-F12 alone or with Shift and Ctrl, Ctrl+E, Ctrl+F, Ctrl+G, Ctrl+P and the page keys. Use the button, or its function code with {"do":"okcode"}.`;
+}
+
+/** A key step; refuses a key the input host cannot type. */
+function keyStep(n: number): Step {
+  const why = untypedKey(n);
+  if (why) throw new ActionError(why);
+  return { do: "key", key: n };
+}
 
 /** One input for the host (ps/input-lib.ps1, op "act"). `settle`: milliseconds the host waits after it. */
 export type Step = (
@@ -443,7 +457,8 @@ export function planToolbar(s: DiagScreen, action: Action, g: Geometry, buttons?
   if (!b) throw new ActionError(`toolbar needs "button": a function code (e.g. "&SORT_ASC") or the button's text, e.g. {"do":"toolbar","id":"${n.id}","button":"&MB_FILTER"}`);
   const w = n.window;
   const k = toolbarKey(w, b);
-  if (k) return { steps: [{ do: "key", key: k.vkey }], note: `pressed toolbar button "${clean(k.text || k.tooltip)}" (${k.key})`, answer: "yes", pressed: [k.text, k.tooltip] };
+  // A key the host cannot type: its button is clicked instead.
+  if (k && TYPED_VKEYS.has(k.vkey)) return { steps: [{ do: "key", key: k.vkey }], note: `pressed toolbar button "${clean(k.text || k.tooltip)}" (${k.key})`, answer: "yes", pressed: [k.text, k.tooltip] };
   if (!buttons) return "need-buttons";
   const area = n.control.area;
   let inside = buttons;
@@ -609,7 +624,7 @@ export function planPlain(s: DiagScreen, action: Action, target: PlainTarget | u
     case "key": {
       const n = vkeyNumber(action.key ?? action.value);
       if (n === undefined) throw new ActionError(`Unknown key ${String(action.key ?? action.value)}`);
-      return { steps: [{ do: "key", key: n }], note: `key ${n}`, answer: "yes" };
+      return { steps: [keyStep(n)], note: `key ${n}`, answer: "yes" };
     }
     case "set": {
       const x = t();
@@ -632,7 +647,7 @@ export function planPlain(s: DiagScreen, action: Action, target: PlainTarget | u
       const x = t();
       const misuse = plainMisuse(action, x);
       if (misuse) throw new ActionError(misuse);
-      if (x.kind === "key") return { steps: [{ do: "key", key: x.key.vkey }], note: `pressed ${x.what}`, answer: "yes" };
+      if (x.kind === "key") return { steps: [keyStep(x.key.vkey)], note: `pressed ${x.what}`, answer: "yes" };
       if (x.kind === "node") {
         const c = controlAt(x, "tree");
         const key = /^\{(.+)\}$/.exec(id)?.[1];

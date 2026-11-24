@@ -74,7 +74,6 @@ has no server side, and no account.
   | Recordings and exports | `SAP_RECORD_DIR` (default `./sap-tests`) | after `sap_record start`, or with `SAP_RECORD=on` |
   | Files Web GUI exports "to a local file", and browser downloads | `SAP_DOWNLOAD_DIR` (default `downloads` in `SAP_RECORD_DIR` when set, else `./sap-downloads`) | when an action in Web GUI produces such a file |
   | Raw DIAG traffic, logon included | `SAP_DIAG_CAPTURE` | only when set; for debugging |
-  | A picture of screen parts read by OCR | `SAP_SCREEN_DEBUG` | only when set; for debugging |
   | Replay reports, exports from the command line | the paths you pass (`--junit`, `--out`) | when you run the command |
   | MCP client configuration (with a `.bak` copy) | the client's own file | when you run `setup` |
 

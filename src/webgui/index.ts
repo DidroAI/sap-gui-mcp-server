@@ -10,12 +10,13 @@
 import type { Frame, Page } from "playwright-core";
 import { chromeAttached, chromeDoctor, chromeTabs, type ChromeTab, noSessionHint, sapTabs, stillOwned } from "../browser/chrome.js";
 import { isWebguiUrl, tabWhere, WEBGUI_PATH } from "../browser/classify.js";
+import { screenshotTab, within } from "../browser/tab.js";
 import { compact } from "../core/compact.js";
 import { type Action, ActionError, type Assessment, type DiscoverOptions, type Driver, type LookOptions, type SessionInfo, type Surface } from "../core/types.js";
 import { extractFacts, type PageFacts } from "./page.js";
 import { act, assess, look, view } from "./reader.js";
 import { runningSince } from "./running.js";
-import { lookRead } from "./screen.js";
+import { cookieIdentity, lookRead } from "./screen.js";
 import { endedText, WebGuiSession } from "./session.js";
 
 export { assessAction } from "./assess.js";
@@ -36,11 +37,7 @@ function sessionOf(frame: Frame): WebGuiSession {
 const FACTS_TIMEOUT_MS = 3000;
 
 function facts(frame: Frame): Promise<PageFacts | undefined> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const late = new Promise<undefined>((resolve) => {
-    timer = setTimeout(() => resolve(undefined), FACTS_TIMEOUT_MS);
-  });
-  return Promise.race([frame.evaluate(extractFacts).catch(() => undefined), late]).finally(() => clearTimeout(timer));
+  return within<PageFacts | undefined>(frame.evaluate(extractFacts), FACTS_TIMEOUT_MS, undefined);
 }
 
 async function isWebGui(frame: Frame): Promise<boolean> {
@@ -65,24 +62,11 @@ export async function webguiAssessInFrame(frame: Frame, action: Action): Promise
   return assess(sessionOf(frame), action);
 }
 
-/** SAP names its session cookie SAP_SESSIONID_<system>_<client>. */
-async function identityFromCookies(page: Page): Promise<{ system?: string; client?: string }> {
-  const cookies = await page
-    .context()
-    .cookies(page.url())
-    .catch(() => []);
-  // Two logons in one browser share the cookies of a host (any port): only a single one says which this is.
-  const ids = [...new Set(cookies.map((c) => /^SAP_SESSIONID_([A-Z0-9]{3})_(\d{3})$/.exec(c.name)).flatMap((m) => (m?.[1] && m[2] ? [`${m[1]} ${m[2]}`] : [])))];
-  if (ids.length !== 1) return {};
-  const [system = "", client = ""] = (ids[0] ?? "").split(" ");
-  return { system, client };
-}
-
 async function describe(page: Page, id: string, f: PageFacts | undefined): Promise<SessionInfo> {
   const url = new URL(page.url());
   // A logon page belongs to no session yet: a cookie names another tab's (sap_sessions called an ECC logon tab
   // "S4H (300)", live 2026-11-23).
-  const cookie = (f?.system && f.client) || f?.logon ? {} : await identityFromCookies(page);
+  const cookie = (f?.system && f.client) || f?.logon ? {} : await cookieIdentity(page, page.url());
   const system = f?.system || cookie.system;
   const client = f?.client || cookie.client || url.searchParams.get("sap-client") || undefined;
   const title = f?.title || (await page.title().catch(() => ""));
@@ -179,15 +163,8 @@ class WebGuiDriver implements Driver {
     return this.page.isClosed() ? undefined : sessionOf(this.frame).timingText;
   }
 
-  async screenshot(): Promise<Buffer> {
-    const shot = () => this.page.screenshot({ type: "png", timeout: 8000 });
-    try {
-      return await shot();
-    } catch {
-      // Chrome does not paint a tab in the background: bring it to the front and try once more.
-      await this.page.bringToFront();
-      return shot();
-    }
+  screenshot(): Promise<Buffer> {
+    return screenshotTab(this.page);
   }
 
   /** Nothing to release: the tab is the user's, and the Chrome connection is shared with the other surfaces. */
