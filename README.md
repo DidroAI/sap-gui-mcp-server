@@ -36,6 +36,7 @@ ctxtVBAK-VTWEG  field  Distribution Channel = ""  (edit)
 [![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=sap-gui&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsInNhcC1ndWktbWNwLXNlcnZlciJdfQ%3D%3D)
 [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_sap--gui-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522sap-gui%2522%252C%2522type%2522%253A%2522stdio%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522sap-gui-mcp-server%2522%255D%257D)
 [![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_sap--gui-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode-insiders%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522sap-gui%2522%252C%2522type%2522%253A%2522stdio%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522sap-gui-mcp-server%2522%255D%257D)
+[![Claude Desktop extension](https://img.shields.io/badge/Claude_Desktop-Download_.mcpb-D97757?style=flat-square&logo=claude&logoColor=white)](https://github.com/DidroAI/sap-gui-mcp-server/releases/latest)
 
 You need Node.js 22 or later (22.18 or later for TypeScript tests). Pick
 your client:
@@ -49,8 +50,11 @@ claude mcp add sap-gui --scope user -- npx -y sap-gui-mcp-server
 or, with the skill, as a plugin: `/plugin marketplace add DidroAI/sap-gui-mcp-server`
 then `/plugin install sap-gui@sap-gui-mcp-server`.
 
-**Claude Desktop** (`claude_desktop_config.json`), **Cursor**
-(`~/.cursor/mcp.json`), **Windsurf** and most other clients:
+**Claude Desktop**: download `sap-gui-mcp-server-<version>.mcpb` from the
+[latest release](https://github.com/DidroAI/sap-gui-mcp-server/releases/latest)
+and open it, or add the JSON below to `claude_desktop_config.json`.
+
+**Cursor** (`~/.cursor/mcp.json`), **Windsurf** and most other clients:
 
 ```json
 {
@@ -75,7 +79,7 @@ args = ["-y", "sap-gui-mcp-server"]
 ```
 
 Or let it configure the clients it finds (Claude Code, Codex, Claude
-Desktop), then check what it can reach:
+Desktop, Cursor, Windsurf, VS Code), then check what it can reach:
 
 ```sh
 npx -y sap-gui-mcp-server setup

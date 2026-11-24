@@ -53,11 +53,14 @@ jobs:
       # Everything that will be published is built before anything is published.
       - name: Pack the npm tarball
         run: npm pack
+      - name: Build the Claude Desktop bundle (.mcpb)
+        run: bun run build:mcpb
       - name: Collect release assets
         shell: bash
         run: |
           mkdir -p release-assets
-          mv "sap-gui-mcp-server-$VERSION.tgz" release-assets/
+          # npm pack and scripts/build-mcpb.mjs both write to the repository root.
+          mv "sap-gui-mcp-server-$VERSION.tgz" "sap-gui-mcp-server-$VERSION.mcpb" release-assets/
           ls -l release-assets
 
       # Publishes exactly the tarball attached to the release below (lifecycle scripts do not run
