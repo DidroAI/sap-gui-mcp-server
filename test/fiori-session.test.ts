@@ -1,24 +1,36 @@
 import { describe, expect, test } from "bun:test";
-import { isLaunchpadUrl, isWebguiUrl, sessionOf } from "../src/fiori/driver.js";
+import { isLaunchpadUrl, isWebguiUrl } from "../src/browser/classify.js";
+import { pickEntry, sessionOf } from "../src/fiori/driver.js";
 import type { Ui5Info } from "../src/fiori/ui5.js";
 
 const info = (more: Partial<Ui5Info> = {}): Ui5Info => ({ ui5: true, launchpad: true, title: "Manage Things", sources: {}, ...more });
 
 describe("fiori sessions", () => {
-  test("launchpad URLs", () => {
-    for (const u of [
-      "https://host:44300/sap/bc/ui2/flp?sap-client=100#Shell-home",
-      "https://host/sap/bc/ui5_ui5/ui2/ushell/shells/abap/FioriLaunchpad.html#Thing-display",
-      "https://host/ui#Thing-manage",
-      "https://tenant.launchpad.cfapps.eu10.hana.ondemand.com/site?siteId=1#Shell-home",
-      "https://tenant.cp.portal.example/site#Shell-home",
-    ])
-      expect(isLaunchpadUrl(u)).toBe(true);
-    expect(isLaunchpadUrl("https://example.com/shop")).toBe(false);
+  test("launchpad URLs: the ABAP launchpad's two addresses; elsewhere the page's sap.ushell decides (classify.ts)", () => {
+    for (const u of ["https://host:44300/sap/bc/ui2/flp?sap-client=100#Shell-home", "https://host/sap/bc/ui5_ui5/ui2/ushell/shells/abap/FioriLaunchpad.html#Thing-display"]) expect(isLaunchpadUrl(u)).toBe(true);
+    for (const u of ["https://host/ui#Thing-manage", "https://tenant.launchpad.cfapps.eu10.hana.ondemand.com/site?siteId=1#Shell-home", "https://tenant.cp.portal.example/site#Shell-home", "https://example.com/shop"])
+      expect(isLaunchpadUrl(u)).toBe(false);
   });
   test("a tab whose own page is Web GUI is not a Fiori tab", () => {
     expect(isWebguiUrl("https://host:44300/sap/bc/gui/sap/its/webgui?sap-client=100")).toBe(true);
+    expect(isWebguiUrl("https://host:44300/SAP/BC/GUI/SAP/ITS/WEBGUI")).toBe(true);
     expect(isWebguiUrl("https://host:44300/sap/bc/ui2/flp#Thing-display")).toBe(false);
+  });
+  test("a dropdown entry: the whole text first, a part of it only when one entry has it", () => {
+    const plants = ["10 Plant Ten", "100 Plant Hundred", "1000 Plant Thousand"];
+    expect(pickEntry(plants, "10")).toBe(0);
+    expect(pickEntry(plants, "100")).toBe(1);
+    expect(pickEntry(plants, "100 plant hundred")).toBe(1);
+    expect(pickEntry(plants, "Thousand")).toBe(2);
+    // A part of more than one entry picks none, and names them.
+    expect(pickEntry(plants, "Plant")).toEqual(plants);
+    expect(pickEntry(["100", "10"], "10")).toBe(1);
+    expect(pickEntry(["100", "1000"], "10")).toEqual(["100", "1000"]);
+    expect(pickEntry(["Open  ", " In Process"], "in process")).toBe(1);
+    expect(pickEntry(plants, "Zeta")).toEqual([]);
+    expect(pickEntry(plants, " ")).toEqual([]);
+    // Two entries of the very same text cannot be told apart: the first.
+    expect(pickEntry(["A", "A"], "A")).toBe(0);
   });
   test("session line: system, client and user from the page, the app as transaction", () => {
     const s = sessionOf(
