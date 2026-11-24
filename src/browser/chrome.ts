@@ -36,7 +36,7 @@ import { homedir } from "node:os";
 import { posix, win32 } from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { allowedOrigins, classify, originAllowed, originOf, type TabOwner, type TabSigns, tabSigns } from "./classify.js";
-import { browserMode, ensureSapWindow, rememberSapAddress, sapWindowStatus, startUrl } from "./launch.js";
+import { browserMode, ensureSapWindow, rememberSapAddress, sapWindowStatus, startUrl, trimEndOf } from "./launch.js";
 import { keepFocused, within } from "./tab.js";
 import type { DoctorCheck } from "../core/types.js";
 
@@ -241,7 +241,7 @@ async function open(env: Env, key: string, options: OpenOptions = {}): Promise<C
       // it does not (a Chrome that allows debugging from chrome://inspect answers 404), Playwright's own
       // request leaves an error on its socket that nothing handles, and the process ends.
       if (/^https?:/.test(endpoint.url)) {
-        const r = await fetch(`${endpoint.url.replace(/\/+$/, "")}/json/version`, { signal: AbortSignal.timeout(5000) });
+        const r = await fetch(`${trimEndOf(endpoint.url, "/")}/json/version`, { signal: AbortSignal.timeout(5000) });
         if (!r.ok)
           throw new Error(
             `${endpoint.url}/json/version answers ${r.status}: this is not a Chrome started with --remote-debugging-port. A Chrome that allows remote debugging from chrome://inspect is reached at the ws:// address its DevToolsActivePort file names`,

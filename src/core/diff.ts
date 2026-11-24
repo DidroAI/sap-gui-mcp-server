@@ -252,8 +252,9 @@ export const windowName = (line: string): string =>
  */
 export function whereLine(view: string): string {
   if (isFioriView(view)) {
-    // The page by its title, a popup in front by its title.
-    const page = /^PAGE (.*?)(?: \(#.*)?$/m.exec(view)?.[1] ?? "";
+    // The page by its title (up to " (#id"), a popup in front by its title. Cut with indexOf: a lazy regex is slow on a long line.
+    const line = /^PAGE (.*)$/m.exec(view)?.[1] ?? "";
+    const page = line.includes(" (#") ? line.slice(0, line.indexOf(" (#")) : line;
     const pop = windows(view).filter((l) => l.startsWith("POPUP ")).at(-1);
     const popTitle = pop ? (/ "([^"]*)"/.exec(pop)?.[1] ?? /#(\S+)/.exec(pop)?.[1] ?? "") : "";
     return [page ? `"${page}"` : "", popTitle ? `popup "${popTitle}"` : ""].filter(Boolean).join(" · ");
