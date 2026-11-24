@@ -85,6 +85,19 @@ describe("a Fiori app sent as an okcode meets the lists (review, 2026-11-24)", (
   });
 });
 
+describe("list settings are checked (review, 2026-11-24)", () => {
+  test("a mistyped entry is an error, not a list that matches nothing", () => {
+    expect(() => policyFromEnv({ SAP_BLOCK_TCODES: "SE*" })).toThrow(/SAP_BLOCK_TCODES: "SE\*" is not a transaction code/);
+    expect(() => policyFromEnv({ SAP_BLOCK_TCODES: "SE38,/nSM30" })).toThrow(/"\/NSM30"/);
+    expect(() => policyFromEnv({ SAP_ALLOW_SYSTEMS: "ABA:800" })).toThrow(/SAP_ALLOW_SYSTEMS/);
+  });
+  test("transactions, namespaced ones, Fiori apps and systems pass", () => {
+    const p = policyFromEnv({ SAP_BLOCK_TCODES: "se38 /SAPAPO/SDP94 S_ALR_87012357 #SalesOrder-manage", SAP_ALLOW_SYSTEMS: "ABA/800, S4H" });
+    expect(p.blockTcodes).toEqual(["SE38", "/SAPAPO/SDP94", "S_ALR_87012357", "SALESORDER-MANAGE"]);
+    expect(p.allowSystems).toEqual(["ABA/800", "S4H"]);
+  });
+});
+
 describe("the command field", () => {
   test("is recognised in every spelling", () => {
     for (const id of ["okcd", "wnd[0]/tbar[0]/okcd", "tbar[0]/okcd", "/app/con[0]/ses[0]/wnd[0]/tbar[0]/okcd", "wnd[1]/tbar[0]/okcd", " OKCD ", "#ToolbarOkCode", "ToolbarOkCode", "okcode"])

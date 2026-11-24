@@ -1,5 +1,5 @@
 /**
- * The MCP server: six tools over the registry of open SAP sessions, and two
+ * The MCP server: seven tools over the registry of open SAP sessions, and two
  * that turn a session into a repeatable test (record/tools.ts).
  *
  *   sap_sessions    list the SAP sessions open on this machine
@@ -17,7 +17,7 @@ import { createHash } from "node:crypto";
 import { actionText, normalizeAction, type NormalizedAction, STEP_VERBS } from "./core/action.js";
 import { type BatchStep, idOn, isLook, MAX_BATCH, parseBatch, popupPart, shortNote, staleWrite, stopAfter, unseenWrite } from "./batch.js";
 import { dateFormatOf, type Notation, notationIn, withNumbers } from "./core/notation.js";
-import { commandFieldRefusal, decide, LEAVE_UNSAVED, leavesTransaction, type Policy, sessionRefusal, tcodeOf, tcodeRefusal } from "./core/guard.js";
+import { commandFieldRefusal, decide, LEAVE_UNSAVED, leavesTransaction, mayDestroy, type Policy, sessionRefusal, tcodeOf, tcodeRefusal } from "./core/guard.js";
 import { type Turn, SessionQueue, waitedLine } from "./core/queue.js";
 import { Registry } from "./core/registry.js";
 import type { ExtensionSystem, LogonOptions, LogonResult } from "./browser/extension/relay.js";
@@ -32,6 +32,8 @@ import { type ActOutput, actOutput, screenOf, screenOfInfo, sessionsData, sessio
 
 export const SERVER_NAME = "sap-ui-automation";
 export const SERVER_VERSION = "0.1.0";
+/** Claude Code defers MCP tools until searched for, except those marked so. */
+const ALWAYS_LOAD = { "anthropic/alwaysLoad": true };
 
 /**
  * What the agent is told about actions that may write, for the write setting
@@ -142,6 +144,8 @@ export function withNextStep(message: string): string {
 /** What the user was shown when asked to confirm: the action runs only if all of it still holds. */
 interface Shown {
   session: string;
+  /** How many actions the server had run in the session when the user was asked. */
+  acts: number;
   surface: string;
   system: string | undefined;
   client: string | undefined;
@@ -152,8 +156,8 @@ interface Shown {
   reason: string;
 }
 
-function shownOf(info: SessionInfo, action: NormalizedAction, a: Assessment): Shown {
-  return { session: info.id, surface: info.surface, system: info.system, client: info.client, transaction: info.transaction, title: info.title, action, risk: a.risk, reason: a.reason };
+function shownOf(info: SessionInfo, action: NormalizedAction, a: Assessment, acts = 0): Shown {
+  return { session: info.id, acts, surface: info.surface, system: info.system, client: info.client, transaction: info.transaction, title: info.title, action, risk: a.risk, reason: a.reason };
 }
 
 /** What differs between what the user confirmed and what is there now; empty when nothing does. */
@@ -170,6 +174,8 @@ export function changedSince(then: Shown, now: Shown): string[] {
   was("window title", then.title, now.title);
   was("action", actionText(then.action), actionText(now.action));
   was("what the action does", `${then.risk}: ${then.reason}`, `${now.risk}: ${now.reason}`);
+  // A field set by another call while the user read the question: the screen looks the same, the data does not.
+  if (now.acts !== then.acts) out.push(`${now.acts - then.acts} other action(s) ran in this session while the user was asked`);
   return out;
 }
 
@@ -293,7 +299,15 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   const registry = new Registry(surfaces, policy);
   const views = new Views(view);
   const recorder = new Recorder(record ?? recorderOptionsFromEnv(process.env, `${SERVER_NAME} ${SERVER_VERSION}`));
-  const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, { instructions: instructions(policy, !!systems) });
+  const server = new McpServer(
+    {
+      name: SERVER_NAME,
+      version: SERVER_VERSION,
+      title: "SAP UI Automation",
+      description: "See and drive the SAP screens open on this machine (SAP GUI for Windows, Web GUI, Fiori), with guardrails on writes",
+      websiteUrl: "https://github.com/DidroAI/sap-ui-automation",
+    },
+    { instructions: instructions(policy, !!systems) });
   const session = z.string().optional().describe("number, id, system, transaction or sapgui|webgui|fiori; default: the active one");
   const queue = new SessionQueue();
   /** The data of an answer, when structured output is on; undefined (nothing added) when it is off. */
@@ -302,6 +316,26 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   const ranOn = (v: string): ActOutput => ({ ran: 1, total: 1, ...screenOf(v) });
   /** Does an answer end with the SDK line? Asked after the action: a recording is on or off by then. */
   const codeLine = () => code ?? recorder.recording;
+  /**
+   * The logon each session was last seen with. SAP GUI ids are positions ("ses[0]"): after a log off and a
+   * logon to another system the same id is another session, and what the server kept for it (actions,
+   * notation, the last view, a refused write) is forgotten.
+   */
+  const logons = new Map<string, string>();
+  async function attach(ref: string | undefined) {
+    const hit = await registry.session(ref);
+    const { id, system, client, user } = hit.info;
+    const logon = [system, client, user].map((x) => (x ?? "").toUpperCase()).join("/");
+    const was = logons.get(id);
+    if (was !== undefined && was !== logon) {
+      for (const m of [history, actShown, actCount, notations]) m.delete(id);
+      settingsAsked.delete(id);
+      writeRefused.delete(id);
+      views.forget(id);
+    }
+    logons.set(id, logon);
+    return hit;
+  }
   /** The actions that ran, per session, oldest first. */
   const history = new Map<string, NormalizedAction[]>();
   function remember(session: string, action: NormalizedAction): void {
@@ -320,6 +354,12 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
    */
   const actShown = new Map<string, string>();
   const fingerprint = (view: string) => createHash("sha1").update(view).digest("hex");
+  /** Actions run per session, so a confirmation can tell that another call acted while the user was asked. */
+  const actCount = new Map<string, number>();
+  const counted = <T>(session: string, f: () => Promise<T>): Promise<T> => {
+    actCount.set(session, (actCount.get(session) ?? 0) + 1);
+    return f();
+  };
 
   /**
    * Each session's number and date notation (core/notation.ts): from the
@@ -413,7 +453,14 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
 
   /** The queue a call on `ref` waits in: the session's id, found without opening it. */
   async function laneOf(ref: string | undefined): Promise<string> {
-    const pick = () => (ref ? registry.resolve(ref)?.id : registry.active);
+    const pick = () => {
+      try {
+        return ref ? registry.resolve(ref)?.id : registry.active;
+      } catch {
+        // An ambiguous reference: the call says so when its turn comes.
+        return undefined;
+      }
+    };
     let key = pick();
     if (!key) {
       await registry.discover().catch(() => {});
@@ -546,13 +593,13 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       description: 'Makes another session the active one and answers with its screen. Only to switch between several sessions; every other tool also takes "session" for one call.',
       inputSchema: { session: z.string().describe("number, id, system, transaction or sapgui|webgui|fiori") },
       // Read-only for SAP: it changes only which session this server's other tools use by default, then reads that session's screen.
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     },
     ({ session: raw }) =>
       answer(() =>
         leniently(raw, (ref) =>
           serial(ref, "sap_use", async () => {
-            const { driver, info } = await registry.session(ref);
+            const { driver, info } = await attach(ref);
             registry.active = info.id;
             actShown.delete(info.id);
             const v = await driver.look({ compact: true });
@@ -576,43 +623,45 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
         cols: z.string().optional().describe('with id: columns by id or title, e.g. "VBELN,NETWR"'),
       },
       annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+      // Claude Code loads MCP tools on demand; the two every task needs are there from the start.
+      _meta: ALWAYS_LOAD,
     },
     ({ session: raw, full, diff, id, rows, cols }) =>
       answer(() => leniently(raw, (ref) => serial(ref, "sap_look", () => look(ref, full, diff, id, rows, cols)))).then(confirmNotice),
   );
 
   async function look(ref: string | undefined, full: boolean | undefined, diff: boolean | undefined, id: string | undefined, rows: string | undefined, cols: string | undefined): Promise<CallToolResult> {
-        const { driver, info } = await registry.session(ref);
-        if (rows !== undefined && !id) throw new ActionError('"rows" needs "id": the grid, table, tree or list to read.');
-        if (cols !== undefined && !id) throw new ActionError('"cols" needs "id": the grid or table control whose columns to keep.');
-        if (id) {
-          // Columns without rows: the rows from the first one on (a page of them; the answer says where it ends).
-          const range = rows !== undefined ? parseRows(rows) : cols !== undefined ? COLS_ONLY_ROWS : undefined;
-          const options: LookOptions = { compact: !full, id, ...(range ? { rows: range } : {}), ...(cols !== undefined ? { cols: cols.split(",") } : {}) };
-          // One control is not the screen: what the agent holds of the screen stays as it is.
-          const part = await driver.look(options);
-          return text(await said(driver, info.id, part, part));
-        }
-        // What the last sap_act answer ended on, if nothing came between: asked once.
-        const acted = actShown.get(info.id);
-        actShown.delete(info.id);
-        if (full) {
-          const whole = await driver.look({ compact: false });
-          // The full view holds everything the compact one does: later changes are counted from here.
-          const c = await driver.look({ compact: true });
-          views.remember(info.id, c);
-          return text(await said(driver, info.id, c, whole));
-        }
-        const view = await driver.look({ compact: true });
-        // Asked for the changes ("diff"): those, also right after an action (live 2026-11-23: the whole 8 KB view came back).
-        if (acted !== undefined && acted === fingerprint(view)) return text(await said(driver, info.id, view, diff ? views.present(info.id, view, false) : `${UNCHANGED}\n${views.present(info.id, view, true)}`));
-        return text(await said(driver, info.id, view, views.present(info.id, view, !diff)));
+    const { driver, info } = await attach(ref);
+    if (rows !== undefined && !id) throw new ActionError('"rows" needs "id": the grid, table, tree or list to read.');
+    if (cols !== undefined && !id) throw new ActionError('"cols" needs "id": the grid or table control whose columns to keep.');
+    if (id) {
+      // Columns without rows: the rows from the first one on (a page of them; the answer says where it ends).
+      const range = rows !== undefined ? parseRows(rows) : cols !== undefined ? COLS_ONLY_ROWS : undefined;
+      const options: LookOptions = { compact: !full, id, ...(range ? { rows: range } : {}), ...(cols !== undefined ? { cols: cols.split(",") } : {}) };
+      // One control is not the screen: what the agent holds of the screen stays as it is.
+      const part = await driver.look(options);
+      return text(await said(driver, info.id, part, part));
+    }
+    // What the last sap_act answer ended on, if nothing came between: asked once.
+    const acted = actShown.get(info.id);
+    actShown.delete(info.id);
+    if (full) {
+      const whole = await driver.look({ compact: false });
+      // The full view holds everything the compact one does: later changes are counted from here.
+      const c = await driver.look({ compact: true });
+      views.remember(info.id, c);
+      return text(await said(driver, info.id, c, whole));
+    }
+    const view = await driver.look({ compact: true });
+    // Asked for the changes ("diff"): those, also right after an action (live 2026-11-23: the whole 8 KB view came back).
+    if (acted !== undefined && acted === fingerprint(view)) return text(await said(driver, info.id, view, diff ? views.present(info.id, view, false) : `${UNCHANGED}\n${views.present(info.id, view, true)}`));
+    return text(await said(driver, info.id, view, views.present(info.id, view, !diff)));
   }
 
   /** The screen as it is, whole, after `head`: the answer to "actions":[] and to {"do":"look"} in sap_act. */
   async function current(ref: string | undefined, head: string): Promise<CallToolResult> {
     return serial(ref, "sap_look", async () => {
-      const { driver, info } = await registry.session(ref);
+      const { driver, info } = await attach(ref);
       const v = await driver.look({ compact: true });
       actShown.delete(info.id);
       const shown = withStatus(views.present(info.id, v, true), v);
@@ -656,7 +705,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   /** Leaves a transaction the agent may not work in, and says how that went. */
   async function leave(d: Driver): Promise<string> {
     try {
-      await d.act(normalizeAction({ do: "okcode", value: "/n" }));
+      await counted(d.info.id, () => d.act(normalizeAction({ do: "okcode", value: "/n" })));
       return "The server left it with /n; input that was not saved there is gone.";
     } catch (e) {
       return `The server could not leave it with /n (${(e as Error).message.split("\n")[0]}): leave it before doing anything else.`;
@@ -681,7 +730,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     const opens = action.do === "okcode" && typeof action.value === "string" && /^\/o\S/i.test(action.value) && d.info.surface === "sapgui";
     const before = opens ? new Set((await registry.discover()).sessions.map((s) => s.id)) : undefined;
     // While a recording is on, an action that works becomes a step of it.
-    const done = shortNote(await recorder.act(d, action, risk, () => d.act(action)));
+    const done = shortNote(await counted(session, () => recorder.act(d, action, risk, () => d.act(action))));
     const acted = Date.now();
     // The line that repeats this action in a script: last in the note block. Kept for a draft test when the action ran where it should.
     const line = codeLine() ? `\ncode: ${codeOf(action)}` : "";
@@ -723,11 +772,11 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     return ok(`${n}${top ? `\n${top}` : ""}${line}\n\n${shown}`, v);
   }
 
-  /** The session as it is now, and what the guard says about this action on it. */
   /** Sessions that had a write refused: the next refusal is one line (core/guard.ts `decide`). */
   const writeRefused = new Set<string>();
-  async function judge(ref: string | undefined, action: NormalizedAction) {
-    const { driver, info } = await registry.session(ref);
+  /** The session as it is now, and what the guard says about this action on it. A look-ahead (`goesOnAfter`) keeps no record. */
+  async function judge(ref: string | undefined, action: NormalizedAction, lookAhead = false) {
+    const { driver, info } = await attach(ref);
     // The transaction the session is in counts too, however it was opened.
     const here = sessionRefusal(policy, info);
     if (here && !leavesTransaction(policy, action))
@@ -737,7 +786,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       throw new ActionError('open works in a Fiori launchpad tab only (sap_sessions lists the tabs). On an SAP GUI or Web GUI screen, open a transaction with {"do":"okcode","value":"/n<transaction>"}.');
     const assessment = await driver.assess(action);
     const verdict = decide(policy, action, assessment, writeRefused.has(info.id), info.surface === "fiori");
-    if (!verdict.run && "refused" in verdict && verdict.refused.startsWith("this action may write")) writeRefused.add(info.id);
+    // A look-ahead refuses nothing to the agent: the first refusal it sees stays the long one.
+    if (!lookAhead && !verdict.run && "refused" in verdict && verdict.refused.startsWith("this action may write")) writeRefused.add(info.id);
     return { driver, info, assessment, verdict };
   }
 
@@ -746,7 +796,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     const j = await judge(shown.session, shown.action);
     if ("refused" in j) return fail(`Refused: ${j.refused}`);
     if (!j.verdict.run && "refused" in j.verdict) return fail(`Refused: ${j.verdict.refused}`);
-    const changed = changedSince(shown, shownOf(j.info, shown.action, j.assessment));
+    const changed = changedSince(shown, shownOf(j.info, shown.action, j.assessment, actCount.get(shown.session) ?? 0));
     if (changed.length) return fail(`Not run: the screen changed since the confirmation was asked (${changed.join("; ")}). Look at the screen and call sap_act again.`);
     return perform(j.driver, shown.action, whole, j.assessment.risk);
   }
@@ -759,7 +809,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   async function failedOn(ref: string | undefined, e: unknown): Promise<CallToolResult> {
     const message = withNextStep((e as Error).message);
     try {
-      const { driver, info } = await registry.session(ref);
+      const { driver, info } = await attach(ref);
       const now = await driver.look({ compact: true });
       const last = views.last(info.id);
       // Where the session is, in one line: the header and the window in front.
@@ -781,6 +831,9 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       wanted = timing === true || timingsOn;
       raw = rest;
     }
+    // Fields of a batch step mean nothing on one action: said, not silently dropped.
+    const stepOnly = raw && typeof raw === "object" && !Array.isArray(raw) ? ["expect", "show", "unseen"].filter((k) => k in raw) : [];
+    if (stepOnly.length) return fail(`Refused: ${stepOnly.map((k) => `"${k}"`).join(", ")} belong${stepOnly.length === 1 ? "s" : ""} to a step of "actions" (a batch), not to a single action. Send {"actions":[{...action, ${stepOnly.map((k) => `"${k}": ...`).join(", ")}}]}, or leave ${stepOnly.length === 1 ? "it" : "them"} out.`);
     // One normalised action for the guard, for assess and for act.
     const action = normalizeAction(raw);
     const field = commandFieldRefusal(action);
@@ -788,13 +841,16 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     // The guard and the action run in the session's turn; asking the user does not hold the session.
     type Held = { info: SessionInfo; assessment: Assessment; confirm: string };
     const box: { held?: Held } = {};
-    const done = await queue.run(await laneOf(ref), actionText(action), async (turn): Promise<CallToolResult | undefined> => {
+    // The call keeps to the session it queued for: a sap_use or a new logon while it waits does not move it.
+    const lane = await laneOf(ref);
+    const at = lane === "*" ? ref : lane;
+    const done = await queue.run(lane, actionText(action), async (turn): Promise<CallToolResult | undefined> => {
       const q0 = Date.now();
       let j: Awaited<ReturnType<typeof judge>>;
       try {
-        j = await judge(ref, action);
+        j = await judge(at, action);
       } catch (e) {
-        return withTurn(await failedOn(ref, e), turn);
+        return withTurn(await failedOn(at, e), turn);
       }
       if ("refused" in j) return withTurn(fail(`Refused: ${j.refused}`), turn);
       const { driver, info, assessment, verdict } = j;
@@ -805,7 +861,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
         const stale = staleWrite(parseScreen(seen), parseScreen(now));
         if (stale) return withTurn(fail(`Not run: ${stale}.\n\n${views.present(info.id, now, true)}`), turn);
       }
-      if (verdict.run) return withTurn(await perform(driver, action, whole, assessment.risk, { t0: q0, judged: Date.now() - q0, wanted }).catch((e: unknown) => failedOn(ref, e)), turn);
+      if (verdict.run) return withTurn(await perform(driver, action, whole, assessment.risk, { t0: q0, judged: Date.now() - q0, wanted }).catch((e: unknown) => failedOn(at, e)), turn);
       if ("refused" in verdict) return withTurn(fail(`Refused: ${verdict.refused}`), turn);
       if (!canElicit()) return withTurn(fail(`Refused: ${cannotAsk(verdict.confirm)}`), turn);
       box.held = { info, assessment, confirm: verdict.confirm };
@@ -819,7 +875,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   async function confirmHeld(held: { info: SessionInfo; assessment: Assessment; confirm: string }, action: NormalizedAction, whole: boolean): Promise<CallToolResult> {
     asks++;
     const { info, assessment, confirm } = held;
-    const shown = shownOf(info, action, assessment);
+    const shown = shownOf(info, action, assessment, actCount.get(info.id) ?? 0);
     const what = `${confirm}, on ${place(info)}`;
     let answer: Awaited<ReturnType<typeof server.server.elicitInput>>;
     try {
@@ -870,7 +926,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       if (!idOn(part(full), id)) return false;
     }
     try {
-      const j = await judge(session, a);
+      const j = await judge(session, a, true);
       return !("refused" in j) && j.verdict.run && j.assessment.risk !== "commit";
     } catch {
       return false;
@@ -897,7 +953,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
    * foresee (`stopAfter`). The answer says what ran and why it ended, then
    * the screen once.
    */
-  async function runBatch(ref: string | undefined, input: unknown, whole = false): Promise<CallToolResult> {
+  async function runBatch(ref: string | undefined, input: unknown, whole = false, call?: CallContext): Promise<CallToolResult> {
+    const token = call?._meta?.progressToken;
     const steps = parseBatch(input);
     const total = Array.isArray(input) ? input.length : steps.length;
     if (!steps.length) return current(ref, total ? "No action to run: this is the screen." : 'No actions sent ("actions" is empty): this is the screen.');
@@ -912,7 +969,9 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     const rest = (from: number) => (from > total ? "" : from === total ? ` Action ${total} did not run.` : ` Actions ${from} to ${total} did not run.`);
     type Held = { info: SessionInfo; assessment: Assessment; confirm: string; action: NormalizedAction };
     const box: { held?: Held; head?: string; ran?: number; stopped?: { why: string; text: string } } = {};
-    const done = await queue.run(await laneOf(ref), `${total} actions`, async (turn): Promise<CallToolResult | undefined> => {
+    const lane = await laneOf(ref);
+    const at = lane === "*" ? ref : lane;
+    const done = await queue.run(lane, `${total} actions`, async (turn): Promise<CallToolResult | undefined> => {
       const lines: string[] = [];
       const codes: string[] = [];
       let ran = 0;
@@ -929,13 +988,18 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
         const n = s.n;
         const last = i === steps.length - 1;
         const what = `action ${n} (${actionText(s.action)})`;
+        // The client cancelled the call (the user pressed Esc): the actions after the one running end here.
+        if (call?.signal.aborted) {
+          end = { why: "cancelled", text: `the client cancelled the call before ${what}`, error: false, next: n };
+          break;
+        }
         let j: Awaited<ReturnType<typeof judge>>;
         try {
           // The session the first action ran on is the session of all of them.
-          j = await judge(id ?? ref, s.action);
+          j = await judge(id ?? at, s.action);
         } catch (e) {
           // No session, or an id that names nothing here: with nothing run yet, the answer is the one of a single action.
-          if (i === 0) return withTurn(await failedOn(ref, e), turn);
+          if (i === 0) return withTurn(await failedOn(at, e), turn);
           end = { why: "failed", text: `${what} could not run: ${(e as Error).message}`, error: true, next: n + 1 };
           view = undefined;
           break;
@@ -973,7 +1037,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
         let said: string;
         try {
           const d = driver;
-          said = await recorder.act(d, s.action, j.assessment.risk, () => d.act(s.action));
+          said = await counted(d.info.id, () => recorder.act(d, s.action, j.assessment.risk, () => d.act(s.action)));
         } catch (e) {
           end = { why: "failed", text: `${what} failed: ${(e as Error).message}`, error: true, next: n + 1 };
           view = undefined;
@@ -981,6 +1045,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
         }
         ran = n;
         remember(id, s.action);
+        if (token !== undefined)
+          await call?.sendNotification({ method: "notifications/progress", params: { progressToken: token, progress: i + 1, total: steps.length, message: `${what} done` } }).catch(() => {});
         lines.push(`${n}. ${shortNote(said)}${s.note ? ` ${s.note}` : ""}`);
         codes.push(codeOf(s.action));
         // A menu entry, a favourite or a tree node can open a transaction no okcode named.
@@ -1088,23 +1154,25 @@ ${writeRule(policy)}`,
         .passthrough(),
       ...(structured ? { outputSchema: actOutput } : {}),
       // A closed SAP system, not the open web: openWorldHint is false on every tool.
-      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: mayDestroy(policy), openWorldHint: false },
+      // Claude Code loads MCP tools on demand; the two every task needs are there from the start.
+      _meta: ALWAYS_LOAD,
     },
-    (input) =>
+    (input, extra) =>
       answer(async () => {
         const { actions, action, session: raw, full } = input as { actions?: unknown; action?: unknown; session?: string; full?: boolean };
-        return leniently(raw, (ref) => act(ref, input, actions, action, full));
+        return leniently(raw, (ref) => act(ref, input, actions, action, full, extra));
       }).then(confirmNotice),
   );
 
   /** sap_act, once the session reference is settled. */
-  async function act(ref: string | undefined, input: Record<string, unknown>, actions: unknown, action: unknown, full: boolean | undefined): Promise<CallToolResult> {
+  async function act(ref: string | undefined, input: Record<string, unknown>, actions: unknown, action: unknown, full: boolean | undefined, call?: CallContext): Promise<CallToolResult> {
     // The action's fields at the top level, as the schema lists them; anything but the call's own keys goes with them.
     const flat = Object.fromEntries(Object.entries(input).filter(([k, v]) => !CALL_KEYS.has(k) && v !== undefined));
     const one = Object.keys(flat).length > 0;
     if (actions !== undefined && (one || action !== undefined)) return fail('Send one action ("do" and its fields) or "actions", not both.');
     if (one && action !== undefined) return fail('Send the action\'s fields ("do", "id", ...) at the top level, not also inside "action".');
-    if (actions !== undefined) return withAnyData(await runBatch(ref, actions, full === true), actions);
+    if (actions !== undefined) return withAnyData(await runBatch(ref, actions, full === true, call), actions);
     // {"do":"look"}: not an action; the screen.
     if (isLook(one ? flat : action)) return withAnyData(await current(ref, "look is not an action: this is the screen."));
     return withAnyData(await run(ref, one ? flat : action, full === true));
@@ -1120,10 +1188,13 @@ ${writeRule(policy)}`,
     },
     ({ session: raw }) =>
       answer(() =>
-        leniently(raw, async (ref) => {
-          const png = await (await registry.driver(ref)).screenshot();
-          return { content: [{ type: "image", data: png.toString("base64"), mimeType: "image/png" }] };
-        }),
+        leniently(raw, (ref) =>
+          // In the session's turn, as every other tool: never mid-action, never beside another call on the driver.
+          serial(ref, "screenshot", async () => {
+            const png = await (await registry.driver(ref)).screenshot();
+            return { content: [{ type: "image", data: png.toString("base64"), mimeType: "image/png" }] };
+          }),
+        ),
       ),
   );
 
@@ -1135,9 +1206,21 @@ ${writeRule(policy)}`,
 }
 
 type ListTools = (request: unknown, extra: unknown) => Promise<{ tools: { inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; execution?: { taskSupport?: string } }[] }>;
+/** What the SDK hands a tool beside its arguments, as far as sap_act uses it: cancellation and progress. */
+interface CallContext {
+  signal: AbortSignal;
+  _meta?: { progressToken?: string | number | undefined } | undefined;
+  sendNotification: (n: { method: "notifications/progress"; params: { progressToken: string | number; progress: number; total: number; message: string } }) => Promise<void>;
+}
+
+type CallTool = (
+  request: { params: { name: string; arguments?: Record<string, unknown> } },
+  extra: unknown,
+) => Promise<{ isError?: boolean; content?: { type: string; text?: string }[] }>;
 
 /**
- * tools/list without what the SDK adds to every tool and no client needs: the
+ * tools/list without what the SDK adds to every tool and no client needs (and
+ * tools/call with plain words for arguments that do not fit): the
  * "$schema" keyword of its JSON Schema conversion, and
  * "execution":{"taskSupport":"forbidden"}, which is the spec's default. Some
  * 25 tokens per tool in every conversation. The SDK has no option for either,
@@ -1151,9 +1234,43 @@ function withoutSdkDefaults(server: McpServer): void {
     const out = await inner(request, extra);
     for (const t of out.tools) {
       delete t.inputSchema.$schema;
+      // A tool without parameters says so, as the spec recommends.
+      if (t.inputSchema.type === "object" && !Object.keys((t.inputSchema.properties as object | undefined) ?? {}).length) t.inputSchema.additionalProperties = false;
       if (t.outputSchema) delete t.outputSchema.$schema;
       if (t.execution && Object.keys(t.execution).length === 1 && t.execution.taskSupport === "forbidden") delete t.execution;
     }
     return out;
   });
+  const call = (handlers as unknown as Map<string, CallTool>).get("tools/call");
+  if (call)
+    (handlers as unknown as Map<string, CallTool>).set("tools/call", async (request, extra) => {
+      const p = request.params;
+      // sap_record takes "op"; agents send sap_act's "do" to it as well.
+      if (p.name === "sap_record" && p.arguments && p.arguments.op === undefined && typeof p.arguments.do === "string") {
+        const { do: op, ...rest } = p.arguments;
+        p.arguments = { ...rest, op };
+      }
+      const out = await call(request, extra);
+      const first = out.content?.[0];
+      if (out.isError && first?.type === "text" && first.text) first.text = plainValidationError(p.name, first.text);
+      return out;
+    });
+}
+
+/**
+ * The SDK's answer to arguments that do not fit a tool's schema ("MCP error -32602: Input validation error:
+ * Invalid arguments for tool sap_look: Invalid input: expected boolean, received string at full"), said as the
+ * other errors are: the field, what is wrong, and where the tool's fields are described.
+ */
+export function plainValidationError(tool: string, message: string): string {
+  const m = /^MCP error -32602: Input validation error: Invalid arguments for tool [\w-]+: ([\s\S]*)$/.exec(message);
+  if (!m) return message;
+  const parts = (m[1] ?? "").split(/;\s*|\n/).map((x) => x.trim()).filter(Boolean);
+  const said = parts.map((x) => {
+    const at = / at ([\w.[\]"-]+)$/.exec(x);
+    const what = (at ? x.slice(0, at.index) : x).replace(/^Invalid (input|option): /, "");
+    return at ? `"${at[1]}": ${what}` : what;
+  });
+  const help = tool === "sap_record" ? ' {"op":"help"} lists every op with its fields.' : " The tool's description lists its fields.";
+  return `${tool} was called with arguments that do not fit: ${said.join("; ")}.${help}`;
 }

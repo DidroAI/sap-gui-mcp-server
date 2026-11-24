@@ -16,9 +16,11 @@
  * "download", a PDF) is saved to the same directory. When a copy fails, the
  * answer says that the file did not reach this machine.
  */
+import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join, resolve, sep } from "node:path";
+import { basename, join, resolve, sep } from "node:path";
 import type { Download, Page } from "playwright-core";
+import { within } from "../browser/tab.js";
 import type { WebGuiSession } from "./session.js";
 
 type Env = Record<string, string | undefined>;
@@ -140,24 +142,52 @@ const watches = new WeakMap<Page, Watch>();
 
 interface Saved {
   target: string;
+  /** The name the browser gave the file, as `localName` makes it. */
+  name: string;
   line: string;
 }
 
 const stamp = (f: StoredFile) => `${f.blobId}|${f.size}|${f.modified}`;
 
+/** Paths handed out by `freeTarget` whose file is being written: not on disk yet, and not free. */
+const taken = new Set<string>();
+
+/**
+ * Where a file of this name goes in `dir`: the name itself, else the first of
+ * "name (2).ext", "name (3).ext", ... that is neither on disk nor handed out
+ * already. A second "export.xlsx" must not replace the first.
+ */
+export function freeTarget(dir: string, name: string): string {
+  const dot = name.lastIndexOf(".");
+  const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
+  for (let n = 1; ; n++) {
+    const target = join(dir, n === 1 ? name : `${stem} (${n})${ext}`);
+    if (taken.has(target) || existsSync(target)) continue;
+    taken.add(target);
+    return target;
+  }
+}
+
+/** What the answer adds when the file was saved under another name than its own: why. */
+const renamed = (target: string, name: string) => (basename(target) === name ? "" : ` (a file "${name}" was there already)`);
+
 async function saveDownload(d: Download, dir: string): Promise<Saved> {
-  const name = d.suggestedFilename() || "download";
-  const target = join(dir, localName(name));
+  const suggested = d.suggestedFilename() || "download";
+  const name = localName(suggested);
   try {
     await mkdir(dir, { recursive: true });
+    const target = freeTarget(dir, name);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const late = new Promise<never>((_, rej) => {
       timer = setTimeout(() => rej(new Error("the browser did not hand the file over within 30 s")), 30_000);
     });
-    await Promise.race([d.saveAs(target), late]).finally(() => clearTimeout(timer));
-    return { target, line: `The browser downloaded a file, "${name}": saved as ${target}.` };
+    await Promise.race([d.saveAs(target), late]).finally(() => {
+      clearTimeout(timer);
+      taken.delete(target);
+    });
+    return { target, name, line: `The browser downloaded a file, "${suggested}": saved as ${target}${renamed(target, name)}.` };
   } catch (e) {
-    return { target: "", line: `The browser downloaded a file, "${name}", but the server could not save it (${(e as Error).message.split("\n")[0]}): it did not reach this machine, or it is in the browser's own download folder.` };
+    return { target: "", name, line: `The browser downloaded a file, "${suggested}", but the server could not save it (${(e as Error).message.split("\n")[0]}): it did not reach this machine, or it is in the browser's own download folder.` };
   }
 }
 
@@ -191,7 +221,18 @@ export async function collectFiles(session: WebGuiSession, env: Env = process.en
   const dir = downloadDir(env);
   const w = watchOf(session.page, dir);
   const lines: string[] = [];
-  const copied = new Set<string>();
+  // A browser download that started with this action is given a moment to finish. Looked at first: Web GUI
+  // can hand the same file to the browser as a download too, and then it is saved once, under one line.
+  const downloaded = new Map<string, Saved>();
+  if (w.downloads.length) {
+    const pending = w.downloads.splice(0);
+    const done = await Promise.all(pending.map((p) => within<Saved | undefined>(p, 5000, undefined)));
+    done.forEach((saved, i) => {
+      if (!saved) w.downloads.push(pending[i] as Promise<Saved>);
+      else if (saved.target) downloaded.set(saved.name, saved);
+      else lines.push(saved.line);
+    });
+  }
   const now = await session.frame.evaluate(listStoredFiles).catch(() => undefined);
   if (now) {
     const before = w.seen;
@@ -200,29 +241,26 @@ export async function collectFiles(session: WebGuiSession, env: Env = process.en
     for (const f of before ? now : []) {
       if (before?.get(`${f.db}|${f.path}`) === stamp(f)) continue;
       const what = `SAP wrote the file "${f.path.replace(/^\//, "")}" (${f.size} bytes). Web GUI keeps such a file in its own store inside the browser, not on a disk`;
-      const target = join(dir, localName(f.path));
+      const name = localName(f.path);
+      const same = downloaded.get(name);
+      if (same) {
+        downloaded.delete(name);
+        lines.push(`${what}: the server copied it to ${same.target}${renamed(same.target, name)}.`);
+        continue;
+      }
       try {
-        if (!resolve(target).startsWith(resolve(dir) + sep)) throw new Error("its name leads outside the download directory");
+        if (!resolve(join(dir, name)).startsWith(resolve(dir) + sep)) throw new Error("its name leads outside the download directory");
         const got = await session.frame.evaluate(readStoredFile, { db: f.db, blobId: f.blobId, max: MAX_FILE_BYTES });
         if ("error" in got) throw new Error(got.error);
         await mkdir(dir, { recursive: true });
-        await writeFile(target, Buffer.from(got.base64, "base64"));
-        copied.add(target);
-        lines.push(`${what}: the server copied it to ${target}.`);
+        const target = freeTarget(dir, name);
+        await writeFile(target, Buffer.from(got.base64, "base64")).finally(() => taken.delete(target));
+        lines.push(`${what}: the server copied it to ${target}${renamed(target, name)}.`);
       } catch (e) {
         lines.push(`${what}, and the server could not copy it out (${(e as Error).message.split("\n")[0]}): the file did not reach this machine. Read the data from the screen instead (sap_look with "id" and "rows").`);
       }
     }
   }
-  // A browser download that started with this action is given a moment to finish.
-  if (w.downloads.length) {
-    const pending = w.downloads.splice(0);
-    const done = await Promise.all(pending.map((p) => Promise.race([p, new Promise<undefined>((res) => setTimeout(() => res(undefined), 5000))])));
-    done.forEach((saved, i) => {
-      if (!saved) w.downloads.push(pending[i] as Promise<Saved>);
-      // Web GUI can hand the same file to the browser as a download too: one line for one file.
-      else if (!copied.has(saved.target)) lines.push(saved.line);
-    });
-  }
+  for (const saved of downloaded.values()) lines.push(saved.line);
   return lines;
 }

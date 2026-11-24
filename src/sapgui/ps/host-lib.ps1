@@ -573,7 +573,7 @@ function Op-Act($req) {
   elseif ($do -eq 'grid') {
     $row = [int]$a['row']
     $rc = [int](G $o 'RowCount')
-    if ($row -ge $rc) { throw "NOT_FOUND: row $($row): the grid has $rc rows (0 to $($rc - 1))" }
+    if ($row -lt 0 -or $row -ge $rc) { throw "NOT_FOUND: row $($row): the grid has $rc rows (0 to $($rc - 1))" }
     # A row that is not on screen is scrolled to first: SAP GUI loads rows as they come into view.
     $fv = T $o 'FirstVisibleRow'
     $v = T $o 'VisibleRowCount'
@@ -591,7 +591,7 @@ function Op-Act($req) {
     $row = [int]$a['row']
     $col = [string]$a['col']
     $rc = [int](G $o 'RowCount')
-    if ($row -ge $rc) { throw "NOT_FOUND: row $($row): the grid has $rc rows (0 to $($rc - 1))" }
+    if ($row -lt 0 -or $row -ge $rc) { throw "NOT_FOUND: row $($row): the grid has $rc rows (0 to $($rc - 1))" }
     $fv = T $o 'FirstVisibleRow'
     $v = T $o 'VisibleRowCount'
     if ($null -ne $fv -and $null -ne $v -and [int]$v -gt 0 -and ($row -lt [int]$fv -or $row -ge ([int]$fv + [int]$v))) { S $o 'FirstVisibleRow' $row }
@@ -648,7 +648,7 @@ function Op-Screenshot($req) {
   Wait-Ready $ses
   $w = T $ses 'ActiveWindow'
   if ($null -eq $w) { $w = G $ses 'FindById' @('wnd[0]') }
-  [string]$file = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), 'sapgui-mcp-' + [guid]::NewGuid().ToString('N') + '.png')
+  [string]$file = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), 'sap-ui-automation-' + [guid]::NewGuid().ToString('N') + '.png')
   $ret = G $w 'HardCopy' @($file, 2)   # 2 = PNG
   $path = $file
   if ($ret -is [string] -and $ret -and (Test-Path -LiteralPath $ret)) { $path = $ret }

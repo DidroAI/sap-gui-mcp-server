@@ -13,7 +13,7 @@ import { join } from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import type { Policy } from "../core/guard.js";
+import { mayDestroy, type Policy } from "../core/guard.js";
 import type { Registry } from "../core/registry.js";
 import type { NormalizedAction } from "../core/action.js";
 import { codeOf, draftTest } from "../sdk/code.js";
@@ -200,7 +200,7 @@ export function registerRecordTools(server: McpServer, registry: Registry, polic
         session,
       },
       ...(structured ? { outputSchema: replayOutput } : {}),
-      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: mayDestroy(policy), openWorldHint: false },
     },
     (a) =>
       answer(async () => {

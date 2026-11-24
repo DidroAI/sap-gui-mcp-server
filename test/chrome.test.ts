@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -58,6 +58,40 @@ describe("finding a running Chrome", () => {
       expect(found.map((e) => e.url)).toEqual([`ws://127.0.0.1:${port}/devtools/browser/abc`]);
       expect(found[0]?.from).toContain("Chrome stable");
       expect(tried.join("\n")).toContain("nothing listens");
+    } finally {
+      server.close();
+      await rm(config, { recursive: true, force: true });
+    }
+  });
+  test.skipIf(process.platform === "win32" || process.getuid?.() === 0)("a file this app may not read is reported to the caller, for this call only", async () => {
+    const config = await mkdtemp(join(tmpdir(), "sap-gui-mcp-"));
+    try {
+      await mkdir(join(config, "google-chrome"), { recursive: true });
+      const file = join(config, "google-chrome", "DevToolsActivePort");
+      await writeFile(file, "9\n/devtools/browser/x\n");
+      await chmod(file, 0o000);
+      const env = { CHROME_CONFIG_HOME: config, XDG_CONFIG_HOME: config };
+      const blocked: string[] = [];
+      expect(await activePortEndpoints(env, [], "linux", config, blocked)).toEqual([]);
+      expect(blocked).toEqual([file]);
+      // Nothing is kept from one call to the next: a later call starts empty.
+      const again: string[] = [];
+      await chmod(file, 0o600);
+      await activePortEndpoints(env, [], "linux", config, again);
+      expect(again).toEqual([]);
+    } finally {
+      await rm(config, { recursive: true, force: true });
+    }
+  });
+  test("an endpoint says what kind it is", async () => {
+    const config = await mkdtemp(join(tmpdir(), "sap-gui-mcp-"));
+    const server = createServer().listen(0, "127.0.0.1");
+    await new Promise((r) => server.once("listening", r));
+    try {
+      await mkdir(join(config, "google-chrome"), { recursive: true });
+      await writeFile(join(config, "google-chrome", "DevToolsActivePort"), `${(server.address() as { port: number }).port}\n/devtools/browser/abc\n`);
+      const found = await activePortEndpoints({ CHROME_CONFIG_HOME: config, XDG_CONFIG_HOME: config }, [], "linux", config);
+      expect(found.map((e) => e.kind)).toEqual(["active-port"]);
     } finally {
       server.close();
       await rm(config, { recursive: true, force: true });

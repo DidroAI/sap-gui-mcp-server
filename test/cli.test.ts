@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { doctorReport } from "../src/cli/doctor.js";
-import { codexTable, launchCommand } from "../src/cli/setup.js";
+import { cmdArg, cmdLine, codexHas, codexTable, launchCommand } from "../src/cli/setup.js";
 import type { Surface } from "../src/core/types.js";
 
 const surface = (name: "webgui" | "fiori" | "sapgui", checks: Awaited<ReturnType<Surface["doctor"]>>): Surface => ({
@@ -21,6 +21,31 @@ describe("setup", () => {
   });
   test("Codex gets a TOML table", () => {
     expect(codexTable(["npx", "-y", "sap-ui-automation"])).toBe('\n[mcp_servers.sap-ui-automation]\ncommand = "npx"\nargs = ["-y", "sap-ui-automation"]\n');
+  });
+  test("Codex: every form of an existing entry is found; an unknown mention is not guessed", () => {
+    expect(codexHas("")).toBe("no");
+    expect(codexHas('[mcp_servers.other]\ncommand = "x"\n')).toBe("no");
+    expect(codexHas("[mcp_servers.sap-ui-automation]\ncommand = 'x'")).toBe("yes");
+    expect(codexHas('[mcp_servers."sap-ui-automation"]\n')).toBe("yes");
+    expect(codexHas("[mcp_servers.'sap-ui-automation']\n")).toBe("yes");
+    expect(codexHas("  [ mcp_servers . sap-ui-automation ]\n")).toBe("yes");
+    expect(codexHas("[mcp_servers.sap-ui-automation.env]\nA = '1'\n")).toBe("yes");
+    expect(codexHas('mcp_servers.sap-ui-automation = { command = "x" }\n')).toBe("yes");
+    expect(codexHas('[mcp_servers]\nsap-ui-automation = { command = "x" }\n')).toBe("yes");
+    expect(codexHas('mcp_servers = { "sap-ui-automation" = { command = "x" } }\n')).toBe("yes");
+    expect(codexHas('[mcp_servers.sap]\nargs = ["-y", "sap-ui-automation"]\n')).toBe("unsure");
+  });
+  test("Windows: arguments are quoted for cmd, so spaces and & stay inside one argument", () => {
+    expect(cmdArg("mcp", false)).toBe('^"mcp^"');
+    expect(cmdArg("C:\\Program Files\\nodejs\\node.exe", false)).toBe('^"C:\\Program^ Files\\nodejs\\node.exe^"');
+    expect(cmdArg("a&b", false)).toBe('^"a^&b^"');
+    // a quote is escaped for the program, the backslashes before it doubled
+    expect(cmdArg('say "hi"\\', false)).toBe('^"say^ \\^"hi\\^"\\\\^"');
+    // a .cmd shim reads its %* once more: escaped twice
+    expect(cmdArg("a&b", true)).toBe('^^^"a^^^&b^^^"');
+    expect(cmdLine("C:\\Users\\me\\AppData\\Roaming\\npm\\claude.cmd", ["mcp", "add", "--", "C:\\Program Files\\nodejs\\node.exe"])).toBe(
+      'C:\\Users\\me\\AppData\\Roaming\\npm\\claude.cmd ^^^"mcp^^^" ^^^"add^^^" ^^^"--^^^" ^^^"C:\\Program^^^ Files\\nodejs\\node.exe^^^"',
+    );
   });
 });
 

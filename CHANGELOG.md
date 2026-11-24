@@ -22,6 +22,30 @@ Preparing the first public release.
   of ending the server, and takes only small frames before pairing.
 - The DIAG router no longer ends the server when SAP GUI resets its
   connection while the onward one is being dialled.
+- `SAP_ALLOW_TCODES`, `SAP_BLOCK_TCODES` and `SAP_ALLOW_SYSTEMS` refuse
+  entries that match nothing (`SE*`, `/nSE38`) when the server starts.
+- A session reference such as `ABA` that fits several sessions is an
+  error listing them, unless the active session is one of them.
+- A confirmed write does not run when another call acted in the session
+  while the user was asked; a queued `sap_act` keeps to its session when
+  `sap_use` runs meanwhile; a new logon in the same SAP GUI session slot
+  starts without what the server kept for the old one.
+
+### For agents
+
+- The server names itself (title, description, website) when a client
+  connects.
+- `destructiveHint` on `sap_act`, `sap_replay` and `sap_code_test` is
+  false with `SAP_WRITE=off` and `SAP_ALLOW_LOGOFF` off, so clients that
+  ask before every destructive call stop asking on each navigation.
+- Arguments that do not fit a tool's schema are answered in plain words;
+  `sap_record` accepts `do` for `op`; `sap_look` and `sap_act` are marked
+  to load up front in Claude Code.
+- A batch reports progress per action and stops when the client cancels.
+- Batch-step fields (`expect`, `show`, `unseen`) on a single action are
+  refused instead of ignored.
+- `AGENTS.md`; the docs add the server under one name,
+  `sap-ui-automation`, everywhere.
 
 ### Documentation
 
@@ -224,5 +248,3 @@ The first public version.
 
 - `skills/sap-gui-drive`, a skill for agents working in SAP screens, also
   shipped in the npm package and as a Claude Code plugin.
-- `bench/`, a benchmark harness with 72 tasks (not in the npm package; no
-  results yet).

@@ -214,6 +214,79 @@ describe("the tools and the instructions say the write setting the server runs w
     });
 });
 
+describe("a call keeps to the session it queued for (review, 2026-11-24)", () => {
+  test("sap_use while a call waits does not move the waiting call", async () => {
+    const { surface, call } = await setup();
+    const ran: string[] = [];
+    const onAct = (a: Action, s: { info: { id: string } }) => void ran.push(`${s.info.id} ${String(a.id)}`);
+    surface.add({ id: "chrome:1", system: "ABA", transaction: "VA03" }, { actMs: 100, onAct });
+    surface.add({ id: "chrome:2", system: "PRD", transaction: "VA03" }, { onAct });
+    await call("sap_use", { session: "chrome:1" });
+    const first = call("sap_act", { action: { do: "set", id: "a", value: "1" } });
+    await new Promise((r) => setTimeout(r, 20));
+    // Queued behind the first, for the session active now: chrome:1.
+    const second = call("sap_act", { action: { do: "set", id: "b", value: "2" } });
+    await new Promise((r) => setTimeout(r, 20));
+    await call("sap_use", { session: "chrome:2" });
+    await Promise.all([first, second]);
+    expect(ran).toEqual(["chrome:1 a", "chrome:1 b"]);
+  });
+});
+
+describe("fields of a batch step on a single action (review, 2026-11-24)", () => {
+  test("are refused, with the batch form, and nothing runs", async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA" });
+    const r = await call("sap_act", { action: { do: "key", key: 0, expect: { screen: "4001" } } });
+    expect(r.error).toBe(true);
+    expect(r.text).toContain('"expect" belongs to a step of "actions"');
+    expect(surface.acts()).toEqual([]);
+  });
+});
+
+describe("a new logon in the same session id starts afresh (review, 2026-11-24)", () => {
+  test("a refused write on the old system does not shorten the first refusal on the new one", async () => {
+    const { surface, call } = await setup();
+    const s = surface.add({ id: "sapgui:/app/con[0]/ses[0]", system: "ABA", client: "800", user: "U1", transaction: "VA02" }, { assess });
+    await call("sap_act", { action: { do: "key", key: 11 } });
+    expect((await call("sap_act", { action: { do: "key", key: 11 } })).text).toContain("As before");
+    s.info = { ...s.info, system: "PRD", client: "100" };
+    const r = await call("sap_act", { action: { do: "key", key: 11 } });
+    expect(r.text).not.toContain("As before");
+    expect(r.text).toContain("SAP_WRITE=confirm or on");
+  });
+});
+
+describe("progress and cancellation of a batch (agent-practice review, 2026-11-24)", () => {
+  test("each action that ran is a progress notification when the client asks for them", async () => {
+    const { surface, client } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA" });
+    const seen: { progress: number; total?: number | undefined }[] = [];
+    await client.callTool(
+      { name: "sap_act", arguments: { actions: [{ do: "set", id: "a", value: "1" }, { do: "set", id: "b", value: "2" }] } },
+      undefined,
+      { onprogress: (p) => void seen.push({ progress: p.progress, total: p.total }) },
+    );
+    expect(seen).toEqual([
+      { progress: 1, total: 2 },
+      { progress: 2, total: 2 },
+    ]);
+  });
+  test("a cancelled call runs no action after the one running", async () => {
+    const { surface, client } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA" }, { actMs: 80 });
+    const stop = new AbortController();
+    const call = client
+      .callTool({ name: "sap_act", arguments: { actions: [{ do: "set", id: "a", value: "1" }, { do: "set", id: "b", value: "2" }, { do: "set", id: "c", value: "3" }] } }, undefined, { signal: stop.signal })
+      .catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 30));
+    stop.abort();
+    await call;
+    await new Promise((r) => setTimeout(r, 200));
+    expect(surface.acts().map((a) => a.id)).toEqual(["a"]);
+  });
+});
+
 describe("confirm mode with elicitation", () => {
   const env = { SAP_WRITE: "confirm" };
   test("the user accepts in the client: the action runs", async () => {
@@ -283,6 +356,19 @@ describe("confirm mode with elicitation", () => {
     expect(r.error).toBe(true);
     expect(r.text).toContain("what the action does");
     expect(surface.acts()).toEqual([]);
+  });
+  test("another call that acts in the session while the user reads: nothing runs (review, 2026-11-24)", async () => {
+    const box: { set?: () => Promise<unknown> } = {};
+    const { surface, call } = await setup(env, async () => {
+      await box.set!();
+      return "accept" as const;
+    });
+    surface.add({ id: "chrome:1", system: "ABA", transaction: "VA02", title: "T" }, { assess });
+    box.set = () => call("sap_act", { action: { do: "set", id: "ctxtA", value: "99" } });
+    const r = await call("sap_act", { action: { do: "key", key: 11 } });
+    expect(r.error).toBe(true);
+    expect(r.text).toContain("1 other action(s) ran in this session while the user was asked");
+    expect(surface.acts()).toEqual([{ do: "set", id: "ctxtA", value: "99" }]);
   });
   test("the confirmed action runs on its session, whichever became active meanwhile", async () => {
     const box: { use?: () => Promise<unknown> } = {};

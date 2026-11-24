@@ -235,7 +235,6 @@ const NO_SAP = new Proxy({} as Sap, {
   },
 });
 
-/** One run of one test: connect (when the test asks for sap), beforeEach, the test, afterEach, close. */
 /** A drift, as its own class or a copy of it from another load of the SDK. */
 const driftOf = (e: unknown): DriftInfo | undefined =>
   e instanceof Error && e.name === "Drift" && typeof (e as { toJSON?: unknown }).toJSON === "function" ? ((e as unknown as { toJSON(): DriftInfo }).toJSON()) : undefined;
@@ -251,6 +250,7 @@ interface Locking {
 /** The options of `use` that go to connect. */
 const PASSED = ["surface", "system", "session", "write", "allowTcodes", "blockTcodes"] as const satisfies readonly (keyof UseOptions & keyof ConnectOptions)[];
 
+/** One run of one test: connect (when the test asks for sap), beforeEach, the test, afterEach, close. */
 async function attempt(p: Planned, retry: number, slugDir: string, config: ResolvedConfig, surfaces: Surface[] | undefined, clamp: UseOptions = {}, locking: Locking = {}): Promise<Attempt> {
   const suites = suitesOf(p.test);
   const use: UseOptions = Object.assign({}, config.use, p.project?.use, ...suites.map((s) => s.use), p.test.details.use, clamp);
@@ -299,20 +299,21 @@ async function attempt(p: Planned, retry: number, slugDir: string, config: Resol
   const down = new Deadline(deadline.ms);
   let trace: string | undefined;
   let lock: LockReport | undefined;
+  // afterEach hooks, innermost suite first; not after a timeout, as the test may still be running.
+  const afterEach = async (sap: Sap) => {
+    if (timedOut) return;
+    for (const s of [...suites].reverse())
+      for (const h of s.afterEach)
+        await Promise.resolve(h({ sap, info })).catch((e: unknown) => {
+          if (!isSkip(e)) error ??= e;
+        });
+  };
   const teardown = (async () => {
     const sap = await sapP.catch(() => undefined);
     if (!sap) return;
-    if (sap === NO_SAP) {
-      if (!timedOut) for (const s of [...suites].reverse()) for (const h of s.afterEach) await Promise.resolve(h({ sap, info })).catch((e: unknown) => { if (!isSkip(e)) error ??= e; });
-      return;
-    }
+    if (sap === NO_SAP) return afterEach(sap);
     try {
-      if (!timedOut)
-        for (const s of [...suites].reverse())
-          for (const h of s.afterEach)
-            await Promise.resolve(h({ sap, info })).catch((e: unknown) => {
-              if (!isSkip(e)) error ??= e;
-            });
+      await afterEach(sap);
       // A test that passed writes the lock: what it saw that the lock did not have yet.
       if (sap.lock) {
         const s = await sap.lock.finish(!error && !skipped && !timedOut).catch((e: unknown) => {

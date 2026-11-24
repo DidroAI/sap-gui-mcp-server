@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configFile, exampleTest, init } from "../src/cli/init.js";
@@ -67,6 +67,29 @@ describe("init", () => {
     const f = await init({ ...base(), yes: true, force: true });
     expect(read(join(cwd, "sap.config.ts"))).toContain("defineConfig");
     expect(f.lines).toContain("✓ sap.config.ts: overwritten");
+  });
+
+  test("an edited skill or Cursor rule is kept, and replaced with --force", async () => {
+    // No client found: Claude Code's project skill.
+    await init({ ...base(), yes: true });
+    const skill = join(cwd, ".claude", "skills", "sap-gui-drive", "SKILL.md");
+    writeFileSync(skill, "mine");
+    const r = await init({ ...base(), yes: true });
+    expect(read(skill)).toBe("mine");
+    expect(r.lines).toContain(`– Claude Code skill sap-gui-drive: differs, kept (--force replaces it) (${join(".claude", "skills", "sap-gui-drive")})`);
+    const f = await init({ ...base(), yes: true, force: true });
+    expect(read(skill)).toBe(read(join(packageRoot(), "skills", "sap-gui-drive", "SKILL.md")));
+    expect(f.lines.some((l) => l.startsWith("• Claude Code skill sap-gui-drive: updated"))).toBe(true);
+    // Cursor found: its rule.
+    mkdirSync(join(home, ".cursor"));
+    await init({ ...base(), yes: true });
+    const rule = join(cwd, ".cursor", "rules", "sap-gui-drive.mdc");
+    writeFileSync(rule, "my rule");
+    const c = await init({ ...base(), yes: true });
+    expect(read(rule)).toBe("my rule");
+    expect(c.lines.some((l) => l.startsWith("– Cursor skill sap-gui-drive: differs, kept"))).toBe(true);
+    await init({ ...base(), yes: true, force: true });
+    expect(read(rule)).toStartWith("---\ndescription:");
   });
 
   test("--dry-run writes nothing", async () => {
@@ -193,6 +216,52 @@ describe("setup: Cursor, Windsurf, VS Code", () => {
     const r = setup({ dryRun: false, only: ["cursor"], cwd, onPath: none }, {}, "linux", home);
     expect(r.lines.some((l) => l.startsWith("✗ Cursor:") && l.includes("not valid JSON"))).toBe(true);
     expect(read(join(home, ".cursor", "mcp.json"))).toBe("{oops");
+  });
+
+  test("a config that is not an object, or whose mcpServers is not one, is left alone", () => {
+    mkdirSync(join(home, ".cursor"));
+    const file = join(home, ".cursor", "mcp.json");
+    for (const text of ["null", "[]", '"x"', '{"mcpServers": []}', '{"mcpServers": "x"}']) {
+      writeFileSync(file, text);
+      const r = setup({ dryRun: false, only: ["cursor"], cwd, onPath: none }, {}, "linux", home);
+      expect(r.changed).toBe(0);
+      expect(r.lines.some((l) => l.startsWith("✗ Cursor:") && l.includes("by hand") && l.includes('"sap-ui-automation"'))).toBe(true);
+      expect(read(file)).toBe(text);
+    }
+    expect(existsSync(`${file}.bak`)).toBe(false);
+  });
+
+  test("the first .bak is kept, and no temporary file is left behind", () => {
+    mkdirSync(join(cwd, ".vscode"));
+    const file = join(cwd, ".vscode", "mcp.json");
+    writeFileSync(file, '{"servers": {}}');
+    setup({ dryRun: false, only: ["vscode"], cwd, onPath: none }, {}, "linux", home);
+    expect(read(`${file}.bak`)).toBe('{"servers": {}}');
+    // the user removes our entry; a second run must not replace the original backup
+    writeFileSync(file, '{"servers": {"mine": {}}}');
+    setup({ dryRun: false, only: ["vscode"], cwd, onPath: none }, {}, "linux", home);
+    expect(read(`${file}.bak`)).toBe('{"servers": {}}');
+    expect(Object.keys(json(file).servers)).toEqual(["mine", "sap-ui-automation"]);
+    expect(readdirSync(join(cwd, ".vscode")).sort()).toEqual(["mcp.json", "mcp.json.bak"]);
+  });
+
+  test("Codex: a quoted or sub-table entry is found; an unclear mention is refused with the table to add", () => {
+    const file = join(home, ".codex", "config.toml");
+    mkdirSync(join(home, ".codex"));
+    writeFileSync(file, '[mcp_servers."sap-ui-automation".env]\nA = "1"\n');
+    let r = setup({ dryRun: false, only: ["codex"], cwd, onPath: none }, {}, "linux", home);
+    expect(r.lines).toContain(`✓ Codex: "sap-ui-automation" is already in ${file}.`);
+    expect(read(file)).toBe('[mcp_servers."sap-ui-automation".env]\nA = "1"\n');
+    writeFileSync(file, '[mcp_servers.sap]\nargs = ["sap-ui-automation"]\n');
+    r = setup({ dryRun: false, only: ["codex"], cwd, onPath: none }, {}, "linux", home);
+    expect(r.changed).toBe(0);
+    expect(r.lines.some((l) => l.startsWith("✗ Codex:"))).toBe(true);
+    expect(r.lines).toContain("    [mcp_servers.sap-ui-automation]");
+    expect(read(file)).toBe('[mcp_servers.sap]\nargs = ["sap-ui-automation"]\n');
+    writeFileSync(file, 'model = "x"\n');
+    r = setup({ dryRun: false, only: ["codex"], cwd, onPath: none }, {}, "linux", home);
+    expect(r.changed).toBe(1);
+    expect(read(file)).toStartWith('model = "x"\n\n[mcp_servers.sap-ui-automation]\n');
   });
 
   test("Windsurf (Devin Desktop): writes ~/.config/devin/mcp_config.json, found by the old folder too", async () => {

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { FORMAT, parseTest, type SapTest } from "../src/record/format.js";
 import type { ReplayResult } from "../src/record/replay.js";
 import { connect } from "../src/sdk/index.js";
+import { openCommand } from "../src/trace/cli.js";
 import { formatMs, htmlPathFor, renderTraceHtml, showTraceCommand, slower, timings, traceSummary } from "../src/trace/index.js";
 import { FakeSap } from "./record-fakes.js";
 
@@ -155,6 +156,11 @@ describe("summary", () => {
 });
 
 describe("show-trace", () => {
+  test("--open on Windows goes through explorer.exe, not cmd, so & in a path is no command", () => {
+    expect(openCommand("C:\\R&D\\a b\\t.html", "win32")).toEqual(["explorer.exe", ["C:\\R&D\\a b\\t.html"]]);
+    expect(openCommand("/tmp/t.html", "darwin")).toEqual(["open", ["/tmp/t.html"]]);
+    expect(openCommand("/tmp/t.html", "linux")).toEqual(["xdg-open", ["/tmp/t.html"]]);
+  });
   test("writes the page next to the file and prints its path; --open opens it", async () => {
     const { file } = await fakeTrace();
     const logs: string[] = [];

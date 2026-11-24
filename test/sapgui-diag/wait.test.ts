@@ -11,7 +11,7 @@ import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Capture, sapguiDiagSurface } from "../../src/sapgui-diag/index.js";
+import { CAPTURE_WARNING, Capture, diagPort, sapguiDiagSurface } from "../../src/sapgui-diag/index.js";
 import { buildRoute, niFrame } from "../../src/sapgui-diag/router.js";
 import { Traffic } from "../../src/sapgui-diag/traffic.js";
 import { END, idItem, message, rfcCall, rfcItem, screenHead, windowStart } from "../diag/build.js";
@@ -222,6 +222,30 @@ describe("the capture is opt-in and never stops reading or the logon", () => {
     expect(c.on).toBe(false);
     expect(c.failed).toContain("failed and was stopped");
   });
+  test("a capture that is on is said, with what the file holds", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "diagcap-"));
+    const logged: string[] = [];
+    await lab("Synthetic Order: Overview", { SAP_DIAG_CAPTURE: dir }, (m) => logged.push(m));
+    expect(logged).toContain(CAPTURE_WARNING);
+    expect(CAPTURE_WARNING).toContain("logon");
+  });
+  test("a capture file that cannot be made private: a warning, and the capture goes on", () => {
+    const dir = mkdtempSync(join(tmpdir(), "diagcap-"));
+    const c = new Capture(dir, "x.bin", () => {
+      throw new Error("icacls failed");
+    });
+    expect(c.on).toBe(true);
+    expect(c.warning).toContain("icacls failed");
+    expect(c.failed).toBeUndefined();
+  });
+  test("the file is restricted once, when it is made", () => {
+    const dir = mkdtempSync(join(tmpdir(), "diagcap-"));
+    const seen: string[] = [];
+    const c = new Capture(dir, "x.bin", (f) => seen.push(f));
+    c.write(0, Buffer.from("a"));
+    expect(seen).toEqual([join(dir, "x.bin")]);
+    expect(c.warning).toBeUndefined();
+  });
   test.skipIf(process.platform === "win32")("the capture file is readable by its owner only", async () => {
     const dir = await mkdtemp(join(tmpdir(), "diagcap-"));
     const c = new Capture(dir, "x.bin");
@@ -253,5 +277,44 @@ describe("the router's messages reach the server's log", () => {
     } finally {
       process.stderr.write = orig;
     }
+  });
+});
+
+describe("SAP_DIAG_PORT", () => {
+  test("a port number, or the default when unset", () => {
+    expect(diagPort(undefined)).toBe(3298);
+    expect(diagPort("")).toBe(3298);
+    expect(diagPort(" 3299 ")).toBe(3299);
+    for (const bad of ["abc", "32a", "0", "70000", "-1", "3.5"]) expect(() => diagPort(bad)).toThrow("SAP_DIAG_PORT");
+  });
+  test("doctor says a bad port as it is, not as a port taken", async () => {
+    const surface = sapguiDiagSurface({ SAP_DIAG_PORT: "abc" }, { transport: { request: async () => ({}) as never, close() {} }, log: () => {} });
+    const check = (await surface.doctor?.())?.find((c) => c.check === "DIAG router");
+    expect(check?.ok).toBe(false);
+    expect(check?.detail).toContain('SAP_DIAG_PORT is "abc"');
+    expect(check?.fix).not.toContain("taken");
+  });
+  test("a port in use is said as taken", async () => {
+    const busy = await new Promise<Server>((r) => {
+      const s = createServer();
+      s.listen(0, "127.0.0.1", () => r(s));
+    });
+    open.push(busy);
+    const port = (busy.address() as { port: number }).port;
+    const surface = sapguiDiagSurface({ SAP_DIAG_PORT: String(port) }, { transport: { request: async () => ({}) as never, close() {} }, log: () => {} });
+    const check = (await surface.doctor?.())?.find((c) => c.check === "DIAG router");
+    expect(check?.fix).toContain(`Port ${port} is taken`);
+  });
+});
+
+describe("closing the surface", () => {
+  test("the router stops listening, and the input host is closed", async () => {
+    let closed = 0;
+    const surface = sapguiDiagSurface({}, { port: 0, transport: { request: async () => ({}) as never, close: () => void closed++ }, log: () => {} });
+    const router = await surface.router;
+    expect(router.listening).toBe(true);
+    await surface.close?.();
+    expect(router.listening).toBe(false);
+    expect(closed).toBe(1);
   });
 });

@@ -1,7 +1,7 @@
 # Codex
 
 ```sh
-codex mcp add sap-gui -- npx -y sap-ui-automation
+codex mcp add sap-ui-automation -- npx -y sap-ui-automation
 ```
 
 Or in `~/.codex/config.toml`:

@@ -152,7 +152,7 @@ export async function init(opts: InitOptions = {}): Promise<InitResult> {
   write(join(cwd, "sap.config.ts"), configFile(answers));
   write(join(cwd, "sap-tests", "example.sap.ts"), exampleTest(answers.surfaces[0] ?? "webgui"));
 
-  const skills = installSkills({ targets: skillTargets(answers.clients), dryRun, cwd, home, env, root: opts.skillsRoot });
+  const skills = installSkills({ targets: skillTargets(answers.clients), dryRun, cwd, home, env, root: opts.skillsRoot, overwrite: !!opts.force });
   lines.push(...skills.lines);
 
   if (answers.clients.length) {

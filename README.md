@@ -22,7 +22,6 @@ VS Code and any other MCP client.
 - **Runs become tests.** Record what the agent did, replay it with no
   model, export it.
 
-<!-- TODO(launch): a 20-second GIF: the agent reads VA03 in Web GUI and answers a question. -->
 
 ```
 TRANSACTION VA01  PROGRAM SAPMV45A  SCREEN 101  SYSTEM ABA (800)
@@ -46,7 +45,7 @@ your client:
 **Claude Code**
 
 ```sh
-claude mcp add sap-gui --scope user -- npx -y sap-ui-automation
+claude mcp add sap-ui-automation --scope user -- npx -y sap-ui-automation
 ```
 
 or, with the skill, as a plugin: `/plugin marketplace add DidroAI/sap-ui-automation`
@@ -72,7 +71,7 @@ and open it, or add the JSON below to `claude_desktop_config.json`.
 code --add-mcp '{"name":"sap-ui-automation","type":"stdio","command":"npx","args":["-y","sap-ui-automation"]}'
 ```
 
-**Codex** (`~/.codex/config.toml`)
+**Codex**: `codex mcp add sap-ui-automation -- npx -y sap-ui-automation`, or in `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.sap-ui-automation]
@@ -87,6 +86,22 @@ Desktop, Cursor, Windsurf, VS Code), then check what it can reach:
 npx -y sap-ui-automation setup
 npx -y sap-ui-automation doctor
 ```
+
+**Gemini CLI, Copilot CLI, opencode, Goose, Cline and other MCP clients**:
+the same command, `npx -y sap-ui-automation`, as a stdio server in the
+client's MCP settings.
+
+**Agents with a shell, without MCP**: the `sap-gui` CLI does the same work
+from the command line (`sap-gui look`, `sap-gui act ...`), and skills teach
+the agent to use it:
+
+```sh
+npm install -g sap-ui-automation
+sap-ui-automation install --skills --target all
+```
+
+`sap-ui-automation init` sets a project up for tests: a config, an example
+test, the skills and the MCP clients.
 
 On Windows, some clients cannot start `npx` directly: use
 `"command": "cmd", "args": ["/c", "npx", "-y", "sap-ui-automation"]`

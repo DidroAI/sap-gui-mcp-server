@@ -14,7 +14,7 @@
  * and exits after SAP_CLI_IDLE minutes without a call (default 30).
  */
 import { createHash, randomBytes } from "node:crypto";
-import { chmodSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { connect, createServer as createNetServer, type Server as NetServer, type Socket } from "node:net";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { join, resolve } from "node:path";
@@ -43,25 +43,76 @@ export interface DaemonAddress {
 }
 
 /**
- * The settings a daemon runs under: every SAP_* variable, except the CLI's
- * own (SAP_CLI_*), which only say where files go and which daemon to use.
+ * The SAP_* variables the server reads. Others are not the daemon's settings:
+ * the CLI's own (SAP_CLI_*) only say where files go and which daemon to use,
+ * and SAP_USER, SAP_PASSWORD or SAP_VAR_* are for exported scripts.
+ * test/cli-agent.test.ts checks this list against the sources.
+ */
+export const SETTINGS = [
+  "SAP_ALLOW_LOGOFF",
+  "SAP_ALLOW_ORIGINS",
+  "SAP_ALLOW_SYSTEMS",
+  "SAP_ALLOW_TCODES",
+  "SAP_BLOCK_TCODES",
+  "SAP_BROWSER",
+  "SAP_CHROME_ARGS",
+  "SAP_CHROME_CDP",
+  "SAP_CHROME_PATH",
+  "SAP_CHROME_PROFILE",
+  "SAP_CODE",
+  "SAP_CODE_TOOLS",
+  "SAP_DIAG_CAPTURE",
+  "SAP_DIAG_CELL",
+  "SAP_DIAG_PORT",
+  "SAP_DIAG_QUIET_MS",
+  "SAP_DIAG_REQUEST_MS",
+  "SAP_DOWNLOAD_DIR",
+  "SAP_EXTENSION_CODE",
+  "SAP_EXTENSION_PORT",
+  "SAP_EXTENSION_START_CHROME",
+  "SAP_EXTENSION_WAIT",
+  "SAP_FIORI_URL",
+  "SAP_FIORI_WAIT",
+  "SAP_GUI_METHOD",
+  "SAP_RECORD",
+  "SAP_RECORD_DIR",
+  "SAP_START_URL",
+  "SAP_STRUCTURED",
+  "SAP_SURFACES",
+  "SAP_TIMINGS",
+  "SAP_VIEW",
+  "SAP_WEBGUI_URL",
+  "SAP_WRITE",
+] as const;
+const SETTING_NAMES = new Set<string>(SETTINGS);
+
+/** A setting whose value is never printed. */
+export const isSecret = (name: string) => /PASSWORD|CODE$|TOKEN|SECRET|KEY/.test(name) && name !== "SAP_CODE";
+
+/**
+ * The settings a daemon runs under: the SAP_* variables the server reads.
  * Names are upper-cased: Windows does not tell SAP_WRITE from sap_write.
  */
 export function settingsOf(env: Env): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(env)) {
     const name = k.toUpperCase();
-    if (v === undefined || !name.startsWith("SAP_") || name.startsWith("SAP_CLI_")) continue;
+    if (v === undefined || !SETTING_NAMES.has(name)) continue;
     out[name] = v;
   }
   return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
 }
 
-/** The settings that differ, said for a person: empty when there is none. */
+/** The settings with secret values hidden, to show. */
+export function shownSettings(settings: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(settings).map(([k, v]) => [k, isSecret(k) ? "(hidden)" : v]));
+}
+
+/** The settings that differ, said for a person: empty when there is none. A secret's value is not said. */
 export function settingsDiff(daemon: Record<string, string>, call: Record<string, string>): string[] {
   const names = [...new Set([...Object.keys(daemon), ...Object.keys(call)])].sort();
-  const said = (v: string | undefined) => (v === undefined ? "unset" : `"${v}"`);
-  return names.filter((n) => daemon[n] !== call[n]).map((n) => `${n}: daemon ${said(daemon[n])}, this call ${said(call[n])}`);
+  const said = (n: string, v: string | undefined) => (v === undefined ? "unset" : isSecret(n) ? "set (hidden)" : `"${v}"`);
+  return names.filter((n) => daemon[n] !== call[n]).map((n) => `${n}: daemon ${said(n, daemon[n])}, this call ${said(n, call[n])}`);
 }
 
 function userTag(): string {
@@ -198,7 +249,7 @@ export async function startDaemon(o: DaemonOptions): Promise<Daemon> {
     lastCallAt: lastCallAt.toISOString(),
     idleExitMinutes: o.idleMs / 60_000,
     calls,
-    settings,
+    settings: shownSettings(settings),
   });
 
   const armIdle = () => {
@@ -271,6 +322,7 @@ export async function startDaemon(o: DaemonOptions): Promise<Daemon> {
         req = JSON.parse(line) as Request;
       } catch {
         socket.end(`${JSON.stringify({ ok: false, code: "bad-request", error: "Not JSON." } satisfies Response)}\n`);
+        if (!closing) armIdle();
         return;
       }
       void handle(req)
@@ -292,16 +344,21 @@ export async function startDaemon(o: DaemonOptions): Promise<Daemon> {
     });
   }
   try {
-    await listen();
+    // Two daemons starting together take turns: one never removes the socket the other just made.
+    await underLock(process.platform === "win32" ? undefined : join(o.address.stateDir, `${o.address.key}.lock`), async () => {
+      try {
+        await listen();
+      } catch (e) {
+        const code = (e as NodeJS.ErrnoException).code;
+        // A socket file left by a daemon that died: nobody answers on it, so it goes. A live one keeps its socket.
+        if (code !== "EADDRINUSE" || process.platform === "win32" || (await answers(o.address.path))) throw e;
+        rmSync(o.address.path, { force: true });
+        await listen();
+      }
+    });
   } catch (e) {
-    const code = (e as NodeJS.ErrnoException).code;
-    // A socket file left by a daemon that died: nobody answers on it, so it goes. A live one keeps its socket.
-    if (code !== "EADDRINUSE" || process.platform === "win32" || (await answers(o.address.path))) {
-      await client.close().catch(() => {});
-      throw e;
-    }
-    rmSync(o.address.path, { force: true });
-    await listen();
+    await client.close().catch(() => {});
+    throw e;
   }
   if (process.platform !== "win32") chmodSync(o.address.path, 0o600);
   // The token is written once the daemon listens, so a daemon that lost the race to listen never overwrites the live one's.
@@ -329,6 +386,54 @@ export async function startDaemon(o: DaemonOptions): Promise<Daemon> {
   }
 
   return { close, closed, status };
+}
+
+/** Is this process alive? */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/**
+ * Runs fn holding a lock file (created with O_EXCL). A lock whose process is
+ * gone, or that is older than a minute, is taken over. No file: no lock.
+ */
+export async function underLock<T>(file: string | undefined, fn: () => Promise<T>, waitMs = 10_000): Promise<T> {
+  if (!file) return fn();
+  const until = Date.now() + waitMs;
+  for (;;) {
+    try {
+      const fd = openSync(file, "wx", 0o600);
+      writeSync(fd, String(process.pid));
+      closeSync(fd);
+      break;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+      let stale = false;
+      try {
+        // Read and dated through one descriptor: the lock looked at is the lock judged.
+        const fd = openSync(file, "r");
+        try {
+          const pid = Number(readFileSync(fd, "utf8"));
+          stale = (pid > 0 && !alive(pid)) || Date.now() - fstatSync(fd).mtimeMs > 60_000;
+        } finally {
+          closeSync(fd);
+        }
+      } catch {}
+      if (stale) rmSync(file, { force: true });
+      else if (Date.now() > until) throw new Error(`${file} is held by another daemon that is starting.`);
+      else await new Promise((r) => setTimeout(r, 25));
+    }
+  }
+  try {
+    return await fn();
+  } finally {
+    rmSync(file, { force: true });
+  }
 }
 
 /** Does something answer on this socket or pipe? */

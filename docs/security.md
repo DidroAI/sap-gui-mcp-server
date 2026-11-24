@@ -70,13 +70,12 @@ The server itself calls no model. Replaying a recorded test needs none.
 | Test code the agent saves, and its run traces | `SAP_RECORD_DIR` | only with `SAP_CODE_TOOLS=on`, on `sap_code_save` and `sap_code_test` | the `*.sap.ts` file; a copy while it runs, deleted after; traces under `sap-results` |
 | Files Web GUI exports "to a local file", browser downloads | `SAP_DOWNLOAD_DIR` (default `downloads` in `SAP_RECORD_DIR` when set, else `./sap-downloads`) | when an action in Web GUI produces such a file | whatever SAP exported |
 | Raw DIAG traffic | `SAP_DIAG_CAPTURE` | only when set | the whole SAP GUI session, **logon included**; file mode 0600 |
-| OCR input picture | `SAP_SCREEN_DEBUG` | only when set | parts of a screen |
 | Reports and exports from the command line | the paths given (`--junit`, `--out`) | when the user runs the command | test results, the test steps |
 
 `./` is the server's working directory, which the MCP client chooses. Nothing
 else is written, apart from the MCP client configuration files that
 `setup` edits when the user runs it. Screenshots are returned to the client,
-not saved. Leave `SAP_DIAG_CAPTURE` and `SAP_SCREEN_DEBUG` unset outside
+not saved. Leave `SAP_DIAG_CAPTURE` unset outside
 debugging.
 
 ## What the agent can do
@@ -168,7 +167,7 @@ Start with a test or sandbox system. For a production system:
   machine.
 - **No other MCP servers that can send data out** (web, email, chat) in
   the same client session, if the data must not leave through them.
-- **Leave `SAP_DIAG_CAPTURE` and `SAP_SCREEN_DEBUG` unset**, and keep
+- **Leave `SAP_DIAG_CAPTURE` unset**, and keep
   `SAP_RECORD` off unless a test is being recorded.
 - **Leave `SAP_CODE_TOOLS` off**: it lets the agent run code on the machine.
 - **Pin the package version** in the client configuration

@@ -8,7 +8,7 @@
  * without the code gets nowhere.
  */
 import { createCipheriv, createDecipheriv, createHmac, randomInt, timingSafeEqual } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { posix, win32 } from "node:path";
 
@@ -56,7 +56,8 @@ export interface PairingCode {
 
 /**
  * The machine's pairing code: SAP_EXTENSION_CODE when set (tests, CI), else the
- * pairing file, made on first use with mode 0600 (and its directory 0700). A
+ * pairing file, made on first use with mode 0600 (and its directory 0700),
+ * and set back to 0600 when it is found open to others. A
  * file whose content is not a code is replaced: no extension can be paired
  * with it anyway.
  */
@@ -71,14 +72,29 @@ export function readOrCreateCode(env: Env = process.env, platform: NodeJS.Platfo
   const file = pairingFile(platform, env, home);
   try {
     const code = normalizeCode(readFileSync(file, "utf8"));
-    if (code.length === CODE_LENGTH) return { code, file };
+    if (code.length === CODE_LENGTH) {
+      ownerOnly(file, platform);
+      return { code, file };
+    }
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
   }
   const code = generateCode();
   mkdirSync((platform === "win32" ? win32 : posix).dirname(file), { recursive: true, mode: 0o700 });
   writeFileSync(file, `${formatCode(code)}\n`, { mode: 0o600 });
+  // The mode above applies to a new file only: one that was there keeps its own.
+  ownerOnly(file, platform);
   return { code, file };
+}
+
+/**
+ * On POSIX, makes the file readable by its owner only (0600) when it is open
+ * to more: a pairing file copied in, or made by hand, is not trusted as it is.
+ * Windows has no such modes: there the user's profile directory keeps others out.
+ */
+function ownerOnly(file: string, platform: NodeJS.Platform): void {
+  if (platform === "win32" || process.platform === "win32") return;
+  if ((statSync(file).mode & 0o077) !== 0) chmodSync(file, 0o600);
 }
 
 /** Which side proves itself: the extension ("sap-gui-ext") or the server ("sap-gui-srv"). */

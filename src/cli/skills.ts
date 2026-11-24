@@ -10,6 +10,8 @@
  *   `description` with `alwaysApply: false`, so Cursor picks it by description.
  *
  * It is idempotent: a file with the same content is left alone and reported unchanged.
+ * A file that differs is replaced, unless `overwrite` is false (init without
+ * --force): then it is kept, as the user may have edited it.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -59,7 +61,7 @@ export function cursorRule(skillMd: string): string {
   return `---\ndescription: ${description}\nglobs:\nalwaysApply: false\n---\n${body}`;
 }
 
-export type FileState = "created" | "updated" | "unchanged";
+export type FileState = "created" | "updated" | "unchanged" | "kept";
 
 export interface InstallResult {
   lines: string[];
@@ -75,11 +77,14 @@ export interface InstallOptions {
   env?: Record<string, string | undefined>;
   /** Where the skills come from (tests). Default: this package. */
   root?: string | undefined;
+  /** Replace a file that differs from the shipped one. Default: true. */
+  overwrite?: boolean;
 }
 
-function put(path: string, content: string | Buffer, dryRun: boolean): FileState {
+function put(path: string, content: string | Buffer, dryRun: boolean, overwrite: boolean): FileState {
   const old = existsSync(path) ? readFileSync(path) : undefined;
   if (old?.equals(Buffer.from(content))) return "unchanged";
+  if (old !== undefined && !overwrite) return "kept";
   if (!dryRun) {
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, content);
@@ -101,12 +106,13 @@ export function installSkills(opts: InstallOptions): InstallResult {
   const home = opts.home ?? homedir();
   const env = opts.env ?? process.env;
   const dryRun = !!opts.dryRun;
+  const overwrite = opts.overwrite ?? true;
   const skills = shippedSkills(opts.root);
   const lines: string[] = [];
   const files: InstallResult["files"] = [];
   if (!skills.length) return { lines: [`✗ Skills: none found in ${join(opts.root ?? packageRoot(), "skills")}.`], files };
   const show = (p: string) => (p.startsWith(cwd + sep) ? relative(cwd, p) : p.startsWith(home + sep) ? join("~", relative(home, p)) : p);
-  const verb = (s: FileState) => (dryRun && s !== "unchanged" ? `would be ${s}` : s);
+  const verb = (s: FileState) => (s === "kept" ? "differs, kept (--force replaces it)" : dryRun && s !== "unchanged" ? `would be ${s}` : s);
 
   for (const target of opts.targets) {
     const dir = skillsDir(target, !!opts.global, cwd, home, env);
@@ -119,21 +125,21 @@ export function installSkills(opts: InstallOptions): InstallResult {
       let shown: string;
       if (target === "cursor") {
         shown = join(dir, `${skill.name}.mdc`);
-        state = put(shown, cursorRule(readFileSync(join(skill.dir, "SKILL.md"), "utf8")), dryRun);
+        state = put(shown, cursorRule(readFileSync(join(skill.dir, "SKILL.md"), "utf8")), dryRun, overwrite);
         files.push({ path: shown, state });
       } else {
         shown = join(dir, skill.name);
         const states = skill.files.map((f) => {
           const path = join(shown, f);
-          const s = put(path, readFileSync(join(skill.dir, f)), dryRun);
+          const s = put(path, readFileSync(join(skill.dir, f)), dryRun, overwrite);
           files.push({ path, state: s });
           return s;
         });
-        // The skill is new when its SKILL.md is; otherwise any change is an update.
+        // The skill is new when its SKILL.md is; a file left as the user had it makes it kept; any other change is an update.
         const main = states[skill.files.indexOf("SKILL.md")];
-        state = main === "created" ? "created" : states.every((s) => s === "unchanged") ? "unchanged" : "updated";
+        state = main === "created" ? "created" : states.includes("kept") ? "kept" : states.every((s) => s === "unchanged") ? "unchanged" : "updated";
       }
-      lines.push(`${state === "unchanged" ? "✓" : "•"} ${LABEL[target]} skill ${skill.name}: ${verb(state)} (${show(shown)})`);
+      lines.push(`${state === "unchanged" ? "✓" : state === "kept" ? "–" : "•"} ${LABEL[target]} skill ${skill.name}: ${verb(state)} (${show(shown)})`);
     }
   }
   return { lines, files };

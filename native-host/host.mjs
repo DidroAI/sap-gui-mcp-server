@@ -15,16 +15,17 @@ import { posix, win32 } from "node:path";
 
 const SERVICE = "sap-ui-automation";
 const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-const CODE_LENGTH = 26;
+export const CODE_LENGTH = 26;
 const MAX_MESSAGE = 64 * 1024;
 
-const normalizeCode = (s) =>
+// The same as extension/code.js and src/browser/extension/pairing.ts (test/pairing-parity.test.ts checks it).
+export const normalizeCode = (s) =>
   String(s || "")
     .toUpperCase()
     .replace(/[IL]/g, "1")
     .replace(/O/g, "0")
     .replace(/[^0-9A-Z]/g, "");
-const formatCode = (c) => normalizeCode(c).replace(/(.{5})(?=.)/g, "$1-");
+export const formatCode = (c) => normalizeCode(c).replace(/(.{5})(?=.)/g, "$1-");
 
 // The same file as src/browser/extension/pairing.ts (pairingFile).
 function configDir(platform = process.platform, env = process.env, home = homedir()) {
@@ -168,24 +169,27 @@ function reply(obj) {
   process.stdout.write(Buffer.concat([head, body]));
 }
 
-let buf = Buffer.alloc(0);
-process.stdin.on("data", (chunk) => {
-  buf = Buffer.concat([buf, chunk]);
-  while (buf.length >= 4) {
-    const n = buf.readUInt32LE(0);
-    if (n > MAX_MESSAGE) process.exit(1);
-    if (buf.length < 4 + n) return;
-    const text = buf.subarray(4, 4 + n).toString("utf8");
-    buf = buf.subarray(4 + n);
-    let out;
-    try {
-      out = handle(JSON.parse(text));
-    } catch (e) {
-      // The message only: a password is never part of an error here.
-      out = { ok: false, error: String((e && e.message) || e).slice(0, 300) };
+// Chrome starts this file and talks to it on stdin; a test only imports it for the functions above.
+function listen() {
+  let buf = Buffer.alloc(0);
+  process.stdin.on("data", (chunk) => {
+    buf = Buffer.concat([buf, chunk]);
+    while (buf.length >= 4) {
+      const n = buf.readUInt32LE(0);
+      if (n > MAX_MESSAGE) process.exit(1);
+      if (buf.length < 4 + n) return;
+      const text = buf.subarray(4, 4 + n).toString("utf8");
+      buf = buf.subarray(4 + n);
+      let out;
+      try {
+        out = handle(JSON.parse(text));
+      } catch (e) {
+        // The message only: a password is never part of an error here.
+        out = { ok: false, error: String((e && e.message) || e).slice(0, 300) };
+      }
+      reply(out);
     }
-    reply(out);
-  }
-});
-process.stdin.on("end", () => process.exit(0));
-
+  });
+  process.stdin.on("end", () => process.exit(0));
+}
+if (/host\.mjs$/i.test(process.argv[1] || "")) listen();

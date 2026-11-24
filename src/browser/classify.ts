@@ -14,6 +14,7 @@
  * Also here: SAP_ALLOW_ORIGINS, the list of origins the server may look at.
  */
 import type { Page } from "playwright-core";
+import { within } from "./tab.js";
 
 export type TabOwner = "webgui" | "fiori" | null;
 
@@ -71,14 +72,11 @@ const SIGNS_TIMEOUT_MS = 3000;
 
 /** The signs of a tab's main frame; all false when the page does not answer in time. */
 export function tabSigns(page: Pick<Page, "mainFrame">, timeoutMs = SIGNS_TIMEOUT_MS): Promise<TabSigns> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const late = new Promise<TabSigns>((resolve) => {
-    timer = setTimeout(() => resolve(NO_SIGNS), timeoutMs);
-  });
-  const asked = Promise.resolve()
-    .then(() => page.mainFrame().evaluate(readSigns))
-    .catch(() => NO_SIGNS);
-  return Promise.race([asked, late]).finally(() => clearTimeout(timer));
+  return within(
+    Promise.resolve().then(() => page.mainFrame().evaluate(readSigns)),
+    timeoutMs,
+    NO_SIGNS,
+  );
 }
 
 /** The origins of SAP_ALLOW_ORIGINS ("https://myhost:44300, https://other"), or undefined when none is set. */

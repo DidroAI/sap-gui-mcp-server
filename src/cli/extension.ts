@@ -9,7 +9,7 @@
  * `install` copies it to a stable place first (default ~/sap-ui-automation-extension,
  * a folder Chrome's file dialog shows on every system). `unpack` is the same.
  */
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,31 +24,35 @@ export const EXTENSION_HELP = `  sap-ui-automation extension install [dir]
                                 remove the helper from every browser, the SAP passwords it saved in the keychain,
                                 and the copied extension (dir, default ~/sap-ui-automation-extension)`;
 
-/** Where `install` copied the extension last: kept next to the pairing file, for `uninstall`. */
-async function folderFile(): Promise<string> {
-  const { pairingFile } = await import("../browser/extension/pairing.js");
-  return join(dirname(pairingFile()), "extension-folder");
+/** Where files go: the user's home and environment (tests pass their own), and whether uninstall clears the keychain. */
+export interface ExtensionOptions {
+  home?: string;
+  env?: Record<string, string | undefined>;
+  keychain?: boolean;
 }
-async function rememberFolder(dir: string): Promise<void> {
+
+/** Where `install` copied the extension last: kept next to the pairing file, for `uninstall`. */
+async function folderFile(o: ExtensionOptions): Promise<string> {
+  const { pairingFile } = await import("../browser/extension/pairing.js");
+  return join(dirname(pairingFile(process.platform, o.env ?? process.env, o.home ?? homedir())), "extension-folder");
+}
+async function rememberFolder(dir: string, o: ExtensionOptions): Promise<void> {
   try {
-    const f = await folderFile();
+    const f = await folderFile(o);
     mkdirSync(dirname(f), { recursive: true, mode: 0o700 });
     writeFileSync(f, `${dir}\n`);
   } catch {}
 }
-async function rememberedFolder(): Promise<string | undefined> {
+async function rememberedFolder(o: ExtensionOptions): Promise<string | undefined> {
   try {
-    return readFileSync(await folderFile(), "utf8").trim() || undefined;
+    return readFileSync(await folderFile(o), "utf8").trim() || undefined;
   } catch {
     return undefined;
   }
 }
 
-/** Is this folder a copy of our extension (its manifest's key is ours)? Only such a folder is ever emptied:
- *  never the package's own extension folder, nor one inside a source checkout. */
-function isOurCopy(dir: string): boolean {
-  if (resolve(dir) === resolve(bundledExtensionDir())) return false;
-  if (existsSync(join(dir, "..", "package.json")) || existsSync(join(dir, "..", ".git"))) return false;
+/** Does this folder hold our extension (its manifest's key is ours)? */
+function hasOurManifest(dir: string): boolean {
   try {
     const mine = JSON.parse(readFileSync(join(bundledExtensionDir(), "manifest.json"), "utf8")) as { key?: string };
     const there = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")) as { key?: string };
@@ -58,12 +62,31 @@ function isOurCopy(dir: string): boolean {
   }
 }
 
+/** Is this folder a copy of our extension? Only such a folder is ever emptied:
+ *  never the package's own extension folder, nor one inside a source checkout. */
+function isOurCopy(dir: string): boolean {
+  if (resolve(dir) === resolve(bundledExtensionDir())) return false;
+  if (existsSync(join(dir, "..", "package.json")) || existsSync(join(dir, "..", ".git"))) return false;
+  return hasOurManifest(dir);
+}
+
+/** A path that exists and is not an empty folder. */
+function inUse(dir: string): boolean {
+  if (!existsSync(dir)) return false;
+  try {
+    return !statSync(dir).isDirectory() || readdirSync(dir).length > 0;
+  } catch {
+    return true;
+  }
+}
+
 /** The extension folder shipped with the package: <package>/extension, from src/cli or dist/cli alike. */
 export function bundledExtensionDir(): string {
   return resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "extension");
 }
 
-export async function extensionCommand(args: string[], out: (l: string) => void = console.log, err: (l: string) => void = console.error): Promise<number> {
+export async function extensionCommand(args: string[], out: (l: string) => void = console.log, err: (l: string) => void = console.error, o: ExtensionOptions = {}): Promise<number> {
+  const home = o.home ?? homedir();
   const sub = args[0];
   if (sub === "pair") {
     const { extensionPairCommand } = await import("../browser/extension/index.js");
@@ -76,16 +99,25 @@ export async function extensionCommand(args: string[], out: (l: string) => void 
       err(`The extension is not in this package (looked in ${from}).`);
       return 1;
     }
-    const to = resolve(args[1] ?? join(homedir(), "sap-ui-automation-extension"));
+    const to = resolve(args[1] ?? join(home, "sap-ui-automation-extension"));
+    if (resolve(to) === resolve(from)) {
+      err(`${to} is the package's own extension folder: pick another folder.`);
+      return 1;
+    }
+    // A folder that holds something else is not ours to fill.
+    if (inUse(to) && !hasOurManifest(to)) {
+      err(`${to} is not empty and holds no copy of the extension: pick an empty or new folder.`);
+      return 1;
+    }
     // An older copy goes first, so that files this version no longer has do not stay behind.
     if (isOurCopy(to)) rmSync(to, { recursive: true, force: true });
     cpSync(from, to, { recursive: true, filter: (p) => !/STORE\.md$/i.test(p) });
     out(`Copied the extension to ${to}`);
-    await rememberFolder(to);
+    await rememberFolder(to, o);
     const { installNativeHost } = await import("../browser/extension/native.js");
     let paired = false;
     try {
-      const host = installNativeHost();
+      const host = installNativeHost({ home, env: o.env ?? process.env });
       paired = host.registered.length > 0;
       out(paired ? `Installed its helper in ${host.hostDir} (for ${host.registered.length} browser profile folder(s)).` : `Copied its helper to ${host.hostDir}, but no browser took it: pair by hand (see below).`);
     } catch (e) {
@@ -100,8 +132,8 @@ export async function extensionCommand(args: string[], out: (l: string) => void 
   }
   if (sub === "uninstall") {
     const { uninstallNativeHost } = await import("../browser/extension/native.js");
-    const to = resolve(args[1] ?? (await rememberedFolder()) ?? join(homedir(), "sap-ui-automation-extension"));
-    const r = uninstallNativeHost();
+    const to = resolve(args[1] ?? (await rememberedFolder(o)) ?? join(home, "sap-ui-automation-extension"));
+    const r = uninstallNativeHost({ home, env: o.env ?? process.env, ...(o.keychain === false ? { keychain: false } : {}) });
     for (const x of r.removed) out(`Removed ${x}`);
     if (r.keychainItems > 0) out(`Deleted ${r.keychainItems} saved SAP password(s) from the keychain.`);
     else if (r.keychainItems < 0) out("No SAP password saved by the extension is left in the keychain.");
