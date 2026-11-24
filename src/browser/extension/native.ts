@@ -1,6 +1,6 @@
 /**
  * The extension's native messaging host (native-host/host.mjs): installed by
- * `sap-gui-mcp-server extension install`, started by Chrome for this extension
+ * `sap-ui-automation extension install`, started by Chrome for this extension
  * only. It hands the extension the pairing code (no copying by hand) and keeps
  * saved SAP passwords in the OS keychain. It does not talk to the server.
  *
@@ -19,7 +19,7 @@ import { pairingFile } from "./pairing.js";
 type Env = Record<string, string | undefined>;
 
 /** The host's name, as the extension calls it (chrome.runtime.sendNativeMessage). */
-export const NATIVE_HOST = "ai.didro.sap_gui_mcp";
+export const NATIVE_HOST = "ai.didro.sap_ui_automation";
 /**
  * The extension's id: fixed by the "key" in extension/manifest.json, so an
  * unpacked copy has the same id on every machine. A Web Store build gets its own
@@ -70,7 +70,7 @@ export interface InstallResult {
 export function hostManifest(launcher: string): Record<string, unknown> {
   return {
     name: NATIVE_HOST,
-    description: "sap-gui-mcp-server helper: pairing and saved SAP passwords for the Chrome extension",
+    description: "sap-ui-automation helper: pairing and saved SAP passwords for the Chrome extension",
     path: launcher,
     type: "stdio",
     allowed_origins: EXTENSION_IDS.map((id) => `chrome-extension://${id}/`),
@@ -100,7 +100,7 @@ export function installNativeHost(options: InstallOptions = {}): InstallResult {
     // nvm version): an upgrade removes the first, and Chrome starts the helper with a bare PATH.
     writeFileSync(
       launcher,
-      `#!/bin/sh\n# sap-gui-mcp-server helper for the Chrome extension (written by \`sap-gui-mcp-server extension install\`)\n` +
+      `#!/bin/sh\n# sap-ui-automation helper for the Chrome extension (written by \`sap-ui-automation extension install\`)\n` +
         `if [ -x ${q(runtime)} ]; then exec ${q(runtime)} ${q(script)} "$@"; fi\n` +
         `PATH="$PATH:/opt/homebrew/bin:/usr/local/bin:/usr/bin:$HOME/.volta/bin"\n` +
         // nvm keeps each version in its own folder: the newest one.
@@ -140,7 +140,7 @@ export interface UninstallResult {
 
 /**
  * Removes the helper: its manifests from every browser, its registry keys (Windows), its folder, and the
- * passwords the extension saved through it (keychain items of the service "sap-gui-mcp-server").
+ * passwords the extension saved through it (keychain items of the service "sap-ui-automation").
  */
 export function uninstallNativeHost(options: { platform?: NodeJS.Platform; home?: string; env?: Env; keychain?: boolean } = {}): UninstallResult {
   const platform = options.platform ?? process.platform;
@@ -168,9 +168,9 @@ export function uninstallNativeHost(options: { platform?: NodeJS.Platform; home?
   if (options.keychain !== false) {
     if (platform === "darwin") {
       // One item per saved system: delete until there is none left.
-      for (let i = 0; i < 500 && spawnSync("/usr/bin/security", ["delete-generic-password", "-s", "sap-gui-mcp-server"], { stdio: "ignore" }).status === 0; i++) keychainItems++;
+      for (let i = 0; i < 500 && spawnSync("/usr/bin/security", ["delete-generic-password", "-s", "sap-ui-automation"], { stdio: "ignore" }).status === 0; i++) keychainItems++;
     } else if (platform === "linux") {
-      if (spawnSync("secret-tool", ["clear", "service", "sap-gui-mcp-server"], { stdio: "ignore" }).status === 0) keychainItems = -1;
+      if (spawnSync("secret-tool", ["clear", "service", "sap-ui-automation"], { stdio: "ignore" }).status === 0) keychainItems = -1;
     } else if (platform === "win32") {
       const dir = win32.join(win32.dirname(pairingFile(platform, env, home)), "secrets");
       if (existsSync(dir)) {

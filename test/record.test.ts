@@ -716,7 +716,7 @@ describe("exports", () => {
     const { test: t } = await recordCreateAndDisplay();
     const s = exportTest(t, "sap-ts");
     expect(s.suffix).toBe(".sap.ts");
-    expect(s.text).toContain('import { expect, test } from "sap-gui-mcp-server/test";');
+    expect(s.text).toContain('import { expect, test } from "sap-ui-automation/test";');
     expect(s.text).toContain('test("Create and display", async ({ sap }) => {');
     expect(s.text).toContain('    // a customer of sales area 1000\n    customer: "2200",');
     expect(s.text).toContain('  await sap.set("ctxtZORD-KUNNR", vars.customer);');
@@ -778,7 +778,7 @@ describe("exports", () => {
       const files: string[] = [];
       for (const [i, t] of [created, popup, kinds].entries()) {
         const f = `t${i}.sap.ts`;
-        await writeFile(join(gen, f), exportTest(t, "sap-ts").text.replace('"sap-gui-mcp-server/test"', '"../../src/runner/index.js"'));
+        await writeFile(join(gen, f), exportTest(t, "sap-ts").text.replace('"sap-ui-automation/test"', '"../../src/runner/index.js"'));
         files.push(f);
       }
       expect(await readFile(join(gen, "t1.sap.ts"), "utf8")).toContain('  if (await sap.control("wnd[1]/tbar[0]/btn[0]").exists()) await sap.press("wnd[1]/tbar[0]/btn[0]");');

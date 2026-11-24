@@ -16,7 +16,7 @@
  *    we keep one connection.
  *
  * With SAP_BROWSER=extension, none of these: the server reaches Chrome through the
- * sap-gui-mcp-server extension and its local relay (src/browser/extension/).
+ * sap-ui-automation extension and its local relay (src/browser/extension/).
  *
  * Nothing else is tried. In attach mode in particular the server does not attach to
  * 127.0.0.1:9222 on its own: a browser listening there may be another tool's
@@ -256,7 +256,7 @@ async function open(env: Env, key: string, options: OpenOptions = {}): Promise<C
     const endpoint = await extensionEndpoint(env);
     const c = await attach(endpoint);
     if (c) return c;
-    throw new Error(`The sap-gui-mcp-server extension is connected, but the server could not attach through it (${errors.join("; ")}).`);
+    throw new Error(`The sap-ui-automation extension is connected, but the server could not attach through it (${errors.join("; ")}).`);
   }
   // <<< SAP_BROWSER=extension
   // 2. The SAP window: the one that runs, else a Chrome started now.
@@ -281,7 +281,7 @@ async function open(env: Env, key: string, options: OpenOptions = {}): Promise<C
   );
 }
 
-/** SAP_BROWSER=extension: Chrome is reached through the sap-gui-mcp-server extension (src/browser/extension/). */
+/** SAP_BROWSER=extension: Chrome is reached through the sap-ui-automation extension (src/browser/extension/). */
 export const extensionMode = (env: Env): boolean => env.SAP_BROWSER?.trim().toLowerCase() === "extension" && !env.SAP_CHROME_CDP?.trim();
 
 async function chrome(env: Env, options: OpenOptions = {}): Promise<Connection> {
@@ -496,7 +496,7 @@ export async function chromeDoctor(env: Record<string, string | undefined>): Pro
       }
       return [
         { ok: true, check, detail: `found at ${status.exe}` },
-        { ok: true, check: "SAP window", detail: `not running yet: it opens the first time the agent needs SAP, or run sap-gui-mcp-server browser. Log on to SAP there once (profile ${status.profileDir})` },
+        { ok: true, check: "SAP window", detail: `not running yet: it opens the first time the agent needs SAP, or run sap-ui-automation browser. Log on to SAP there once (profile ${status.profileDir})` },
       ];
     }
   }
@@ -507,7 +507,7 @@ export async function chromeDoctor(env: Record<string, string | undefined>): Pro
     if (extensionMode(env)) return [{ ok: false, check, detail: message }];
     if (env.SAP_CHROME_CDP)
       return [{ ok: false, check, detail: message.split(/(?<=\.) /)[0] ?? message, fix: "Check that this Chrome runs with --remote-debugging-port and --user-data-dir, or unset SAP_CHROME_CDP to use your everyday Chrome." }];
-    if (usesSapWindow(env)) return [{ ok: false, check, detail: message, fix: "Close the SAP window (the Chrome that this server opened), then run sap-gui-mcp-server browser." }];
+    if (usesSapWindow(env)) return [{ ok: false, check, detail: message, fix: "Close the SAP window (the Chrome that this server opened), then run sap-ui-automation browser." }];
     if (blockedFiles.length)
       return [
         {
@@ -575,7 +575,7 @@ export interface OpenedWindow {
 }
 
 /**
- * `sap-gui-mcp-server browser`: opens the SAP window, or brings it to the
+ * `sap-ui-automation browser`: opens the SAP window, or brings it to the
  * front when it runs. Only for SAP_BROWSER=launch without SAP_CHROME_CDP.
  */
 export async function openSapWindow(env: Record<string, string | undefined>): Promise<OpenedWindow> {

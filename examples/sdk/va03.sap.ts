@@ -1,5 +1,5 @@
 // The same check as a test for the runner: npx sap-gui test examples/sdk
-import { expect, test } from "sap-gui-mcp-server/test";
+import { expect, test } from "sap-ui-automation/test";
 
 test("order 4711 displays without an error", async ({ sap }) => {
   await sap.okcode("/nVA03");

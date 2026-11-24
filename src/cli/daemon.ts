@@ -96,7 +96,7 @@ export function daemonAddress(env: Env, cwd: string, platform: NodeJS.Platform =
   const base =
     env.SAP_CLI_STATE_DIR ??
     (platform === "win32"
-      ? join(env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"), "sap-gui", "daemons")
+      ? join(env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"), "sap-ui-automation", "daemons")
       : join(env.XDG_RUNTIME_DIR ?? tmpdir(), `sap-gui-${process.getuid?.() ?? user}`));
   const stateDir = privateDir(base, platform);
   // A Unix socket path must stay under ~104 bytes: the key keeps it short.
@@ -172,7 +172,7 @@ export async function startDaemon(o: DaemonOptions): Promise<Daemon> {
     policy: policyFromEnv(o.env),
     surfaces: o.surfaces,
     view: viewModeFromEnv(o.env),
-    record: recorderOptionsFromEnv(o.env, `${SERVER_NAME}-mcp-server ${SERVER_VERSION} (cli)`, o.cwd),
+    record: recorderOptionsFromEnv(o.env, `${SERVER_NAME} ${SERVER_VERSION} (cli)`, o.cwd),
     ...(systems ? { systems: systems(o.env) } : {}),
   });
   const client = new Client({ name: "sap-gui-cli", version: SERVER_VERSION });

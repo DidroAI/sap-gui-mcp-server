@@ -1,6 +1,6 @@
 /**
  * A `*.sap.ts` test: the recording written with the scripting API (src/sdk),
- * run by `sap-gui-mcp-server/test`.
+ * run by `sap-ui-automation/test`.
  *
  *   steps      one SDK line each (sdk/code.ts `codeOf`)
  *   variables  `const vars = {...}` with the recorded values; written

@@ -21,8 +21,8 @@ CI uses 1.4.4) and Node.js 22 or later (the built server runs on plain Node;
 CI runs 22 and 24).
 
 ```sh
-git clone https://github.com/DidroAI/sap-gui-mcp-server.git
-cd sap-gui-mcp-server
+git clone https://github.com/DidroAI/sap-ui-automation.git
+cd sap-ui-automation
 bun install --frozen-lockfile
 bun run typecheck
 bun run test
@@ -164,7 +164,7 @@ Both are in [src/core/types.ts](src/core/types.ts).
   client, user, transaction, title, where). It never logs on and never
   opens anything.
 - `open(session)`: a `Driver` on one of them.
-- `doctor()`: setup checks for `sap-gui-mcp-server doctor`, each with what
+- `doctor()`: setup checks for `sap-ui-automation doctor`, each with what
   was found and, when not ok, the one thing to change.
 
 `Driver`:

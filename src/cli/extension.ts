@@ -1,12 +1,12 @@
 /**
- *   sap-gui-mcp-server extension install [dir]  copies the Chrome extension to a folder Chrome can load, and
+ *   sap-ui-automation extension install [dir]  copies the Chrome extension to a folder Chrome can load, and
  *                                               installs its helper (pairing in one click, passwords in the keychain)
- *   sap-gui-mcp-server extension pair           prints the pairing code, for pairing by hand
- *   sap-gui-mcp-server extension uninstall [dir] removes the helper, the passwords it saved, and the copied extension
+ *   sap-ui-automation extension pair           prints the pairing code, for pairing by hand
+ *   sap-ui-automation extension uninstall [dir] removes the helper, the passwords it saved, and the copied extension
  *
  * Until the extension is in the Chrome Web Store, it is loaded unpacked from a
  * folder. The package's own copy lives in npm's cache, which npx may clear, so
- * `install` copies it to a stable place first (default ~/sap-gui-mcp-extension,
+ * `install` copies it to a stable place first (default ~/sap-ui-automation-extension,
  * a folder Chrome's file dialog shows on every system). `unpack` is the same.
  */
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -14,15 +14,15 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const EXTENSION_HELP = `  sap-gui-mcp-server extension install [dir]
-                                copy the Chrome extension to dir (default ~/sap-gui-mcp-extension) to load it
+export const EXTENSION_HELP = `  sap-ui-automation extension install [dir]
+                                copy the Chrome extension to dir (default ~/sap-ui-automation-extension) to load it
                                 in chrome://extensions > Load unpacked, and install its helper: the extension
                                 then pairs in one click and keeps saved SAP passwords in the keychain
-  sap-gui-mcp-server extension pair
+  sap-ui-automation extension pair
                                 print the pairing code, to pair the extension by hand (SAP_BROWSER=extension)
-  sap-gui-mcp-server extension uninstall [dir]
+  sap-ui-automation extension uninstall [dir]
                                 remove the helper from every browser, the SAP passwords it saved in the keychain,
-                                and the copied extension (dir, default ~/sap-gui-mcp-extension)`;
+                                and the copied extension (dir, default ~/sap-ui-automation-extension)`;
 
 /** Where `install` copied the extension last: kept next to the pairing file, for `uninstall`. */
 async function folderFile(): Promise<string> {
@@ -76,7 +76,7 @@ export async function extensionCommand(args: string[], out: (l: string) => void 
       err(`The extension is not in this package (looked in ${from}).`);
       return 1;
     }
-    const to = resolve(args[1] ?? join(homedir(), "sap-gui-mcp-extension"));
+    const to = resolve(args[1] ?? join(homedir(), "sap-ui-automation-extension"));
     // An older copy goes first, so that files this version no longer has do not stay behind.
     if (isOurCopy(to)) rmSync(to, { recursive: true, force: true });
     cpSync(from, to, { recursive: true, filter: (p) => !/STORE\.md$/i.test(p) });
@@ -94,13 +94,13 @@ export async function extensionCommand(args: string[], out: (l: string) => void 
     out("");
     out(`In Chrome: open chrome://extensions, turn on Developer mode, click "Load unpacked" and pick ${to}.`);
     out(`(In the folder dialog on a Mac, press Cmd+Shift+G and type ${to}.)`);
-    out(paired ? `Then click the Agent Connector icon (under the puzzle piece in Chrome's toolbar; pin it there) and "Pair with This Computer".` : `Then run "npx -y sap-gui-mcp-server extension pair" and paste the code into the extension's popup.`);
-    out(`To update: run "npx -y sap-gui-mcp-server@latest extension install" again, then click the reload arrow on the extension's card in chrome://extensions.`);
+    out(paired ? `Then click the Agent Connector icon (under the puzzle piece in Chrome's toolbar; pin it there) and "Pair with This Computer".` : `Then run "npx -y sap-ui-automation extension pair" and paste the code into the extension's popup.`);
+    out(`To update: run "npx -y sap-ui-automation@latest extension install" again, then click the reload arrow on the extension's card in chrome://extensions.`);
     return 0;
   }
   if (sub === "uninstall") {
     const { uninstallNativeHost } = await import("../browser/extension/native.js");
-    const to = resolve(args[1] ?? (await rememberedFolder()) ?? join(homedir(), "sap-gui-mcp-extension"));
+    const to = resolve(args[1] ?? (await rememberedFolder()) ?? join(homedir(), "sap-ui-automation-extension"));
     const r = uninstallNativeHost();
     for (const x of r.removed) out(`Removed ${x}`);
     if (r.keychainItems > 0) out(`Deleted ${r.keychainItems} saved SAP password(s) from the keychain.`);

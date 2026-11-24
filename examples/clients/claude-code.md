@@ -1,20 +1,20 @@
 # Claude Code
 
 ```sh
-claude mcp add sap-gui --scope user -- npx -y sap-gui-mcp-server
+claude mcp add sap-gui --scope user -- npx -y sap-ui-automation
 ```
 
 Or the plugin, which adds the `sap-gui-drive` skill as well:
 
 ```text
-/plugin marketplace add DidroAI/sap-gui-mcp-server
-/plugin install sap-gui@sap-gui-mcp-server
+/plugin marketplace add DidroAI/sap-ui-automation
+/plugin install sap-ui-automation@sap-ui-automation
 ```
 
 To let the agent prepare writes that you approve one by one:
 
 ```sh
-claude mcp add --scope user --env SAP_WRITE=confirm --transport stdio sap-gui -- npx -y sap-gui-mcp-server
+claude mcp add --scope user --env SAP_WRITE=confirm --transport stdio sap-gui -- npx -y sap-ui-automation
 ```
 
 Claude Code asks in interactive sessions; in `claude -p` a write under

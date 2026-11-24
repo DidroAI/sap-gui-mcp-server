@@ -31,11 +31,11 @@
     <section id="pairing" class="card" hidden>
       <h2 class="card-title">Connect to Your Agent</h2>
       <p id="pair-text" class="text"></p>
-      <p id="pair-cmd" class="cmd" hidden><code>npx -y sap-gui-mcp-server extension install</code></p>
+      <p id="pair-cmd" class="cmd" hidden><code>npx -y sap-ui-automation extension install</code></p>
       <button id="pair" class="btn emphasized wide" type="button">Pair with This Computer</button>
       <details id="pair-manual" class="disclosure">
         <summary>Pair with a Code Instead</summary>
-        <p class="hint">Run <code>npx -y sap-gui-mcp-server extension pair</code> in a terminal, then paste the code it prints.</p>
+        <p class="hint">Run <code>npx -y sap-ui-automation extension pair</code> in a terminal, then paste the code it prints.</p>
         <form id="pair-form" class="inline">
           <label class="sr" for="code">Pairing Code</label>
           <input id="code" class="input" type="text" autocomplete="off" spellcheck="false" placeholder="Pairing code">
@@ -151,7 +151,7 @@
     </form>
     <p id="managed" class="hint" hidden></p>
     <dl id="about" class="about"></dl>
-    <p class="hint">Nothing leaves this computer: the extension talks only to your agent on this machine, and SAP. <a id="privacy" href="https://github.com/DidroAI/sap-gui-mcp-server/blob/main/extension/PRIVACY.md" target="_blank" rel="noopener">Privacy</a></p>
+    <p class="hint">Nothing leaves this computer: the extension talks only to your agent on this machine, and SAP. <a id="privacy" href="https://github.com/DidroAI/sap-ui-automation/blob/main/extension/PRIVACY.md" target="_blank" rel="noopener">Privacy</a></p>
   </section>
 
   <!-- What an action did, for screen readers (row notes are drawn again and again). -->

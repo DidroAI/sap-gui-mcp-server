@@ -1,6 +1,6 @@
 /**
  * Test files and configs are ES modules (`import { test } from
- * "sap-gui-mcp-server/test"`), but Node decides a `.ts` or `.js` file's
+ * "sap-ui-automation/test"`), but Node decides a `.ts` or `.js` file's
  * module system from the nearest package.json. `npm init` writes
  * `"type": "commonjs"`, and then `sap.config.ts` fails with "Cannot use
  * import statement outside a module".

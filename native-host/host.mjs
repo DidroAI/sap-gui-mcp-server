@@ -1,4 +1,4 @@
-// sap-gui-mcp-server helper: the native messaging host of the sap-gui-mcp-server Chrome extension.
+// sap-ui-automation helper: the native messaging host of the sap-ui-automation Chrome extension.
 //
 // Chrome starts it, for this extension only (allowed_origins in its manifest), once per message:
 // - "pair": the machine's pairing code, the one the server uses, so the user never copies it by hand;
@@ -6,14 +6,14 @@
 //   (macOS Keychain, the Secret Service through secret-tool on Linux, DPAPI on Windows).
 //
 // It never talks to the MCP server, and never writes a password to a log, a file in clear or the command line.
-// Plain Node.js with no dependencies: `sap-gui-mcp-server extension install` copies it next to the pairing file.
+// Plain Node.js with no dependencies: `sap-ui-automation extension install` copies it next to the pairing file.
 import { spawnSync } from "node:child_process";
 import { randomInt } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { posix, win32 } from "node:path";
 
-const SERVICE = "sap-gui-mcp-server";
+const SERVICE = "sap-ui-automation";
 const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const CODE_LENGTH = 26;
 const MAX_MESSAGE = 64 * 1024;
@@ -135,7 +135,7 @@ function handle(msg) {
       const k = keychain();
       if (!k) return { ok: false, error: "no keychain on this machine" };
       if (!validId(msg.id) || typeof msg.value !== "string" || !msg.value) return { ok: false, error: "bad request" };
-      const label = `sap-gui-mcp-server: ${String(msg.label || msg.id).slice(0, 80)}`;
+      const label = `sap-ui-automation: ${String(msg.label || msg.id).slice(0, 80)}`;
       k.set(msg.id, msg.value, label);
       // Read it back: a keychain that stores but cannot give back would lose the password silently.
       if (k.get(msg.id) !== msg.value) {

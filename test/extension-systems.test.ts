@@ -138,7 +138,7 @@ describe("installing the helper", () => {
     mkdirSync(join(config, "chromium"), { recursive: true });
     const extra = join(home, "profile", "NativeMessagingHosts");
     const r = installNativeHost({ platform: "linux", home, env: { XDG_CONFIG_HOME: config }, extraDirs: [extra] });
-    expect(r.hostDir).toBe(join(config, "sap-gui-mcp-server", "native-host"));
+    expect(r.hostDir).toBe(join(config, "sap-ui-automation", "native-host"));
     expect(r.registered.sort()).toEqual([join(config, "chromium", "NativeMessagingHosts", `${NATIVE_HOST}.json`), join(config, "google-chrome", "NativeMessagingHosts", `${NATIVE_HOST}.json`), join(extra, `${NATIVE_HOST}.json`)].sort());
     expect(existsSync(join(config, "microsoft-edge"))).toBe(false);
     expect(JSON.parse(readFileSync(r.registered[0]!, "utf8")).path).toBe(r.launcher);

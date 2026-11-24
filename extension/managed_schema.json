@@ -2,8 +2,8 @@
   "type": "object",
   "properties": {
     "allowedOrigins": {
-      "title": "Sites shared with sap-gui-mcp-server",
-      "description": "Chrome match patterns (for example \"https://*.s4hana.example.com/*\") of sites whose tabs the bridge may share with the local sap-gui-mcp-server, in addition to the sites the user allows in the popup. Users cannot remove these. Ports are ignored unless the pattern names one.",
+      "title": "Sites shared with sap-ui-automation",
+      "description": "Chrome match patterns (for example \"https://*.s4hana.example.com/*\") of sites whose tabs the bridge may share with the local sap-ui-automation, in addition to the sites the user allows in the popup. Users cannot remove these. Ports are ignored unless the pattern names one.",
       "type": "array",
       "items": {
         "type": "string"

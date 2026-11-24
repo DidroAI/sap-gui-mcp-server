@@ -25,7 +25,7 @@ A file `va03-display-order.saptest.json` in `SAP_RECORD_DIR`, like the one
 in [../recorded-test](../recorded-test/). Replay runs with no model:
 
 ```sh
-npx -y sap-gui-mcp-server replay sap-tests/va03-display-order.saptest.json --var order=4712
+npx -y sap-ui-automation replay sap-tests/va03-display-order.saptest.json --var order=4712
 ```
 
 The recording holds what was typed and checked: treat it like the system's

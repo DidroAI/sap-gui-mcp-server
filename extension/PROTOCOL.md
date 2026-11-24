@@ -1,6 +1,6 @@
 # Extension ⇄ server protocol
 
-The extension (`extension/`, MV3) and sap-gui-mcp-server talk over one
+The extension (`extension/`, MV3) and sap-ui-automation talk over one
 WebSocket on 127.0.0.1. The server side is `src/browser/extension/`. This file
 is the contract both sides implement; change both together.
 
@@ -26,10 +26,10 @@ is the contract both sides implement; change both together.
 
 A pairing code is 26 Crockford base32 characters (130 random bits), shown as
 `ABCDE-FGHJK-MNPQR-STVWX-YZ012-3` style groups (dashes are cosmetic). The
-server keeps it in a file (`pairing.ts`: `~/.config/sap-gui-mcp-server/extension-pairing`
-on Linux, `~/Library/Application Support/sap-gui-mcp-server/…` on macOS,
-`%APPDATA%\sap-gui-mcp-server\…` on Windows; mode 0600), created on first use;
-`SAP_EXTENSION_CODE` overrides it (tests, CI). `sap-gui-mcp-server extension pair`
+server keeps it in a file (`pairing.ts`: `~/.config/sap-ui-automation/extension-pairing`
+on Linux, `~/Library/Application Support/sap-ui-automation/…` on macOS,
+`%APPDATA%\sap-ui-automation\…` on Windows; mode 0600), created on first use;
+`SAP_EXTENSION_CODE` overrides it (tests, CI). `sap-ui-automation extension pair`
 prints it; the user pastes it into the extension popup once.
 
 Normalized code = uppercase, every character outside `[0-9A-Z]` removed, and
@@ -38,7 +38,7 @@ UTF-8 bytes of the normalized code.
 
 Handshake (JSON text frames), mutual, the code itself never crosses the wire:
 
-1. Relay → ext: `{"type":"hello","v":1,"nonce":"<b64 16 bytes>","server":"sap-gui-mcp-server","version":"0.1.0"}`
+1. Relay → ext: `{"type":"hello","v":1,"nonce":"<b64 16 bytes>","server":"sap-ui-automation","version":"0.1.0"}`
 2. Ext → relay: `{"type":"auth","nonce":"<b64 16 bytes>","mac":"<b64 HMAC-SHA256(key, 'sap-gui-ext|' + nS + '|' + nE)>","extensionVersion":"0.1.0","userAgent":"<navigator.userAgent>"}`
 3. Relay → ext, mac good: `{"type":"welcome","mac":"<b64 HMAC-SHA256(key, 'sap-gui-srv|' + nS + '|' + nE)>"}`.
    The extension checks this mac before it executes anything; a bad mac closes
@@ -162,7 +162,7 @@ asks the user to take:
 | Chrome is not running | macOS and Windows: the server starts the user's own Chrome (`open -a "Google Chrome"`, `start chrome`; no debugging switch, their profile) and waits for the extension. Otherwise, or if it still does not connect: "Google Chrome is not running … ask the user to open Chrome". |
 | Chrome runs, no extension dials in | "not installed, switched off in chrome://extensions, or in another Chrome profile", with the install and pair steps. |
 | The extension dials in with another code | "Ask the user to click the extension's icon and Pair Again". |
-| Another server holds the extension | "Another sap-gui-mcp-server is connected … ask the user to close the other agent". |
+| Another server holds the extension | "Another sap-ui-automation is connected … ask the user to close the other agent". |
 | Sharing is paused | error `paused`: "ask the user to click Resume Sharing in the extension's popup". |
 | The system is not registered | error `not_registered`, with the registered names: "ask the user to open it in Chrome and click Add This SAP Page. Never ask the user for a password." |
 
@@ -281,7 +281,7 @@ storage, a log, or the relay.
 
 ## The helper (native messaging host)
 
-`sap-gui-mcp-server extension install` installs `ai.didro.sap_gui_mcp`
+`sap-ui-automation extension install` installs `ai.didro.sap_ui_automation`
 (`native-host/host.mjs`, plain Node.js), allowed for this extension's id
 only (fixed by the manifest's `key`). One JSON message per call:
 

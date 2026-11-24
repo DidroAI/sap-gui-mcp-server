@@ -1,4 +1,4 @@
-# SAP GUI scripting host for sap-gui-mcp-server: the functions.
+# SAP GUI scripting host for sap-ui-automation: the functions.
 #
 # host.ps1 dot-sources this file and calls Start-Host. One long-lived Windows
 # PowerShell 5.1 process, started by the Node server. It attaches to the SAP GUI the user already has open (it never logs on) and

@@ -1,6 +1,6 @@
 # Agent Connector for SAP Systems
 
-The Chrome extension of [sap-gui-mcp-server](../README.md). It keeps your
+The Chrome extension of [sap-ui-automation](../README.md). It keeps your
 SAP systems in one list, in the Chrome you use every day, and lets your
 local AI agent (Claude Desktop, Claude Code, Codex…) open them and log on.
 
@@ -32,17 +32,17 @@ nodejs.org).
 1. In a terminal, run:
 
    ```sh
-   npx -y sap-gui-mcp-server extension install
+   npx -y sap-ui-automation extension install
    ```
 
-   It copies the extension to `~/sap-gui-mcp-extension` (or to the folder
+   It copies the extension to `~/sap-ui-automation-extension` (or to the folder
    you name after `install`), and installs its **helper**: a small program
    Chrome starts for this extension only. The helper pairs the extension
    with your agent in one click and keeps saved passwords in your keychain.
 2. In Chrome, open `chrome://extensions` and switch on **Developer mode**
    (top right).
 3. Click **Load unpacked** and pick that folder. On a Mac, press
-   Cmd+Shift+G in the dialog and type `~/sap-gui-mcp-extension`.
+   Cmd+Shift+G in the dialog and type `~/sap-ui-automation-extension`.
 4. Click the puzzle-piece icon in Chrome's toolbar, then the pin next to
    **Agent Connector for SAP Systems**, so you can see its status. If Chrome
    was open while you ran step 1, restart it once (Chrome finds the helper
@@ -53,7 +53,7 @@ nodejs.org).
 Click the Agent Connector icon, then **Pair with This Computer**. That's
 all: the helper gives the extension the code your agent's server uses.
 
-Without the helper, pair by hand: run `npx -y sap-gui-mcp-server extension
+Without the helper, pair by hand: run `npx -y sap-ui-automation extension
 pair`, open **Pair with a Code Instead** in the popup and paste the code.
 
 The popup then says **Ready for your agent.** While an agent works, the
@@ -80,14 +80,14 @@ asks once to allow the extension on that site. Or click **Add System** (or
 ## Tell your agent to use it
 
 Set `SAP_BROWSER` to `extension` in your agent's settings for
-sap-gui-mcp-server. For Claude Desktop (Settings → Developer → Edit Config):
+sap-ui-automation. For Claude Desktop (Settings → Developer → Edit Config):
 
 ```json
 {
   "mcpServers": {
-    "sap-gui": {
+    "sap-ui-automation": {
       "command": "npx",
-      "args": ["-y", "sap-gui-mcp-server"],
+      "args": ["-y", "sap-ui-automation"],
       "env": { "SAP_BROWSER": "extension", "SAP_WRITE": "off" }
     }
   }
@@ -102,7 +102,7 @@ until you allow them (see the main README).
 To check the setup, run:
 
 ```sh
-SAP_BROWSER=extension npx -y sap-gui-mcp-server doctor
+SAP_BROWSER=extension npx -y sap-ui-automation doctor
 ```
 
 (Close the agent app first: one server at a time can hold the extension.)
@@ -131,7 +131,7 @@ in could show a password field of its own.
 ## Where your passwords are
 
 - In your computer's keychain, through the helper: the macOS Keychain
-  (entries named "sap-gui-mcp-server: <system>"), the Secret Service on
+  (entries named "sap-ui-automation: <system>"), the Secret Service on
   Linux, or a file protected with Windows DPAPI that only your Windows
   account can read.
 - Without the helper (or with no keychain on the computer) the extension
@@ -175,7 +175,7 @@ in could show a password field of its own.
 ## Update
 
 ```sh
-npx -y sap-gui-mcp-server@latest extension install
+npx -y sap-ui-automation@latest extension install
 ```
 
 Then click the reload arrow on the extension's card in `chrome://extensions`,
@@ -184,7 +184,7 @@ and restart your agent app.
 ## Uninstall
 
 ```sh
-npx -y sap-gui-mcp-server extension uninstall
+npx -y sap-ui-automation extension uninstall
 ```
 
 It removes the helper from every browser, the SAP passwords the extension
@@ -227,7 +227,7 @@ The schema is in `managed_schema.json`. Its id is
   `.crx` with an `update.xml` you host. An unpacked extension cannot be
   force-installed; until then each user loads it as above.
 - **The helper** is installed per user. Where `NativeMessagingAllowlist` is
-  set, add `ai.didro.sap_gui_mcp`. Where `NativeMessagingUserLevelHosts` is
+  set, add `ai.didro.sap_ui_automation`. Where `NativeMessagingUserLevelHosts` is
   off, Chrome ignores per-user helpers: the helper's manifest must then go
   to the system folder (`/Library/Google/Chrome/NativeMessagingHosts` on a
   Mac, `HKLM\Software\Google\Chrome\NativeMessagingHosts` on Windows),

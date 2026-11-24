@@ -19,7 +19,7 @@ Log on to Web GUI in Chrome yourself (the server never logs on), with
 remote debugging allowed (see [Chrome](../../docs/guides/chrome.md)). Then:
 
 ```sh
-npx -y sap-gui-mcp-server replay examples/recorded-test/va03-display-order.saptest.json \
+npx -y sap-ui-automation replay examples/recorded-test/va03-display-order.saptest.json \
   --var order=<an order on your system> --var customer=<its sold-to party>
 ```
 
@@ -41,7 +41,7 @@ sap_replay {"name":"VA03 display order","variables":{"order":"...","customer":".
 ## Export it
 
 ```sh
-npx -y sap-gui-mcp-server export examples/recorded-test/va03-display-order.saptest.json --to gherkin --out -
+npx -y sap-ui-automation export examples/recorded-test/va03-display-order.saptest.json --to gherkin --out -
 ```
 
 Targets: `calm` (SAP Cloud ALM manual test case), `vbs` (SAP GUI scripting),

@@ -996,7 +996,7 @@ export interface DiagSurfaceOptions {
 
 /** The server's log: stderr, since stdout carries the MCP protocol. */
 const stderrLog = (m: string): void => {
-  process.stderr.write(`sap-gui-mcp DIAG router: ${m}\n`);
+  process.stderr.write(`sap-ui-automation DIAG router: ${m}\n`);
 };
 
 /** The most router messages doctor shows. */

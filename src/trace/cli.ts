@@ -1,5 +1,5 @@
 /**
- *   sap-gui-mcp-server show-trace <file.saptest.json> [--out file.html] [--open]
+ *   sap-ui-automation show-trace <file.saptest.json> [--out file.html] [--open]
  *
  * Writes the trace page next to the file (`<name>.html`) or where --out
  * says, prints its path, and with --open shows it in the default browser.
@@ -10,7 +10,7 @@ import { dirname, resolve } from "node:path";
 import { parseTest } from "../record/format.js";
 import { renderTraceHtml } from "./html.js";
 
-export const TRACE_HELP = `  sap-gui-mcp-server show-trace <file> [--out <file.html>] [--open]
+export const TRACE_HELP = `  sap-ui-automation show-trace <file> [--out <file.html>] [--open]
                                 write a recorded test or trace as one HTML page (steps, timings, screens, screenshots)`;
 
 /** The page's path for a test file: `x.saptest.json` -> `x.html`. */

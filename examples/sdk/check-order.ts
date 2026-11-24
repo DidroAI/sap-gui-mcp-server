@@ -5,7 +5,7 @@
 //
 // Needs the SDK (connect, expect), new in this version, and Node 22.6+
 // (type stripping). Writes stay refused: SAP_WRITE is off unless you set it.
-import { connect, expect } from "sap-gui-mcp-server";
+import { connect, expect } from "sap-ui-automation";
 
 const order = process.argv[2] ?? "4711";
 

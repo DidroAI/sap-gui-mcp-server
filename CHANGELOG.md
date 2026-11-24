@@ -70,7 +70,7 @@ The first public version.
   starts the installed Google Chrome itself, with a profile of its own (the
   SAP window), the first time the agent needs SAP: you log on there once,
   and nothing has to be set up in Chrome. The window stays open between
-  agent sessions and is found again; `sap-gui-mcp-server browser` opens it
+  agent sessions and is found again; `sap-ui-automation browser` opens it
   by hand; `doctor` says whether it runs. `SAP_CHROME_PATH` names the
   Chrome to start, `SAP_START_URL` the address a new window opens on.
 - `SAP_BROWSER=attach` uses the browser you already work in instead
@@ -94,7 +94,7 @@ The first public version.
   and never ends the user's other logons (only `otherLogons: "keep"`, after
   the user said so). A tab that shows a password field is never shared with
   the server. On macOS and Windows the server starts Chrome when it is
-  closed. `sap-gui-mcp-server extension install` copies the extension and
+  closed. `sap-ui-automation extension install` copies the extension and
   installs its helper (a native messaging host): the extension pairs in one
   click and keeps passwords only in the macOS Keychain, the Secret Service
   or Windows DPAPI; `extension uninstall` removes it all. The link to the
@@ -143,7 +143,7 @@ The first public version.
   recorded checks still judge), with a proposed change to the test in the
   result. The server calls no model.
 - `sap_record` keeps a run as a test file; `sap_replay` and
-  `sap-gui-mcp-server replay` run it again with no model.
+  `sap-ui-automation replay` run it again with no model.
 - `export` writes a SAP Cloud ALM manual test case, a SAP GUI script (VBS),
   a Playwright spec, or a Gherkin feature.
 

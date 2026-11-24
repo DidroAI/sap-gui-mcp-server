@@ -199,7 +199,7 @@ describe("the messy run as code, through the runner", () => {
   /** Writes the code into a project that imports the runner from this checkout, and runs it on `fake`. */
   async function runCode(code: string, fake: FakeSap) {
     const dir = await mkdtemp(join(tmpdir(), "sap-tidy-run-"));
-    await writeFile(join(dir, "messy.sap.ts"), code.replace('"sap-gui-mcp-server/test"', JSON.stringify(RUNNER)));
+    await writeFile(join(dir, "messy.sap.ts"), code.replace('"sap-ui-automation/test"', JSON.stringify(RUNNER)));
     return runTests({ config: resolveConfig({ use: { write: "on" }, expectTimeout: 300}, dir), surfaces: [fake] });
   }
 

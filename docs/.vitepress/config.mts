@@ -3,7 +3,7 @@ import { defineConfig } from "vitepress";
 // A static site: no analytics, no hosted search, no external fonts or scripts.
 // The same markdown files ship in the npm package (docs/**/*.md) for agents to read offline.
 export default defineConfig({
-  title: "sap-gui-mcp-server",
+  title: "SAP UI Automation",
   description: "Let an agent see and drive the SAP screens you have open: SAP GUI for Windows, Web GUI and Fiori.",
   lang: "en",
   cleanUrls: true,
@@ -75,8 +75,8 @@ export default defineConfig({
         ],
       },
     ],
-    socialLinks: [{ icon: "github", link: "https://github.com/DidroAI/sap-gui-mcp-server" }],
-    editLink: { pattern: "https://github.com/DidroAI/sap-gui-mcp-server/edit/main/docs/:path" },
+    socialLinks: [{ icon: "github", link: "https://github.com/DidroAI/sap-ui-automation" }],
+    editLink: { pattern: "https://github.com/DidroAI/sap-ui-automation/edit/main/docs/:path" },
     footer: {
       message: "MIT licence. Not affiliated with, endorsed by or sponsored by SAP SE. SAP and other SAP products are trademarks of SAP SE.",
     },

@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "sap-gui": {
+    "sap-ui-automation": {
       "command": "npx",
-      "args": ["-y", "sap-gui-mcp-server"],
+      "args": ["-y", "sap-ui-automation"],
       "env": { "SAP_WRITE": "${SAP_WRITE:-off}" }
     }
   }

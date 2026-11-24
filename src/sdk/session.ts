@@ -1,7 +1,7 @@
 /**
  * The scripting API: one SAP session, driven from code.
  *
- *   import { connect } from "sap-gui-mcp-server";
+ *   import { connect } from "sap-ui-automation";
  *   const sap = await connect({ surface: "webgui", system: "ABA" });
  *   await sap.okcode("/nVA03");
  *   await sap.set("VBAK-VBELN", "4711");
@@ -182,7 +182,7 @@ export class Sap {
     this.driverInfo = info;
     const t = this.options.trace;
     if (t) {
-      this.recorder = new Recorder({ dir: t.dir, auto: false, by: `sap-gui-mcp-server sdk ${SDK_VERSION}`, trace: { screens: true, screenshots: t.screenshots ?? false } });
+      this.recorder = new Recorder({ dir: t.dir, auto: false, by: `sap-ui-automation sdk ${SDK_VERSION}`, trace: { screens: true, screenshots: t.screenshots ?? false } });
       await this.recorder.start(driver, info, t.name, undefined, true);
     }
     if (this.options.verify) await this.useLock(this.options.verify);

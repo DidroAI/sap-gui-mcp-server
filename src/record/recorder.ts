@@ -26,7 +26,7 @@ export interface RecorderOptions {
   dir: string;
   /** Record from the first action on, without `start` (SAP_RECORD=on). */
   auto: boolean;
-  /** "sap-gui-mcp-server 0.1.0", written into the file. */
+  /** "sap-ui-automation 0.1.0", written into the file. */
   by: string;
   now?: () => Date;
   /**
@@ -380,6 +380,6 @@ export class Recorder {
     this.test = undefined;
     this.sessionId = undefined;
     const h = hints(test);
-    return { test, path, text: [summary, ...(h.length ? ["", ...h.map((x) => `Hint: ${x}`)] : []), "", `Replay it with sap_replay {"name":"${test.name}"}, or: sap-gui-mcp-server replay ${path}`].join("\n") };
+    return { test, path, text: [summary, ...(h.length ? ["", ...h.map((x) => `Hint: ${x}`)] : []), "", `Replay it with sap_replay {"name":"${test.name}"}, or: sap-ui-automation replay ${path}`].join("\n") };
   }
 }

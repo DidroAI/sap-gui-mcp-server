@@ -1,7 +1,7 @@
 ---
 layout: home
 hero:
-  name: sap-gui-mcp-server
+  name: SAP UI Automation
   text: Let your agent see and drive SAP
   tagline: SAP GUI for Windows, Web GUI and Fiori, in a compact text view, with writes off until you allow them. Runs on your machine.
   actions:
@@ -13,7 +13,7 @@ hero:
       link: /getting-started/installation
     - theme: alt
       text: GitHub
-      link: https://github.com/DidroAI/sap-gui-mcp-server
+      link: https://github.com/DidroAI/sap-ui-automation
 features:
   - title: The screens you already have open
     details: Finds your SAP GUI, Web GUI and Fiori sessions and works in them as you, under your SAP authorisations. It never logs on and never stores a password.

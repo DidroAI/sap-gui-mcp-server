@@ -4,9 +4,9 @@ Every action `sap_act` takes, its fields, and which surface supports it.
 For how an action is judged and run, see [Actions](../concepts/actions.md)
 and [Safety model](../concepts/safety.md).
 
-Source: [`src/core/action.ts`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/core/action.ts)
+Source: [`src/core/action.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/core/action.ts)
 (the shape every action is brought to) and the surface drivers under
-[`src/`](https://github.com/DidroAI/sap-gui-mcp-server/tree/main/src).
+[`src/`](https://github.com/DidroAI/sap-ui-automation/tree/main/src).
 
 ## The shape of an action
 
@@ -34,7 +34,7 @@ level of the call, beside `session` and `full`:
 | `timing` | boolean | any action: add a line that says where the time went (also `SAP_TIMINGS=on`). Not part of the action, and not in the schema |
 
 Before anything reads it, the server brings the action to one shape
-([`normalizeAction`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/src/core/action.ts)):
+([`normalizeAction`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/core/action.ts)):
 
 - `do` is one of the 16 verbs below, trimmed and lower-cased. Any other
   word is refused with the list of verbs.

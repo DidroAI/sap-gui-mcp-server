@@ -521,7 +521,7 @@ function updateCredFields() {
     ? `Saved in ${KEYCHAIN_NAME[h.keychain] || "your keychain"}, never in Chrome.`
     : h && h.ok
       ? "This computer has no keychain the helper can use, so no password is saved. You log on in the tab."
-      : "To save a password, install the helper: run npx -y sap-gui-mcp-server extension install, then restart Chrome. Without it, you log on in the tab.";
+      : "To save a password, install the helper: run npx -y sap-ui-automation extension install, then restart Chrome. Without it, you log on in the tab.";
   updateHttpWarning();
 }
 
