@@ -152,13 +152,9 @@ describe("the start address", () => {
     expect(startAddressOf("https://h/sap/bc/ui2/flp#SalesOrder-manage")).toBe("https://h/sap/bc/ui2/flp");
     expect(startAddressOf("chrome://newtab")).toBeUndefined();
   });
-  test("the last SAP address, else SAP_START_URL, else the local start page", async () => {
+  test("the last SAP address, else SAP_START_URL, else an empty tab", async () => {
     const profile = join(await tempDir(), "chrome");
-    const page = await startUrl({}, profile);
-    expect(page).toMatch(/^file:\/\/.*chrome-start\.html$/);
-    const html = await readFile(new URL(page), "utf8");
-    expect(html).toContain("Open your SAP system here (Web GUI or Fiori launchpad address) and log on.");
-    expect(html).toContain("The agent works on the SAP screen in this window.");
+    expect(await startUrl({}, profile)).toBe("about:blank");
     expect(await startUrl({ SAP_START_URL: "https://h/sap/bc/ui2/flp" }, profile)).toBe("https://h/sap/bc/ui2/flp");
     await expect(startUrl({ SAP_START_URL: "javascript:alert(1)" }, profile)).rejects.toThrow("SAP_START_URL must be an http or https address");
     await rememberSapAddress(profile, "http://h:8010/sap/bc/gui/sap/its/webgui?sap-client=800&~okcode=x");
@@ -213,7 +209,7 @@ describe("the window that runs is used again; else Chrome is started", () => {
     expect(calls[0]?.exe).toBe("/fake/chrome");
     expect(calls[0]?.args[0]).toBe(`--user-data-dir=${profile}`);
     expect(calls[0]?.args).toContain("--remote-debugging-port=0");
-    expect(calls[0]?.args.at(-1)).toMatch(/^file:.*chrome-start\.html$/);
+    expect(calls[0]?.args.at(-1)).toBe("about:blank");
   });
 
   test("a stale file (its Chrome has ended): Chrome is started again", async () => {
@@ -318,7 +314,7 @@ describe("what starts no Chrome", () => {
     expect(checks.every((c) => c.ok)).toBe(true);
     expect(checks[0]?.detail).toBe(`found at ${m.exe}`);
     expect(checks[1]?.check).toBe("SAP window");
-    expect(checks[1]?.detail).toContain("not running yet: it opens the first time the agent needs SAP, or run sap-ui-automation browser");
+    expect(checks[1]?.detail).toContain("not running yet: it opens the first time the agent needs SAP, or run npx -y sap-ui-automation browser");
     expect(m.ran()).toBe(false);
     expect(existsSync(m.profile)).toBe(false);
     expect((await sapWindowStatus(env)).running).toBeUndefined();

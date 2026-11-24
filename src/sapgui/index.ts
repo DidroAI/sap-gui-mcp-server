@@ -86,10 +86,10 @@ function explain(e: unknown): Error {
     case "NO_SESSION":
       return new ActionError("This SAP GUI session is closed. Call sap_sessions to see what is open.");
     case "SCRIPTING_OFF":
-      return new ActionError(`${SCRIPTING_OFF}. Run "sap-ui-automation doctor" for what to change.`);
+      return new ActionError(`${SCRIPTING_OFF}. Run "npx -y sap-ui-automation doctor" for what to change.`);
     case "NO_SAPGUI":
     case "NO_ENGINE":
-      return new ActionError(`${e.message}. Run "sap-ui-automation doctor" for what to change.`);
+      return new ActionError(`${e.message}. Run "npx -y sap-ui-automation doctor" for what to change.`);
     case "LOGON":
       return new ActionError(LOGON_REFUSAL);
     case "PASSWORD":

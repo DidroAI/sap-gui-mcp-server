@@ -6,6 +6,15 @@ change the tools or the view format.
 
 ## Unreleased
 
+### Changed (after 0.1.0)
+
+- The SAP window opens on an empty tab the first time, instead of a local
+  page; after that it opens the last SAP address, as before.
+- `setup`, `doctor` and the error texts print commands as `npx -y
+  sap-ui-automation ...`, which work without a global install.
+- `setup` points out entries left under the server's old names
+  (`sap-gui-mcp-server`, `sap-gui`), which give the agent the tools twice.
+
 Preparing the first public release.
 
 ### Security
