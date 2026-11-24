@@ -8,9 +8,8 @@
 import type { Frame, Page, Request } from "playwright-core";
 import { Unsaved } from "./unsaved.js";
 import { ActionError } from "../core/types.js";
-
-/** The URL path of SAP GUI for HTML. */
-export const WEBGUI_PATH = "/sap/bc/gui/sap/its/webgui";
+import { isWebguiUrl } from "../browser/classify.js";
+import { keepFocused, within } from "../browser/tab.js";
 
 /**
  * Web GUI shows a "Loading data ..." message bar (#progressText, lsdata state
@@ -69,14 +68,14 @@ interface Traffic {
 }
 const trafficOf = new WeakMap<Page, Traffic>();
 
-/** Is this request made by a Web GUI frame or a frame inside one (an HTML viewer)? */
-function fromWebGui(r: Request): boolean {
+/** Is this request made by a Web GUI frame or a frame inside one (an HTML viewer)? The path counts in any case, as the classifier reads it. */
+export function fromWebGui(r: Pick<Request, "frame" | "url">): boolean {
   try {
-    for (let f: Frame | null = r.frame(); f; f = f.parentFrame()) if (f.url().includes(WEBGUI_PATH)) return true;
+    for (let f: Frame | null = r.frame(); f; f = f.parentFrame()) if (isWebguiUrl(f.url())) return true;
     return false;
   } catch {
     // Requests without a frame (service workers).
-    return r.url().includes(WEBGUI_PATH);
+    return isWebguiUrl(r.url());
   }
 }
 
@@ -183,39 +182,6 @@ export function extractEnded(): string {
 /** The answer when the session has ended, with what the page says. */
 export function endedText(said: string): string {
   return `The SAP session in this tab has ended: the page says "${said}". Nothing more can be done in it: the user has to log on again (this server never logs on), then call sap_sessions.`;
-}
-
-/** Pages whose focus emulation was asked for, and how that went. */
-const awake = new WeakMap<Page, Promise<boolean>>();
-
-/**
- * Makes a tab behave as the visible, focused one while the server drives it.
- *
- * Chrome gives a tab in the background no animation frames and slows its
- * timers. Web GUI draws and sends on those, so in a background tab a typed
- * command stayed in the command field, a click waited for a page that never
- * settled, and keys did not reach popups; the answer then showed the old
- * screen as if the step had run. Chrome's focus emulation (DevTools:
- * "Emulate a focused page") lifts this for the tab the server is attached
- * to, without bringing it to the front: the user's own tab stays where it is.
- * It ends when the server disconnects.
- */
-export function keepAwake(page: Page): Promise<boolean> {
-  let p = awake.get(page);
-  if (!p) {
-    p = (async () => {
-      try {
-        const cdp = await page.context().newCDPSession(page);
-        await cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true });
-        return true;
-      } catch {
-        // Not Chromium, or the browser refuses: the server works as before, in a tab that is in front.
-        return false;
-      }
-    })();
-    awake.set(page, p);
-  }
-  return p;
 }
 
 /** Is the page hidden from Chrome's point of view (a background tab, a minimised window)? */
@@ -543,14 +509,10 @@ export class WebGuiSession {
    * sent before. `unreadable` is the answer when the page cannot be asked.
    */
   private framesDrawn(ms: number, unreadable = false): Promise<boolean> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
     const drawn = this.frame
       .evaluate(() => new Promise<boolean>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)))))
       .catch(() => unreadable);
-    const late = new Promise<boolean>((resolve) => {
-      timer = setTimeout(() => resolve(false), ms);
-    });
-    return Promise.race([drawn, late]).finally(() => clearTimeout(timer));
+    return within(drawn, ms, false);
   }
 
   /** How many browser windows this page has opened so far. */
@@ -760,7 +722,9 @@ export class WebGuiSession {
    */
   async wake(): Promise<void> {
     // A tab Chrome still sees as hidden is brought to the front, whether focus emulation took or not.
-    await keepAwake(this.page);
+    // Chrome gives a background tab no animation frames and slow timers, and Web GUI draws and sends on
+    // those: a typed command stayed in the field and keys did not reach popups (see keepFocused).
+    await keepFocused(this.page);
     // A window this page opened (the Fiori launchpad, a document) is in front of it now, and the browser
     // hands typed keys to no page behind another: the command field then took nothing (S/4HANA, /n/UI2/FLP).
     // The page is brought back to the front, which the browser does a moment later (measured: keys were

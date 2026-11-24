@@ -3,7 +3,7 @@
  * window), the HTML viewers inside it, Web GUI's own dialogs, the menu bar,
  * the focused control, and the logon and logoff pages.
  */
-import type { Frame } from "playwright-core";
+import type { Frame, Page } from "playwright-core";
 import { names, resolveId, severalText, shortIds } from "../core/ids.js";
 import { dateFormatOf } from "../core/notation.js";
 import { ActionError } from "../core/types.js";
@@ -333,19 +333,31 @@ const SNAPSHOT = snapshotScript(false);
 const SNAPSHOT_UNLESS_ENDED = snapshotScript(true);
 
 /**
- * "S4H (100)" from SAP's session cookie (SAP_SESSIONID_<system>_<client>),
- * when the tab holds exactly one: two logons in one browser share the
- * cookies of an origin, and then the cookie does not tell which is this one.
+ * The system and client from SAP's session cookie (SAP_SESSIONID_<system>_<client>)
+ * for this URL, when the browser holds exactly one: two logons in one browser
+ * share the cookies of a host (any port), and then the cookie does not tell
+ * which is this one. Empty when it cannot tell.
  */
+export async function cookieIdentity(page: Page, url: string): Promise<{ system?: string; client?: string }> {
+  const cookies = await page
+    .context()
+    .cookies(url)
+    .catch(() => []);
+  const ids = [...new Set(cookies.map((c) => /^SAP_SESSIONID_([A-Z0-9]{3})_(\d{3})$/.exec(c.name)).flatMap((m) => (m?.[1] && m[2] ? [`${m[1]} ${m[2]}`] : [])))];
+  if (ids.length !== 1) return {};
+  const [system = "", client = ""] = (ids[0] ?? "").split(" ");
+  return { system, client };
+}
+
+/** "S4H (100)" from SAP's session cookie (see cookieIdentity); "" when it does not tell. */
 async function systemFromCookie(f: Frame): Promise<string> {
-  let cookies: { name: string }[] = [];
+  let id: { system?: string; client?: string };
   try {
-    cookies = await f.page().context().cookies(f.url());
+    id = await cookieIdentity(f.page(), f.url());
   } catch {
     return "";
   }
-  const ids = [...new Set(cookies.map((c) => /^SAP_SESSIONID_([A-Z0-9]{3})_(\d{3})$/.exec(c.name)).filter((m) => !!m).map((m) => `${m[1]} (${m[2]})`))];
-  return ids.length === 1 ? (ids[0] ?? "") : "";
+  return id.system ? `${id.system} (${id.client})` : "";
 }
 
 async function read(session: WebGuiSession, ended: boolean): Promise<ScreenRead> {
