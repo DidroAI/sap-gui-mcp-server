@@ -63,11 +63,14 @@ that ([Security](../security.md#what-the-agent-can-do)).
 
 ## Teaching the agent
 
-The package ships skills in its `skills/` folder, among them
+`sap-gui install --skills` copies the bundled skills, among them
 [`sap-gui-drive`](https://github.com/DidroAI/sap-gui-mcp-server/blob/main/skills/sap-gui-drive/SKILL.md)
-and a `sap-gui-cli` skill on driving SAP through these commands; copy the
-folder into the agent's skills folder (`.claude/skills` for Claude Code,
-`.agents/skills` for Codex). The skill tells the agent
+and a `sap-gui-cli` skill on driving SAP through these commands, into the
+agent's folder: `.claude/skills` (Claude), `.agents/skills` (Codex) or
+`.cursor/rules/<name>.mdc` (Cursor), chosen with
+`--target claude|codex|cursor|all`; `--global` uses `~/.claude/skills` and
+`$CODEX_HOME/skills` instead. `sap-gui init` does this as part of setting a project
+up. The skill tells the agent
 how SAP screens behave: fields take effect on Enter, popups come first,
 value help instead of guessed codes, and never work around the write
 setting.

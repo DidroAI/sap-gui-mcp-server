@@ -82,7 +82,8 @@
     "prepublishOnly": "bun run typecheck && bun run test && bun run build",
     "test:bench": "cd bench && bun install --frozen-lockfile && node --test test/*.test.ts",
     "docs:dev": "cd docs && bun install --frozen-lockfile && bun run dev",
-    "docs:build": "cd docs && bun install --frozen-lockfile && bun run build"
+    "docs:build": "cd docs && bun install --frozen-lockfile && bun run build",
+    "build:mcpb": "node scripts/build-mcpb.mjs"
   },
   "publishConfig": {
     "access": "public"
