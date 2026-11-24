@@ -1,0 +1,50 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.DidroAI/sap-ui-automation",
+  "title": "SAP UI Automation",
+  "description": "See and drive the SAP screens you have open: SAP GUI for Windows, Web GUI, Fiori. Writes off by default.",
+  "version": "0.1.0",
+  "websiteUrl": "https://docs.didro.ai/sap-ui-automation/",
+  "repository": {
+    "url": "https://github.com/DidroAI/sap-ui-automation",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "sap-ui-automation",
+      "version": "0.1.0",
+      "runtimeHint": "npx",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        {
+          "name": "SAP_WRITE",
+          "description": "Actions that may save, post or delete: off (refused, the default), confirm (each waits for your yes in the client) or on.",
+          "format": "string",
+          "isRequired": false,
+          "default": "off",
+          "choices": ["off", "confirm", "on"]
+        },
+        {
+          "name": "SAP_ALLOW_SYSTEMS",
+          "description": "The only systems the server may touch, e.g. QAS or QAS/100, comma-separated. Empty: every system.",
+          "format": "string",
+          "isRequired": false
+        },
+        {
+          "name": "SAP_ALLOW_TCODES",
+          "description": "The only transactions and Fiori apps the agent may open, comma-separated (VA03, SalesOrder-manage). Empty: all but the blocked ones.",
+          "format": "string",
+          "isRequired": false
+        },
+        {
+          "name": "SAP_BLOCK_TCODES",
+          "description": "Transactions and Fiori apps the agent may never open, comma-separated (SE38, SM30).",
+          "format": "string",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}
