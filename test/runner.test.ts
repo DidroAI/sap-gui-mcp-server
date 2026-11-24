@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { parseTest } from "../src/record/format.js";
 import { configFor, explainTypeScriptLoad, globToRegExp, resolveConfig } from "../src/runner/config.js";
 import { parseTestArgs, testCommand } from "../src/runner/cli.js";
-import { htmlReport, junitReport, listLine } from "../src/runner/reporters.js";
+import { htmlReport, junitReport, listLine, stackPlace } from "../src/runner/reporters.js";
 import { runTests } from "../src/runner/run.js";
 import { FakeSap } from "./record-fakes.js";
 
@@ -171,6 +171,21 @@ describe("traces", () => {
     const t = parseTest(await readFile(trace, "utf8"));
     expect(t.name).toBe("displays order 5000");
     expect(t.steps.map((s) => s.code)).toEqual(['await sap.okcode("/nZA03");', 'await sap.set("ctxtZORD-VBELN", "5000");', "await sap.key(0);"]);
+  });
+});
+
+describe("the place of a failure in its stack line", () => {
+  test("with and without parentheses, with and without file://", () => {
+    expect(stackPlace("    at <anonymous> (/tmp/x/o.sap.ts:5:60)")).toBe("/tmp/x/o.sap.ts:5:60");
+    expect(stackPlace("    at async fn (file:///tmp/x/o.sap.ts:5:60)")).toBe("/tmp/x/o.sap.ts:5:60");
+    expect(stackPlace("    at /tmp/x/o.sap.ts:5:60")).toBe("/tmp/x/o.sap.ts:5:60");
+    expect(stackPlace("    at fn (native)")).toBeUndefined();
+  });
+  test("a long line that names no place is read in linear time", () => {
+    const t0 = performance.now();
+    expect(stackPlace(`at ${"'".repeat(100_000)}`)).toBeUndefined();
+    expect(stackPlace(`at ${":9".repeat(50_000)}x`)).toBeUndefined();
+    expect(performance.now() - t0).toBeLessThan(100);
   });
 });
 

@@ -154,7 +154,7 @@ export function slug(name: string): string {
   const s = name
     .normalize("NFKD")
     .replace(/[^A-Za-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+    .replace(/^-|-$/g, "") // one dash at most: the line above leaves no run of them
     .toLowerCase()
     .slice(0, 80);
   if (!s) throw new Error("a recording needs a name with at least one letter or digit");
