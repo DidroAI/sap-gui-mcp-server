@@ -15,3 +15,5 @@ sap-tests/
 docs/.vitepress/cache/
 docs/.vitepress/dist/
 *.mcpb
+agent-connector-*.zip
+store-assets/
