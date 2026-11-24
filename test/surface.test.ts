@@ -70,6 +70,26 @@ describe("tools/list", () => {
   });
 });
 
+describe("arguments that do not fit (agent-practice review, 2026-11-24)", () => {
+  test("are said in plain words, with the field", async () => {
+    const { client } = await setup({});
+    const r = (await client.callTool({ name: "sap_look", arguments: { full: "yes" } })) as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0]?.text).toBe('sap_look was called with arguments that do not fit: "full": expected boolean, received string. The tool\'s description lists its fields.');
+  });
+  test('sap_record takes "do" for "op"', async () => {
+    const { client } = await setup({});
+    const r = (await client.callTool({ name: "sap_record", arguments: { do: "help" } })) as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBeFalsy();
+    expect(r.content[0]?.text).toStartWith("sap_record ops");
+  });
+  test("a tool without parameters says it takes none", async () => {
+    const { client } = await setup({});
+    const { tools } = await client.listTools();
+    expect(tools.find((t) => t.name === "sap_sessions")?.inputSchema).toEqual({ type: "object", properties: {}, additionalProperties: false });
+  });
+});
+
 describe("descriptions as instructions", () => {
   test("each description fits what clients show whole (under 4,096 characters), and says when to use the tool", async () => {
     for (const write of ["off", "confirm", "on"]) {

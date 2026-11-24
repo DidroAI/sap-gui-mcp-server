@@ -32,6 +32,8 @@ import { type ActOutput, actOutput, screenOf, screenOfInfo, sessionsData, sessio
 
 export const SERVER_NAME = "sap-ui-automation";
 export const SERVER_VERSION = "0.1.0";
+/** Claude Code defers MCP tools until searched for, except those marked so. */
+const ALWAYS_LOAD = { "anthropic/alwaysLoad": true };
 
 /**
  * What the agent is told about actions that may write, for the write setting
@@ -621,6 +623,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
         cols: z.string().optional().describe('with id: columns by id or title, e.g. "VBELN,NETWR"'),
       },
       annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+      // Claude Code loads MCP tools on demand; the two every task needs are there from the start.
+      _meta: ALWAYS_LOAD,
     },
     ({ session: raw, full, diff, id, rows, cols }) =>
       answer(() => leniently(raw, (ref) => serial(ref, "sap_look", () => look(ref, full, diff, id, rows, cols)))).then(confirmNotice),
@@ -1143,6 +1147,8 @@ ${writeRule(policy)}`,
       ...(structured ? { outputSchema: actOutput } : {}),
       // A closed SAP system, not the open web: openWorldHint is false on every tool.
       annotations: { readOnlyHint: false, destructiveHint: mayDestroy(policy), openWorldHint: false },
+      // Claude Code loads MCP tools on demand; the two every task needs are there from the start.
+      _meta: ALWAYS_LOAD,
     },
     (input) =>
       answer(async () => {
@@ -1192,9 +1198,14 @@ ${writeRule(policy)}`,
 }
 
 type ListTools = (request: unknown, extra: unknown) => Promise<{ tools: { inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; execution?: { taskSupport?: string } }[] }>;
+type CallTool = (
+  request: { params: { name: string; arguments?: Record<string, unknown> } },
+  extra: unknown,
+) => Promise<{ isError?: boolean; content?: { type: string; text?: string }[] }>;
 
 /**
- * tools/list without what the SDK adds to every tool and no client needs: the
+ * tools/list without what the SDK adds to every tool and no client needs (and
+ * tools/call with plain words for arguments that do not fit): the
  * "$schema" keyword of its JSON Schema conversion, and
  * "execution":{"taskSupport":"forbidden"}, which is the spec's default. Some
  * 25 tokens per tool in every conversation. The SDK has no option for either,
@@ -1208,9 +1219,43 @@ function withoutSdkDefaults(server: McpServer): void {
     const out = await inner(request, extra);
     for (const t of out.tools) {
       delete t.inputSchema.$schema;
+      // A tool without parameters says so, as the spec recommends.
+      if (t.inputSchema.type === "object" && !Object.keys((t.inputSchema.properties as object | undefined) ?? {}).length) t.inputSchema.additionalProperties = false;
       if (t.outputSchema) delete t.outputSchema.$schema;
       if (t.execution && Object.keys(t.execution).length === 1 && t.execution.taskSupport === "forbidden") delete t.execution;
     }
     return out;
   });
+  const call = (handlers as unknown as Map<string, CallTool>).get("tools/call");
+  if (call)
+    (handlers as unknown as Map<string, CallTool>).set("tools/call", async (request, extra) => {
+      const p = request.params;
+      // sap_record takes "op"; agents send sap_act's "do" to it as well.
+      if (p.name === "sap_record" && p.arguments && p.arguments.op === undefined && typeof p.arguments.do === "string") {
+        const { do: op, ...rest } = p.arguments;
+        p.arguments = { ...rest, op };
+      }
+      const out = await call(request, extra);
+      const first = out.content?.[0];
+      if (out.isError && first?.type === "text" && first.text) first.text = plainValidationError(p.name, first.text);
+      return out;
+    });
+}
+
+/**
+ * The SDK's answer to arguments that do not fit a tool's schema ("MCP error -32602: Input validation error:
+ * Invalid arguments for tool sap_look: Invalid input: expected boolean, received string at full"), said as the
+ * other errors are: the field, what is wrong, and where the tool's fields are described.
+ */
+export function plainValidationError(tool: string, message: string): string {
+  const m = /^MCP error -32602: Input validation error: Invalid arguments for tool [\w-]+: ([\s\S]*)$/.exec(message);
+  if (!m) return message;
+  const parts = (m[1] ?? "").split(/;\s*|\n/).map((x) => x.trim()).filter(Boolean);
+  const said = parts.map((x) => {
+    const at = / at ([\w.[\]"-]+)$/.exec(x);
+    const what = (at ? x.slice(0, at.index) : x).replace(/^Invalid (input|option): /, "");
+    return at ? `"${at[1]}": ${what}` : what;
+  });
+  const help = tool === "sap_record" ? ' {"op":"help"} lists every op with its fields.' : " The tool's description lists its fields.";
+  return `${tool} was called with arguments that do not fit: ${said.join("; ")}.${help}`;
 }
