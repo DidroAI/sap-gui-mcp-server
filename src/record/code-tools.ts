@@ -1,6 +1,6 @@
 /**
  * Code tools: an agent without a file system saves a `*.sap.ts` test and
- * runs it through the runner (docs/code-tools.md).
+ * runs it through the runner (docs/reference/tools.md).
  *
  *   sap_code_save  {"name","code"}               writes <SAP_RECORD_DIR>/<slug>.sap.ts after the checks below
  *   sap_code_test  {"name","variables"?}         runs it on the active session, under the server's policy

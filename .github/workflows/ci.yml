@@ -54,19 +54,17 @@ jobs:
           # shellcheck disable=SC2016
           node -e '
             const files = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))[0].files.map((f) => f.path);
-            const allowed = /^(dist\/|skills\/|docs\/.+\.md$|README\.md$|CHANGELOG\.md$|LICENSE$|package\.json$)/;
-            // Never shipped, wherever they sit: the maintainers launch notes, VitePress config and
+            const allowed = /^(dist\/|skills\/|extension\/|native-host\/|docs\/.+\.md$|README\.md$|CHANGELOG\.md$|LICENSE$|package\.json$)/;
+            // Never shipped, wherever they sit: VitePress config and
             // cache, source maps, env files, recorded tests and screen captures (they hold business data).
             const forbidden = [
-              /^docs\/launch-checklist\.md$/,
-              /^docs\/(agent-surface-plan|cached-steps|code-tools|phase1-summary|tool-review|live-[a-z]+-[0-9-]+|node[0-9]+-[a-z]+-[0-9-]+)\.md$/,
               /^docs\/node_modules\//,
               /(^|\/)\.vitepress\//,
               /\.map$/,
               /(^|\/)\.env(\.|$)/,
               /\.saptest\.json$/,
               /(^|\/)captures\//,
-              /\.png$/i,
+              /^(?!extension\/icons\/).*\.png$/i, // the extension's own icons are the one exception
             ];
             const bad = files.filter((p) => !allowed.test(p) || forbidden.some((re) => re.test(p)));
             for (const need of [
@@ -163,23 +161,3 @@ jobs:
       - run: bun run build
       - run: bun run build:mcpb
 
-  bench:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: bench
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: 1.4.4
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24
-      - run: bun install --frozen-lockfile
-      - run: npx tsc --noEmit
-      # Task files and checkers only; a benchmark run needs your own SAP systems.
-      - run: node --test test/*.test.ts

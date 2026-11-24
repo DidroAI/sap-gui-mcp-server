@@ -1,6 +1,6 @@
 /**
  * The lock file: what the screens looked like on a run of a `*.sap.ts` test
- * that passed (docs/cached-steps.md, "Lock files").
+ * that passed (docs/guides/sdk-tests.md, "Lock files").
  *
  * The code is the source of truth for WHAT to do. The lock, a sidecar the
  * SDK writes (`<name>.sap.lock.json` next to `<name>.sap.ts`), holds what
