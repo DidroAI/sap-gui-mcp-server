@@ -51,7 +51,12 @@ describe("table controls from a live capture", () => {
     ]);
     expect(t).toMatchObject({ totalRows: 2, visibleRows: 4 });
     // The empty entry lines are hidden templates ("______"): never shown as values.
-    expect(diagView(s as DiagScreen)).not.toContain("___");
+    const v = diagView(s as DiagScreen);
+    expect(v).not.toContain("___");
+    // The head lists the columns that hold something in the rows on show, not all 109.
+    expect(v).toContain("Item VBAP-POSNR | Material RV45A-MABNR");
+    expect(v).not.toContain("Batch VBAP-CHARG");
+    expect(v).toMatch(/109 columns: .* \| \(\d+ more, empty in the rows on show\)/);
   });
 
   test("VA02 scrolled to its second item: the first line on show is item 20, line 1 of the table", () => {
@@ -87,6 +92,14 @@ describe("other screens from a live capture", () => {
     }
     expect(screens[1]?.message).toMatchObject({ type: "E", text: "SD document 50455045 is not in the database or has been archived" });
     expect(screens[1]?.windows[0]?.elements.find((e) => e.name === "VBAK-VBELN")?.text).toBe("50455045");
+  });
+
+  test("the SAP menu, a large tree, is shown as it is on show, not with its closed folders", () => {
+    const [s] = replay("easy-access.bin");
+    const v = diagView(s as DiagScreen);
+    expect(v).toContain("14 nodes on show");
+    expect(v).toContain("(97 more nodes in closed folders)");
+    expect(v).not.toContain("(in a closed folder)");
   });
 
   test("MB52: a radio button with a function code reads its text without the code", () => {

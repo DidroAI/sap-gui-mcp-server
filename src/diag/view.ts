@@ -111,7 +111,15 @@ function tableLines(t: DiagTable, maxRows: number): string[] {
     return c.title && count.get(c.title) === 1 ? c.title : `${c.title}(${c.name})`;
   };
   const filled = t.rows.filter((r) => !r.empty || r.cells.some((c) => c.typed));
-  const out = [`r${t.row}  table ${t.name}${t.title ? ` ${quote(t.title)}` : ""}  ${t.totalRows ?? t.rows.length} rows (${filled.length} with data on show), ${columns.length} columns: ${columns.map((c) => `${one(c.title || c.tooltip || "")} ${c.name}`.trim()).join(" | ")}`];
+  // With rows on show, the head lists the columns that hold something in them (VA03's item table has 109 columns,
+  // most empty); the empty ones are counted. Without, every column, to type into.
+  const holds = (i: number) => filled.some((r) => {
+    const c = r.cells[i];
+    return !!c && !c.hidden && (!!c.text || !!c.checked || !!c.typed);
+  });
+  const listed = filled.length ? columns.filter((c) => holds(c.index)) : columns;
+  const rest = columns.length - listed.length;
+  const out = [`r${t.row}  table ${t.name}${t.title ? ` ${quote(t.title)}` : ""}  ${t.totalRows ?? t.rows.length} rows (${filled.length} with data on show), ${columns.length} columns: ${listed.map((c) => `${one(c.title || c.tooltip || "")} ${c.name}`.trim()).join(" | ")}${rest ? ` | (${rest} more, empty in the rows on show)` : ""}`];
   for (const r of filled.slice(0, maxRows)) {
     const cells: string[] = [];
     for (const c of columns) {
@@ -152,6 +160,9 @@ function listLines(list: DiagList, maxRows: number): string[] {
   return out;
 }
 
+/** The most nodes of a tree shown whole, closed folders included. */
+const WHOLE_TREE = 40;
+
 function controlLines(c: DiagControl, maxRows: number): string[] {
   const where = `${c.area ? `r${c.area.row}  ` : ""}`;
   const id = `${c.container ?? (c.dynpro ? "value-help" : "")} (shell ${c.id})`.trim();
@@ -172,9 +183,10 @@ function controlLines(c: DiagControl, maxRows: number): string[] {
       if (visible) shown.push(n);
     }
     const out = [`${where}tree ${id}  ${shown.length} nodes on show${c.tree.headers.length ? `; columns: ${c.tree.headers.map(one).join(" | ")}` : ""}`];
-    // SAP often sends the nodes of closed folders too (MMBE's stock levels): a small tree is shown whole, those marked.
+    // SAP often sends the nodes of closed folders too (MMBE's stock levels): a small tree is shown whole, those
+    // marked. A large one (the SAP menu) only as it is on show.
     const budget = maxRows * 4;
-    const whole = c.tree.nodes.length <= budget;
+    const whole = c.tree.nodes.length <= Math.min(budget, WHOLE_TREE);
     const on = new Set(shown);
     for (const n of (whole ? c.tree.nodes : shown).slice(0, budget)) {
       if (n.hidden) continue;
