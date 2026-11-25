@@ -175,3 +175,56 @@ describe("sapgui: a click on a grid's cell selects its row (FB02, live 2026-11-2
     expect((await d.assess({ do: "click", id: "cntlCTRL_CONTAINERBSEG/shell" })).risk).not.toBe("navigate");
   });
 });
+
+describe("sapgui: typing into fields does not read the screen again (FB50, live 2026-11-25: 23 s for 7 cells)", () => {
+  /** A host that counts screen reads; acts change nothing it shows. */
+  async function counting(screen: Screen) {
+    let reads = 0;
+    const acts: unknown[] = [];
+    const host: Transport = {
+      async request<T>(op: string, params: Record<string, unknown> = {}): Promise<T> {
+        if (op === "screen") {
+          reads++;
+          return structuredClone(screen) as T;
+        }
+        if (op === "describe") return { found: false } as T;
+        if (op === "act") acts.push(params.action);
+        return { done: true } as T;
+      },
+      close() {},
+    };
+    const d = await sapguiSurface({}, { platform: "win32", transport: host }).open({ id: "sapgui:/app/con[0]/ses[0]", surface: "sapgui", where: "test" });
+    return { d, acts, reads: () => reads };
+  }
+  const form = one([
+    { id: "wnd[0]/tbar[0]/btn[11]", type: "GuiButton", name: "btn[11]", text: "Save", tip: "Save (Ctrl+S)", changeable: true },
+    { id: "wnd[0]/usr/ctxtZ-A", type: "GuiCTextField", name: "Z-A", text: "", label: "A", changeable: true },
+    { id: "wnd[0]/usr/txtZ-B", type: "GuiTextField", name: "Z-B", text: "", label: "B", changeable: true },
+  ]);
+  test("assess, set, look: one read, and the view shows what was typed", async () => {
+    const { d, reads } = await counting(form);
+    await d.assess({ do: "set", id: "ctxtZ-A", value: "1000" });
+    await d.act({ do: "set", id: "ctxtZ-A", value: "1000" });
+    const view = await d.look({ compact: true });
+    expect(view).toContain('ctxtZ-A  field  A = "1000"');
+    await d.assess({ do: "set", id: "txtZ-B", value: "x" });
+    await d.act({ do: "set", id: "txtZ-B", value: "x" });
+    expect(await d.look({ compact: true })).toContain('txtZ-B  field  B = "x"');
+    expect(reads()).toBe(1);
+  });
+  test("after a key or a button the screen is read again", async () => {
+    const { d, reads } = await counting(form);
+    await d.act({ do: "set", id: "ctxtZ-A", value: "1000" });
+    await d.act({ do: "key", key: 0 });
+    await d.look({ compact: true });
+    expect(reads()).toBe(2);
+    // The fake shows the field empty: the view is SAP's, not what was typed.
+    expect(await d.look({ compact: true })).toContain('ctxtZ-A  field  A = ""');
+  });
+  test("a plain look after a while reads again", async () => {
+    const { d, reads } = await counting(form);
+    await d.look({ compact: true });
+    await d.look({ compact: true });
+    expect(reads()).toBe(2);
+  });
+});

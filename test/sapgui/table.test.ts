@@ -222,8 +222,9 @@ describe("keys without a virtual key", () => {
     const { acts, open } = hostFor(screen);
     const d = await open();
     expect(await d.act({ do: "key", key: "Tab" })).toBe("key Tab: focus wnd[0]/usr/txtB");
+    // The cursor is on B now (the driver knows where it put it): Shift+Tab goes back to A.
     await d.act({ do: "key", key: "Shift+Tab" });
-    expect(acts().at(-1)).toEqual({ do: "focus", id: "wnd[0]/usr/txtB" });
+    expect(acts().at(-1)).toEqual({ do: "focus", id: "wnd[0]/usr/ctxtA" });
     expect((await d.assess({ do: "key", key: "Tab" })).risk).toBe("read");
     expect(nextField(screen, false)?.id).toBe("wnd[0]/usr/txtB");
     expect(nextField({ ...screen, focus: "wnd[0]/usr/txtB" }, false)?.id).toBe("wnd[0]/usr/ctxtA");

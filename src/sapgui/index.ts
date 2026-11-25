@@ -121,10 +121,32 @@ export function readOnlyText(id: string, screen: Screen): string {
   return `${id} is read-only on this screen: it takes no input here (a display, or a field SAP fills in). Change mode or another screen may have it.`;
 }
 
+/**
+ * The screen after an action that SAP GUI keeps to itself, worked out from
+ * the screen before it: "set" into a text field or a text editor (its text),
+ * "focus" (the cursor). undefined for every other action, and for a field
+ * the screen does not have: then the screen is read again.
+ *
+ * Each read walks every control of the screen through COM; FB50's table of
+ * 74 columns took seconds, and a batch read it twice per field typed (live,
+ * 2026-11-25: 23 s for 7 cells and Enter).
+ */
+export function typed(screen: Screen, action: Record<string, unknown>): Screen | undefined {
+  if (action.do !== "set" && action.do !== "focus") return undefined;
+  const id = String(action.id ?? "");
+  const at = screen.windows.flatMap((w) => w.controls).find((c) => c.id === id);
+  if (!at) return undefined;
+  if (action.do === "focus") return { ...screen, focus: id };
+  const text = at.type === "GuiTextField" || at.type === "GuiCTextField" || (at.type === "GuiShell" && at.sub === "TextEdit");
+  if (!text || typeof action.value !== "string") return undefined;
+  return { ...screen, windows: screen.windows.map((w) => ({ ...w, controls: w.controls.map((c) => (c.id === id ? { ...c, text: action.value as string } : c)) })) };
+}
+
 class SapguiDriver implements Driver {
   info: SessionInfo;
   private sid: string;
-  private last: { at: number; screen: Screen } | undefined;
+  /** The last screen read; `typed`: it is that read with what "set" or "focus" changed since (no read in between). */
+  private last: { at: number; screen: Screen; typed?: boolean } | undefined;
   /** Trees longer than the host reads at once: the node each is read from, until the screen changes. */
   private treeFrom: Record<string, number> = {};
 
@@ -160,7 +182,8 @@ class SapguiDriver implements Driver {
   }
 
   async look(options: LookOptions): Promise<string> {
-    const screen = await this.screen();
+    // Right after "set" or "focus" the screen is the last read with that change: SAP GUI has not gone to the server.
+    const screen = await this.screen(this.last?.typed === true);
     const full = fullView(screen);
     // The compact view leaves out what SAP GUI adds around the transaction (forAgent); the full view keeps all.
     if (!options.id) return options.compact ? compact(fullView(forAgent(screen))) : full;
@@ -241,7 +264,8 @@ class SapguiDriver implements Driver {
   }
 
   async assess(action: Action): Promise<Assessment> {
-    const screen = await this.screen();
+    // A read of the last moment serves (the server reads the screen after every action of a batch, then judges the next).
+    const screen = await this.screen(true);
     if (isLogonScreen(screen.program, screen.screen)) throw new ActionError(LOGON_REFUSAL);
     // Tab and Space have no virtual key: they are judged as what they become (a focus, a tick, a row selection).
     if (action.do === "key" && localKey(action.key ?? action.value)) {
@@ -450,10 +474,14 @@ class SapguiDriver implements Driver {
   }
 
   private async run(action: Record<string, unknown>, note: string, timeoutMs = ACT_MS): Promise<string> {
+    const prior = this.last;
     this.last = undefined;
+    const local = prior && Date.now() - prior.at < FRESH_MS ? typed(prior.screen, action) : undefined;
     // Another screen may follow: a tree's paging belongs to the screen it was asked on.
-    this.treeFrom = {};
+    if (!local) this.treeFrom = {};
     await this.ask("act", { action }, timeoutMs);
+    // Typing into a field or moving the cursor stays in SAP GUI: the screen is the one read, with that change.
+    if (local) this.last = { at: Date.now(), screen: local, typed: true };
     return note;
   }
 
