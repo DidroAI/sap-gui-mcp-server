@@ -1835,6 +1835,9 @@ async function doLogonSteps(sys, by, otherLogons) {
     await chrome.debugger.attach({ tabId }, "1.3");
     ownAttach = true;
     await chrome.debugger.sendCommand({ tabId }, "Page.enable").catch(() => {});
+    // The user clicked Log on in the side panel, which keeps the window's focus: without this the logon
+    // page never has focus (document.hasFocus() is false), and FOCUS refuses to type into it.
+    await chrome.debugger.sendCommand({ tabId }, "Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => {});
     let state;
     if (multiTab !== null) state = { kind: "multi", host };
     else {

@@ -6,6 +6,13 @@ change the tools or the view format.
 
 ## Unreleased
 
+### Fixed (after 0.1.0)
+
+- Log on from the extension's side panel failed with "The logon page looks
+  different from SAP's": the panel keeps the window's focus, so the logon page
+  never had it and the extension refused to type. The logon tab now gets focus
+  for typing.
+
 ### Changed (after 0.1.0)
 
 - The SAP window opens on an empty tab the first time, instead of a local
