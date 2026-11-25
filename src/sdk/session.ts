@@ -48,7 +48,7 @@ export function isAt(screen: ParsedScreen, place: Place): boolean {
 /** Errors already named with their step: an error that leaves nested steps is named once, by the innermost. */
 const named = new WeakSet<object>();
 
-export const SDK_VERSION = "0.1.0";
+export const SDK_VERSION = "0.2.0";
 
 /** The guard said no: the action did not run. */
 export class Refused extends Error {

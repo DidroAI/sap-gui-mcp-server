@@ -283,8 +283,10 @@ list.
 
 ## Releasing (maintainers)
 
-1. Set the version in `package.json` and `server.json` (twice; a test checks
-   they agree), and move the "Unreleased" changelog entries under it.
+1. Set the version in `package.json`, `server.json` (twice),
+   `mcpb/manifest.json`, `.claude-plugin/plugin.json`, and `SERVER_VERSION`
+   (`src/server.ts`) and `SDK_VERSION` (`src/sdk/session.ts`); a test checks
+   they agree. Move the "Unreleased" changelog entries under it.
 2. Merge that to `main`, then tag it there: `git tag v0.2.0 && git push origin v0.2.0`.
 3. `release.yml` builds and tests, then waits for approval in the `npm`
    environment. Once approved it publishes to npm through trusted publishing
