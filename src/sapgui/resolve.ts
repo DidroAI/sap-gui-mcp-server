@@ -5,7 +5,8 @@
  * 3. the SAP field name ("VBAK-AUART") on the active window;
  * 4. a short id from the compact view: the end of a full id ("ctxtVBAK-AUART", "tblX/ctxtY[1,0]");
  * 5. a handle of the compact view (core/ids.ts): `cntlGRID1/shell`, `shellcont[1]/shell`;
- * 6. a selection criterion's name ("MS_MATNR", "ctxtMS_MATNR"): its "from" field (MS_MATNR-LOW).
+ * 6. a field's id with another type in front ("ctxtRF05L-BELNR" for txtRF05L-BELNR): the field by its name;
+ * 7. a selection criterion's name ("MS_MATNR", "ctxtMS_MATNR"): its "from" field (MS_MATNR-LOW).
  * When several controls match by name, one the user can change wins, and a field wins over its label.
  * A handle that names several controls is not guessed: `resolveStrict` says which they are.
  */
@@ -45,6 +46,12 @@ export function resolve(screen: Screen, ident: string): Control | undefined {
   }
   let found = candidates(screen, screen.activeWindow ?? "wnd[0]").filter((c) => c.name === id);
   if (!found.length) found = candidates(screen).filter((c) => c.id.endsWith(`/${id}`));
+  // A field's id with the wrong type in front ("ctxtRF05L-BELNR" for txtRF05L-BELNR, live FB02 2026-11-25): its name.
+  const typed = /^(?:ctxt|txt|cmb|chk|rad|pwd)([A-Z0-9_%/][^/[\]]*)$/.exec(id);
+  if (!found.length && typed) {
+    const byName = resolve(screen, typed[1] as string);
+    if (byName && byName.type !== "GuiLabel") return byName;
+  }
   // A selection criterion by its name ("MS_MATNR"): its "from" field, MS_MATNR-LOW (live, MMBE, 2026-11-25).
   if (!found.length && !/-(LOW|HIGH)$/i.test(id)) return resolve(screen, `${id}-LOW`);
   if (!found.length) return undefined;
