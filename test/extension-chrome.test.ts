@@ -167,7 +167,7 @@ describe.skipIf(!exe)("the extension in Chromium", () => {
       env: { ...process.env, HOME: home, XDG_CONFIG_HOME: config, PATH: `${bin}:${process.env.PATH}` },
     });
     popup = await context.newPage();
-    await popup.goto(`chrome-extension://${EXTENSION_IDS[0]}/popup.html`);
+    await popup.goto(`chrome-extension://${EXTENSION_IDS[0]}/panel.html`);
     await popup.evaluate((port) => chrome.storage.local.set({ port }), relay.port);
   }, 60_000);
 
@@ -182,11 +182,11 @@ describe.skipIf(!exe)("the extension in Chromium", () => {
   test("pairs through its helper: no code copied", async () => {
     await popup.click("#pair").catch(() => {}); // shown while not paired; the worker may have paired by itself already
     expect(await relay.waitForExtension(20_000)).toBe(true);
-    await popup.waitForFunction(() => document.getElementById("pill-text")?.textContent === "Connected", undefined, { timeout: 10_000 });
-    expect(await popup.textContent("#strip-title")).toBe("Your agent is connected.");
+    await popup.waitForFunction(() => /connected$/.test(document.getElementById("status-title")?.textContent ?? ""), undefined, { timeout: 10_000 });
+    expect(await popup.textContent("#status-title")).toBe("Your agent is connected");
   }, 40_000);
 
-  test("a system is registered in the popup; its password goes to the keychain", async () => {
+  test("a system is registered in the panel; its password goes to the keychain", async () => {
     // No system yet: the empty state's one button.
     expect(await popup.isVisible("#add")).toBe(false);
     await popup.click("#empty-add");
@@ -199,9 +199,9 @@ describe.skipIf(!exe)("the extension in Chromium", () => {
     await popup.click("#save");
     await popup.waitForSelector("#edit-view", { state: "hidden" });
     await popup.waitForSelector(".item");
-    expect(await popup.locator(".item .item-line").allTextContents()).toEqual([origins[0]!.slice(7), "Web GUI, Client 800, Language EN", "User JDOE, password in your keychain"]);
-    expect(await popup.getAttribute(".item .item-line.host", "title")).toBe(`${origins[0]}${WEBGUI}`);
-    expect(await popup.textContent(".item .go")).toBe("Log On");
+    expect(await popup.locator(".item .item-line").allTextContents()).toEqual([`Web GUIClient 800${origins[0]!.slice(7)}`, "JDOE, password saved"]);
+    expect(await popup.getAttribute(".item .item-line", "title")).toBe(`${origins[0]}${WEBGUI}`);
+    expect(await popup.textContent(".item .go")).toBe("Log on");
     const stored = await popup.evaluate(() => chrome.storage.local.get(null));
     expect(JSON.stringify(stored)).not.toContain(PASSWORD);
     expect(stored.systems[0]).toMatchObject({ name: "Fake ECC", client: "800", language: "EN", user: "JDOE", passwordIn: "keychain" });
@@ -323,13 +323,13 @@ describe.skipIf(!exe)("the extension in Chromium", () => {
     expect(wire.join("\n")).not.toContain("not it");
   }, 90_000);
 
-  test("the popup says what SAP answered, and offers the one way out: a new password", async () => {
+  test("the panel says what SAP answered, and offers the one way out: a new password", async () => {
     const row = popup.locator(".item", { hasText: "Bad" });
     await row.locator(".item-note.error").waitFor();
-    expect(await row.locator(".item-note").textContent()).toBe("SAP refused the saved password.Update Password");
-    // The row's button does not try that password again: Open shows SAP's logon page for the user.
-    expect(await row.locator(".go").textContent()).toBe("Open");
-    await row.locator(".item-note .link").click();
+    expect(await row.locator(".item-note").textContent()).toBe("SAP rejected the saved password.");
+    // The row's button does not try that password again: it opens the form at the password.
+    expect(await row.locator(".go").textContent()).toBe("Update password");
+    await row.locator(".go").click();
     expect(await popup.evaluate(() => document.activeElement?.id)).toBe("f-password");
     await popup.fill("#f-password", PASSWORD);
     await popup.click("#save");
@@ -358,11 +358,11 @@ describe.skipIf(!exe)("the extension in Chromium", () => {
     expect(posts.length).toBe(before);
   }, 90_000);
 
-  test("sharing paused: the agent is told to ask the user to resume", async () => {
+  test("sharing stopped from Chrome's bar: the agent is told to ask the user to share again", async () => {
     await popup.evaluate(() => chrome.storage.local.set({ paused: true }));
     const r = await refusal(relay.logon("Fake ECC"));
     expect(r.reason).toBe("paused");
-    expect(r.message).toContain("Resume Sharing");
+    expect(r.message).toContain("Share again");
     await popup.evaluate(() => chrome.storage.local.set({ paused: false }));
   }, 30_000);
 

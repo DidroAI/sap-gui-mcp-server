@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // The Chrome Web Store screenshots (1280×800) and the small promo tile (440×280) of the
-// extension, written to store-assets/. The popup is the real popup.html, fed made-up
+// extension, written to store-assets/. The panel is the real panel.html, fed made-up
 // systems on sap.example.com through a stand-in for chrome.runtime: never a real SAP
 // system, never SAP's logo (extension/STORE.md, "Assets").
 //
@@ -41,53 +41,76 @@ const base = {
   managedOrigins: [],
   shared: [],
   agent: null,
+  agentInfo: { agent: "Codex", policy: { write: "confirm", systems: [], transactions: [], blocked: ["SE38", "SM30", "SU01"], logoff: false } },
+  activity: [],
   currentTab: null,
   version,
 };
+// Steps of the agent, `ago` seconds back (the stand-in turns them into times).
+const step = (ago, d, label, value, more = {}) => ({ state: "ran", do: d, label, value, transaction: "VA02", title: "Change Sales Order", system: "ECC", client: "800", agent: "Codex", ago, ...more });
+const VA02 = [
+  step(900, "okcode", "", "/nVA03", { transaction: "VA03", title: "Display Sales Order" }),
+  step(880, "set", "Order", "4710", { transaction: "VA03", title: "Display Sales Order" }),
+  step(870, "key", "", "0", { transaction: "VA03", title: "Display Sales Order" }),
+  step(40, "okcode", "", "/nVA02", { transaction: "", title: "SAP Easy Access" }),
+  step(30, "set", "Order", "4711"),
+  step(24, "key", "", "0"),
+  step(12, "set", "Req. delivery date", "12.12.2026"),
+];
+const ecc = (more = {}) => sys("ecc", "ECC Sales", "webgui", more);
 const SCENES = [
   {
-    file: "1-connected",
-    title: "Your agent works in your SAP systems",
-    text: "Register a system once. Your local agent opens it and logs on in your own Chrome.",
-    state: { ...base, systems: [sys("ecc", "ECC Sales", "webgui", { open: true }), sys("s4", "S/4HANA Sandbox", "fiori"), sys("qas", "Quality System", "webgui", { passwordIn: null })], agent: { tabId: 7, title: "Display Sales Order: Overview", system: "ECC Sales" } },
+    file: "1-working",
+    title: "See what your agent does in SAP",
+    text: "A column beside your SAP tabs: each step, in SAP's own words, as the agent takes it.",
+    state: { ...base, systems: [ecc({ open: true }), sys("s4", "S/4HANA Sandbox", "fiori"), sys("qas", "QAS Finance", "webgui", { passwordIn: null, client: "200" })], agent: { tabId: 7, title: "Change Sales Order", system: "ECC Sales" }, activity: VA02 },
   },
   {
-    file: "2-logging-on",
+    file: "2-asking",
+    title: "Saves wait for your yes",
+    text: "Before the agent saves, your agent app asks you. The panel shows what waits.",
+    state: { ...base, systems: [ecc({ open: true }), sys("s4", "S/4HANA Sandbox", "fiori")], agent: { tabId: 7, title: "Change Sales Order", system: "ECC Sales" }, activity: [...VA02, step(2, "key", "Save", "11", { state: "waiting" })] },
+  },
+  {
+    file: "3-logon",
     title: "The agent never sees your password",
     text: "The extension types it into SAP's logon page itself, from your computer's keychain.",
-    state: { ...base, systems: [sys("ecc", "ECC Sales", "webgui", { open: true }), sys("s4", "S/4HANA Sandbox", "fiori", { loggingOn: true })] },
-  },
-  {
-    file: "3-wrong-password",
-    title: "One try, then it asks you",
-    text: "When SAP refuses a saved password, nothing is typed again until you update it.",
-    state: { ...base, systems: [sys("ecc", "ECC Sales", "webgui", { logonIssue: { reason: "wrong_password" } }), sys("s4", "S/4HANA Sandbox", "fiori", { open: true })] },
+    state: { ...base, status: "ready", agentInfo: null, systems: [ecc({ logonIssue: { reason: "wrong_password" } }), sys("s4", "S/4HANA Sandbox", "fiori", { loggingOn: true }), sys("qas", "QAS Finance", "webgui", { passwordIn: null, client: "200" })] },
   },
   {
     file: "4-pair",
-    title: "Pairs with your computer in one click",
-    text: "It talks only to the local server on 127.0.0.1 and to the SAP systems you registered.",
-    state: { ...base, status: "no_code", code: { set: false, managed: false, managedInvalid: false }, systems: [sys("ecc", "ECC Sales", "webgui"), sys("s4", "S/4HANA Sandbox", "fiori")] },
+    title: "Set up in a minute",
+    text: "It talks only to your agent on this computer and to the SAP systems you add.",
+    state: { ...base, status: "no_code", agentInfo: null, code: { set: false, managed: false, managedInvalid: false }, systems: [] },
+  },
+  {
+    file: "5-settings",
+    title: "You decide what the agent may do",
+    text: "Saves, systems and blocked transactions are set in your agent; the panel shows them.",
+    view: "settings",
+    state: { ...base, systems: [ecc()], agent: null },
   },
 ];
 
-// The stand-in for the extension APIs the popup calls; the scene's state comes from the page address.
+// The stand-in for the extension APIs the panel calls; the scene's state comes from the page address.
 const STUB = `(() => {
   const scene = new URLSearchParams(location.search).get("s");
   if (!scene) return;
   const state = JSON.parse(decodeURIComponent(scene));
+  for (const e of state.activity || []) e.at = Date.now() - e.ago * 1000;
   const ok = (v) => Promise.resolve(v);
-  // The popup's notice about "controlled by automated test software" is for the screenshot browser, not for users.
+  // The panel's notice about "controlled by automated test software" is for the screenshot browser, not for users.
   Object.defineProperty(navigator, "webdriver", { get: () => false });
+  const ev = { addListener() {} };
   window.chrome = {
     runtime: { sendMessage: (m) => ok(m && m.cmd === "state" ? state : { ok: true }), getManifest: () => ({ version: state.version }), id: "store" },
-    storage: { local: { get: () => ok({ "notice-seen": true }), set: () => ok() }, onChanged: { addListener() {} } },
-    tabs: { query: () => ok([]), create: () => ok({}) },
+    storage: { local: { get: () => ok({ "notice-seen": true }), set: () => ok() }, onChanged: ev },
+    tabs: { query: () => ok([]), create: () => ok({}), onActivated: ev, onUpdated: ev },
     permissions: { contains: () => ok(true), request: () => ok(true) },
   };
 })();`;
 
-const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".svg": "image/svg+xml", ".json": "application/json" };
+const TYPES = { ".woff2": "font/woff2", ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".svg": "image/svg+xml", ".json": "application/json" };
 const server = createServer((req, res) => {
   const path = decodeURIComponent(new URL(req.url, "http://x").pathname);
   if (path === "/frame.html") {
@@ -108,43 +131,44 @@ const server = createServer((req, res) => {
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 function frame(title, text, scene) {
+  // A browser window: the SAP page on the left (a plain stand-in, never SAP's look or logo), the side panel on the right.
   return `<!doctype html><meta charset="utf-8"><style>
-  body { margin: 0; width: 1280px; height: 800px; display: grid; grid-template-columns: 1fr 400px; gap: 64px; align-items: center; padding: 0 96px; box-sizing: border-box; background: #f2f4f7; font-family: system-ui, sans-serif; color: #1d2d3e; }
-  h1 { font-size: 46px; line-height: 1.1; margin: 0 0 20px; letter-spacing: -0.01em; }
-  p { font-size: 22px; line-height: 1.45; margin: 0; color: #475e75; }
-  iframe { width: 400px; height: 600px; border: 0; border-radius: 12px; background: #fff; box-shadow: 0 12px 40px rgba(29,45,62,.18); }
-  </style><div><h1>${esc(title)}</h1><p>${esc(text)}</p></div><iframe src="/popup.html?s=${encodeURIComponent(scene)}"></iframe>`;
+  @font-face { font-family: "Instrument Sans"; font-weight: 400; src: url("/fonts/InstrumentSans-Latin-400.woff2"); }
+  @font-face { font-family: "Instrument Sans"; font-weight: 600; src: url("/fonts/InstrumentSans-Latin-600.woff2"); }
+  body { margin: 0; width: 1280px; height: 800px; display: grid; grid-template-columns: 1fr 380px; background: #fdfcfb; font-family: "Instrument Sans", system-ui, sans-serif; color: #101114; }
+  .page { display: flex; flex-direction: column; justify-content: center; padding: 0 88px; border-right: 1px solid #d4cdcd; background: #f7f3f2; }
+  h1 { font-size: 46px; line-height: 1.1; margin: 0 0 20px; letter-spacing: -0.025em; font-weight: 600; }
+  p { font-size: 21px; line-height: 1.45; margin: 0; color: #555258; max-width: 30ch; }
+  iframe { width: 380px; height: 800px; border: 0; display: block; }
+  </style><div class="page"><h1>${esc(title)}</h1><p>${esc(text)}</p></div><iframe src="/panel.html?s=${encodeURIComponent(scene)}"></iframe>`;
 }
 
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const port = server.address().port;
 const browser = await chromium.launch(process.env.SAP_TEST_CHROME ? { executablePath: process.env.SAP_TEST_CHROME } : {});
 try {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, colorScheme: process.env.DARK ? "dark" : "light" });
   await page.addInitScript(STUB);
   for (const s of SCENES) {
     const q = new URLSearchParams({ title: s.title, text: s.text, s: encodeURIComponent(JSON.stringify(s.state)) });
     await page.goto(`http://127.0.0.1:${port}/frame.html?${q}`);
     await page.waitForTimeout(800);
-    // The frame as tall as the popup's content, as Chrome sizes a popup (at most 600 px).
-    await page.evaluate(() => {
-      const f = document.querySelector("iframe");
-      const body = f.contentDocument.body;
-      const bottom = Math.max(...[...body.children].filter((c) => !c.hidden).map((c) => c.getBoundingClientRect().bottom));
-      const h = Math.min(600, Math.ceil(bottom));
-      f.style.height = `${h}px`;
-      f.style.width = `${Math.ceil(Math.max(...[...body.children].filter((c) => !c.hidden).map((c) => c.getBoundingClientRect().right)))}px`;
-    });
-    await page.screenshot({ path: join(out, `${s.file}.png`) });
-    console.log(join(out, `${s.file}.png`));
+    if (s.view === "settings") await page.frameLocator("iframe").locator("#settings-open").click();
+    await page.waitForTimeout(300);
+    const file = join(out, `${s.file}${process.env.DARK ? "-dark" : ""}.png`);
+    await page.screenshot({ path: file });
+    console.log(file);
   }
   // The small promo tile: the extension's own icon and the name, on a flat background.
   const tile = await browser.newPage({ viewport: { width: 440, height: 280 } });
   await tile.goto(`http://127.0.0.1:${port}/frame.html?tile=1`);
-  await tile.setContent(`<!doctype html><meta charset="utf-8"><style>body{margin:0;width:440px;height:280px;display:grid;place-items:center;background:#1d2d3e;font-family:system-ui,sans-serif;color:#fff}
-    img{display:block;width:88px;height:88px;margin:0 auto 16px}
-    h1{font-size:28px;margin:0;text-align:center;font-weight:600}p{margin:6px 0 0;text-align:center;color:#c5d2df;font-size:16px}</style>
-    <div><img src="http://127.0.0.1:${port}/icons/128.png" alt=""><h1>Agent Connector</h1><p>for SAP Systems</p></div>`);
+  await tile.setContent(`<!doctype html><meta charset="utf-8"><style>
+    @font-face { font-family: "Instrument Sans"; font-weight: 600; src: url("http://127.0.0.1:${port}/fonts/InstrumentSans-Latin-600.woff2"); }
+    @font-face { font-family: "Instrument Sans"; font-weight: 400; src: url("http://127.0.0.1:${port}/fonts/InstrumentSans-Latin-400.woff2"); }
+    body{margin:0;width:440px;height:280px;display:grid;place-items:center;background:#fdfcfb;font-family:"Instrument Sans",system-ui,sans-serif;color:#101114}
+    div{display:flex;align-items:center;gap:18px}img{display:block;width:72px;height:72px}
+    h1{font-size:30px;margin:0;font-weight:600;letter-spacing:-0.025em}p{margin:2px 0 0;color:#71696d;font-size:18px}</style>
+    <div><img src="http://127.0.0.1:${port}/icons/128.png" alt=""><span><h1>UI Automation</h1><p>for SAP</p></span></div>`);
   await tile.waitForTimeout(300);
   await tile.screenshot({ path: join(out, "promo-440x280.png") });
   console.log(join(out, "promo-440x280.png"));

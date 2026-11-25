@@ -14,6 +14,18 @@ change the tools or the view format.
   sap-ui-automation ...`, which work without a global install.
 - `setup` points out entries left under the server's old names
   (`sap-gui-mcp-server`, `sap-gui`), which give the agent the tools twice.
+- The Chrome extension is now **UI Automation for SAP** (0.4.0) and opens
+  as a side panel beside the page instead of a popup. The panel names the
+  agent, says whether saves wait for your yes, lists each step the agent
+  takes in SAP (transaction, field, value), turns amber while a save waits
+  for your answer, and marks the system the agent works in. Settings shows
+  what the agent may do, as set in the agent. The look follows the Didro
+  platform (Instrument Sans, bundled). The Pause Sharing switch is gone:
+  Cancel on Chrome's debugging bar still stops sharing, and the panel offers
+  Share again.
+- With `SAP_BROWSER=extension`, the server sends the panel the agent's name,
+  its write policy and each step (`panel` and `activity` notes on the relay;
+  extension/PROTOCOL.md).
 
 Preparing the first public release.
 

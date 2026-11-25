@@ -26,7 +26,7 @@ describe("extension helper (the Chrome Web Store extension)", () => {
     mkdirSync(join(o.env.XDG_CONFIG_HOME as string, "google-chrome"), { recursive: true });
     expect(await run("helper")).toBe(0);
     expect(out.join("\n")).toContain("Installed the extension's helper");
-    expect(out.join("\n")).toContain("Pair with This Computer");
+    expect(out.join("\n")).toContain("Pair in the side panel");
     expect(existsSync(join(o.home, "sap-ui-automation-extension"))).toBe(false);
   });
 });

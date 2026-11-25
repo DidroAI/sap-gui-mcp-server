@@ -822,7 +822,7 @@ chrome.debugger.onDetach.addListener(async (source, reason) => {
   send({ type: "detached", tabId, reason });
   if (reason === "canceled_by_user") {
     // Cancel on Chrome's "started debugging this browser" bar: stop sharing
-    // everywhere until the user clicks Resume in the popup.
+    // everywhere until the user clicks Share again in the side panel.
     await chrome.storage.local.set({ paused: true });
   }
   if (reason === "target_closed") recentlyClosed.add(tabId);
@@ -1013,11 +1013,63 @@ function onRelayMessage(data) {
     return;
   }
   if (!m || m.type === "pong") return;
-  if (!Number.isInteger(m.id)) return;
+  if (!Number.isInteger(m.id)) return onServerNote(m);
   privateRestored.then(() => handleRequest(m)).then(
     (result) => send({ id: m.id, result }),
     (e) => send({ id: m.id, error: { message: (e && e.message) || String(e), code: typeof e?.code === "number" ? e.code : -32000, ...(typeof e?.reason === "string" ? { reason: e.reason } : {}) } }),
   );
+}
+
+// ---------------------------------------------------------------- the side panel's view of the agent
+
+// Who the agent is and what it may do (the server's "panel" note), and its last steps ("activity").
+// Kept in session storage: the worker may restart, Chrome's restart forgets them.
+const ACTIVITY_MAX = 80;
+let panelInfo = null;
+let activity = [];
+const panelRestored = chrome.storage.session
+  .get(["panelInfo", "activity"])
+  .then((r) => {
+    panelInfo = r.panelInfo || null;
+    activity = Array.isArray(r.activity) ? r.activity : [];
+  })
+  .catch(() => {});
+
+const str = (v, n) => (typeof v === "string" ? v.slice(0, n) : "");
+
+function onServerNote(m) {
+  if (m.type === "panel") {
+    const p = m.policy && typeof m.policy === "object" ? m.policy : {};
+    const list = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string").slice(0, 50).map((x) => x.slice(0, 40)) : []);
+    panelInfo = {
+      agent: str(m.agent, 40),
+      policy: { write: ["off", "confirm", "on"].includes(p.write) ? p.write : "", systems: list(p.systems), transactions: list(p.transactions), blocked: list(p.blocked), logoff: !!p.logoff },
+      at: Date.now(),
+    };
+    chrome.storage.session.set({ panelInfo }).catch(() => {});
+    return;
+  }
+  if (m.type === "activity") {
+    const e = {
+      state: ["ran", "waiting", "refused", "declined"].includes(m.state) ? m.state : "ran",
+      do: str(m.do, 20),
+      label: str(m.label, 80),
+      value: str(m.value, 80),
+      transaction: str(m.transaction, 40),
+      title: str(m.title, 120),
+      system: str(m.system, 20),
+      client: str(m.client, 3),
+      agent: str(m.agent, 40),
+      at: Date.now(),
+    };
+    // The yes the agent waited for came: the waiting line gives way to what happened.
+    const last = activity[activity.length - 1];
+    if (last && last.state === "waiting" && e.state !== "waiting" && last.do === e.do && last.label === e.label) activity.pop();
+    activity.push(e);
+    if (activity.length > ACTIVITY_MAX) activity = activity.slice(-ACTIVITY_MAX);
+    if (e.agent && panelInfo) panelInfo.agent = e.agent;
+    chrome.storage.session.set({ activity }).catch(() => {});
+  }
 }
 
 async function teardown(sock, state, refused) {
@@ -1450,15 +1502,15 @@ function agentText(reason, sys, sapMessage = "", extra = {}) {
   const said = sapMessage ? ` SAP says: "${sapMessage}".` : "";
   switch (reason) {
     case "paused":
-      return "Sharing is paused in the extension. Ask the user to click Resume Sharing in the extension's popup (the Agent Connector icon in Chrome's toolbar), then call sap_logon again.";
+      return "The user stopped sharing with Cancel on Chrome's debugging bar. Ask them to click Share again in the extension's side panel (the UI Automation for SAP icon in Chrome's toolbar), then call sap_logon again.";
     case "password_unreadable":
-      return `The saved password of ${sys.name} could not be read${sys.passwordIn === "keychain" ? " from the keychain" : ""}. Ask the user to open the extension's popup, edit ${sys.name} and save its password again.`;
+      return `The saved password of ${sys.name} could not be read${sys.passwordIn === "keychain" ? " from the keychain" : ""}. Ask the user to open the extension's side panel, edit ${sys.name} and save its password again.`;
     case "wrong_password":
-      return `SAP refused the user name or password for ${who}.${said} The extension will not try this password again, so that the user is not locked. Ask the user to update the password of ${sys.name} in the extension's popup (Edit), or to log on in the tab themselves. Do not ask for the password.`;
+      return `SAP refused the user name or password for ${who}.${said} The extension will not try this password again, so that the user is not locked. Ask the user to update the password of ${sys.name} in the extension's side panel (Edit), or to log on in the tab themselves. Do not ask for the password.`;
     case "user_locked":
-      return `SAP says ${sys.user || "the user"} is locked on ${sys.name}.${said} Ask the user to have it unlocked (their SAP administrator, transaction SU01), then to click Log On in the extension's popup. Do not retry.`;
+      return `SAP says ${sys.user || "the user"} is locked on ${sys.name}.${said} Ask the user to have it unlocked (their SAP administrator, transaction SU01), then to click Log on in the extension's side panel. Do not retry.`;
     case "password_change":
-      return `SAP asks ${who} for a new password. Ask the user to change it in the tab that is now in front, then to save the new password in the extension's popup (Edit ${sys.name}). Do not retry before that.`;
+      return `SAP asks ${who} for a new password. Ask the user to change it in the tab that is now in front, then to save the new password in the extension's side panel (Edit ${sys.name}). Do not retry before that.`;
     case "multiple_logon":
       return `${sys.user || "The user"} is already logged on to ${sys.name} elsewhere, and SAP asks whether to end those other logons. Ask the user what they want: they can answer in the tab that is now in front, or tell you to keep the other logons; then call sap_logon again with otherLogons: "keep". Never end the user's other logons yourself.`;
     case "identity_provider":
@@ -1467,7 +1519,7 @@ function agentText(reason, sys, sapMessage = "", extra = {}) {
       return `The logon page of ${sys.name} has no ${extra.field || "field"} the extension knows, so it did not log on. Ask the user to log on in the tab that is now in front, then call sap_sessions.`;
     case "sap_error":
       return /dialog user/i.test(sapMessage)
-        ? `SAP answered with an error page for ${who}: "${sapMessage}". The saved user is not a dialog user (it may be meant for RFC or background work), so it cannot log on in a browser. Ask the user to save a dialog user for ${sys.name} in the extension's popup (Edit).`
+        ? `SAP answered with an error page for ${who}: "${sapMessage}". The saved user is not a dialog user (it may be meant for RFC or background work), so it cannot log on in a browser. Ask the user to save a dialog user for ${sys.name} in the extension's side panel (Edit).`
         : `SAP answered with an error page for ${who}.${said} Tell the user what SAP said; the tab stays open.`;
     case "timeout":
       return `${sys.name} did not show SAP within ${Math.round(LOGON_TIMEOUT_MS / 1000)} s (the tab stays open). Check with the user that the system is reachable from this computer (VPN, address), then call sap_logon again.`;
@@ -1684,8 +1736,8 @@ async function logonSystem(ref, { by, otherLogons = null }) {
     throw logonError(
       "not_registered",
       names.length
-        ? `No system named "${ref}" is registered in the extension. Registered: ${names.join(", ")}. If the user means another system, ask them to open it in Chrome and click Add This SAP Page in the extension's popup. Never ask the user for a password.`
-        : "No SAP system is registered in the extension yet. Ask the user to open their SAP system in Chrome and click Add This SAP Page in the extension's popup. Never ask the user for a password.",
+        ? `No system named "${ref}" is registered in the extension. Registered: ${names.join(", ")}. If the user means another system, ask them to open it in Chrome and click Add this SAP page in the extension's side panel. Never ask the user for a password.`
+        : "No SAP system is registered in the extension yet. Ask the user to open their SAP system in Chrome and click Add this SAP page in the extension's side panel. Never ask the user for a password.",
     );
   }
   if (by === "server" && (await getConfig()).paused) throw logonError("paused", agentText("paused", sys));
@@ -1921,6 +1973,7 @@ async function popupState(tabId) {
     agent = { tabId: agentTab.tabId, title: t.title, system: system ? system.name : null };
   }
   const targets = [...all.values()];
+  await panelRestored;
   return {
     status: status.state,
     port: status.port,
@@ -1933,6 +1986,8 @@ async function popupState(tabId) {
     systems: cfg.systems.map((x) => ({ ...x, kind: x.kind || kindOf(x.url), open: targets.some((t) => tabOfSystem(x, t.url) && !privateTabs.has(t.tabId)), loggingOn: logons.has(x.id) })),
     shared,
     agent,
+    agentInfo: panelInfo,
+    activity,
     currentTab,
     version: EXT_VERSION,
   };
@@ -2037,11 +2092,17 @@ async function handlePopup(msg) {
       else throw new Error("invalid port");
       return { ok: true };
     }
-    case "pause":
-      await chrome.storage.local.set({ paused: true });
-      return { ok: true };
+    // Sharing stops only from Chrome's own bar (Cancel on "started debugging this browser"); the panel shares again.
     case "resume":
       await chrome.storage.local.set({ paused: false });
+      return { ok: true };
+    case "clearActivity":
+      activity = [];
+      await chrome.storage.session.set({ activity }).catch(() => {});
+      return { ok: true };
+    case "unpair":
+      await chrome.storage.local.remove("pairingCode");
+      reconnect();
       return { ok: true };
     case "reconnect":
       reconnect();
@@ -2095,7 +2156,14 @@ chrome.runtime.onStartup.addListener(() => {
   ensureAlarm();
   ensureConnected({ force: true });
 });
+// The toolbar icon opens the side panel: a column beside the page, open while the user works.
+function panelOnClick() {
+  if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+}
+panelOnClick();
+
 chrome.runtime.onInstalled.addListener(() => {
+  panelOnClick();
   ensureAlarm();
   ensureConnected({ force: true });
 });

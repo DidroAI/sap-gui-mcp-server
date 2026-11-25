@@ -60,7 +60,7 @@ and is likely to work. Firefox and Safari are not supported.
 ## Use your everyday Chrome with the extension
 
 Instead of remote debugging, the server can reach your Chrome through the
-**Agent Connector for SAP Systems** extension: no `chrome://inspect`
+**UI Automation for SAP** extension: no `chrome://inspect`
 switch, your normal profile with its SSO, and only the tabs of the SAP
 systems you register are shared. The extension also keeps your systems'
 logons: the agent can say "log on to ECC Dev", and the extension types the
@@ -73,17 +73,19 @@ it.
    on **Developer mode**, click **Load unpacked** and pick that folder.
    Pin the icon (puzzle piece, then the pin), and restart Chrome once if it
    was open during the install.
-2. Click the Agent Connector icon and **Pair with This Computer**.
-3. Open your SAP system in a tab and click **Add This SAP Page**. Add
+2. Click the UI Automation for SAP icon: it opens a side panel beside the
+   page. Click **Pair**.
+3. Open your SAP system in a tab and click **Add this SAP page** in the panel. Add
    user and password if the extension should log on for you.
 4. Add `"SAP_BROWSER": "extension"` to the `env` of sap-ui-automation in
    your agent's settings, and restart the agent app. The agent then also
    has `sap_systems` (your registered systems) and `sap_logon` (open one and
    log on).
 
-While the server works in a tab, Chrome shows "Agent Connector for SAP
-Systems started debugging this browser". Clicking **Cancel** there stops the
-sharing until you click **Resume Sharing** in the popup.
+The side panel shows what the agent does in SAP, step by step, and when it
+waits for your yes to save. While the server works in a tab, Chrome shows
+"UI Automation for SAP started debugging this browser". Clicking **Cancel**
+there stops the sharing until you click **Share again** in the side panel.
 `npx -y sap-ui-automation extension uninstall` removes the helper and the
 saved passwords. See
 [extension/README.md](https://github.com/DidroAI/sap-ui-automation/blob/main/extension/README.md)

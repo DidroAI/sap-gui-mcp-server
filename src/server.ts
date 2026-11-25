@@ -248,6 +248,45 @@ export interface SystemsAccess {
   logon(system: string, options?: LogonOptions): Promise<LogonResult>;
   /** May the server look at a tab of this address (SAP_ALLOW_ORIGINS)? Absent: every registered system's. */
   looksAt?(url: string): boolean;
+  /** The extension's side panel: who the agent is and what it may do. */
+  panel?(info: Record<string, unknown>): void;
+  /** One step of the agent, for the side panel's activity list. */
+  activity?(event: Record<string, unknown>): void;
+}
+
+/** The agent's name as people know it, from the client's MCP name ("codex-mcp-client" is Codex). */
+export function agentName(client: { name?: string | undefined; title?: string | undefined } | undefined): string {
+  const n = `${client?.title ?? ""} ${client?.name ?? ""}`;
+  const known: [RegExp, string][] = [
+    [/claude[- ]?code/i, "Claude Code"],
+    [/claude/i, "Claude"],
+    [/codex/i, "Codex"],
+    [/cursor/i, "Cursor"],
+    [/windsurf/i, "Windsurf"],
+    [/visual studio code|vscode|copilot/i, "VS Code"],
+    [/gemini/i, "Gemini"],
+  ];
+  for (const [re, label] of known) if (re.test(n)) return label;
+  return (client?.title || client?.name || "Your agent").slice(0, 40);
+}
+
+/** The label a control has on a view ("Order" for `ctxtVBAK-VBELN  field  Order = ""`), for the side panel's activity. */
+export function labelOn(view: string | undefined, id: unknown): string {
+  if (!view || typeof id !== "string" || !id.trim()) return "";
+  const want = id.trim().replace(/\[\d+,\d+\]$/, "");
+  for (const l of view.split("\n")) {
+    const parts = l.trim().split("  ");
+    const got = (parts[0] ?? "").replace(/\[\d+,\d+\]$/, "");
+    if (got !== want && !got.endsWith(`/${want}`)) continue;
+    const label = (parts[2] ?? "").replace(/\s*=.*$/, "").replace(/^"|"$/g, "").trim();
+    return label.slice(0, 80);
+  }
+  return "";
+}
+
+/** What the side panel's settings say the agent may do: the server's policy, never a secret. */
+export function panelPolicy(policy: Policy): Record<string, unknown> {
+  return { write: policy.write, systems: policy.allowSystems, transactions: policy.allowTcodes, blocked: policy.blockTcodes, logoff: !!policy.allowLogoff };
 }
 
 const KIND_NAME: Record<string, string> = { webgui: "Web GUI", fiori: "Fiori launchpad", other: "SAP" };
@@ -260,7 +299,7 @@ const LOGON_NAME: Record<string, string> = {
 /** What stands from the last logon (ExtensionSystem.issue): the agent must not retry before the user acts. */
 const ISSUE_NAME: Record<string, string> = {
   wrong_password: "SAP refused its saved password: the user updates it in the extension before the next logon",
-  user_locked: "SAP said the user is locked: the user has it unlocked, then logs on from the extension's popup",
+  user_locked: "SAP said the user is locked: the user has it unlocked, then logs on from the extension's side panel",
 };
 
 /** One line per registered system. */
@@ -308,6 +347,23 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       websiteUrl: "https://github.com/DidroAI/sap-ui-automation",
     },
     { instructions: instructions(policy, !!systems) });
+  // The extension's side panel learns who the agent is once the client said its name.
+  const agent = () => agentName(server.server.getClientVersion());
+  if (systems?.panel) {
+    const tellPanel = () => systems.panel?.({ agent: server.server.getClientVersion() ? agent() : "", policy: panelPolicy(policy) });
+    tellPanel();
+    const before = server.server.oninitialized;
+    server.server.oninitialized = () => {
+      before?.();
+      tellPanel();
+    };
+  }
+  /** One step for the side panel: what ran, waits for the user, or was refused. Field values are cut short; the panel is local. */
+  const tell = (info: SessionInfo, action: NormalizedAction, state: "ran" | "waiting" | "refused" | "declined", label = labelOn(views.last(info.id), action.id)) => {
+    if (!systems?.activity) return;
+    const value = action.do === "key" ? String(action.key ?? "") : action.do === "set" || action.do === "okcode" || action.do === "open" || action.do === "combo" ? String(action.value ?? action.app ?? "").slice(0, 80) : "";
+    systems.activity({ state, do: action.do, label, value, transaction: info.transaction ?? "", title: (info.title ?? "").slice(0, 120), system: info.system ?? "", client: info.client ?? "", agent: agent(), at: Date.now() });
+  };
   const session = z.string().optional().describe("number, id, system, transaction or sapgui|webgui|fiori; default: the active one");
   const queue = new SessionQueue();
   /** The data of an answer, when structured output is on; undefined (nothing added) when it is off. */
@@ -510,7 +566,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   async function systemsHint(): Promise<string> {
     try {
       const list = await systems!.list();
-      if (!list.length) return "No system is registered in the Chrome extension either: ask the user to open SAP in Chrome and click Add This SAP Page in the extension's popup (the Agent Connector icon in Chrome's toolbar).";
+      if (!list.length) return "No system is registered in the Chrome extension either: ask the user to open SAP in Chrome and click Add this SAP page in the extension's side panel (the UI Automation for SAP icon in Chrome's toolbar).";
       return `Systems registered in the Chrome extension: ${list.map((x) => x.name).join(", ")}. sap_logon opens one and logs on.`;
     } catch (e) {
       return `(The Chrome extension did not answer: ${(e as Error).message})`;
@@ -530,7 +586,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       () =>
         answer(async () => {
           const list = await systems.list();
-          if (!list.length) return text("No SAP system is registered in the Chrome extension. Ask the user to open their SAP system in Chrome and click Add This SAP Page in the extension's popup (the Agent Connector icon in Chrome's toolbar). Never ask the user for a password.");
+          if (!list.length) return text("No SAP system is registered in the Chrome extension. Ask the user to open their SAP system in Chrome and click Add this SAP page in the extension's side panel (the UI Automation for SAP icon in Chrome's toolbar). Never ask the user for a password.");
           const lines = list.map((x, i) => systemLine(x, i) + (systems.looksAt && !systems.looksAt(x.url) ? " Outside SAP_ALLOW_ORIGINS: this server does not look at its tabs." : ""));
           return text([...lines, "", "sap_logon opens one and logs on. Passwords stay in the extension: this server never sees them, and never asks the user for one."].join("\n"));
         }),
@@ -861,8 +917,16 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
         const stale = staleWrite(parseScreen(seen), parseScreen(now));
         if (stale) return withTurn(fail(`Not run: ${stale}.\n\n${views.present(info.id, now, true)}`), turn);
       }
-      if (verdict.run) return withTurn(await perform(driver, action, whole, assessment.risk, { t0: q0, judged: Date.now() - q0, wanted }).catch((e: unknown) => failedOn(at, e)), turn);
-      if ("refused" in verdict) return withTurn(fail(`Refused: ${verdict.refused}`), turn);
+      if (verdict.run) {
+        const label = labelOn(views.last(info.id), action.id);
+        const r = await perform(driver, action, whole, assessment.risk, { t0: q0, judged: Date.now() - q0, wanted }).catch((e: unknown) => failedOn(at, e));
+        if (!r.isError) tell(info, action, "ran", label);
+        return withTurn(r, turn);
+      }
+      if ("refused" in verdict) {
+        tell(info, action, "refused");
+        return withTurn(fail(`Refused: ${verdict.refused}`), turn);
+      }
       if (!canElicit()) return withTurn(fail(`Refused: ${cannotAsk(verdict.confirm)}`), turn);
       box.held = { info, assessment, confirm: verdict.confirm };
       return undefined;
@@ -877,6 +941,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     const { info, assessment, confirm } = held;
     const shown = shownOf(info, action, assessment, actCount.get(info.id) ?? 0);
     const what = `${confirm}, on ${place(info)}`;
+    const label = labelOn(views.last(info.id), action.id);
+    tell(info, action, "waiting", label);
     let answer: Awaited<ReturnType<typeof server.server.elicitInput>>;
     try {
       answer = await server.server.elicitInput(
@@ -896,10 +962,12 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
         answer.action === "decline"
           ? "the user declined"
           : "the confirmation was dismissed, or the client could not show it (a client run without a user, such as claude -p, dismisses every question): no yes came for";
+      tell(info, action, "declined", label);
       const said = `Not run: ${who} this action (${what}). Stop here: do not retry it or look for another way; tell the user it was not done and ask how to go on. ${LEAVE_UNSAVED}`;
       return withData(text(said), data((): ActOutput => ({ ran: 0, total: 1, stopped: { why: "declined", text: said.split(". Stop here")[0] as string }, screen: screenOfInfo(info) })));
     }
     const r = await serial(shown.session, actionText(action), () => runConfirmed(shown, whole));
+    tell(info, action, r.isError ? "declined" : "ran", label);
     // The agent does not see the dialog: without this line it told the user a confirmed popup "Yes" had saved
     // without asking them (live 2026-11-21, interactive Claude Code).
     const [first, ...more] = r.content;
@@ -1011,6 +1079,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
           break;
         }
         if (!j.verdict.run && "refused" in j.verdict) {
+          tell(j.info, s.action, "refused");
           end = { why: "refused", text: `${what} was refused: ${j.verdict.refused}`, error: true, next: n + 1 };
           break;
         }
@@ -1035,6 +1104,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
           break;
         }
         let said: string;
+        const label = labelOn(view ?? views.last(j.info.id), s.action.id);
         try {
           const d = driver;
           said = await counted(d.info.id, () => recorder.act(d, s.action, j.assessment.risk, () => d.act(s.action)));
@@ -1045,6 +1115,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
         }
         ran = n;
         remember(id, s.action);
+        tell(j.info, s.action, "ran", label);
         if (token !== undefined)
           await call?.sendNotification({ method: "notifications/progress", params: { progressToken: token, progress: i + 1, total: steps.length, message: `${what} done` } }).catch(() => {});
         lines.push(`${n}. ${shortNote(said)}${s.note ? ` ${s.note}` : ""}`);

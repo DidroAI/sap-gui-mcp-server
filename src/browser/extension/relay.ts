@@ -417,6 +417,7 @@ export class ExtensionRelay {
         nextId: 0,
         lastSeen: Date.now(),
       };
+      if (this.panel) this.ext.send({ type: "panel", ...this.panel });
       const waiters = this.waiters;
       this.waiters = [];
       for (const w of waiters) w();
@@ -487,6 +488,20 @@ export class ExtensionRelay {
    */
   async logon(system: string, options: LogonOptions = {}): Promise<LogonResult> {
     return (await this.request("logon", { system, ...(options.otherLogons ? { otherLogons: options.otherLogons } : {}) }, Math.max(this.requestTimeoutMs, LOGON_TIMEOUT_MS))) as LogonResult;
+  }
+
+  /** What the extension's side panel shows of this server (the agent, what it may do); sent again on every connection. */
+  private panel?: Params;
+
+  /** Tells the side panel who the agent is and what it may do. */
+  setPanel(info: Params): void {
+    this.panel = info;
+    this.ext?.send({ type: "panel", ...info });
+  }
+
+  /** One step of the agent, for the side panel's activity list. Nothing waits for an answer; without an extension it is dropped. */
+  tell(event: Params): void {
+    this.ext?.send({ type: "activity", ...event });
   }
 
   /** Sends a request to the extension; resolves with its `result`. */

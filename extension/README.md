@@ -1,4 +1,4 @@
-# Agent Connector for SAP Systems
+# UI Automation for SAP
 
 The Chrome extension of [sap-ui-automation](../README.md). It keeps your
 SAP systems in one list, in the Chrome you use every day, and lets your
@@ -44,24 +44,30 @@ nodejs.org).
 3. Click **Load unpacked** and pick that folder. On a Mac, press
    Cmd+Shift+G in the dialog and type `~/sap-ui-automation-extension`.
 4. Click the puzzle-piece icon in Chrome's toolbar, then the pin next to
-   **Agent Connector for SAP Systems**, so you can see its status. If Chrome
+   **UI Automation for SAP**, so it is one click away. If Chrome
    was open while you ran step 1, restart it once (Chrome finds the helper
    at start).
 
 ## Pair
 
-Click the Agent Connector icon, then **Pair with This Computer**. That's
-all: the helper gives the extension the code your agent's server uses.
+Click the UI Automation for SAP icon: the extension opens as a side panel,
+a column beside the page that stays open while you work. Click **Pair**.
+That's all: the helper gives the extension the code your agent's server uses.
 
 Without the helper, pair by hand: run `npx -y sap-ui-automation extension
-pair`, open **Pair with a Code Instead** in the popup and paste the code.
+pair`, open **Pair with a code instead** in the panel and paste the code.
 
-The popup then says **Ready for your agent.** While an agent works, the
-badge turns green, **Connected**, and the popup names the system it works in.
+The panel then says **Ready. No agent connected.** Once an agent connects it
+names it ("Codex is connected"), says whether saves wait for your yes, and
+lists each step the agent takes in SAP (**Activity**): the transaction, the
+field and the value, in SAP's own words. When the agent waits for your yes to
+save, the panel turns amber and says where to answer (in the agent app). The
+system the agent works in is marked **Agent here**; **Settings** shows what
+the agent may do (saves, systems, blocked transactions), as set in the agent.
 
 ## Add your systems
 
-Open your SAP system in a tab and click **Add This SAP Page**: the address,
+Open your SAP system in a tab and click **Add this SAP page** in the panel: the address,
 client and language come from the page. Give it a name, add your user and
 password if the extension should log on for you, and click **Save**. Chrome
 asks once to allow the extension on that site. Or click **Add System** (or
@@ -111,7 +117,7 @@ SAP_BROWSER=extension npx -y sap-ui-automation doctor
 
 The extension submits SAP's logon form once per request, and never guesses.
 
-| SAP says | The popup shows | What to do |
+| SAP says | The panel shows | What to do |
 | --- | --- | --- |
 | Wrong user name or password | "SAP refused the saved password." | Click **Update Password** and save the right one. Until you do, the extension does not try that password again, so your user is not locked. |
 | User is locked | "SAP says the user is locked." | Have it unlocked (your SAP administrator, SU01), then click **Log On**. |
@@ -164,13 +170,13 @@ in could show a password field of its own.
   acts, the server must prove that it holds the pairing code; after that,
   every message is encrypted and authenticated. Web pages cannot connect.
 - **The yellow bar.** While the agent works in your tabs, and while the
-  extension logs on, Chrome shows "Agent Connector for SAP Systems started
-  debugging this browser". Clicking **Cancel** there pauses sharing until
-  you click **Resume Sharing** in the popup.
+  extension logs on, Chrome shows "UI Automation for SAP started
+  debugging this browser". Clicking **Cancel** there stops sharing until
+  you click **Share again** in the side panel.
 - **"Chrome is being controlled by automated test software"** is not this
   extension. Chrome shows that bar when a program started it with
   `--enable-automation` (Playwright, Puppeteer and tools built on them do).
-  The popup tells you once when that is the case.
+  The panel tells you once when that is the case.
 
 ## Update
 
@@ -190,17 +196,17 @@ npx -y sap-ui-automation extension uninstall
 It removes the helper from every browser, the SAP passwords the extension
 saved in your keychain, and the folder it installed the extension to. The
 pairing code stays (in the server's settings folder), for the server. Then, in
-`chrome://extensions`, click **Remove** on Agent Connector for SAP Systems.
+`chrome://extensions`, click **Remove** on UI Automation for SAP.
 (Removing the extension in Chrome alone leaves the keychain entries.)
 
 ## When it doesn't connect
 
-- **Badge "Ready" but the agent says no extension connected:** is
+- **"Ready. No agent connected." but the agent says no extension connected:** is
   `SAP_BROWSER` set to `extension` in the agent's settings? Restart the agent
   app. A Chrome that was asleep connects within 30 seconds; opening the
-  popup wakes it at once.
-- **"Code Mismatch":** click **Pair Again**.
-- **"Busy":** another agent app holds the extension. Close it, then click
+  panel wakes it at once.
+- **"Pair again":** this extension and your agent hold different codes; click **Pair**.
+- **"Another agent app is connected":** another agent app holds the extension. Close it, then click
   **Reconnect** under **Settings**.
 - **The helper stopped working after switching Node.js** (Homebrew, nvm,
   Volta): run the install command again.
@@ -262,6 +268,7 @@ gives Playwright a browser endpoint. The logon flow, its answers and the
 security rules are in [PROTOCOL.md](PROTOCOL.md); the review that shaped
 this version is in [REVIEW.md](REVIEW.md).
 
-The popup's look follows SAP Fiori's Horizon theme. Its icons and mark are
-drawn for this extension; it bundles no font (SAP's "72" typeface is used
-when installed).
+The side panel follows the Didro platform's look: square boxes, warm
+hairlines, Instrument Sans (bundled, SIL Open Font License, in `fonts/`), one
+crimson action per view, and a dark theme that follows the system's. Its icons
+and mark are drawn for this extension; no SAP artwork.

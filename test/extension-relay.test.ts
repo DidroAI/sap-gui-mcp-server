@@ -339,6 +339,24 @@ describe("encrypted channel", () => {
   });
 });
 
+describe("the side panel's notes", () => {
+  test("who the agent is, on every connection, and each step it takes", async () => {
+    const relay = await startRelay();
+    relay.setPanel({ agent: "Codex", policy: { write: "confirm", blocked: ["SE38"] } });
+    const ext = await FakeExtension.connect(relay);
+    expect(await ext.client.next((m) => m.type === "panel")).toMatchObject({ agent: "Codex", policy: { write: "confirm", blocked: ["SE38"] } });
+    relay.tell({ state: "ran", do: "set", label: "Order", value: "4711" });
+    const note = await ext.client.next((m) => m.type === "activity");
+    // A note, not a request: the extension owes no answer.
+    expect(note).toMatchObject({ state: "ran", do: "set", label: "Order", value: "4711" });
+    expect(note.id).toBeUndefined();
+  });
+  test("a step without an extension is dropped", async () => {
+    const relay = await startRelay();
+    expect(() => relay.tell({ state: "ran", do: "key", value: "0" })).not.toThrow();
+  });
+});
+
 describe("handshake", () => {
   test("an oversized frame before auth closes the socket (1009)", async () => {
     const relay = await startRelay();

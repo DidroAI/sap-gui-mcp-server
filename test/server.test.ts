@@ -4,7 +4,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { policyFromEnv } from "../src/core/guard.js";
 import type { Action, Assessment } from "../src/core/types.js";
-import { createServer, statusTop, UNCHANGED, withStatus } from "../src/server.js";
+import { agentName, createServer, labelOn, statusTop, UNCHANGED, withStatus } from "../src/server.js";
 import { FakeSurface } from "./fakes.js";
 
 /** Save (key 11) commits; everything else navigates. */
@@ -758,5 +758,47 @@ describe("the NUMBERS line on screens that do not show the notation (P1)", () =>
     surface.add({ id: "chrome:1", system: "ABA", transaction: "MB51" }, { view: MB51, notation: { sign: ".", date: "MM/DD/YYYY" } });
     const v = (await call("sap_look")).text.split("\n");
     expect(v[1]).toBe('NUMBERS 1,234.56  (decimal point: "1,000" is one thousand, "1.000" is one; the user\'s setting; dates MM/DD/YYYY)');
+  });
+});
+
+describe("the extension's side panel", () => {
+  test("the agent's name, as people know it", () => {
+    expect(agentName({ name: "codex-mcp-client" })).toBe("Codex");
+    expect(agentName({ name: "claude-code" })).toBe("Claude Code");
+    expect(agentName({ name: "claude-ai", title: "Claude" })).toBe("Claude");
+    expect(agentName({ name: "cursor-vscode" })).toBe("Cursor");
+    expect(agentName({ name: "my-agent" })).toBe("my-agent");
+    expect(agentName(undefined)).toBe("Your agent");
+  });
+
+  test("a control's label, from the view the agent saw", () => {
+    const view = 'wnd[0]/usr/ctxtVBAK-VBELN  field  Order = "4711"  (edit)\nwnd[0]/tbar[0]/btn[11]  button  Save (Ctrl+S)';
+    expect(labelOn(view, "ctxtVBAK-VBELN")).toBe("Order");
+    expect(labelOn(view, "wnd[0]/tbar[0]/btn[11]")).toBe("Save (Ctrl+S)");
+    expect(labelOn(view, "btn[3]")).toBe("");
+    expect(labelOn(undefined, "x")).toBe("");
+  });
+
+  test("the panel hears the agent's name and policy, then each step: ran, waiting for the user's yes, declined", async () => {
+    const panels: Record<string, unknown>[] = [];
+    const steps: Record<string, unknown>[] = [];
+    const surface = new FakeSurface("webgui");
+    const systems = { list: async () => [], logon: async () => ({}) as never, panel: (p: Record<string, unknown>) => panels.push(p), activity: (e: Record<string, unknown>) => steps.push(e) };
+    const { server } = createServer({ policy: policyFromEnv({ SAP_WRITE: "confirm", SAP_BLOCK_TCODES: "SE38" }), surfaces: [surface], systems });
+    const client = new Client({ name: "codex-mcp-client", version: "0" }, { capabilities: { elicitation: { form: {} } } });
+    client.setRequestHandler(ElicitRequestSchema, async () => ({ action: "decline" }));
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(a), client.connect(b)]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(panels.at(-1)).toMatchObject({ agent: "Codex", policy: { write: "confirm", blocked: ["SE38"] } });
+    surface.add({ id: "chrome:1", system: "ABA", client: "800", transaction: "VA02" }, { assess });
+    await client.callTool({ name: "sap_act", arguments: { action: { do: "set", id: "ctxtA", value: "OR" } } });
+    await client.callTool({ name: "sap_act", arguments: { action: { do: "key", key: 11 } } });
+    expect(steps.map((s) => [s.state, s.do, s.value])).toEqual([
+      ["ran", "set", "OR"],
+      ["waiting", "key", "11"],
+      ["declined", "key", "11"],
+    ]);
+    expect(steps[0]).toMatchObject({ agent: "Codex", system: "ABA", client: "800", transaction: "VA02" });
   });
 });

@@ -5,12 +5,12 @@ The extension is distributed unpacked until the first store release.
 
 ## Listing
 
-- **Name:** Agent Connector for SAP Systems
-- **Summary (132 characters max):** Let your local AI agent open, log on to and work in the SAP systems you register. Passwords stay in your keychain.
+- **Name:** UI Automation for SAP
+- **Summary (132 characters max):** See what your local AI agent does in SAP, from Chrome's side panel. Passwords stay in your keychain. Not affiliated with SAP SE.
 - **Category:** Developer Tools (alternative: Workflow & Planning)
 - **Description:**
 
-  > Agent Connector lets an AI agent that runs on your own computer (through the open-source sap-ui-automation) work in your SAP systems in the Chrome you use every day.
+  > UI Automation for SAP lets an AI agent that runs on your own computer (through the open-source sap-ui-automation) work in your SAP systems in the Chrome you use every day. A side panel beside your SAP tabs shows each step the agent takes, in SAP's own words, and when it waits for your yes to save.
   >
   > Register each SAP system once (Web GUI or Fiori launchpad address, client, language, user). Your agent can then list them, open one and log on, and work in its tabs: with your SAP authorizations, and only in the systems you registered.
   >
@@ -64,14 +64,14 @@ local automation (such as Playwright's MCP bridge) follow the same model.
 
 - Icon: `icons/128.png` (96 px artwork in 16 px of clear space; flat tile,
   no SAP artwork). Smaller sizes are drawn separately (`icons/mark-16.svg`).
-- Screenshots (1280×800): the popup's states (empty, systems, connected,
-  logging on, logon error, form, menu, paused), made against made-up SAP
+- Screenshots (1280×800): the side panel beside a page (working, asking to
+  save, logging on and a rejected password, first run, settings), made against made-up SAP
   pages for each release and placed on a plain background; never SAP's logo
   or a real customer system.
 - Small promo tile (440×280): the mark and the name, no SAP blue gradient or
   SAP logo.
 - Both are made by `SAP_TEST_CHROME=<chrome> node scripts/extension-screenshots.mjs`
-  into `store-assets/` (not committed): the real popup, fed made-up systems on
+  into `store-assets/` (not committed): the real side panel, fed made-up systems on
   `sap.example.com`.
 
 ## The extension id
