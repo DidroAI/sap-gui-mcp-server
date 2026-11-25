@@ -86,3 +86,36 @@ describe("sapgui: the agent's view leaves out what SAP GUI adds around the trans
     expect(compact(fullView(forAgent(main))).split("\n").length).toBeLessThanOrEqual(compact(fullView(main)).split("\n").length - 8);
   });
 });
+
+describe("sapgui: a selection screen's texts are said once, on their fields (MMBE, live 2026-11-25)", () => {
+  const mmbe: Screen = {
+    transaction: "MMBE",
+    program: "RMMMBESTN",
+    screen: "1000",
+    windows: [
+      {
+        id: "wnd[0]",
+        title: "Stock Overview",
+        controls: [
+          c("wnd[0]/usr/txt%_MS_MATNR_%_APP_%-TEXT", "GuiTextField", { name: "%_MS_MATNR_%_APP_%-TEXT", text: "Material", changeable: false }),
+          c("wnd[0]/usr/txt%_MS_MATNR_%_APP_%-OPTI_PUSH", "GuiTextField", { name: "%_MS_MATNR_%_APP_%-OPTI_PUSH", text: "", label: "Material", changeable: false }),
+          c("wnd[0]/usr/ctxtMS_MATNR-LOW", "GuiCTextField", { name: "MS_MATNR-LOW", text: "", label: "Material", changeable: true }),
+          c("wnd[0]/usr/txt%_MS_WERKS_%_APP_%-TEXT", "GuiTextField", { name: "%_MS_WERKS_%_APP_%-TEXT", text: "Plant", changeable: false }),
+          c("wnd[0]/usr/ctxtMS_WERKS-LOW", "GuiCTextField", { name: "MS_WERKS-LOW", text: "", label: "Plant", changeable: true }),
+          c("wnd[0]/usr/txt%_MS_WERKS_%_APP_%-TO_TEXT", "GuiTextField", { name: "%_MS_WERKS_%_APP_%-TO_TEXT", text: "to", label: "Plant", changeable: false }),
+          c("wnd[0]/usr/ctxtMS_WERKS-HIGH", "GuiCTextField", { name: "MS_WERKS-HIGH", text: "", label: "to", changeable: true }),
+          c("wnd[0]/usr/txt%_MS_DISPO_%_APP_%-OPTI_PUSH", "GuiTextField", { name: "%_MS_DISPO_%_APP_%-OPTI_PUSH", text: "Select: Equal to", changeable: false }),
+        ],
+      },
+    ],
+  };
+  const view = fullView(forAgent(mmbe));
+  test("the criterion's name, its 'to' and an empty operator go; the fields keep them as labels", () => {
+    expect(view).not.toContain("-TEXT");
+    expect(view).not.toContain("MS_MATNR_%_APP_%-OPTI_PUSH");
+    expect(view).toContain('ctxtMS_MATNR-LOW  field  Material = ""  (edit)');
+    expect(view).toContain('ctxtMS_WERKS-HIGH  field  to = ""  (edit)');
+    // An operator that is set stays: it changes what the criterion selects.
+    expect(view).toContain("MS_DISPO_%_APP_%-OPTI_PUSH");
+  });
+});

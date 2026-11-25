@@ -147,7 +147,9 @@ const last = (id: string) => id.slice(id.lastIndexOf("/") + 1);
  *   "More" button of the toolbar (the buttons it folds away are on the view
  *   anyway), and Enter in the main window's system toolbar (key Enter);
  * - a field's label when it is its own line too ("lblVBAK-AUART label Order
- *   Type" before the field that already says "Order Type").
+ *   Type" before the field that already says "Order Type"), and a selection
+ *   screen's texts (the criterion's name and "to" before its fields, its
+ *   operator button while it has none).
  *
  * Measured live on FB50 (2026-11-25): 18 of 64 lines. Every control stays
  * in the full view (sap_look full) and can still be acted on.
@@ -169,6 +171,10 @@ export function forAgent(s: Screen): Screen {
       for (const c of all) {
         if (c.type === "GuiMainWindow" || c.type === "GuiModalWindow" || c.type === "GuiFrameWindow" || c.type === "GuiStatusPane") continue;
         if (c.type === "GuiButton" && (GUI_BUTTONS.test(c.id) || last(c.id) === "btnvhmore" || (w.id === "wnd[0]" && c.id === "wnd[0]/tbar[0]/btn[0]"))) continue;
+        // A selection screen's texts are fields of their own: "txt%_MS_MATNR_%_APP_%-TEXT" = "Material" before the field
+        // labelled Material, "-TO_TEXT" = "to"; the operator button "-OPTI_PUSH" is an empty read-only field until one is chosen.
+        const sel = /%_APP_%-(TEXT|TO_TEXT|OPTI_PUSH)$/.exec(c.name);
+        if (sel && c.changeable === false && (sel[1] === "OPTI_PUSH" ? !esc(c.text) : labels.has(esc(c.text)))) continue;
         if (c.type === "GuiLabel") {
           const k = KIND.exec(last(c.id));
           const field = k?.[1] === "lbl" ? fields.get(`${c.id.slice(0, c.id.lastIndexOf("/") + 1)}${k[2]}`) : undefined;
