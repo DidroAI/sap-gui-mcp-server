@@ -120,3 +120,58 @@ describe("sapgui: a toolbar's menu button (ME23N's document overview, Selection 
     expect((await d.assess({ do: "toolbar", id: "shell[0]", button: "SELECT", value: "Purchase orders" })).risk).toBe("navigate");
   });
 });
+
+describe("sapgui: a field SAP keeps closed is refused with the reason (FB50, live 2026-11-25)", () => {
+  const closed = (type: string, text: string) =>
+    one([
+      { id: "wnd[0]/usr/ctxtACGL_HEAD-BLDAT", type: "GuiCTextField", name: "ACGL_HEAD-BLDAT", text: "", label: "Document Date", changeable: true },
+      { id: "wnd[0]/usr/txtACGL_HEAD-BKTXT", type: "GuiTextField", name: "ACGL_HEAD-BKTXT", text: "", label: "Doc.Header Text", changeable: false },
+      { id: "wnd[0]/sbar", type: "GuiStatusbar", name: "sbar", text, messageType: type },
+    ]);
+  test("after an error: correct the field it names, then Enter; nothing is sent", async () => {
+    const { d, acts } = await on(closed("E", "Enter valid date"));
+    await expect(d.act({ do: "set", id: "txtACGL_HEAD-BKTXT", value: "X" })).rejects.toThrow('read-only now: after the error "Enter valid date" SAP keeps the other fields closed. Correct the field the message names, then Enter');
+    expect(acts).toEqual([]);
+  });
+  test("after a warning: Enter accepts it", async () => {
+    const { d } = await on(closed("W", "Check the tax code"));
+    await expect(d.act({ do: "set", id: "txtACGL_HEAD-BKTXT", value: "X" })).rejects.toThrow("Enter accepts the warning");
+  });
+  test("without a message: a display field", async () => {
+    const { d } = await on(closed("", ""));
+    await expect(d.act({ do: "set", id: "txtACGL_HEAD-BKTXT", value: "X" })).rejects.toThrow("read-only on this screen");
+  });
+  test("a field that takes input is set as before", async () => {
+    const { d, acts } = await on(closed("E", "Enter valid date"));
+    await d.act({ do: "set", id: "ctxtACGL_HEAD-BLDAT", value: "25.11.2026" });
+    expect(acts).toEqual([{ do: "set", id: "wnd[0]/usr/ctxtACGL_HEAD-BLDAT", value: "25.11.2026" }]);
+  });
+});
+
+describe("sapgui: a click on a grid's cell selects its row (FB02, live 2026-11-25)", () => {
+  const grid = one([
+    {
+      id: "wnd[0]/usr/cntlCTRL_CONTAINERBSEG/shellcont/shell",
+      type: "GuiShell",
+      name: "shell",
+      sub: "GridView",
+      grid: { cols: ["KTONR", "KOBEZ"], titles: ["Account", "Name"], rowCount: 3, rows: [["1000", "A"], ["1100", "B"], ["1200", "C"]] },
+    },
+  ]);
+  test("click with row and col: the cursor on the cell, the row selected", async () => {
+    const { d, acts } = await on(grid);
+    expect(await d.act({ do: "click", id: "cntlCTRL_CONTAINERBSEG/shell", row: 1, col: "KTONR" })).toContain("grid select row 1");
+    expect(acts).toEqual([{ do: "grid", id: "wnd[0]/usr/cntlCTRL_CONTAINERBSEG/shellcont/shell", row: 1, col: "KTONR", how: "select" }]);
+  });
+  test("press with row only: the row selected", async () => {
+    const { d, acts } = await on(grid);
+    await d.act({ do: "press", id: "cntlCTRL_CONTAINERBSEG/shell", row: 2 });
+    expect(acts).toEqual([{ do: "grid", id: "wnd[0]/usr/cntlCTRL_CONTAINERBSEG/shellcont/shell", row: 2, col: "", how: "select" }]);
+  });
+  test("the guard judges it as selecting a row, not as an unknown press", async () => {
+    const { d } = await on(grid);
+    expect(await d.assess({ do: "click", id: "cntlCTRL_CONTAINERBSEG/shell", row: 1, col: "KTONR" })).toMatchObject({ risk: "navigate" });
+    // Without a row it stays unknown: under writes off it is refused.
+    expect((await d.assess({ do: "click", id: "cntlCTRL_CONTAINERBSEG/shell" })).risk).not.toBe("navigate");
+  });
+});

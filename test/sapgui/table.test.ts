@@ -11,10 +11,11 @@ const TBL = "wnd[1]/usr/tblSAPLMGMMTC_VIEW";
 const GRID = "wnd[0]/usr/subSUB0:SAPLMEGUI:0013/subSUB2:SAPLMEVIEWS:1100/subSUB2:SAPLMEVIEWS:1200/subSUB1:SAPLMEGUI:3212/cntlGRIDCONTROL/shellcont/shell";
 
 /** The MM02 "Select View(s)" popup: a table control with row selectors, 4 of its 6 rows on screen from `first`. */
-function views(first = 0, focus?: string): Screen {
+/** `open`: cells that take input (a table of entry fields), for the tests of "set" into a cell. */
+function views(first = 0, focus?: string, open = false): Screen {
   const names = ["Basic Data 1", "Basic Data 2", "Purchasing", "MRP 1", "MRP 2", "Accounting 1"];
   const cells: Control[] = [];
-  for (let v = 0; v < 4; v++) cells.push({ id: `${TBL}/txtMSICHTAUSW-DYTXT[0,${v}]`, type: "GuiTextField", name: "MSICHTAUSW-DYTXT", text: names[first + v] ?? "", changeable: false });
+  for (let v = 0; v < 4; v++) cells.push({ id: `${TBL}/txtMSICHTAUSW-DYTXT[0,${v}]`, type: "GuiTextField", name: "MSICHTAUSW-DYTXT", text: names[first + v] ?? "", changeable: open });
   return {
     transaction: "MM02",
     program: "SAPLMGMM",
@@ -75,7 +76,7 @@ function hostFor(start: Screen) {
       if (op === "act" && a.do === "scroll" && a.id === TBL) {
         const from = screen.windows[1]?.controls[0]?.firstRow ?? 0;
         const first = Math.min(Number(a.to), 2);
-        screen = views(first);
+        screen = views(first, undefined, screen.windows[1]?.controls.some((c) => c.changeable && c.id.includes("DYTXT")));
         return { from, first, visible: 4, total: 6 } as T;
       }
       return { done: true } as T;
@@ -141,9 +142,9 @@ describe("select on what cannot be selected", () => {
 
 describe("set into a table control's cell", () => {
   test("by row and field name, on screen", async () => {
-    const { acts, open } = hostFor(views());
+    const { acts, open } = hostFor(views(0, undefined, true));
     const d = await open();
-    // The cells here are read-only in SAP, but the driver's routing is what is checked: the cell's own id.
+    // The driver's routing is what is checked: the cell's own id.
     expect(await d.act({ do: "set", id: TBL, row: 1, col: "MSICHTAUSW-DYTXT", value: "x" })).toBe(`set ${TBL}/txtMSICHTAUSW-DYTXT[0,1] = "x"`);
     expect(acts().at(-1)).toEqual({ do: "set", id: `${TBL}/txtMSICHTAUSW-DYTXT[0,1]`, value: "x" });
     // By the column's title, its short field name, or its number.
@@ -156,7 +157,7 @@ describe("set into a table control's cell", () => {
   });
 
   test("a row below the screen is scrolled to first, then set by its row on screen", async () => {
-    const { acts, open } = hostFor(views());
+    const { acts, open } = hostFor(views(0, undefined, true));
     const d = await open();
     expect(await d.act({ do: "set", id: TBL, row: 5, col: "View", value: "v" })).toBe(`set ${TBL}/txtMSICHTAUSW-DYTXT[0,3] = "v"`);
     expect(acts()).toEqual([

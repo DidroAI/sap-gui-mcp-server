@@ -24,7 +24,7 @@ import { type Action, ActionError, type Assessment, type Driver, type LookOption
 import { isLogonScreen, LOGON_REFUSAL } from "../core/words.js";
 import { assess } from "./assess.js";
 import type { Control, DoctorEngine, DoctorLocal, Screen, SessionFacts, SessionsFacts, Transport } from "./facts.js";
-import { forAgent, fullView, listsOnly } from "./format.js";
+import { esc, forAgent, fullView, listsOnly } from "./format.js";
 import { vkeyNumber } from "./keys.js";
 import { HostError, MAX_TIMEOUT_MS, type PowershellPolicy, powershellPolicy, PsHost, READ_TIMEOUT_MS } from "./host.js";
 import { relativeId, resolve, resolveStrict } from "./resolve.js";
@@ -106,6 +106,19 @@ function explain(e: unknown): Error {
     default:
       return new ActionError(`SAP GUI refused: ${e.message}`);
   }
+}
+
+/**
+ * Why a field takes no input. After an error or a warning SAP opens only the
+ * fields its message is about (live: FB50 after "Enter valid date" refused
+ * the header text, and the agent read "invalid argument" as a wrong value).
+ */
+export function readOnlyText(id: string, screen: Screen): string {
+  const bar = screen.windows.flatMap((w) => w.controls).find((c) => c.type === "GuiStatusbar" && c.text);
+  const type = bar?.messageType ?? "";
+  if (type === "E" || type === "W")
+    return `${id} is read-only now: after the ${type === "E" ? "error" : "warning"} "${esc(bar?.text)}" SAP keeps the other fields closed. ${type === "E" ? "Correct the field the message names, then Enter" : "Enter accepts the warning"}; the fields open again, then set this one.`;
+  return `${id} is read-only on this screen: it takes no input here (a display, or a field SAP fills in). Change mode or another screen may have it.`;
 }
 
 class SapguiDriver implements Driver {
@@ -314,9 +327,14 @@ class SapguiDriver implements Driver {
         if (target.type === "GuiShell" && target.sub === "TextEdit") return this.run({ do: "set", id, value: String(action.value ?? "").replace(/\r\n?|\n/g, "\r\n") }, `set ${id}`, timeoutMs);
         if (!SET_TYPES.has(target.type))
           throw new ActionError(`${id} is a ${target.type}, not a field: "set" types into fields only, or into a table's or grid's cell given "row" and "col". Use "press" for a button, "select" for a tab or a menu entry.`);
+        // SAP GUI answers a read-only field with "The method got an invalid argument": say why instead.
+        if (target.changeable === false) throw new ActionError(readOnlyText(id, screen));
         const single = oneLine(String(action.value ?? ""));
         return this.run({ do: "set", id, value: single.text }, `set ${id} = "${single.text}"${single.had ? ` (${ONE_LINE_NOTE})` : ""}`, timeoutMs);
       case "press":
+        // A click on a grid's cell (live: "click" with row and col on FB02's line items) puts the cursor there and selects the row.
+        if (target.type === "GuiShell" && target.sub === "GridView" && action.row !== undefined) return this.act({ ...action, do: action.col === undefined ? "select" : "grid", how: "select" });
+        if (target.type === "GuiTableControl" && action.row !== undefined) return this.act({ ...action, do: "grid", how: action.col === undefined ? "select" : "cell" });
         if (target.type !== "GuiButton") throw new ActionError(`${id} is a ${target.type}, not a button: use "select" for a tab or a menu entry, "set" for a field.`);
         return this.run({ do: doing, id }, `${doing} ${id}`, timeoutMs);
       case "select": {
