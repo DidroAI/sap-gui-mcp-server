@@ -275,3 +275,19 @@ describe("sapgui: a column's id with a row means that table's cell; a grid's cel
     expect(acts).toEqual([{ do: "grid", id: G, row: 0, col: "NETWR", how: "cell" }]);
   });
 });
+
+describe("sapgui: rows of a list that has no scrollbar (MI24, live 2026-11-25)", () => {
+  const list = one([
+    { id: "wnd[0]/usr", type: "GuiUserArea", name: "usr" },
+    { id: "wnd[0]/usr/lbl[3,1]", type: "GuiLabel", name: "lbl[3,1]", text: "PhysInvDoc" },
+    { id: "wnd[0]/usr/lbl[14,1]", type: "GuiLabel", name: "lbl[14,1]", text: "Item" },
+    { id: "wnd[0]/usr/lbl[3,3]", type: "GuiLabel", name: "lbl[3,3]", text: "1000004" },
+    { id: "wnd[0]/usr/lbl[14,3]", type: "GuiLabel", name: "lbl[14,3]", text: "1" },
+  ]);
+  test("are read as they are, not refused as 'does not scroll'", async () => {
+    const { d, acts } = await on(list);
+    const view = await d.look({ compact: true, id: "wnd[0]/usr", rows: { from: 0, to: 10 } });
+    expect(view).toContain("1000004");
+    expect(acts).toEqual([]);
+  });
+});

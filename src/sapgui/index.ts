@@ -196,6 +196,8 @@ class SapguiDriver implements Driver {
       return readRows(
         {
           scrollTo: async (row) => {
+            // A list with no scrollbar (all its rows on screen, MI24 live) has nothing to scroll: its rows are read as they are.
+            if (target.type === "GuiUserArea" && !target.scroll) return;
             await this.scroll(target, row);
           },
           block: async () => {
