@@ -760,7 +760,15 @@ const TAB_STOPS = new Set(["field", "dropdown", "checkbox", "radio", "button"]);
  * cursor moves). Undefined when there is no such cell, or a cell between is of a kind whose Tab stop is not
  * known.
  */
+/**
+ * Table controls whose Tab stops were checked live, by program: FB50's G/L items (SAPLFSKB). In ME21N's items
+ * (SAPLMEGUI) the same count put the values two columns off (2026-11-25), for a reason not found: there,
+ * and in any table not checked, a cell right of the edge is refused rather than typed into blind.
+ */
+const TAB_CHECKED = new Set(["SAPLFSKB"]);
+
 export function tabReach(t: DiagTable, index: number, column: number): { anchor: DiagTable["columns"][number]; tabs: number; row: number } | undefined {
+  if (!TAB_CHECKED.has(t.program.trim().toUpperCase())) return undefined;
   const r = t.rows.find((x) => x.index === index);
   if (!r) return undefined;
   const order = [...t.columns].sort((a, b) => a.position - b.position);
@@ -788,6 +796,7 @@ export function tabReach(t: DiagTable, index: number, column: number): { anchor:
 
 /** Input cells between two columns of a table row (after `from`, up to `to` included): the Tab presses from one to the other. Undefined when a cell between is of a kind whose Tab stop is not known, or `to` is not right of `from`. */
 export function tabsBetween(t: DiagTable, index: number, from: number, to: number): number | undefined {
+  if (!TAB_CHECKED.has(t.program.trim().toUpperCase())) return undefined;
   const r = t.rows.find((x) => x.index === index);
   const order = [...t.columns].sort((a, b) => a.position - b.position);
   const a = order.findIndex((c) => c.index === from);

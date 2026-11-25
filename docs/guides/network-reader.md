@@ -175,8 +175,10 @@ Each refusal says what to do instead.
 - A click into a table cell right of what SAP GUI shows of the table (its
   columns beyond the window's width): it would land in another cell. `set`
   reaches such a cell with Tab from the nearest cell on show that takes
-  text, as a person does; SAP GUI then scrolls the table sideways, and the
-  table's other cells are refused until SAP's next screen (send Enter).
+  text, as a person does, in the tables where the Tab stops were checked
+  (FB50's items); SAP GUI then scrolls the table sideways, and the table's
+  other cells are refused until SAP's next screen (send Enter). Elsewhere
+  (ME21N's items: the count put values two columns off) it is refused.
   The fixed columns stay on show, and the view follows the scroll.
 - A click at a row under the window's scroll bars (the last row of a screen
   taller or wider than the window): the refusal gives the scroll that brings

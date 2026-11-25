@@ -15,7 +15,7 @@ import { type Geometry, lastClickRow, planCombo, planPlain, planScreenScroll, pl
 const cell = (column: number, text: string, kind: "field" | "dropdown" | "checkbox" = "field") => ({ column, text, kind, input: true, hidden: false, ...(kind === "dropdown" ? { key: "", valueList: "0123456789ABCDEF0123456789ABCDEF" } : {}) });
 const TABLE = {
   name: "TC_1211",
-  program: "SAPLMEGUI",
+  program: "SAPLFSKB",
   title: "",
   row: 10,
   col: 1,
@@ -109,5 +109,15 @@ describe("a second cell further right in the row the cursor is in", () => {
     expect(p?.steps[0]).toMatchObject({ vk: 9, count: 1 });
     expect(planTabOn(TABLE, 0, 2, 5, "x", "X")?.steps[0]).toMatchObject({ count: 3 });
     expect(planTabOn(TABLE, 0, 3, 2, "x", "1")).toBeUndefined();
+  });
+});
+
+describe("Tab reach only where it was checked", () => {
+  test("ME21N's items (SAPLMEGUI): a cell right of the edge is refused, not reached with Tab", () => {
+    const me21n = { ...TABLE, program: "SAPLMEGUI" } as DiagTable;
+    const s5 = { ...s, windows: [{ ...w, tables: [me21n] }] } as DiagScreen;
+    const a = { do: "set", id: "MEPO1211-BNFPO[0]", value: "10" };
+    expect(() => planPlain(s5, a, resolveTarget(s5, a), geo)).toThrow("cannot scroll a table sideways");
+    expect(planTabOn(me21n, 0, 2, 3, "x", "10")).toBeUndefined();
   });
 });
