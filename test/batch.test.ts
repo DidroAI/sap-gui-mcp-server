@@ -340,8 +340,8 @@ describe("a batch and the guard: each action has its own decision", () => {
     expect((await batch(Array.from({ length: MAX_BATCH + 1 }, () => ENTER))).text).toContain(`${MAX_BATCH} actions at most`);
     expect((await call("sap_act", { action: ENTER, actions: [ENTER] })).text).toBe('Send one action ("do" and its fields) or "actions", not both.');
     expect((await call("sap_act", { ...ENTER, actions: [ENTER] })).error).toBe(true);
-    // A step's own key next to "actions" (seen in Haiku runs: "expect" at the top): said as such, not "not both".
-    expect((await call("sap_act", { actions: [ENTER], expect: { popup: true } })).text).toBe('"expect" next to "actions" belongs inside an action of "actions" (each step has its own, e.g. [{"do":"key","key":0,"expect":{"popup":true}}]). Nothing ran.');
+    // A step's own key next to "actions" (a top-level "expect" is taken for the last action, see below): said as such, not "not both".
+    expect((await call("sap_act", { actions: [ENTER], unseen: true })).text).toBe('"unseen" next to "actions" belongs inside an action of "actions" (each step has its own, e.g. [{"do":"key","key":0,"expect":{"popup":true}}]). Nothing ran.');
     expect(sap.acts).toEqual([]);
   });
 
