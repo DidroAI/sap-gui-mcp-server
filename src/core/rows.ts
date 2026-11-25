@@ -151,8 +151,8 @@ export function onlyColumns(page: Page, cols: string[]): Page {
   if (!want.length) return page;
   // The columns a missing name is close to (its words in a column's id or title), when there are some: ten
   // "Length" columns say more than all seventy (Astra's review, 2026-11-23).
-  const near = (names: string[]) => {
-    const words = want.flatMap((w) => w.split(/[^a-z0-9]+/)).filter((w) => w.length > 1);
+  const near = (names: string[], asked = want) => {
+    const words = asked.flatMap((w) => w.split(/[^a-z0-9]+/)).filter((w) => w.length > 1);
     const close = names.filter((n) => words.some((w) => n.toLowerCase().includes(w)));
     return close.length && close.length < names.length ? `the columns close to it are ${close.join(" | ")} (${close.length} of ${names.length})` : `its columns are ${names.join(" | ")}`;
   };
@@ -169,9 +169,12 @@ export function onlyColumns(page: Page, cols: string[]): Page {
       return want.includes(cid.toLowerCase()) || want.includes(title.toLowerCase());
     });
     if (!keep.length) throw new ActionError(`none of the columns ${cols.join(", ")} is in this grid: ${near(names)}.`);
+    // A name that matched no column is said, not dropped in silence.
+    const missing = want.filter((w) => !names.some((n) => n.split("=").some((x) => x.toLowerCase() === w)));
+    const lost = missing.length ? `; no column ${missing.join(", ")}: ${near(names, missing)}` : "";
     return {
       ...page,
-      head: `${m[1]}${keep.map(({ n }) => n).join(" | ")}  (${keep.length} of ${names.length} columns)`,
+      head: `${m[1]}${keep.map(({ n }) => n).join(" | ")}  (${keep.length} of ${names.length} columns${lost})`,
       rows: page.rows.map((r) => {
         const p = split(r.text);
         if (!p) return r;

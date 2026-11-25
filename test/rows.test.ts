@@ -174,6 +174,11 @@ describe("a column that is not there: the error lists the columns close to it (A
       "none of the columns length code is in this grid: the columns close to it are LAENG=Length | LAENG2=Length of postal code | LNPLZ=Postal code length (3 of 7).",
     );
   });
+  test("one of several names that is not there is said, with the columns close to it (VA05 live: NETWR is VBAP_NETWR)", () => {
+    expect(onlyColumns(grid, ["LAND1", "length code"]).head).toBe(
+      "cntlG/shell  grid  3 rows; columns: LAND1=Country  (1 of 7 columns; no column length code: the columns close to it are LAENG=Length | LAENG2=Length of postal code | LNPLZ=Postal code length (3 of 7))",
+    );
+  });
   test("no column close to it: all of them", () => {
     expect(() => onlyColumns(grid, ["XYZ"])).toThrow(`its columns are ${cols.join(" | ")}.`);
   });

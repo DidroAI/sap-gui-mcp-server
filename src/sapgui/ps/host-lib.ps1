@@ -332,7 +332,8 @@ function Shell-Facts($o, $n) {
           $bid = [string](G $o 'GetButtonId' @($i))
           $txt = [string](G $o 'GetButtonText' @($i))
           $tip = [string](G $o 'GetButtonTooltip' @($i))
-          if ($bid) { [void]$btns.Add(@{ id = $bid; text = $txt; tip = $tip }) }
+          $bt = [string](T $o 'GetButtonType' @($i))
+          if ($bid) { [void]$btns.Add(@{ id = $bid; text = $txt; tip = $tip; type = $bt }) }
         } catch { }
       }
       $n.buttons = $btns
@@ -636,8 +637,48 @@ function Op-Act($req) {
       if (-not $done) { throw "NOT_SELECTABLE: row $row of $id has no row selector and no checkbox that takes input" }
     }
   }
-  elseif ($do -eq 'toolbar') { M $o 'PressToolbarButton' @([string]$a['button']) }
+  elseif ($do -eq 'toolbar') { return (Toolbar-Act $o $a) }
   else { throw "UNKNOWN_ACTION: $do" }
+  @{ done = $true }
+}
+
+# A toolbar button: of a toolbar control (PressButton) or of a grid's toolbar (PressToolbarButton). A menu
+# button opens its menu; with "menu" (an entry's text or function code) that entry is chosen, without it
+# the answer lists the entries as menu: [[code, text], ...].
+function Toolbar-Act($o, $a) {
+  $b = [string]$a['button']
+  $want = ''
+  if ($a.ContainsKey('menu') -and $null -ne $a['menu']) { $want = ([string]$a['menu']).Trim() }
+  $grid = ([string](T $o 'SubType')) -eq 'GridView'
+  $type = ''
+  if ($grid) {
+    $n = [int](T $o 'ToolbarButtonCount')
+    for ($i = 0; $i -lt $n; $i++) { if ([string](T $o 'GetToolbarButtonId' @($i)) -eq $b) { $type = [string](T $o 'GetToolbarButtonType' @($i)) } }
+  } else {
+    $n = [int](T $o 'ButtonCount')
+    for ($i = 0; $i -lt $n; $i++) { if ([string](T $o 'GetButtonId' @($i)) -eq $b) { $type = [string](T $o 'GetButtonType' @($i)) } }
+  }
+  if (-not ($type -eq 'Menu' -or ($type -eq 'ButtonAndMenu' -and $want))) {
+    if ($grid) { M $o 'PressToolbarButton' @($b) } else { M $o 'PressButton' @($b) }
+    return @{ done = $true }
+  }
+  if ($grid) { M $o 'PressToolbarContextButton' @($b) } else { M $o 'PressContextButton' @($b) }
+  $entries = New-List
+  $cm = T $o 'CurrentContextMenu'
+  if ($null -ne $cm) {
+    foreach ($m in (Items (T $cm 'Children'))) {
+      $t = ([string](T $m 'Text')).Trim()
+      if ($t) { [void]$entries.Add(@([string](T $m 'Name'), $t)) }
+    }
+  }
+  if (-not $want) { return @{ done = $true; menu = $entries } }
+  $code = $null
+  foreach ($e in $entries) { if ($e[0] -eq $want) { $code = $e[0] } }
+  if ($null -eq $code) { foreach ($e in $entries) { if ($e[1] -ieq $want) { $code = $e[0] } } }
+  # A code the menu did not list (no entries could be read): SAP GUI is asked for it as it is.
+  if ($null -eq $code -and $entries.Count -eq 0) { $code = $want }
+  if ($null -eq $code) { throw ("NOT_FOUND: no entry `"$want`" in the menu of $b; its entries: " + (($entries | ForEach-Object { $_[1] }) -join ', ')) }
+  M $o 'SelectContextMenuItem' @($code)
   @{ done = $true }
 }
 

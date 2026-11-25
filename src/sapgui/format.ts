@@ -63,7 +63,7 @@ function shellLines(c: Control): string[] {
   } else if (c.sub === "TextEdit") {
     out.push(`${c.id}  text-editor  "${esc(c.text).slice(0, 2000)}"`);
   } else if (c.sub === "Toolbar") {
-    const buttons = (c.buttons ?? []).map((b) => `${esc(b.text) || esc(b.tip)} {${b.id}}`);
+    const buttons = (c.buttons ?? []).map((b) => `${esc(b.text) || esc(b.tip)} {${b.id}}${b.type === "Menu" ? " (menu)" : b.type === "ButtonAndMenu" ? " (also a menu)" : ""}`);
     if (buttons.length) out.push(`${c.id}  toolbar  ${buttons.join(", ")}`);
   } else if (c.sub === "HTMLViewer") {
     out.push(`${c.id}  html-viewer`);
@@ -109,6 +109,25 @@ export function controlLines(c: Control): string[] {
 
   if (t === "GuiOkCodeField") return [`${id}  command-field`];
   return text ? [`${id}  ${t.slice(3).toLowerCase()}  ${text}`] : [];
+}
+
+/** A cell of a classic list: a control named by its place only, "lbl[3,5]" or "chk[0,5]", right under the user area. */
+const LIST_CELL = /^[a-z]+\[\d+,\d+\]$/;
+
+/**
+ * The screen with a scrollbar kept only on user areas that are classic
+ * lists. SAP GUI gives a selection screen's user area a vertical scrollbar
+ * too (VA05, MMBE, ME23N: "785 rows"), but its fields are all readable and
+ * nothing there scrolls like a list.
+ */
+export function listsOnly(s: Screen): Screen {
+  for (const w of s.windows)
+    for (const c of w.controls) {
+      if (c.type !== "GuiUserArea" || !c.scroll) continue;
+      const inside = `${c.id}/`;
+      if (!w.controls.some((x) => x.id.startsWith(inside) && LIST_CELL.test(x.id.slice(inside.length)))) delete c.scroll;
+    }
+  return s;
 }
 
 export function fullView(s: Screen): string {

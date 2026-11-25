@@ -439,10 +439,27 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     }
     const seen = n.from === "settings" ? undefined : notationIn(view);
     if (seen?.sign) n = { ...n, sign: seen.sign, spaced: seen.spaced === true, from: "screen" };
+    // A session of the same logon (an /o session) is the same user: it writes numbers and dates the same way.
+    if (!n.sign || !n.date) {
+      const sib = sameLogon(session);
+      if (!n.sign && sib?.sign) n = { ...n, sign: sib.sign, spaced: sib.spaced === true, ...(sib.from ? { from: sib.from } : {}) };
+      if (!n.date && sib?.date) n.date = sib.date;
+    }
     // Fiori writes dates by the browser's locale, not by the user's SAP setting.
     const date = view.startsWith("FIORI") ? undefined : dateFormatOf(view);
     if (date && !n.date) n.date = date;
     if (n.sign || n.date) notations.set(session, n);
+  }
+  /** What another session of the same surface, system, client and user knows of the notation. */
+  function sameLogon(session: string): Notation | undefined {
+    const me = registry.resolve(session);
+    if (!me?.system || !me.client || !me.user) return undefined;
+    for (const [id, n] of notations) {
+      if (id === session || !(n.sign || n.date)) continue;
+      const o = registry.resolve(id);
+      if (o && o.id === id && o.surface === me.surface && o.system === me.system && o.client === me.client && o.user === me.user) return n;
+    }
+    return undefined;
   }
   /** `answer` (which shows `view`, or part of it) with the session's NUMBERS line where it needs one. */
   async function said(d: Driver, session: string, view: string, answer: string): Promise<string> {

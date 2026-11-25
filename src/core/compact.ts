@@ -204,9 +204,11 @@ interface Cell {
   c: number;
   text: string;
   button?: boolean;
+  /** An unticked checkbox: drawn on blank lines too, so it fills no row by itself. */
+  unticked?: boolean;
 }
-/** The cells of a row that hold a value: a row with buttons only is an empty row. */
-const filled = (cells: Cell[]): boolean => cells.some((x) => !x.button);
+/** The cells of a row that hold a value: a row with buttons and unticked checkboxes only is an empty row. */
+const filled = (cells: Cell[]): boolean => cells.some((x) => !x.button && !x.unticked);
 /** A row's cells in the order of the columns (a table scrolled sideways draws its fixed columns last). */
 const rowText = (cells: Cell[]): string =>
   filled(cells)
@@ -516,7 +518,9 @@ export function compact(full: string, options: CompactOptions = {}): string {
         out.push({ cells, prefix: opt.shortRows ? `  row ${r}` : `  ${lastSegment(tbl)} row ${r}`, ...(t ? { table: t } : {}), r });
       }
       // A cell the reader wrote twice (a display cell and the label in it: "View=Basic Data 1; View=Basic Data 1"): once.
-      if (cell && !cells.some((x) => x.c === c && x.text === cell)) cells.push({ c, text: cell, ...(button ? { button } : {}) });
+      // With empty runs folded (the default), an unticked checkbox alone leaves a row empty.
+      const unticked = opt.emptyRuns === true && cell !== null && cell.endsWith(" [ ]");
+      if (cell && !cells.some((x) => x.c === c && x.text === cell)) cells.push({ c, text: cell, ...(button ? { button } : {}), ...(unticked ? { unticked } : {}) });
       continue;
     }
     if (l.includes("  table  rows ")) {
