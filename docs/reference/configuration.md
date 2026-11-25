@@ -33,9 +33,15 @@ Lists are separated by commas or spaces and are not case-sensitive.
 | --- | --- | --- | --- |
 | `SAP_SURFACES` | `sapgui,webgui,fiori` on Windows, `webgui,fiori` elsewhere | any of `sapgui`, `webgui`, `fiori` | which kinds of session to look for. Lower case |
 | `SAP_GUI_METHOD` | `auto` | `auto`, `scripting`, `diag` | how SAP GUI for Windows is read. `auto`: both SAP GUI scripting and the network reader (experimental) run, and the agent works in whichever session it needs. `scripting` or `diag`: only that one, for setups where nobody watches the agent. Any other value is an error at start. See [Network reader](../guides/network-reader.md) |
-| `SAP_CHROME_CDP` | the running Chrome, then Chrome Beta, then Edge, that allows remote debugging | `http://127.0.0.1:9333` | a Chrome DevTools endpoint (`http`, `https`, `ws` or `wss`). Nothing else is tried when it is set. See [Chrome](../guides/chrome.md) |
-| `SAP_BROWSER` | `launch` | `launch`, `attach`, `extension` | `launch`: the server starts Google Chrome with a profile of its own (the SAP window). `attach`: your everyday Chrome or Edge with remote debugging allowed. `extension`: your everyday Chrome through the UI Automation for SAP extension. `SAP_CHROME_CDP` wins over it. See [Chrome](../guides/chrome.md#use-your-everyday-chrome-with-the-extension) |
+| `SAP_CHROME_CDP` | none | `http://127.0.0.1:9333` | a Chrome DevTools endpoint (`http`, `https`, `ws` or `wss`). When set, it wins over `SAP_BROWSER` and nothing else is tried. See [Chrome](../guides/chrome.md#a-chrome-started-with-a-debugging-port) |
+| `SAP_BROWSER` | `launch` | `launch`, `attach`, `extension` | `launch`: the server starts Google Chrome with a profile of its own (the SAP window) and looks only at its tabs. `attach`: your running Chrome or Edge, with remote debugging allowed in `chrome://inspect`. `extension`: your everyday Chrome through the UI Automation for SAP extension. `SAP_CHROME_CDP` wins over it. See [Choose a browser mode](../guides/chrome.md#choose-a-browser-mode) |
+| `SAP_CHROME_PATH` | found: Google Chrome in the usual places (on Linux also Chromium) | a program file | `launch`: the Chrome to start |
+| `SAP_START_URL` | the last SAP address the window showed, else an empty tab | an `http` or `https` address | `launch`: the address a new SAP window opens on |
+| `SAP_CHROME_PROFILE` | `sap-ui-automation/chrome` in the user's data folder | a folder | `launch`: the SAP window's profile folder |
+| `SAP_CHROME_ARGS` | none | Chrome switches, separated by spaces | `launch`: extra switches for the Chrome it starts |
 | `SAP_EXTENSION_PORT` | first free of 47823–47830 | a port | with `SAP_BROWSER=extension`, the local port where the extension connects |
+| `SAP_EXTENSION_WAIT` | `35` | seconds | with `SAP_BROWSER=extension`, how long to wait for the extension to connect |
+| `SAP_EXTENSION_START_CHROME` | `on` on macOS and Windows, `off` elsewhere | `on`, `off` | with `SAP_BROWSER=extension`, start your Chrome when it is not running, so the extension can connect |
 
 ## Network reader (`SAP_GUI_METHOD=diag`)
 
@@ -108,6 +114,8 @@ You do not normally set them for this server.
 | Variable | Effect |
 | --- | --- |
 | `SAP_TEST_CHROME` | the repository's tests: a Chrome to run browser tests against |
+| `SAP_EXTENSION_CODE` | a fixed pairing code for the extension, for tests and CI; otherwise the code is kept in a file only you can read |
+| `SAP_CLI_STATE_DIR` | where the agent CLI keeps its daemon's state, for tests |
 
 `sap-ui-automation --help` lists the commands and the main settings
 ([CLI commands](cli.md)).

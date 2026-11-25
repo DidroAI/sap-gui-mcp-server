@@ -82,11 +82,12 @@ in `surfacesFromEnv`.
 | `src/core/` | what every surface shares: the `Surface` and `Driver` types, actions, the guard, the commit and safe words, the compact view, ids, diffs, the registry of sessions, the per-session queue |
 | `src/sapgui/` | SAP GUI for Windows through scripting; `ps/` is the PowerShell host |
 | `src/sapgui-diag/`, `src/diag/` | SAP GUI without scripting: the local SAProuter, input through PowerShell, and the DIAG decoder |
-| `src/webgui/`, `src/fiori/`, `src/browser/` | Web GUI and Fiori in Chrome, and attaching to Chrome |
+| `src/webgui/`, `src/fiori/` | Web GUI and Fiori in Chrome |
 | `src/record/` | record, replay, export |
 | `src/server.ts`, `src/surfaces.ts` | the MCP tools, and which surfaces run on this machine |
 | `src/cli.ts`, `src/cli/` | the command line, `setup` and `doctor` |
-| `skills/` | the agent skill |
+| `src/browser/`, `extension/`, `native-host/` | the three browser modes; the Chrome extension and its helper |
+| `skills/` | the agent skills (`sap-ui-automation`, `sap-ui-automation-cli`) |
 | `docs/` | the documentation site (VitePress); the markdown also ships in the npm package |
 | `examples/` | client configurations, prompts and a recorded test |
 
@@ -100,7 +101,13 @@ Everything CI runs needs no SAP system and no SAP GUI:
 | Web GUI reader and actions in a browser, on synthetic pages (`test/webgui-*.test.ts`, `test/chrome.test.ts`) | `SAP_TEST_CHROME=/path/to/chrome bun run test` | a Chrome or Chromium binary; skipped without it |
 | PowerShell scripts parse, and the SAP GUI host and window tests | part of `bun run test` | Windows; skipped elsewhere |
 | The built server, its PowerShell host and COM, against a fake SAP GUI | `bun run build && node test/sapgui/e2e.mjs` | Windows |
-| The documentation site | `bun run docs:build` | nothing |
+| The documentation site, and every link between its pages | `bun run docs:build` | nothing |
+
+For the browser tests, any Chrome or Chromium works, for example
+Playwright's (`npx playwright install chromium`). On Ubuntu 23.10 and
+later, a Chromium that is not installed as a package may refuse to start
+without a sandbox profile; the tests then fail to launch it, not on the
+code.
 
 The fakes:
 
@@ -146,6 +153,19 @@ where you tell them to: keep that out of Git.
 The token counts use the Anthropic `count_tokens` API when
 `ANTHROPIC_API_KEY` is set. These development scripts are not part of the
 npm package; the server itself makes no such call.
+
+## Good first contributions
+
+- A screen the view reads wrong: a fixture with made-up data and the line
+  you expected (see `test/sapgui/` or the synthetic Web GUI pages).
+- Safe and commit words in another logon language (`src/core/words.ts`),
+  with a test.
+- A docs page that was wrong or unclear for your setup. Docs-only changes
+  need `bun run docs:build` to pass, nothing else.
+
+Issues labelled
+[good first issue](https://github.com/DidroAI/sap-ui-automation/labels/good%20first%20issue)
+are a place to start.
 
 ## Add a surface
 
@@ -283,8 +303,10 @@ list.
 
 ## Releasing (maintainers)
 
-1. Set the version in `package.json` and `server.json` (twice; a test checks
-   they agree), and move the "Unreleased" changelog entries under it.
+1. Set the version in `package.json`, `server.json` (twice),
+   `mcpb/manifest.json`, `.claude-plugin/plugin.json`, and `SERVER_VERSION`
+   (`src/server.ts`) and `SDK_VERSION` (`src/sdk/session.ts`); a test checks
+   they agree. Move the "Unreleased" changelog entries under it.
 2. Merge that to `main`, then tag it there: `git tag v0.2.0 && git push origin v0.2.0`.
 3. `release.yml` builds and tests, then waits for approval in the `npm`
    environment. Once approved it publishes to npm through trusted publishing

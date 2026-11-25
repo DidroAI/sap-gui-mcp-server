@@ -34,6 +34,10 @@ Before 1.0, only the latest published version gets fixes.
   reaching the agent, a log or a recording;
 - the server reading browser tabs that are not SAP tabs;
 - the local SAProuter of the `diag` method reachable from another machine;
+- with the Chrome extension: a tab of a system you did not register shared
+  with the server, the extension's local port answering a web page or an
+  unpaired client, or a saved SAP password reaching the server, the agent
+  or a log;
 - a recording or a tool argument that makes the server read or write a file
   outside its directory;
 - any network connection the server makes that this page does not list.
@@ -48,8 +52,14 @@ has no server side, and no account.
 - **Network connections.** The server connects only to:
   - your SAP front end on this machine: SAP GUI for Windows through SAP GUI
     scripting (a Windows PowerShell process it starts), or Chrome or Edge
-    through the DevTools protocol (the endpoint Chrome announces in its
-    `DevToolsActivePort` file, or the one you name in `SAP_CHROME_CDP`);
+    through the DevTools protocol on `127.0.0.1` (the Chrome window it
+    starts itself in the default `SAP_BROWSER=launch`, your Chrome's
+    endpoint from its `DevToolsActivePort` file with `attach`, or the one
+    you name in `SAP_CHROME_CDP`);
+  - with `SAP_BROWSER=extension` only: it listens on `127.0.0.1` (the
+    first free port of 47823–47830, or `SAP_EXTENSION_PORT`) for the UI
+    Automation for SAP extension, which must prove the pairing code before
+    it is used;
   - with `SAP_GUI_METHOD=diag` only: it listens on `127.0.0.1` (port 3298,
     or `SAP_DIAG_PORT`) and relays SAP GUI's traffic to the next hop of the
     SAProuter string in your SAP Logon entry, which is your SAP system or
@@ -64,7 +74,11 @@ has no server side, and no account.
   run without one.
 - **No credentials.** The server never logs on, never stores a password,
   never types into a password field, and acts on no logon screen. It works
-  in sessions you have already opened. The exported Playwright spec is the
+  in sessions you have already opened. With the optional Chrome extension,
+  the extension logs on to the systems you registered in it, keeps their
+  passwords in your system's keychain through its helper, and types them
+  into SAP's logon page itself; the server only learns whether the logon
+  worked ([extension/PRIVACY.md](extension/PRIVACY.md)). The exported Playwright spec is the
   one exception, and it is not the server: it is a file you run yourself,
   and it reads `SAP_USER` and `SAP_PASSWORD` from your environment.
 - **On disk.** The server writes files only in these cases:

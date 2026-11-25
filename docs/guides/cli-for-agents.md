@@ -6,6 +6,20 @@ reads a short answer, and opens the screen file only when it needs it. This
 keeps screens out of the conversation until they matter, and works in
 agents that have no MCP support.
 
+## Set up
+
+```sh
+npm install -g sap-ui-automation             # puts sap-gui on the PATH
+sap-gui install --skills --target all        # in your project: the skills for Claude Code, Codex and Cursor
+sap-gui sessions                             # what it finds now
+```
+
+`npx -y sap-ui-automation setup` installs the skills for your user instead
+(Claude Code and Codex). Then open SAP (for Web GUI and Fiori: log on in
+the Chrome window it opens, see [Chrome](chrome.md)) and ask your agent to
+work in it with `sap-gui`. Without a global install, every command also
+runs as `npx -y -p sap-ui-automation sap-gui <command>`.
+
 ## Commands
 
 The package installs two names for the same program: `sap-gui` and
@@ -18,13 +32,15 @@ The package installs two names for the same program: `sap-gui` and
 | `sap-gui look [--full] [--diff] [--id <id> [--rows 0-50] [--cols A,B]] [--print]` | writes the screen to a file and prints one line with its path (`--print` prints the screen) | `sap_look` |
 | `sap-gui act '<json>' [--full]` | runs one action ([actions](../reference/actions.md)) | `sap_act` |
 | `sap-gui act '[<json>, ...]' [--full]` | runs one screen's actions in one call | `sap_act` with `actions` |
-| `sap-gui act set <id> <value>`, `press <id>`, `key <n>`, `okcode <cmd>`, `select <id>`, `check <id> [true\|false]`, `combo <id> [key]`, `f4 <id>`, `dblclick <id>`, `scroll <id> <to>` | shorthand for one action | `sap_act` |
+| `sap-gui act set <id> <value>`, `press <id>`, `key <n>`, `okcode <cmd>`, `select <id>`, `check <id> [true\|false]`, `combo <id> [key]`, `f4 <id>`, `dblclick <id>`, `scroll <id> <to>`, `open <intent>` | shorthand for one action | `sap_act` |
+| `sap-gui okcode <cmd>` | same as `act okcode <cmd>`: it submits, no Enter after it | `sap_act` |
+| `sap-gui open <intent>` | same as `act open <intent>`: a Fiori app, e.g. `'#SalesOrder-manage'` | `sap_act` |
 | `sap-gui screenshot` | writes a PNG of the window or tab | `sap_screenshot` |
 | `sap-gui record <op> ['<json>']` | `start <name>`, `assert '{"check":"status","contains":"saved"}'`, `stop`, `list`, ... | `sap_record` |
 | `sap-gui daemon status\|stop` | the background process that keeps the session attached between commands | |
 
 Each command prints one short line and the path of the screen file.
-`look`, `act`, `screenshot` and `record` take `--session <ref>`. Exit codes:
+`look`, `act`, `okcode`, `open`, `screenshot` and `record` take `--session <ref>`. Exit codes:
 0 done, 1 error or refused, 2 usage.
 
 | Variable | Default | Meaning |
@@ -68,7 +84,7 @@ that ([Security](../security.md#what-the-agent-can-do)).
 and a `sap-ui-automation-cli` skill on driving SAP through these commands, into the
 agent's folder: `.claude/skills` (Claude), `.agents/skills` (Codex) or
 `.cursor/rules/<name>.mdc` (Cursor), chosen with
-`--target claude|codex|cursor|all`; `--global` uses `~/.claude/skills` and
+`--target claude|codex|cursor|all` (default `claude`); `--global` uses `~/.claude/skills` and
 `~/.agents/skills` instead. `setup` installs them for the user as well. `sap-gui init` does this as part of setting a project
 up. The skill tells the agent
 how SAP screens behave: fields take effect on Enter, popups come first,

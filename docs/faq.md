@@ -165,13 +165,55 @@ capture folder. SAP GUI's connection is kept even when the reader fails.
 
 ## Troubleshooting: Chrome, Web GUI and Fiori
 
+Which checks `doctor` runs depends on the browser mode (`SAP_BROWSER`):
+see [Choose a browser mode](guides/chrome.md#choose-a-browser-mode).
+
+### Chrome: Google Chrome was not found
+
+**Symptom.** `✗ Chrome: Google Chrome was not found on this machine`
+(the default mode, `launch`).
+
+**Cause.** The server starts Chrome itself and did not find it in the usual
+places.
+
+**Fix.** Install Google Chrome, or set `SAP_CHROME_PATH` to the program
+file of a Chrome or Chromium. To use a Chrome that already runs instead,
+set `SAP_BROWSER=attach` or `SAP_BROWSER=extension`.
+
+### Chrome ended at once and opened no window
+
+**Symptom.** `Chrome ended at once ... and opened no window` from
+`browser`, `sessions` or the agent.
+
+**Cause.** Chrome could not start: most often there is no screen (a server
+or a container), or the Chrome binary cannot run there (on Ubuntu 23.10 and
+later, a Chromium that is not installed as a package may refuse to start
+without a sandbox profile).
+
+**Fix.** Run the command it prints to see Chrome's own error. Use a
+machine with a desktop, or a Chrome installed from Google's package.
+
+### Chrome extension: no extension connected
+
+**Symptom.** `✗ Chrome extension: no UI Automation for SAP extension
+connected to port 47823 within 35 s` (`SAP_BROWSER=extension`).
+
+**Cause.** The extension is not installed or not paired, or Chrome is not
+running. On Linux the server does not start Chrome for you.
+
+**Fix.** [Install the extension](guides/chrome.md#install-the-extension),
+open Chrome, click the extension's icon and **Pair**, then run `doctor`
+again. If the side panel shows another port, set `SAP_EXTENSION_PORT` to
+it.
+
 ### Chrome: no Chrome with remote debugging allowed
 
 **Symptom.** `✗ Chrome: no Chrome with remote debugging allowed is running
 (looked for Chrome, Chrome Beta and Edge)`.
 
-**Cause.** The server attaches to the Chrome you use, once you allow it.
-Remote debugging is not allowed yet, or Chrome is older than 144.
+**Cause.** With `SAP_BROWSER=attach`, the server attaches to the Chrome you
+use, once you allow it. Remote debugging is not allowed yet, or Chrome is
+older than 144.
 
 **Fix.** In Chrome 144 or later, open `chrome://inspect/#remote-debugging`
 and tick *Allow remote debugging for this browser instance*. Run `doctor`
@@ -213,7 +255,7 @@ the value is not a URL.
 
 **Fix.** Check that this Chrome runs with `--remote-debugging-port` and
 `--user-data-dir` (since Chrome 136 the port opens only with both), or
-unset `SAP_CHROME_CDP` to use your everyday Chrome.
+unset `SAP_CHROME_CDP` to use the browser mode `SAP_BROWSER` names.
 
 ### Fiori tabs
 
@@ -246,8 +288,8 @@ those origins are looked at.
 
 ### Does it work on a Mac or on Linux?
 
-Web GUI and Fiori, yes: they run in Chrome on Windows, macOS and Linux. SAP
-GUI for Windows needs Windows. SAP GUI for Java (macOS, Linux) has no
+Web GUI and Fiori, yes: they run in Chrome on Windows, macOS and Linux, in
+all three browser modes. SAP GUI for Windows needs Windows. SAP GUI for Java (macOS, Linux) has no
 scripting and is not supported: on a Mac, use Web GUI or Fiori.
 
 ### Does it work with SAP GUI for Java?
@@ -262,9 +304,11 @@ the traffic, and cannot read SNC-encrypted connections.
 
 ### Does it work with Microsoft Edge?
 
-Probably. Edge is Chromium, and the server finds it the same way as Chrome
-(Chrome stable, then Chrome Beta, then Edge). It is less tested than
-Chrome. Firefox and Safari are not supported.
+Probably, with `SAP_BROWSER=attach`. Edge is Chromium, and the server
+finds it the same way as Chrome (Chrome stable, then Chrome Beta, then
+Edge). The default mode starts Google Chrome; `SAP_CHROME_PATH` can name
+Edge's program file instead. Both are less tested than Chrome. Firefox
+and Safari are not supported.
 
 ### Does it log on?
 

@@ -1,5 +1,11 @@
 # Review: Agent Connector 0.3.0
 
+> A record of the review of extension version 0.3.0, kept as it was. The
+> extension was called "Agent Connector for SAP Systems" then; it is now
+> **UI Automation for SAP**, and its icon is a lit pointer on a navy tile,
+> not the `>_` mark findings U5 and F12 discuss. Current behaviour is in
+> [README.md](README.md) and [PROTOCOL.md](PROTOCOL.md).
+
 Before this version was called ready, four reviewers looked at it on their
 own, from the code and the screenshots: a Fiori designer, a first-time user
 (an SAP consultant on a Mac), a security engineer, and a reviewer for Web

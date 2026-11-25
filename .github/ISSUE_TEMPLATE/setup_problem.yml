@@ -1,0 +1,88 @@
+name: Setup problem
+description: setup, doctor, the extension or your MCP client does not work as the docs say
+labels: [setup]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before you open this, run `npx -y sap-ui-automation doctor` and look up each ✗ in [FAQ and troubleshooting](https://github.com/DidroAI/sap-ui-automation/blob/main/docs/faq.md). **Leave real SAP data out**: replace host names, system names and user names with made-up ones.
+  - type: dropdown
+    id: path
+    attributes:
+      label: What you are setting up
+      multiple: true
+      options:
+        - Web GUI or Fiori, SAP window (SAP_BROWSER=launch, the default)
+        - Web GUI or Fiori, my Chrome with remote debugging (SAP_BROWSER=attach)
+        - Web GUI or Fiori, the Chrome extension (SAP_BROWSER=extension)
+        - SAP GUI for Windows, scripting
+        - SAP GUI for Windows, network reader (DIAG)
+        - The sap-gui command line for agents
+        - The SDK or the test runner
+        - Adding the server to an MCP client (setup)
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of doctor
+      description: "`npx -y sap-ui-automation doctor`, with the same SAP_* variables your client sets. Replace host names and user names."
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What you did and what happened
+      description: The commands you ran (setup, extension install, ...), their output, and the page of the docs you followed.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: sap-ui-automation version
+      description: "`npx -y sap-ui-automation --version`"
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node.js version
+      description: "`node -v`"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: For example "Windows 11 24H2", "macOS 15.5", "Ubuntu 24.04".
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: MCP client or agent, and version
+      description: For example "Claude Code 2.1", "Codex 0.120", "Cursor 1.8", "VS Code 1.106".
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version
+      description: For Web GUI and Fiori. For example "Chrome 146". With the extension, also its version from chrome://extensions.
+  - type: input
+    id: gui
+    attributes:
+      label: SAP GUI version
+      description: For SAP GUI for Windows. For example "SAP GUI for Windows 8.00 PL 12".
+  - type: textarea
+    id: settings
+    attributes:
+      label: Client configuration
+      description: The sap-ui-automation entry of your client's configuration, and the SAP_* variables you set (never a password).
+      render: text
+  - type: checkboxes
+    id: scrubbed
+    attributes:
+      label: Data
+      options:
+        - label: I removed host names, user names and other personal data from what I pasted.
+          required: true
