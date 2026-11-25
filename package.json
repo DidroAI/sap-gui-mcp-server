@@ -60,6 +60,8 @@
     "docs/**/*.md",
     "!docs/node_modules/**",
     "extension",
+    "!extension/REVIEW.md",
+    "!extension/STORE.md",
     "native-host",
     "README.md",
     "CHANGELOG.md",
