@@ -263,6 +263,8 @@ export class DiagDecoder {
       } else if (it.id === ID.window && it.sid === 0x04) mode.lastCommand = clean(decode(it.value, mode.classic.utf8)).trim();
     }
     if (!answer && items.length) mode.userActed = true;
+    // What the user typed, as SAP GUI sends it: the fields hold it until SAP sends them again.
+    if (!answer) mode.classic.clientValues(items);
   }
 
   /** One RFC item. Returns true when it is a call SAP GUI still has to answer (the step goes on). */

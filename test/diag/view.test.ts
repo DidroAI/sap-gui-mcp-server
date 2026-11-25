@@ -112,9 +112,9 @@ describe("diagView", () => {
     const at = lines.findIndex((l) => l.startsWith("r9  table"));
     expect(lines.slice(at, at + 4)).toEqual([
       'r9  table TC_ITEMS "All items"  2 rows (2 with data on show), 5 columns: Item ZITM-POSNR | Material ZITM-MATNR | D ZITM-DONE | Text ZITM-TEXT1 | Text ZITM-TEXT2',
-      "  row 0 r10: Item=10; Material=[WIDGET-1]; D=[x]; Text(ZITM-TEXT1)=one",
-      "  row 1 r11: Item=20; Material=WIDGET-2; Text(ZITM-TEXT2)=two",
-      "  (1 empty row below, from r12, open for input)",
+      "  row 0 r11: Item=10; Material=[WIDGET-1]; D=[x]; Text(ZITM-TEXT1)=one",
+      "  row 1 r12: Item=20; Material=WIDGET-2; Text(ZITM-TEXT2)=two",
+      "  (1 empty row below, from r13, open for input)",
     ]);
   });
 

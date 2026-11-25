@@ -37,6 +37,50 @@ change the tools or the view format.
 - The number notation is read from grouped quantities with three decimals
   (`9.983,000`) and from tree nodes too (MMBE's stock overview said
   `NUMBERS unknown`).
+- Network reader (SAP GUI without scripting), from the first end-to-end runs
+  with writes (ECC, Claude Haiku):
+  - `check` sets a box to the state asked for; a box already there is not
+    clicked (it was toggled whatever the value said).
+  - The Enter of a message popup (an error or information with only text,
+    labelled "Confirm") acknowledges it, as on the other surfaces; with
+    `SAP_WRITE=off` it was refused as a write.
+  - A table cell can be named the way `sap_act` describes it, the table's id
+    with `row` and `col`, or a column's field name with `row`.
+  - A table's head names the columns open for input even while they are
+    empty.
+  - A screen SAP sends again with only what changed (FB50 after a warning)
+    keeps the fields' texts, the values typed included, and its tabs; they
+    showed as empty read-only fields.
+  - `btn[N]`, a toolbar button's text with its key ("Display Document
+    (F2)") and a tab's caption are ids, as on the other surfaces.
+  - Dropdowns: the entries are read from SAP GUI's own cache on the PC, so
+    `combo` lists them, takes a key or a text, refuses one that is not there,
+    and chooses in one input (the list closed before when another window was
+    brought forward); a choice shows as typed until the next Enter.
+  - `set` in a cell of an editable ALV grid (ME51N's items).
+  - A table cell right of what SAP GUI shows is reached with Tab from the
+    nearest cell on show (SAP GUI scrolls the table sideways); the reader
+    follows a table scrolled sideways (its fixed columns stay). Other actions
+    on such a cell are refused: a click there typed into another cell.
+  - Table rows were placed one row too high in tables with a title, and the
+    click point of a row was at its upper edge: clicks into item tables
+    missed. A row under the window's scroll bars is refused, with the scroll
+    that brings it up.
+  - A step whose answer goes through more than one screen keeps the status
+    messages of the screens before the last: FB50's "Document ... was
+    posted" was replaced by the next screen's error, and the agent posted
+    again.
+  - A screen taller than SAP GUI's window scrolls (`scroll` with id
+    `screen`, the mouse wheel); clicks follow the scroll SAP reports, and a
+    field under the window's edge is refused with that scroll instead of
+    being clicked where another field is.
+  - A popup SAP sends again as an update (after SAP GUI's type-ahead call)
+    keeps its fields; it came back empty.
+  - `set` clicks again when a dropdown chosen just before swallowed the click,
+    and types nothing when the cursor still did not come; a second cell
+    further right in a row reached with Tab goes on with Tab.
+  - When SAP GUI shows a popup the traffic did not describe, the refusal
+    says so and how to close it.
 
 ### Changed
 

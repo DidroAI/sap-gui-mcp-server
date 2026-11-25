@@ -81,7 +81,7 @@ function elementText(e: DiagElement): string {
       return `${box} ${one(e.text || e.label || "")} ${e.name}${at}${e.input ? "" : " (read-only)"}${e.typed ? " (ticked, sent with the next Enter)" : ""}`;
     }
     case "dropdown":
-      return `${e.name}${at}=dropdown ${e.input ? `[${e.key ?? ""}]` : quote(e.key ?? "")}`;
+      return `${e.name}${at}=dropdown ${e.input ? `[${e.key ?? ""}]` : quote(e.key ?? "")}${e.typed ? ` ${TYPED}` : ""}`;
     case "field":
       // An empty read-only field with a SAP name is kept (`NAME@17=""`): a check can say it is empty.
       if (!e.input && !e.text) return e.name ? `${e.name}${at}=""` : "";
@@ -111,15 +111,20 @@ function tableLines(t: DiagTable, maxRows: number): string[] {
     return c.title && count.get(c.title) === 1 ? c.title : `${c.title}(${c.name})`;
   };
   const filled = t.rows.filter((r) => !r.empty || r.cells.some((c) => c.typed));
-  // With rows on show, the head lists the columns that hold something in them (VA03's item table has 109 columns,
-  // most empty); the empty ones are counted. Without, every column, to type into.
+  // With rows on show, the head lists the columns that hold something in them or take input there (VA03's item
+  // table has 109 columns, most empty and read-only); the others are counted. Without, every column, to type into.
   const holds = (i: number) => filled.some((r) => {
     const c = r.cells[i];
     return !!c && !c.hidden && (!!c.text || !!c.checked || !!c.typed);
   });
-  const listed = filled.length ? columns.filter((c) => holds(c.index)) : columns;
+  // A column open for input in a row on show is named too, empty or not: it is where a row is filled in.
+  const open = (i: number) => t.rows.some((r) => {
+    const c = r.cells[i];
+    return !!c && !c.hidden && c.input && c.kind !== "button";
+  });
+  const listed = filled.length ? columns.filter((c) => holds(c.index) || open(c.index)) : columns;
   const rest = columns.length - listed.length;
-  const out = [`r${t.row}  table ${t.name}${t.title ? ` ${quote(t.title)}` : ""}  ${t.totalRows ?? t.rows.length} rows (${filled.length} with data on show), ${columns.length} columns: ${listed.map((c) => `${one(c.title || c.tooltip || "")} ${c.name}`.trim()).join(" | ")}${rest ? ` | (${rest} more, empty in the rows on show)` : ""}`];
+  const out = [`r${t.row}  table ${t.name}${t.title ? ` ${quote(t.title)}` : ""}  ${t.totalRows ?? t.rows.length} rows (${filled.length} with data on show), ${columns.length} columns: ${listed.map((c) => `${one(c.title || c.tooltip || "")} ${c.name}`.trim()).join(" | ")}${rest ? ` | (${rest} more, empty and read-only in the rows on show)` : ""}`];
   for (const r of filled.slice(0, maxRows)) {
     const cells: string[] = [];
     for (const c of columns) {
