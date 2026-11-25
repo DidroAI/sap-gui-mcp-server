@@ -112,8 +112,15 @@ export function isLook(raw: unknown): boolean {
   return typeof d === "string" && d.trim().toLowerCase() === LOOK;
 }
 
-/** A key 0 or Enter with nothing else said about it. */
-const bareEnter = (s: BatchStep) => s.action.do === "key" && (s.action.key === 0 || s.action.key === "Enter") && !s.expect && !s.show && !s.unseen;
+/**
+ * A key 0 or Enter with nothing else said about it, or only "whatever comes"
+ * (expect any screen, or a popup): agents add that to the Enter after an
+ * okcode to mean "and then the transaction's first screen". Live (SAP GUI,
+ * FB50, 2026-11-25), {"popup":true} on it ran the Enter on an empty initial
+ * screen: "Enter valid date", and the fields stayed closed.
+ */
+const vague = (e: Expect | undefined) => !e || Object.entries(e).every(([k, v]) => v === undefined || (k === "screen" && v === ANY) || (k === "popup" && v === true));
+const bareEnter = (s: BatchStep) => s.action.do === "key" && (s.action.key === 0 || s.action.key === "Enter") && vague(s.expect) && !s.show && !s.unseen;
 
 /**
  * The steps of a batch, each action normalised as `sap_act` normalises one.

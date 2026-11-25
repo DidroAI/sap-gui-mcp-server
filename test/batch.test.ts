@@ -198,7 +198,12 @@ describe("an Enter right after an okcode", () => {
   });
   test('"Enter" by name and any okcode count; an Enter that says more, or comes later, runs', async () => {
     expect(parseBatch([{ do: "okcode", value: "=SAVE" }, { do: "key", key: "enter" }]).map((s) => [s.n, s.action.do, s.note])).toEqual([[1, "okcode", "(skipped Enter: okcode already submits)"]]);
-    expect(parseBatch([{ do: "okcode", value: "/nZA03" }, { ...ENTER, expect: { popup: true } }])).toHaveLength(2);
+    // An Enter that only says "whatever comes" (any screen, a popup) is skipped too (SAP GUI FB50, live 2026-11-25: "Enter valid date").
+    expect(parseBatch([{ do: "okcode", value: "/nZA03" }, { ...ENTER, expect: { popup: true } }])).toHaveLength(1);
+    expect(parseBatch([{ do: "okcode", value: "/nZA03" }, { ...ENTER, expect: { screen: "*" } }])).toHaveLength(1);
+    // One that names what it is for runs.
+    expect(parseBatch([{ do: "okcode", value: "/nZA03" }, { ...ENTER, expect: { screen: "4001" } }])).toHaveLength(2);
+    expect(parseBatch([{ do: "okcode", value: "/nZA03" }, { ...ENTER, expect: { status: "W" } }])).toHaveLength(2);
     expect(parseBatch([{ do: "okcode", value: "/nZA03" }, CUSTOMER, ENTER])).toHaveLength(3);
     expect(parseBatch([{ do: "okcode", value: "/nZA03" }, { do: "look" }, ENTER])).toHaveLength(2);
   });
