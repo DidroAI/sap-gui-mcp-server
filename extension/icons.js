@@ -31,11 +31,12 @@ export const ICONS = {
   sso: svg(o("M12 3.5l7 2.750V12c0 4.250-3 7-7 8.500C8 19 5 16.250 5 12V6.250z")),
   person: svg(ring(12, 8, 3.75) + o("M4.5 20c1-3.500 3.750-5.500 7.500-5.500s6.500 2 7.500 5.500")),
   spinner: svg('<path fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" d="M20.5 12a8.5 8.5 0 1 1-5.800-8.060"/>'),
-  // The product's mark: an ink tile, a green text caret and the agent's pointer (it types, it clicks). Ours, not SAP's.
+  // The product's mark: a round ink seal with a lowercase "a" (automation) and a green dot, the agent at work. Ours, not SAP's.
   mark: svg(
-    '<rect class="mark-tile" x="1.5" y="1.5" width="125" height="125" rx="29"/>' +
-      '<rect class="mark-caret" x="28" y="27" width="14" height="48" rx="7"/>' +
-      '<path class="mark-pointer" d="M58 42v60l16-15.500h25z" stroke-width="6" stroke-linejoin="round"/>',
+    '<circle class="mark-tile" cx="64" cy="64" r="63"/>' +
+      '<circle class="mark-glyph" cx="58" cy="71" r="19" stroke-width="11"/>' +
+      '<path class="mark-glyph" d="M77 50v41" stroke-width="11" stroke-linecap="round"/>' +
+      '<circle class="mark-dot" cx="94" cy="38" r="9"/>',
     "0 0 128 128",
   ),
 };

@@ -1,61 +1,59 @@
-/* UI Automation for SAP: the side panel's identity, "Ink and signal".
+/* UI Automation for SAP: the side panel's identity, "Ledger".
 
-   Idea      A quiet instrument beside SAP. Ink does the work, one green says the agent is live.
-   Palette   A neutral canvas with white surfaces on it; near-black ink for text and for the one
-             primary action of a view. A single accent, signal green: the agent's presence
-             (connected, working, "Agent here", waiting for your yes), focus and links. Red only
-             for what failed. No second hue, no tinted greys.
-   Type      Geist and Geist Mono (bundled, OFL). Four steps: 20 display, 16 status, 13 body,
-             12 meta; weights 400, 500, 600 only. SAP's own codes (VA02, client, user fields)
-             are set in the mono, figures are tabular.
-   Space     A 4 px grid. Boxes sit 12 px from the panel's edge and pad 12 px, and every line of
-             text that is not in a box starts on the same 24 px edge as the text inside them.
-   Shape     12 px on surfaces, 8 px on controls, 5 px on small labels. Only dots are round.
-   Depth     No grey outlines. A surface is white on the canvas, held by a hairline ring and a
-             1 px shadow; what is being edited or floats (the form, the menu) lifts further.
-             Fields are wells sunk into the surface.
+   Idea      A well-made tool from a studio, calm beside SAP's grey: warm paper, dark ink, and one
+             deep green that says the agent is here.
+   Palette   A warm paper canvas, a lighter paper for surfaces, warm ink for text and for the one
+             primary action of a view. One accent, ledger green: the agent's presence (connected,
+             working, "Agent here", waiting for your yes), focus and links. Red only for what
+             failed. Every grey is warm; none is blue.
+   Type      DM Sans for everything, Geist Mono for SAP's own codes (VA02, client, user fields).
+             Both bundled (OFL). Weights 400, 500, 600; figures are tabular.
+   Space     A 4 px grid. Boxes sit 12 px from the panel's edge and pad 12 px.
+   Shape     12 px on surfaces, 8 px on controls, 5 px on small labels. The mark and dots are round.
+   Depth     Hairlines in warm grey; the systems are one grouped list on the paper. What is being
+             edited or floats (the form, the menu) lifts with a soft shadow.
    Icons     One set on a 24 grid, 1.75 stroke, round caps and joins.
-   Dark      Not an inversion: a near-black canvas, surfaces one step lighter with a light ring,
-             the primary button turns white, the green brightens.
+   Dark      Warm, not blue-black: dark umber paper, the primary button turns paper, the green
+             brightens.
 
    Colours live in the two token blocks only. */
 
-@font-face { font-family: "Geist"; src: url("fonts/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; font-display: block; }
+@font-face { font-family: "DM Sans"; src: url("fonts/DMSans-Variable.woff2") format("woff2"); font-weight: 100 1000; font-display: block; }
 @font-face { font-family: "Geist Mono"; src: url("fonts/GeistMono-Variable.woff2") format("woff2"); font-weight: 100 900; font-display: block; }
 
 :root {
-  --ink: #111214;
-  --text: #43464d;
-  --muted: #6c7078;
-  --faint: #a1a4ab;
-  --bg: #f4f4f5;
-  --surface: #ffffff;
-  --well: #f7f7f8;
-  --hover: #e9e9ec;
-  --press: #dfe0e4;
-  --line: #e4e4e8;
-  --line-strong: #cfd0d6;
-  --ring: rgba(17, 18, 20, 0.09);
-  --ring-strong: rgba(17, 18, 20, 0.16);
-  --shadow: rgba(17, 18, 20, 0.06);
-  --lift: rgba(17, 18, 20, 0.14);
-  --primary: #111214;
-  --primary-hover: #2a2c31;
-  --primary-ink: #ffffff;
-  --primary-edge: rgba(255, 255, 255, 0.14);
-  --accent: #0c9a6c;
-  --accent-text: #087a56;
-  --accent-soft: #e6f5ee;
-  --accent-line: #9fd9c1;
-  --danger: #c9343f;
-  --danger-soft: #fcefef;
-  --danger-line: #efb4b8;
-  --mark-tile: #111214;
-  --mark-pointer: #ffffff;
-  --mark-caret: #2fd492;
-  --mark-edge: #111214;
-  --shimmer: #a1a4ab;
-  --font: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --ink: #1d1b17;
+  --text: #4a463e;
+  --muted: #857f72;
+  --faint: #b3ac9d;
+  --bg: #f6f3ec;
+  --surface: #fdfbf6;
+  --well: #f3efe6;
+  --hover: #ece7dc;
+  --press: #e3ddcf;
+  --line: #e6e0d3;
+  --line-strong: #d6cfbf;
+  --ring: rgba(60, 48, 24, 0.10);
+  --ring-strong: rgba(60, 48, 24, 0.18);
+  --shadow: rgba(60, 48, 24, 0.06);
+  --lift: rgba(60, 48, 24, 0.16);
+  --primary: #1d1b17;
+  --primary-hover: #35322b;
+  --primary-ink: #fdfbf6;
+  --primary-edge: rgba(255, 255, 255, 0.10);
+  --accent: #2f6b4f;
+  --accent-text: #2a5e46;
+  --accent-soft: #e4ede5;
+  --accent-line: #b5cdbb;
+  --danger: #b3402f;
+  --danger-soft: #f8e9e3;
+  --danger-line: #e5b5a8;
+  --tile: #ebe5d8;
+  --mark-tile: #1d1b17;
+  --mark-glyph: #fdfbf6;
+  --mark-dot: #6fae8c;
+  --shimmer: #b3ac9d;
+  --font: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --r: 12px;
   --r-sm: 8px;
@@ -65,35 +63,37 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --ink: #f3f3f4;
-    --text: #b5b7bc;
-    --muted: #888b92;
-    --faint: #5c5f66;
-    --bg: #0e0f10;
-    --surface: #18191b;
-    --well: #101112;
-    --hover: #232528;
-    --press: #2c2e32;
-    --line: #26282b;
-    --line-strong: #3a3c41;
-    --ring: rgba(255, 255, 255, 0.08);
-    --ring-strong: rgba(255, 255, 255, 0.15);
+    --ink: #f2ede3;
+    --text: #c4bdaf;
+    --muted: #958d7e;
+    --faint: #645e53;
+    --bg: #161411;
+    --surface: #1e1b17;
+    --well: #12100e;
+    --hover: #2a2620;
+    --press: #332e27;
+    --line: #2c2823;
+    --line-strong: #403a32;
+    --ring: rgba(255, 244, 220, 0.08);
+    --ring-strong: rgba(255, 244, 220, 0.15);
     --shadow: rgba(0, 0, 0, 0.4);
     --lift: rgba(0, 0, 0, 0.6);
-    --primary: #f3f3f4;
+    --primary: #f2ede3;
     --primary-hover: #ffffff;
-    --primary-ink: #111214;
+    --primary-ink: #1d1b17;
     --primary-edge: rgba(255, 255, 255, 0);
-    --accent: #3fd596;
-    --accent-text: #4bdb9f;
-    --accent-soft: #11261d;
-    --accent-line: #1f5a43;
-    --danger: #ff7b84;
-    --danger-soft: #2b1618;
-    --danger-line: #6b2b31;
-    --mark-tile: #232528;
-    --mark-edge: #3a3c41;
-    --shimmer: #5c5f66;
+    --accent: #7fc29b;
+    --accent-text: #8fcca8;
+    --accent-soft: #1b2a21;
+    --accent-line: #2f5240;
+    --danger: #ec8b78;
+    --danger-soft: #2e1a15;
+    --danger-line: #6b3428;
+    --tile: #2c2822;
+    --mark-tile: #f2ede3;
+    --mark-glyph: #1d1b17;
+    --mark-dot: #2f6b4f;
+    --shimmer: #645e53;
     color-scheme: dark;
   }
 }
@@ -108,7 +108,7 @@ body {
   background: var(--bg);
   color: var(--ink);
   font: 400 13px/20px var(--font);
-  letter-spacing: -0.003em;
+  letter-spacing: -0.006em;
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -131,11 +131,11 @@ svg { display: block; width: 16px; height: 16px; }
 
 .bar { height: 52px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 12px; }
 .mark svg { width: 24px; height: 24px; }
-.mark-tile { fill: var(--mark-tile); stroke: var(--mark-edge); stroke-width: 3; }
-.mark-caret { fill: var(--mark-caret); }
-.mark-pointer { fill: var(--mark-pointer); stroke: var(--mark-pointer); }
+.mark-tile { fill: var(--mark-tile); }
+.mark-glyph { fill: none; stroke: var(--mark-glyph); }
+.mark-dot { fill: var(--mark-dot); }
 .product { flex-grow: 1; display: flex; align-items: baseline; gap: 5px; min-width: 0; white-space: nowrap; }
-.product-name { font-size: 14px; font-weight: 600; letter-spacing: -0.015em; }
+.product-name { font-size: 14.5px; font-weight: 600; letter-spacing: -0.02em; }
 .product-for { font-size: 14px; color: var(--muted); letter-spacing: -0.01em; }
 .sub-bar { display: flex; align-items: center; gap: 4px; padding: 0 8px 4px 16px; }
 .sub-bar .icon-btn { margin-left: -8px; }
@@ -200,7 +200,7 @@ svg { display: block; width: 16px; height: 16px; }
 .section-head-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-right: 12px; }
 .section-head { display: inline-flex; align-items: center; gap: 2px; height: 24px; margin-left: 6px; padding: 0 4px 0 6px; border: 0; border-radius: 6px; background: none; color: var(--muted); }
 .section-head:hover { color: var(--ink); background: var(--hover); }
-.section-head h2 { margin: 0; font-size: 12px; line-height: 16px; font-weight: 500; }
+.section-head h2 { margin: 0; font-size: 12px; line-height: 16px; font-weight: 600; }
 .chevron { color: var(--faint); transform: rotate(90deg); transition: transform 0.14s; }
 .chevron svg { width: 12px; height: 12px; }
 .folded .chevron { transform: none; }
@@ -213,7 +213,7 @@ svg { display: block; width: 16px; height: 16px; }
 .status.accent { padding: 12px; background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line); }
 .status.danger { padding: 12px; background: var(--danger-soft); box-shadow: inset 0 0 0 1px var(--danger-line); }
 .status-head { display: flex; align-items: center; gap: 9px; }
-.status-title { font-size: 16px; line-height: 22px; font-weight: 600; letter-spacing: -0.015em; }
+.status-title { font-size: 17px; line-height: 23px; font-weight: 600; letter-spacing: -0.025em; }
 .status-detail { color: var(--muted); }
 .status.accent .status-detail, .status.danger .status-detail { color: var(--text); }
 .status-step { margin-top: 8px; padding: 6px 10px; border-radius: var(--r-sm); background: var(--surface); box-shadow: 0 0 0 1px var(--ring), 0 1px 2px var(--shadow); color: var(--ink); font-weight: 500; }
@@ -259,15 +259,23 @@ svg { display: block; width: 16px; height: 16px; }
 
 /* ---------------------------------------------------------------- systems */
 
-.cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.card { border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--ring), 0 1px 2px var(--shadow); transition: box-shadow 0.16s; }
-li.card:hover { box-shadow: 0 0 0 1px var(--ring-strong), 0 1px 2px var(--shadow); }
-.card.here, li.card.here:hover { box-shadow: 0 0 0 1px var(--accent-line), 0 1px 2px var(--shadow); }
-.card.confirming { box-shadow: 0 0 0 1px var(--danger-line), 0 1px 2px var(--shadow); }
-.card-head { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 9px 6px 9px 12px; }
+.cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--ring), 0 1px 2px var(--shadow); }
+.cards:empty { display: none; }
+.card { position: relative; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--ring), 0 1px 2px var(--shadow); transition: background-color 0.16s, box-shadow 0.16s; }
+.cards > .card { box-shadow: none; background: none; }
+.cards > .card + .card::before { content: ""; position: absolute; top: 0; left: 54px; right: 0; height: 1px; background: var(--line); }
+.cards > li.card:hover { background: var(--well); }
+.cards > .card.here { background: var(--accent-soft); }
+.cards > .card.confirming { background: var(--danger-soft); }
+.cards > .card.editing { z-index: 1; background: var(--surface); box-shadow: 0 0 0 1px var(--ring-strong), 0 8px 24px -6px var(--lift), 0 2px 4px var(--shadow); }
+.cards > .card.editing + .card::before, .cards > .card.here + .card::before { left: 0; }
+.card-head { display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 10px 6px 10px 12px; }
+.av { width: 30px; height: 30px; flex-shrink: 0; display: grid; place-items: center; border-radius: var(--r-sm); background: var(--tile); color: var(--ink); font-size: 11.5px; font-weight: 600; letter-spacing: 0; }
+.here .av { background: var(--accent); color: var(--primary-ink); }
+.here .tag { display: none; }
 .card-body { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; }
 .card-title { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.card-name { font-weight: 500; letter-spacing: -0.008em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-name { font-size: 13.5px; font-weight: 500; letter-spacing: -0.012em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-line { display: flex; align-items: center; font-size: 12px; line-height: 18px; color: var(--muted); min-width: 0; }
 .item-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
@@ -279,7 +287,7 @@ li.card:hover { box-shadow: 0 0 0 1px var(--ring-strong), 0 1px 2px var(--shadow
 .card-note svg { width: 12px; height: 12px; margin-top: 3px; }
 .row-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 10px; padding-right: 6px; }
 
-.tag { display: inline-flex; align-items: center; height: 18px; padding: 0 5px; border-radius: var(--r-xs); font-size: 11px; font-weight: 500; color: var(--muted); box-shadow: inset 0 0 0 1px var(--line); white-space: nowrap; flex-shrink: 0; }
+.tag { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: var(--r-xs); font-size: 11px; font-weight: 500; color: var(--muted); background: var(--well); white-space: nowrap; flex-shrink: 0; }
 .tag.mono { font-size: 11px; color: var(--text); background: var(--well); }
 
 .add-card {
@@ -298,6 +306,7 @@ li.card:hover { box-shadow: 0 0 0 1px var(--ring-strong), 0 1px 2px var(--shadow
   transition: background-color 0.12s, border-color 0.12s, color 0.12s;
 }
 .add-card:hover { border-color: var(--muted); color: var(--ink); background: var(--surface); }
+.add-card > [data-icon] { width: 30px; justify-content: center; }
 .add-card:active { background: var(--well); }
 .add-text { display: flex; flex-direction: column; min-width: 0; }
 .add-title { font-weight: 500; }

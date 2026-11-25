@@ -158,11 +158,11 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 function frame(title, text, scene) {
   // A browser window: the SAP page on the left (a plain stand-in, never SAP's look or logo), the side panel on the right.
   return `<!doctype html><meta charset="utf-8"><style>
-  @font-face { font-family: "Geist"; src: url("/fonts/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; }
-  body { margin: 0; width: 1280px; height: 800px; display: grid; grid-template-columns: 1fr 380px; background: #f4f4f5; font-family: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: #111214; -webkit-font-smoothing: antialiased; }
-  .page { display: flex; flex-direction: column; justify-content: center; padding: 0 88px; border-right: 1px solid #e4e4e8; background: #ffffff; }
+  @font-face { font-family: "DM Sans"; src: url("/fonts/DMSans-Variable.woff2") format("woff2"); font-weight: 100 1000; }
+  body { margin: 0; width: 1280px; height: 800px; display: grid; grid-template-columns: 1fr 380px; background: #f6f3ec; font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: #1d1b17; -webkit-font-smoothing: antialiased; }
+  .page { display: flex; flex-direction: column; justify-content: center; padding: 0 88px; border-right: 1px solid #e6e0d3; background: #fdfbf6; }
   h1 { font-size: 46px; line-height: 1.08; margin: 0 0 20px; letter-spacing: -0.035em; font-weight: 600; }
-  p { font-size: 21px; line-height: 1.45; margin: 0; color: #6c7078; max-width: 30ch; letter-spacing: -0.01em; }
+  p { font-size: 21px; line-height: 1.45; margin: 0; color: #857f72; max-width: 30ch; letter-spacing: -0.01em; }
   iframe { width: 380px; height: 800px; border: 0; display: block; }
   </style><div class="page"><h1>${esc(title)}</h1><p>${esc(text)}</p></div><iframe src="/panel.html?s=${encodeURIComponent(scene)}"></iframe>`;
 }
@@ -197,10 +197,10 @@ try {
   const tile = await browser.newPage({ viewport: { width: 440, height: 280 } });
   await tile.goto(`http://127.0.0.1:${port}/frame.html?tile=1`);
   await tile.setContent(`<!doctype html><meta charset="utf-8"><style>
-    @font-face{font-family:"Geist";src:url("http://127.0.0.1:${port}/fonts/Geist-Variable.woff2") format("woff2");font-weight:100 900}
-    body{margin:0;width:440px;height:280px;display:grid;place-items:center;background:#f4f4f5;font-family:"Geist",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;color:#111214;-webkit-font-smoothing:antialiased}
+    @font-face{font-family:"DM Sans";src:url("http://127.0.0.1:${port}/fonts/DMSans-Variable.woff2") format("woff2");font-weight:100 900}
+    body{margin:0;width:440px;height:280px;display:grid;place-items:center;background:#f6f3ec;font-family:"DM Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;color:#1d1b17;-webkit-font-smoothing:antialiased}
     div{display:flex;align-items:center;gap:18px}img{display:block;width:72px;height:72px}
-    h1{font-size:30px;line-height:1.1;margin:0;font-weight:600;letter-spacing:-0.035em}p{margin:4px 0 0;color:#6c7078;font-size:18px;letter-spacing:-0.01em}</style>
+    h1{font-size:30px;line-height:1.1;margin:0;font-weight:600;letter-spacing:-0.035em}p{margin:4px 0 0;color:#857f72;font-size:18px;letter-spacing:-0.01em}</style>
     <div><img src="http://127.0.0.1:${port}/icons/128.png" alt=""><span><h1>UI Automation</h1><p>for SAP</p></span></div>`);
   await tile.waitForTimeout(300);
   await tile.screenshot({ path: join(out, "promo-440x280.png") });

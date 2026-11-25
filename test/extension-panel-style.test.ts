@@ -1,7 +1,7 @@
 /**
- * The side panel's identity, "ink and signal": colours only from the tokens (near-black ink, one
- * green accent, a neutral canvas with white surfaces), rounded surfaces held by a ring and a soft
- * shadow instead of grey outlines, Geist and Geist Mono bundled as local files (nothing fetched),
+ * The side panel's identity, "Ledger": colours only from the tokens (warm ink, one deep green
+ * accent, a warm paper canvas with lighter paper surfaces), rounded surfaces held by a ring and a
+ * soft shadow instead of grey outlines, DM Sans and Geist Mono bundled as local files (nothing fetched),
  * sentence case on buttons and headings, no "·" or "•" separators, and no SAP artwork.
  */
 import { describe, expect, test } from "bun:test";
@@ -32,15 +32,15 @@ function sentenceCase(label: string): boolean {
 }
 
 describe("the side panel's look", () => {
-  test("colours come from the tokens only; ink, one green accent, a neutral canvas", () => {
+  test("colours come from the tokens only; warm ink, one green accent, a paper canvas", () => {
     // In a declaration's value, not a selector such as #add.
     expect([...rules.matchAll(/\{([^{}]*)\}/g)].flatMap((m) => m[1]!.match(/#[0-9a-f]{3,8}\b/gi) ?? [])).toEqual([]);
     expect(js.match(/#[0-9a-f]{3,8}\b/gi) ?? []).toEqual([]);
     expect(icons.match(/#[0-9a-f]{3,8}\b/gi) ?? []).toEqual([]);
-    for (const t of ["--ink: #111214;", "--bg: #f4f4f5;", "--surface: #ffffff;", "--primary: #111214;", "--accent: #0c9a6c;", "--accent-text: #087a56;", "--danger: #c9343f;"]) expect(light).toContain(t);
-    for (const t of ["--bg: #0e0f10;", "--surface: #18191b;", "--primary: #f3f3f4;", "--accent: #3fd596;"]) expect(dark).toContain(t);
+    for (const t of ["--ink: #1d1b17;", "--bg: #f6f3ec;", "--surface: #fdfbf6;", "--primary: #1d1b17;", "--accent: #2f6b4f;", "--accent-text: #2a5e46;", "--danger: #b3402f;"]) expect(light).toContain(t);
+    for (const t of ["--bg: #161411;", "--surface: #1e1b17;", "--primary: #f2ede3;", "--accent: #7fc29b;"]) expect(dark).toContain(t);
     // Not SAP's blue, and none of the looks that were turned down (crimson, amber, the default blue).
-    for (const no of ["#0070f2", "#a31329", "#3b63f3", "#3b82f6"]) expect(css.toLowerCase()).not.toContain(no);
+    for (const no of ["#0070f2", "#a31329", "#3b63f3", "#3b82f6", "#111214", "#0c9a6c"]) expect(css.toLowerCase()).not.toContain(no);
     // The primary action is ink, not the accent; the accent is the agent's presence.
     expect(rule(".btn.primary {")).toContain("background: var(--primary)");
     expect(rule(".dot.green, .dot.accent {")).toContain("background: var(--accent)");
@@ -61,14 +61,14 @@ describe("the side panel's look", () => {
     expect(rule(".add-card {")).toContain("border: 1px dashed var(--line-strong)");
   });
 
-  test("Geist and Geist Mono, bundled; nothing fetched", () => {
-    expect(light).toMatch(/--font: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI"/);
+  test("DM Sans and Geist Mono, bundled; nothing fetched", () => {
+    expect(light).toMatch(/--font: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI"/);
     expect(light).toMatch(/--mono: "Geist Mono", ui-monospace/);
     const faces = [...css.matchAll(/@font-face \{[^}]*url\("([^"]+)"\)/g)].map((m) => m[1]!);
-    expect(faces).toEqual(["fonts/Geist-Variable.woff2", "fonts/GeistMono-Variable.woff2"]);
+    expect(faces).toEqual(["fonts/DMSans-Variable.woff2", "fonts/GeistMono-Variable.woff2"]);
     for (const f of faces) expect(existsSync(resolve(dir, f))).toBe(true);
     // The fonts' licence travels with them (SIL Open Font License).
-    expect(readFileSync(resolve(dir, "fonts/OFL.txt"), "utf8")).toContain("SIL OPEN FONT LICENSE");
+    for (const l of ["fonts/DMSans-OFL.txt", "fonts/GeistMono-OFL.txt"]) expect(readFileSync(resolve(dir, l), "utf8")).toContain("SIL OPEN FONT LICENSE");
     for (const m of css.matchAll(/url\(([^)]+)\)/g)) expect(m[1]!).not.toMatch(/https?:|^\/\//);
     expect(html).not.toMatch(/(?:src="https?:|<link[^>]+href="https?:)/);
   });

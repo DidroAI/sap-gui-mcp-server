@@ -410,6 +410,14 @@ function factsOf(x) {
   return [x.client && `Client ${x.client}`, x.sso ? "Single sign-on" : x.user && `User ${x.user}`].filter(Boolean).join("; ");
 }
 
+/** The row's tile: "EC" for ECC Sales, "S4" for S/4HANA, "DB" for dev box. */
+function initialsOf(name) {
+  const words = name.trim().split(/\s+/);
+  const first = words[0].replace(/[^A-Za-z0-9]/g, "");
+  const two = first.length >= 2 && first === first.toUpperCase() ? first.slice(0, 2) : words.slice(0, 2).map((w) => w.replace(/[^A-Za-z0-9]/g, "")[0] || "").join("") || first.slice(0, 2);
+  return two.toUpperCase();
+}
+
 function systemRow(x, s) {
   if (confirming === x.id) {
     const forget = confirmAction === "forget";
@@ -446,6 +454,7 @@ function systemRow(x, s) {
     el(
       "div",
       { class: "card-head" },
+      el("span", { class: "av", "aria-hidden": "true" }, initialsOf(x.name)),
       el(
         "div",
         { class: "card-body" },
