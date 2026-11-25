@@ -753,6 +753,18 @@ describe("the NUMBERS line on screens that do not show the notation (P1)", () =>
     expect(acted[2]).toStartWith("TRANSACTION MB51");
     expect(acted[3]).toStartWith("NUMBERS 1.234,56");
   });
+  test("a session of the same logon (an /o session) takes the notation its sibling learnt; another user's does not", async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA", client: "800", user: "U1", transaction: "VA03" }, { view: VA03 });
+    expect((await call("sap_look", { session: "chrome:1" })).text).toContain("NUMBERS 1.234,56");
+    surface.add({ id: "chrome:2", system: "ABA", client: "800", user: "U1", transaction: "MB51" }, { view: MB51 });
+    surface.add({ id: "chrome:3", system: "ABA", client: "800", user: "U2", transaction: "MB51" }, { view: MB51 });
+    surface.add({ id: "chrome:4", system: "ABA", client: "900", user: "U1", transaction: "MB51" }, { view: MB51 });
+    await call("sap_sessions");
+    expect((await call("sap_look", { session: "chrome:2" })).text.split("\n")[1]).toStartWith("NUMBERS 1.234,56  (decimal comma");
+    expect((await call("sap_look", { session: "chrome:3" })).text.split("\n")[1]).toStartWith("NUMBERS unknown");
+    expect((await call("sap_look", { session: "chrome:4" })).text.split("\n")[1]).toStartWith("NUMBERS unknown");
+  });
   test("the user's setting, when the surface reads it, comes first", async () => {
     const { surface, call } = await setup();
     surface.add({ id: "chrome:1", system: "ABA", transaction: "MB51" }, { view: MB51, notation: { sign: ".", date: "MM/DD/YYYY" } });
