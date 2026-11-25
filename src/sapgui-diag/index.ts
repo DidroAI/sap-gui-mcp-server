@@ -93,6 +93,19 @@ function commitQuestion(s: DiagScreen): string | undefined {
   return commitWord(text) ? clean(text) : undefined;
 }
 
+/**
+ * A message popup (an error, warning or information in a popup): message lines and nothing to fill in or
+ * press in its body, and no commit word. Its Enter only acknowledges the message, also when SAP GUI labels
+ * it "Confirm": the rule of the scripting and Web GUI surfaces (sapgui/assess.ts isMessagePopup).
+ */
+function messagePopup(w: DiagWindow): boolean {
+  if (!w.modal || w.tables.length || w.controls.length || w.tabstrips.length || w.list?.rows.length) return false;
+  const shown = w.elements.filter((e) => !e.hidden);
+  if (shown.some((e) => e.input || e.fcode || (e.kind !== "field" && e.kind !== "label" && e.kind !== "group"))) return false;
+  const lines = shown.map((e) => clean(e.text)).filter((t) => t && !/^@\w{2}\\Q.*@$/.test(t));
+  return lines.length > 0 && !commitWord(clean(w.title), ...lines);
+}
+
 function keyOf(w: DiagWindow, n: number): DiagKey | undefined {
   return [...w.toolbar, ...w.keys].find((k) => k.vkey === n);
 }
@@ -105,6 +118,7 @@ export function assessDiag(s: DiagScreen, action: Action, target?: Target): Asse
     const k = keyOf(w, n);
     // A toolbar button may have only a tooltip ("List Width Right"): named by it, not as "".
     const named = k ? `${how} "${clean(k.text || k.tooltip)}"` : how;
+    if (n === 0 && messagePopup(w)) return { risk: "navigate", reason: `${named} acknowledges the message` };
     if (k && commitWord(k.text, k.tooltip)) return commit(named);
     const q = n === 0 || (k && !/^(no|cancel|back|exit)$/.test(safeWord(lang, k.text) ?? "")) ? commitQuestion(s) : undefined;
     if (q && n !== 12 && n !== 3 && n !== 15) return commit(`${named} on the popup "${q.slice(0, 90)}"`);
