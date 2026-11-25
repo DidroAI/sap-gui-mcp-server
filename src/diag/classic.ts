@@ -121,6 +121,28 @@ function comboValue(s: string, codeLength = 0): { key: string; valueList?: strin
   return { key: clean(rest).trim(), valueList: m[1] as string, ...(fcode ? { fcode } : {}) };
 }
 
+/**
+ * Where each column of a table control starts, and whether it is on show: after the row selector, one cell
+ * between columns, in the order shown. Scrolled sideways (`firstColumn`), the fixed columns stay and the
+ * others start at that one; those between are out of view.
+ */
+export function layoutColumns(table: DiagTable): void {
+  const order = [...table.columns].sort((a, b) => a.position - b.position);
+  const fixed = table.fixedColumns ?? 0;
+  const first = table.firstColumn && table.firstColumn > fixed ? table.firstColumn : 0;
+  let col = table.col + 2;
+  order.forEach((c, i) => {
+    if (first && i >= fixed && i < first) {
+      c.col = col;
+      c.visible = false;
+      return;
+    }
+    c.col = col;
+    c.visible = table.width === 0 || col + c.width <= table.col + table.width;
+    col += c.width + 1;
+  });
+}
+
 /** Table control while its items arrive. */
 interface TableBuild {
   table: DiagTable;
@@ -442,6 +464,12 @@ export class ClassicState {
           this.build.table.totalRows = i32(0);
           this.build.table.visibleRows = i32(2);
           this.build.firstRow = i32(4);
+          // The sixth: the first column on show after the fixed ones when SAP GUI scrolled the table sideways
+          // (FB50 scrolled to Assignment, its column 9, gave 9).
+          if (v.length >= 24 && i32(5) > 0 && i32(5) < this.build.table.columns.length) {
+            this.build.table.firstColumn = i32(5);
+            layoutColumns(this.build.table);
+          }
         }
         this.scrollOf = undefined;
         return;
@@ -934,13 +962,10 @@ export class ClassicState {
       const it = iconText(clean(titles[c] ?? ""));
       table.columns.push({ index: c, position: position.get(c) ?? c, name: "", title: it.text, width: u16(widthsAt + 2 * c), col: 0, visible: false, ...(it.tooltip ? { tooltip: it.tooltip } : {}) });
     }
-    // Where each column starts: after the row selector, one cell between columns.
-    let col = table.col + 2;
-    for (const c of [...table.columns].sort((a, b) => a.position - b.position)) {
-      c.col = col;
-      c.visible = table.width === 0 || col + c.width <= table.col + table.width;
-      col += c.width + 1;
-    }
+    // Bytes 15-16: the columns that stay on show when the table scrolls sideways (FB50's items: 5, the first five
+    // SAP GUI shows left of its divider; VA01's: 2; MM03's view list, all of its columns).
+    table.fixedColumns = Math.min(u16(15), count);
+    layoutColumns(table);
     if (this.carried.size) w.tables = w.tables.filter((x) => !(this.carried.has(x) && x.name === table.name));
     w.tables.push(table);
     this.build = { table, refs: new Map(), firstRow: 0 };
@@ -1002,7 +1027,9 @@ export class ClassicState {
     if (t > tokens.length) this.note(`table ${b.table.name}: a row has fewer values than cells`);
     // The row's line on show (1-based) is its screen row under the column titles; the table's line is that plus the scrolling.
     const line = b.line?.index ?? b.table.rows.length + 1;
-    b.table.rows.push({ index: b.firstRow + line - 1, row: b.table.row + line, empty: cells.every((c) => c.hidden || (!c.text && !c.checked)), cells });
+    // The table's area starts with its title, when it has one, then the column headers: FB50's items (title "0 Items")
+    // and VA01's ("All items") show their first line two rows below the area's top (checked live, 2026-11-25).
+    b.table.rows.push({ index: b.firstRow + line - 1, row: b.table.row + line + (b.table.title ? 1 : 0), empty: cells.every((c) => c.hidden || (!c.text && !c.checked)), cells });
     delete b.line;
   }
 }

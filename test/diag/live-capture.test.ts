@@ -45,10 +45,10 @@ describe("table controls from a live capture", () => {
     ]);
     const t = s?.windows[0]?.tables[0];
     expect(t?.rows.map((r) => [r.index, r.row, r.empty])).toEqual([
-      [0, 17, false],
-      [1, 18, false],
-      [2, 19, true],
-      [3, 20, true],
+      [0, 18, false],
+      [1, 19, false],
+      [2, 20, true],
+      [3, 21, true],
     ]);
     expect(t).toMatchObject({ totalRows: 2, visibleRows: 4 });
     // The empty entry lines are hidden templates ("______"): never shown as values.
@@ -63,7 +63,7 @@ describe("table controls from a live capture", () => {
   test("VA02 scrolled to its second item: the first line on show is item 20, line 1 of the table", () => {
     const [s] = replay("va02-scrolled.bin");
     const t = s?.windows[0]?.tables[0];
-    expect(t?.rows[0]).toMatchObject({ index: 1, row: 17 });
+    expect(t?.rows[0]).toMatchObject({ index: 1, row: 18 });
     expect(cell(s as DiagScreen, "TCTRL_U_ERF_AUFTRAG", 1, "RV45A-MABNR")).toBe("P-103");
   });
 
