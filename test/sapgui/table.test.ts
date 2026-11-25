@@ -154,6 +154,11 @@ describe("set into a table control's cell", () => {
     expect(acts().at(-1)).toMatchObject({ id: `${TBL}/txtMSICHTAUSW-DYTXT[0,3]` });
     await d.act({ do: "set", id: TBL, row: 0, col: "0", value: "w" });
     expect(acts().at(-1)).toMatchObject({ id: `${TBL}/txtMSICHTAUSW-DYTXT[0,0]` });
+    // As the view's column legend writes it, the cell's id without its place (VK12, live 2026-11-25), or a whole cell id.
+    await d.act({ do: "set", id: TBL, row: 1, col: "txtMSICHTAUSW-DYTXT", value: "u" });
+    expect(acts().at(-1)).toMatchObject({ id: `${TBL}/txtMSICHTAUSW-DYTXT[0,1]` });
+    await d.act({ do: "set", id: TBL, row: 2, col: "txtMSICHTAUSW-DYTXT[0,0]", value: "t" });
+    expect(acts().at(-1)).toMatchObject({ id: `${TBL}/txtMSICHTAUSW-DYTXT[0,2]` });
   });
 
   test("a row below the screen is scrolled to first, then set by its row on screen", async () => {

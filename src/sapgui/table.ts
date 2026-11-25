@@ -35,7 +35,8 @@ export function tableColumn(screen: Screen, table: Control, col: unknown): numbe
     const n = Number(col);
     if (Number.isInteger(n) && n >= 0 && (n < titles.length || cells.some((c) => cellParts(c.id)?.col === n))) return n;
   } else if (typeof col === "string" && col.trim()) {
-    const want = norm(col);
+    // The column as the view's legend writes it: the cell's id without its place, "txtKONP-KBETR" (live, VK12, 2026-11-25).
+    const want = norm(col.trim().replace(/\[\d+,\d+\]$/, "").replace(/^(ctxt|txt|cmb|chk|rad|btn|lbl|pwd)(?=[A-Z0-9_%/]*-|[A-Z])/, ""));
     const byField = cells.find((c) => {
       const field = norm(c.name || (cellParts(c.id)?.field ?? ""));
       return field === want || field.endsWith(`-${want}`);
