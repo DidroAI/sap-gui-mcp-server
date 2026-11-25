@@ -90,7 +90,7 @@ local automation (such as Playwright's MCP bridge) follow the same model.
 ## Building the upload
 
 ```sh
-npm run pack:extension                      # agent-connector-<version>.zip
+npm run pack:extension                      # ui-automation-for-sap-<version>.zip
 npm run pack:extension -- --key key.pem     # first upload only: keeps the id
 ```
 
