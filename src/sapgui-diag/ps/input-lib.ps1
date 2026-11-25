@@ -195,6 +195,16 @@ public static class SapScreen {
     AttachThreadInput(GetCurrentThreadId(), t, false);
     System.Threading.Thread.Sleep(60);
   }
+  [StructLayout(LayoutKind.Sequential)] struct PT { public int x, y; }
+  [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr h, ref PT p);
+  /** Is the text caret on the screen row of a point (within half a row)? A click a dropdown's open list swallowed leaves it where it was. */
+  public static bool CaretAt(IntPtr top, int y, int half) {
+    uint pid; var gi = new GUITHREADINFO(); gi.cb = Marshal.SizeOf(typeof(GUITHREADINFO));
+    if (!GetGUIThreadInfo(GetWindowThreadProcessId(top, out pid), ref gi) || gi.caret == IntPtr.Zero) return false;
+    var p = new PT { x = gi.rcCaret.L, y = (gi.rcCaret.T + gi.rcCaret.B) / 2 };
+    if (!ClientToScreen(gi.caret, ref p)) return true;
+    return Math.Abs(p.y - y) <= half;
+  }
   /** Is a text caret showing in this window's thread? SAP GUI shows one only in a field that takes input. */
   public static bool HasCaret(IntPtr top) {
     uint pid; var gi = new GUITHREADINFO(); gi.cb = Marshal.SizeOf(typeof(GUITHREADINFO));
@@ -492,7 +502,10 @@ function Op-Act($req) {
     $p = Point $a
     [SapScreen]::Click($p[0], $p[1], $false)
     Start-Sleep -Milliseconds 200
+    # A dropdown chosen just before can swallow the first click (its list closes on it): click once more when the caret did not come.
+    if ([SapScreen]::HasCaret($top) -and -not [SapScreen]::CaretAt($top, $p[1], 16)) { [SapScreen]::Click($p[0], $p[1], $false); Start-Sleep -Milliseconds 200 }
     if (-not [SapScreen]::HasCaret($top)) { throw 'NOT_INPUT: no text cursor appeared at this point: it is not a field that takes input' }
+    if (-not [SapScreen]::CaretAt($top, $p[1], 16)) { throw 'NOT_INPUT: the text cursor did not come to this point: nothing was typed' }
     [SapScreen]::Key(0x24, $false, $false, $false)  # Home
     [SapScreen]::Key(0x23, $false, $true, $false)   # Shift+End
     [SapScreen]::Key(0x2E, $false, $false, $false)  # Delete
@@ -513,6 +526,7 @@ function Op-Act($req) {
     # The list takes the typed text a moment after the keys: Enter too soon takes the entry before.
     Start-Sleep -Milliseconds 300
     [SapScreen]::Key(0x0D, $false, $false, $false)
+    Start-Sleep -Milliseconds 300
   }
   else { throw "UNKNOWN_ACTION: $do" }
   Start-Sleep -Milliseconds ([int]$(if ($null -ne $a['settle']) { $a['settle'] } else { 600 }))

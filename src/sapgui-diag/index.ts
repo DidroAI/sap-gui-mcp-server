@@ -41,7 +41,7 @@ import { HostError, MAX_TIMEOUT_MS, powershellExe, PsHost, READ_TIMEOUT_MS } fro
 import type { Transport } from "../sapgui/facts.js";
 import { vkeyNumber } from "../sapgui/keys.js";
 import { type Cells, cellMetrics, cellPoint, cellsFromEnv, type HostWindow, pickWindow, type Rect } from "./geometry.js";
-import { type ComboEntry, type Geometry, type Named, namedControl, type Plan, plainMisuse, planCombo, planGrid, planGridScroll, planGridSet, planPage, planPlain, planScreenScroll, planTableRow, planToolbar, planTree, position, scrollables, scrolledRows, screenScrolls, scrollTarget, type Step, type TreeChange, toolbarKey, untypedKey } from "./plan.js";
+import { type ComboEntry, type Geometry, type Named, namedControl, type Plan, plainMisuse, planCombo, planGrid, planGridScroll, planGridSet, planPage, planPlain, planScreenScroll, planTabOn, planTableRow, planToolbar, planTree, position, scrollables, scrolledRows, screenScrolls, scrollTarget, type Step, type TreeChange, toolbarKey, untypedKey } from "./plan.js";
 import { type Hop, startRouter } from "./router.js";
 import { lookControl } from "./rows.js";
 import { MAYBE_REQUEST_MS, Traffic, type WaitOptions, waitNote, waitOptions } from "./traffic.js";
@@ -937,6 +937,26 @@ export class DiagDriver implements Driver {
     // A table SAP GUI scrolled sideways (a cell reached with Tab): where its cells are is known again with SAP's next screen.
     const step0 = this.conn.steps.get(this.mode) ?? 0;
     const sideways = this.sideways && this.sideways.step === step0 && this.sideways.mode === this.mode ? this.sideways.table : undefined;
+    // The cell the last set reached with Tab still has the cursor: a set further right in its row goes on with Tab.
+    const chain = this.tabCell && this.tabCell.step === step0 && this.tabCell.mode === this.mode && this.tabCell.acts === this.acts ? this.tabCell : undefined;
+    this.acts++;
+    this.tabCell = undefined;
+    if (chain && action.do === "set") {
+      let t: Target | undefined;
+      try {
+        t = resolveTarget(s, action);
+      } catch {
+        t = undefined;
+      }
+      const table = t?.kind === "cell" && t.table === chain.table && t.index === chain.index ? active(s).tables.find((x) => x.name === chain.table) : undefined;
+      const plan = t?.kind === "cell" && table ? planTabOn(table, t.index, chain.column, t.column, t.what, String(action.value ?? "")) : undefined;
+      if (plan && t?.kind === "cell") {
+        const wins = await this.windows(s);
+        plan.note = this.keepTyped(t, String(action.value ?? ""), s).replace("(typed;", "(typed, on with Tab;");
+        this.tabCell = { ...chain, column: t.column, acts: this.acts };
+        return this.run(s, plan, wins, waitOptions(action, this.shared.env, MAX_TIMEOUT_MS), t0);
+      }
+    }
     if (sideways && touchesTable(s, action, sideways))
       throw new ActionError(`SAP GUI scrolled the table ${sideways} sideways to reach a cell, so where its cells are on the screen is not known until SAP's next screen: nothing was done. Send what was typed with Enter ({"do":"key","key":0}) first, then go on in the table.`);
     const scrolledScreen = this.screenMoved && this.screenMoved.step === step0 && this.screenMoved.mode === this.mode && !active(s).modal;
@@ -1032,7 +1052,11 @@ export class DiagDriver implements Driver {
       }
     }
     const before = this.conn.steps.get(this.mode) ?? 0;
-    if (plan.sideways) this.sideways = { table: plan.sideways, step: before, mode: this.mode };
+    if (plan.sideways) {
+      this.sideways = { table: plan.sideways, step: before, mode: this.mode };
+      const t = resolveTarget(s, action);
+      if (t?.kind === "cell") this.tabCell = { table: t.table, index: t.index, column: t.column, step: before, mode: this.mode, acts: this.acts };
+    }
     // The typed values this step sends to SAP: checked on the screen it brings.
     const sent = plan.answer !== "no" && plan.steps.length ? (this.conn.typed.get(this.mode) ?? []).filter((x) => x.step === before) : [];
     const note = await this.run(s, plan, wins, o, t0);
@@ -1050,6 +1074,10 @@ export class DiagDriver implements Driver {
 
   /** The step at which SAP GUI's screen was scrolled with the wheel: its fields' places are known again with the next screen. */
   private screenMoved: { step: number; mode: number } | undefined;
+
+  /** Actions run so far, and the cell the last one reached with Tab (the cursor is there): a set further right in its row goes on with Tab. */
+  private acts = 0;
+  private tabCell: { table: string; index: number; column: number; step: number; mode: number; acts: number } | undefined;
 
   /** The table SAP GUI scrolled sideways in this step, if any. */
   private sideways: { table: string; step: number; mode: number } | undefined;

@@ -50,7 +50,7 @@ export type Step = (
   /** The mouse wheel over a point, `notches` times (negative: down): SAP GUI scrolls a screen taller than its window. */
   | { do: "wheel"; x: number; y: number; notches: number }
   /** A dropdown in one input: click (opens its list), type the entry's text, Enter. `index`: its place in the list. */
-  | { do: "combo"; x: number; y: number; value: string; index?: number }
+  | { do: "combo"; x: number; y: number; value: string; index?: number; fcode?: boolean }
   /** A Windows button by its accessible name or description, inside `within` (screen pixels): BM_CLICK, no mouse. */
   | { do: "press"; name: string; within?: Rect }
 ) & { settle?: number };
@@ -467,7 +467,7 @@ export function planCombo(s: DiagScreen, action: Action, g: Geometry, entries?: 
   const sends = !!e.fcode;
   const index = entry && known ? known.indexOf(entry) : -1;
   return {
-    steps: [{ do: "combo", x, y, value: text, ...(index >= 0 ? { index } : {}), settle: 500 }],
+    steps: [{ do: "combo", x, y, value: text, ...(index >= 0 ? { index } : {}), ...(sends ? { fcode: true } : {}), settle: 300 }],
     note: `chose ${entry ? entryText(entry) : `"${text}"`} in ${n.id}${sends ? "" : "; SAP gets it with the next Enter or function key"}`,
     answer: sends ? "yes" : "no",
     ...(sends ? { confirm: (after: DiagScreen | undefined) => (after ? verdict(after) : undefined) } : { later: verdict }),
@@ -784,6 +784,42 @@ export function tabReach(t: DiagTable, index: number, column: number): { anchor:
     tabs++;
   }
   return { anchor: order[from] as DiagTable["columns"][number], tabs, row: r.row };
+}
+
+/** Input cells between two columns of a table row (after `from`, up to `to` included): the Tab presses from one to the other. Undefined when a cell between is of a kind whose Tab stop is not known, or `to` is not right of `from`. */
+export function tabsBetween(t: DiagTable, index: number, from: number, to: number): number | undefined {
+  const r = t.rows.find((x) => x.index === index);
+  const order = [...t.columns].sort((a, b) => a.position - b.position);
+  const a = order.findIndex((c) => c.index === from);
+  const b = order.findIndex((c) => c.index === to);
+  if (!r || a < 0 || b <= a) return undefined;
+  let tabs = 0;
+  for (let i = a + 1; i <= b; i++) {
+    const cell = r.cells[(order[i] as DiagTable["columns"][number]).index];
+    if (!cell || cell.hidden || !cell.input) continue;
+    if (!TAB_STOPS.has(cell.kind)) return undefined;
+    tabs++;
+  }
+  return tabs || undefined;
+}
+
+/** set in a cell right of the one the cursor was left in by the last set (reached with Tab): on with Tab, no click. */
+export function planTabOn(t: DiagTable, index: number, from: number, to: number, what: string, value: string): Plan | undefined {
+  const tabs = tabsBetween(t, index, from, to);
+  if (!tabs) return undefined;
+  const single = oneLine(value);
+  return {
+    steps: [
+      { do: "vk", vk: VK.TAB, count: tabs, settle: 150 },
+      { do: "vk", vk: VK.HOME, settle: 40 },
+      { do: "vk", vk: VK.END, shift: true, settle: 40 },
+      { do: "vk", vk: VK.DELETE, settle: 40 },
+      { do: "type", value: single.text, settle: 150 },
+    ],
+    note: `typed into ${what}, on with Tab from the cell typed before; SAP gets it with the next Enter or function key`,
+    answer: "no",
+    sideways: t.name,
+  };
 }
 
 export function planPlain(s: DiagScreen, action: Action, target: PlainTarget | undefined, g: Geometry, local?: ReadonlyMap<string, boolean>): Plan {

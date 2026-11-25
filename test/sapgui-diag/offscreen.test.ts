@@ -10,7 +10,7 @@ import type { Action } from "../../src/core/types.js";
 import type { DiagScreen, DiagTable, DiagWindow } from "../../src/diag/index.js";
 import { cellMetrics, cellPoint } from "../../src/sapgui-diag/geometry.js";
 import { resolveTarget } from "../../src/sapgui-diag/index.js";
-import { type Geometry, lastClickRow, planCombo, planPlain, planScreenScroll } from "../../src/sapgui-diag/plan.js";
+import { type Geometry, lastClickRow, planCombo, planPlain, planScreenScroll, planTabOn } from "../../src/sapgui-diag/plan.js";
 
 const cell = (column: number, text: string, kind: "field" | "dropdown" | "checkbox" = "field") => ({ column, text, kind, input: true, hidden: false, ...(kind === "dropdown" ? { key: "", valueList: "0123456789ABCDEF0123456789ABCDEF" } : {}) });
 const TABLE = {
@@ -98,5 +98,16 @@ describe("a screen taller than SAP GUI's window", () => {
     expect(planScreenScroll(sel(0), "next", geo).steps).toMatchObject([{ do: "wheel", notches: -6 }]);
     expect(planScreenScroll(sel(1), "prev", geo).steps).toMatchObject([{ do: "wheel", notches: 6 }]);
     expect(() => planScreenScroll(w, "next", geo)).toThrow("does not scroll");
+  });
+});
+
+describe("a second cell further right in the row the cursor is in", () => {
+  // ME21N: the requisition number, then its item, two columns on (2026-11-25: SAP wants both in one step).
+  test("goes on with Tab from the cell typed before, with no click", () => {
+    const p = planTabOn(TABLE, 0, 2, 3, "MEPO1211-BNFPO in row 0", "10");
+    expect(p?.steps.map((x) => x.do)).toEqual(["vk", "vk", "vk", "vk", "type"]);
+    expect(p?.steps[0]).toMatchObject({ vk: 9, count: 1 });
+    expect(planTabOn(TABLE, 0, 2, 5, "x", "X")?.steps[0]).toMatchObject({ count: 3 });
+    expect(planTabOn(TABLE, 0, 3, 2, "x", "1")).toBeUndefined();
   });
 });
