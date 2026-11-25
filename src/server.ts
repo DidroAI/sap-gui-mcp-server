@@ -92,7 +92,10 @@ function originOf(s: SessionInfo): string | undefined {
 export function sessionLine(s: SessionInfo, i: number, active: boolean): string {
   const sys = [s.system && `${s.system}${s.client ? ` (${s.client})` : ""}`, s.user].filter(Boolean).join(" ");
   const origin = originOf(s);
-  return `${i + 1}. ${active ? "* " : "  "}${s.surface.padEnd(6)} ${sys.padEnd(22)} ${(s.transaction ?? "").padEnd(8)} "${s.title ?? ""}"  [${s.where}]${origin ? `  origin=${origin}` : ""}  id=${s.id}`;
+  // A tab whose system SAP does not show yet (loading, a popup, not logged on) is not one to work in yet.
+  // Fiori: some launchpads never name their system, so only Web GUI, whose status bar always does.
+  const unverified = !s.system && s.surface === "webgui" ? "  (not verified: SAP shows no system yet; call sap_sessions again before using it)" : "";
+  return `${i + 1}. ${active ? "* " : "  "}${s.surface.padEnd(6)} ${sys.padEnd(22)} ${(s.transaction ?? "").padEnd(8)} "${s.title ?? ""}"  [${s.where}]${origin ? `  origin=${origin}` : ""}  id=${s.id}${unverified}`;
 }
 
 const place = (s: SessionInfo) => `${s.system ?? "?"}${s.client ? `/${s.client}` : ""}${s.transaction ? `, ${s.transaction}` : ""}${s.title ? ` ("${s.title}")` : ""}`;
@@ -626,13 +629,17 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
                   ? `Opened ${r.system}; SAP logged on by itself (single sign-on).`
                   : `Opened ${r.system}. ${r.message || "SAP shows its logon page and no password is saved: ask the user to log on in the tab that is now in front, then call sap_sessions."}`;
           if (r.state === "needs_user") return text(head);
-          // The tab is shared again once SAP's logon page is gone: find its session.
+          // An extension older than newSession reuses the open tab: said as a failure, never as a new session.
+          if (newSession && r.state === "already")
+            return fail(`${head} No new session was opened: the Chrome extension reused the open tab, so it does not know newSession yet. Ask the user to update the extension (npx -y sap-ui-automation extension install, then reload it in chrome://extensions).`);
+          // The tab is shared again once SAP's logon page is gone: find its session, and wait until SAP shows who is logged on.
           const id = r.targetId ? `chrome:${r.targetId}` : undefined;
           let info: SessionInfo | undefined;
-          for (let i = 0; i < 20 && !info; i++) {
+          for (let i = 0; i < 20; i++) {
             const { sessions } = await registry.discover();
             info = sessions.find((s) => s.id === id);
-            if (!info) await new Promise((res) => setTimeout(res, 500));
+            if (info && (info.system || info.surface !== "webgui")) break;
+            await new Promise((res) => setTimeout(res, 500));
           }
           if (!info) {
             // SAP_ALLOW_ORIGINS narrows what the server looks at, below what the extension shares.
@@ -642,9 +649,20 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
             return text(`${head} Its tab is not listed as a SAP session yet: call sap_sessions in a moment.`);
           }
           registry.active = info.id;
+          // New or reused, its id, and whether SAP shows the system, client and user the logon was for.
+          const how = r.state === "already" ? "reused (it was open already)" : "new";
+          const shows = [info.system && `${info.system}${info.client ? ` (${info.client})` : ""}`, info.user].filter(Boolean).join(" ");
+          const differs = (r.client && info.client && info.client !== r.client) || (r.user && info.user && info.user.toUpperCase() !== r.user.toUpperCase());
+          const verified = !info.system
+            ? info.surface === "webgui"
+              ? "not verified yet: SAP shows no system, client or user in the tab (still loading, or a popup): call sap_sessions before using it"
+              : "the launchpad names no system (some do not): sap_look shows where it is"
+            : differs
+              ? `SAP shows ${shows}, not the logon's client ${r.client || "?"} and user ${r.user || "?"}: look at the tab before using it`
+              : `verified: SAP shows ${shows}`;
           const { sessions } = await registry.discover();
           const next = newSession ? `Pass session "${info.id}" on every call in this session.` : "The session marked * is the active one: go on with sap_look or sap_act.";
-          return text([head, "", ...sessions.map((s, i) => sessionLine(s, i, s.id === registry.active)), "", next].join("\n"));
+          return text([head, `Session ${info.id}: ${how}; ${verified}.`, "", ...sessions.map((s, i) => sessionLine(s, i, s.id === registry.active)), "", next].join("\n"));
         }),
     );
   }
@@ -816,7 +834,12 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
         await new Promise((r) => setTimeout(r, 500));
       }
       const { v, n } = await note(() => d.look({ compact: true }));
-      return ok(`${n}\nNo new session appeared within 5 s (SAP allows at most 6 per logon): this is still the previous session.${line}\n\n${views.present(session, v, whole)}`, v);
+      // SAP's own answer when the logon has all the sessions it allows (6 by default, rdisp/max_alt_modes).
+      const full = /maximum number of (sap gui )?sessions|maximale anzahl.*modi|nombre maximal de sessions/i.test(v);
+      const why = full
+        ? `SAP refused: this logon has all the sessions it allows. Close one you no longer need${systems ? ", or open another logon with sap_logon and newSession: true (each logon has its own sessions)" : ""}; answer SAP's popup first.`
+        : "No new session appeared within 5 s (SAP allows at most 6 per logon).";
+      return ok(`${n}\n${why} This is still the previous session.${line}\n\n${views.present(session, v, whole)}`, v);
     }
     // A menu entry, a favourite or a tree node can open a transaction no okcode named.
     const after = await d.refresh().catch(() => undefined);

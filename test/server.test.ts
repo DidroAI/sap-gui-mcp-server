@@ -817,6 +817,22 @@ describe("parallel sessions", () => {
     expect(list.text).toMatch(/\* webgui ABA \(800\).*VA03/);
   });
 
+  test('"/o" at SAP\'s session limit: the answer says why, and that this is still the old session', async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA", client: "800", transaction: "SMEN" }, { view: 'WINDOW wnd[1]  "Information"\nwnd[1]/usr/txtMESSTXT1  "Maximum number of SAP GUI sessions reached"' });
+    const r = await call("sap_act", { action: { do: "okcode", value: "/oVA03" } });
+    expect(r.text).toContain("SAP refused: this logon has all the sessions it allows. Close one you no longer need; answer SAP's popup first. This is still the previous session.");
+  }, 20_000);
+
+  test("sap_sessions marks a Web GUI tab SAP shows no system for as not verified", async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA", client: "800", user: "JDOE" });
+    surface.add({ id: "chrome:2", title: "SAP Easy Access" });
+    const lines = (await call("sap_sessions")).text.split("\n");
+    expect(lines[0]).not.toContain("not verified");
+    expect(lines[1]).toContain("id=chrome:2  (not verified: SAP shows no system yet; call sap_sessions again before using it)");
+  });
+
   test("a call keeps to the session it queued for, even when another becomes active while it waits", async () => {
     const { surface, call } = await setup();
     surface.add({ id: "chrome:1", system: "ABA", transaction: "VA01" }, { actMs: 200 });

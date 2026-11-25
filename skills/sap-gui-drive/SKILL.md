@@ -46,7 +46,7 @@ do by hand, under their authorisations.
   from the list rather than inventing a value.
 - **Transactions:** `{"do":"okcode","value":"/nVA03"}` leaves the current
   transaction and starts another (unsaved input is lost);
-  `/oVA03` opens it in a new session (SAP GUI). In a Fiori tab, open an app
+  `/oVA03` opens it in a new session (SAP GUI and Web GUI). In a Fiori tab, open an app
   with `{"do":"open","app":"#PurchaseOrder-manage"}`; an okcode with an
   intent (`/nPurchaseOrder-manage`, `#X-y`) does the same, and `/n` goes to
   the launchpad's home page.
@@ -70,6 +70,29 @@ do by hand, under their authorisations.
 - **Back without saving:** F3 (`key 3`) goes back, F12 (`key 12`) cancels.
   If SAP asks whether to save, answer **No** unless the user asked you to
   save.
+
+## Several sessions at once
+
+When the task has independent parts (look up one order while creating
+another, the same check in two systems), work them in parallel, one session
+per part:
+
+1. **Get one session per part.** `/o<tcode>` opens another session of the
+   same logon; `sap_logon` with `"newSession": true` opens one in a new
+   window, on the same system or another (a logon has at most 6 sessions).
+   Use a session only when its answer says `new` or `reused` and
+   `verified` (or `sap_sessions` shows its system, client and user): a tab
+   marked "not verified" is still loading or shows a popup.
+2. **Pass its `session` id on every call**, never rely on the active one.
+   Calls on different sessions run at the same time; calls on one session
+   run in order.
+3. **Send the independent calls before waiting on any**, and keep the
+   dependent steps of each part in order in its own session.
+4. **Check each answer against its own part** (transaction, document
+   number in the status bar) and report each part as it finishes, so that
+   one stuck session does not hide another one's result.
+5. Asked to show that it ran in parallel: note when you sent each call and
+   when its answer came.
 
 ## Writing to SAP
 

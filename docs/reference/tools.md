@@ -99,7 +99,14 @@ even if another one becomes the active one meanwhile. To get more sessions:
 - with the Chrome extension, `sap_logon` with `newSession: true` opens a
   system in a new window and logs on there, even when it is open already,
   for the same system or another one. SAP may ask about the user's other
-  logons; the agent asks the user, as for any logon.
+  logons; the agent asks the user, as for any logon. Its answer says
+  whether the session is `new` or `reused`, its id, and whether SAP shows
+  the logon's system, client and user (`verified`).
+
+A Web GUI tab where SAP shows no system yet (still loading, or a popup) is
+marked "not verified" in the list: it is not one to work in yet. At SAP's
+limit of sessions per logon (6 by default), `/o` says so; another logon
+with `newSession` has sessions of its own.
 
 ## sap_use
 

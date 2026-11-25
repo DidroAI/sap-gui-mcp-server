@@ -12,6 +12,8 @@ change the tools or the view format.
   different from SAP's": the panel keeps the window's focus, so the logon page
   never had it and the extension refused to type. The logon tab now gets focus
   for typing.
+- Save (key 11) in Web GUI presses the Save button: Chrome could keep
+  Ctrl+S for itself, and the key did nothing.
 
 ### Changed (after 0.1.0)
 
@@ -22,6 +24,14 @@ change the tools or the view format.
   into the new browser window, as in SAP GUI. A call that waits for its
   session's turn keeps to that session, even when another one becomes the
   active one meanwhile.
+- `sap_logon` says whether the session is new or reused, its id, and
+  whether SAP shows the logon's system, client and user. An extension too
+  old for `newSession` is an error, not a reused tab that looks new.
+- `sap_sessions` marks a Web GUI tab SAP shows no system for yet as not
+  verified. At SAP's limit of sessions per logon, `/o` says so and points to
+  another logon.
+- The `sap-gui-drive` skill has a section on working in several sessions at
+  once.
 - The SAP window opens on an empty tab the first time, instead of a local
   page; after that it opens the last SAP address, as before.
 - `setup`, `doctor` and the error texts print commands as `npx -y
