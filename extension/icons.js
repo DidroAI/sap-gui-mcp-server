@@ -31,12 +31,18 @@ export const ICONS = {
   sso: svg(o("M12 3.5l7 2.750V12c0 4.250-3 7-7 8.500C8 19 5 16.250 5 12V6.250z")),
   person: svg(ring(12, 8, 3.75) + o("M4.5 20c1-3.500 3.750-5.500 7.500-5.500s6.500 2 7.500 5.500")),
   spinner: svg('<path fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" d="M20.5 12a8.5 8.5 0 1 1-5.800-8.060"/>'),
-  // The product's mark: a round ink seal with a lowercase "a" (automation) and a green dot, the agent at work. Ours, not SAP's.
+  // The product's mark: a soft pointer lit from inside, on a navy tile with a blue glow beneath it.
+  // Ours, not SAP's: no SAP artwork, not SAP's blue. Colours come from panel.css (the mark-* tokens).
   mark: svg(
-    '<circle class="mark-tile" cx="64" cy="64" r="63"/>' +
-      '<circle class="mark-glyph" cx="58" cy="71" r="19" stroke-width="11"/>' +
-      '<path class="mark-glyph" d="M77 50v41" stroke-width="11" stroke-linecap="round"/>' +
-      '<circle class="mark-dot" cx="94" cy="38" r="9"/>',
+    '<defs>' +
+      '<linearGradient id="mk-tile" x1="0" y1="0" x2="0" y2="1"><stop class="mk-t0" offset="0"/><stop class="mk-t1" offset="1"/></linearGradient>' +
+      '<radialGradient id="mk-glow" cx="50%" cy="55%" r="50%"><stop class="mk-g0" offset="0"/><stop class="mk-g1" offset="1"/></radialGradient>' +
+      '<radialGradient id="mk-ptr" cx="38%" cy="30%" r="75%"><stop class="mk-p0" offset="0"/><stop class="mk-p1" offset=".35"/><stop class="mk-p2" offset=".7"/><stop class="mk-p3" offset="1"/></radialGradient>' +
+      '</defs>' +
+      '<rect x="2" y="2" width="124" height="124" rx="30" fill="url(#mk-tile)"/>' +
+      '<rect class="mark-edge" x="2.5" y="2.5" width="123" height="123" rx="29.5"/>' +
+      '<circle cx="66" cy="70" r="52" fill="url(#mk-glow)"/>' +
+      '<path d="M38 36L94 58L68 68L58 94Z" fill="url(#mk-ptr)" stroke="url(#mk-ptr)" stroke-width="14" stroke-linejoin="round"/>',
     "0 0 128 128",
   ),
 };

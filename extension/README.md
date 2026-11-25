@@ -273,5 +273,5 @@ action, one deep green for the agent's presence, and a warm dark theme that
 follows the system's. The typeface is DM Sans, with Geist Mono for SAP's codes
 (both bundled in `fonts/` under the SIL Open Font License, see
 `fonts/DMSans-OFL.txt` and `fonts/GeistMono-OFL.txt`; nothing is fetched). Its
-icons and mark (a round seal with an "a") are drawn for this extension; no SAP
+icons and mark (a soft lit pointer on a navy tile) are drawn for this extension; no SAP
 artwork.

@@ -12,6 +12,7 @@
    Shape     12 px on surfaces, 8 px on controls, 5 px on small labels. The mark and dots are round.
    Depth     Hairlines in warm grey; the systems are one grouped list on the paper. What is being
              edited or floats (the form, the menu) lifts with a soft shadow.
+   Mark      A soft pointer lit from inside, on a navy tile: the one place blue appears.
    Icons     One set on a 24 grid, 1.75 stroke, round caps and joins.
    Dark      Warm charcoal, not black: lifted enough to read at a glance, the primary button turns paper, the green
              brightens.
@@ -49,9 +50,13 @@
   --danger-soft: #f8e9e3;
   --danger-line: #e5b5a8;
   --tile: #ebe5d8;
-  --mark-tile: #1d1b17;
-  --mark-glyph: #fdfbf6;
-  --mark-dot: #6fae8c;
+  --mark-tile-top: #17233b;
+  --mark-tile-bottom: #0b1222;
+  --mark-glow: #5b9af5;
+  --mark-light: #f4f8ff;
+  --mark-ice: #bcd8ff;
+  --mark-azure: #5b9af5;
+  --mark-deep: #2a5fc9;
   --shimmer: #b3ac9d;
   --font: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -90,9 +95,6 @@
     --danger-soft: #3d2621;
     --danger-line: #7a4134;
     --tile: #3d3832;
-    --mark-tile: #f5f1e8;
-    --mark-glyph: #1d1b17;
-    --mark-dot: #2f6b4f;
     --shimmer: #7a7366;
     color-scheme: dark;
   }
@@ -131,9 +133,15 @@ svg { display: block; width: 16px; height: 16px; }
 
 .bar { height: 52px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 12px; }
 .mark svg { width: 24px; height: 24px; }
-.mark-tile { fill: var(--mark-tile); }
-.mark-glyph { fill: none; stroke: var(--mark-glyph); }
-.mark-dot { fill: var(--mark-dot); }
+.mk-t0 { stop-color: var(--mark-tile-top); }
+.mk-t1 { stop-color: var(--mark-tile-bottom); }
+.mk-g0 { stop-color: var(--mark-glow); stop-opacity: 0.6; }
+.mk-g1 { stop-color: var(--mark-glow); stop-opacity: 0; }
+.mk-p0 { stop-color: var(--mark-light); }
+.mk-p1 { stop-color: var(--mark-ice); }
+.mk-p2 { stop-color: var(--mark-azure); }
+.mk-p3 { stop-color: var(--mark-deep); }
+.mark-edge { fill: none; stroke: var(--mark-light); stroke-opacity: 0.08; }
 .product { flex-grow: 1; display: flex; align-items: baseline; gap: 5px; min-width: 0; white-space: nowrap; }
 .product-name { font-size: 14.5px; font-weight: 600; letter-spacing: -0.02em; }
 .product-for { font-size: 14px; color: var(--muted); letter-spacing: -0.01em; }
