@@ -228,3 +228,24 @@ describe("sapgui: typing into fields does not read the screen again (FB50, live 
     expect(reads()).toBe(2);
   });
 });
+
+describe("sapgui: a table's dropdown cell and a pressed tab (FB50, MM02, live 2026-11-25)", () => {
+  const T = "wnd[0]/usr/tblSAPLFSKBTABLE";
+  const screen = one([
+    { id: "wnd[0]/usr/tabsTABSPR1/tabpSP12", type: "GuiTab", name: "SP12", text: "MRP 1" },
+    { id: T, type: "GuiTableControl", name: "SAPLFSKBTABLE", rowCount: 16, visibleRowCount: 2, firstRow: 0, columns: ["G/L acct", "D/C"] },
+    { id: `${T}/ctxtACGL_ITEM-HKONT[1,0]`, type: "GuiCTextField", name: "ACGL_ITEM-HKONT", text: "", changeable: true },
+    { id: `${T}/cmbACGL_ITEM-SHKZG[3,0]`, type: "GuiComboBox", name: "ACGL_ITEM-SHKZG", key: "", entries: [["S", "Debit"], ["H", "Credit"]], changeable: true },
+  ]);
+  test("combo with the table, row and col chooses the cell's entry", async () => {
+    const { d, acts } = await on(screen);
+    await d.act({ do: "combo", id: "tblSAPLFSKBTABLE", row: 0, col: "cmbACGL_ITEM-SHKZG", key: "S" });
+    expect(acts).toEqual([{ do: "combo", id: `${T}/cmbACGL_ITEM-SHKZG[3,0]`, key: "S" }]);
+  });
+  test("press on a tab selects it", async () => {
+    const { d, acts } = await on(screen);
+    expect(await d.act({ do: "press", id: "tabpSP12" })).toBe("select wnd[0]/usr/tabsTABSPR1/tabpSP12");
+    expect(acts).toEqual([{ do: "select", id: "wnd[0]/usr/tabsTABSPR1/tabpSP12" }]);
+    expect((await d.assess({ do: "press", id: "tabpSP12" })).risk).toBe("navigate");
+  });
+});

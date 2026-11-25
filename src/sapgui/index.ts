@@ -359,6 +359,8 @@ class SapguiDriver implements Driver {
         // A click on a grid's cell (live: "click" with row and col on FB02's line items) puts the cursor there and selects the row.
         if (target.type === "GuiShell" && target.sub === "GridView" && action.row !== undefined) return this.act({ ...action, do: action.col === undefined ? "select" : "grid", how: "select" });
         if (target.type === "GuiTableControl" && action.row !== undefined) return this.act({ ...action, do: "grid", how: action.col === undefined ? "select" : "cell" });
+        // A tab is clicked to open it: that is "select" (live, MM02's tabs, 2026-11-25).
+        if (target.type === "GuiTab") return this.act({ ...action, do: "select" });
         if (target.type !== "GuiButton") throw new ActionError(`${id} is a ${target.type}, not a button: use "select" for a tab or a menu entry, "set" for a field.`);
         return this.run({ do: doing, id }, `${doing} ${id}`, timeoutMs);
       case "select": {
@@ -391,6 +393,12 @@ class SapguiDriver implements Driver {
         return this.run({ do: "check", id, value }, `${value ? "checked" : "unchecked"} ${id}`, timeoutMs);
       }
       case "combo": {
+        // A dropdown in a table control's cell, by row and column (live, FB50's D/C column, 2026-11-25).
+        if (target.type === "GuiTableControl")
+          return this.tableAct(target, action, (cell) => {
+            const { row: _row, col: _col, ...rest } = action;
+            return this.act({ ...rest, id: cell.id });
+          }, timeoutMs);
         if (target.type !== "GuiComboBox") throw new ActionError(`${id} is a ${target.type}, not a dropdown.`);
         const entries = target.entries ?? [];
         // No key: the entries, and nothing is chosen.
