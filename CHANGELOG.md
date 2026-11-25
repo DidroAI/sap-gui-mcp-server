@@ -37,6 +37,10 @@ change the tools or the view format.
     click point of a row was at its upper edge: clicks into item tables
     missed. A row under the window's scroll bars is refused, with the scroll
     that brings it up.
+  - A step whose answer goes through more than one screen keeps the status
+    messages of the screens before the last: FB50's "Document ... was
+    posted" was replaced by the next screen's error, and the agent posted
+    again.
   - When SAP GUI shows a popup the traffic did not describe, the refusal
     says so and how to close it.
 

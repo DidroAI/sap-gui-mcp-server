@@ -35,7 +35,7 @@ import { join } from "node:path";
 import { ONE_LINE_NOTE, oneLine } from "../core/action.js";
 import { ActionError, type Action, type Assessment, type DoctorCheck, type Driver, type LookOptions, type SessionInfo, type Surface } from "../core/types.js";
 import { CLOSES_SESSIONS, commitCode, commitWord, isLogonScreen, LOGON_REFUSAL, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
-import { type DiagControl, DiagDecoder, type DiagElement, type DiagKey, type DiagScreen, type DiagWindow, diagView, menuView } from "../diag/index.js";
+import { type DiagControl, DiagDecoder, type DiagElement, type DiagKey, type DiagScreen, type DiagWindow, diagView, menuView, statusLine } from "../diag/index.js";
 import { notationNote } from "../core/notation.js";
 import { HostError, MAX_TIMEOUT_MS, powershellExe, PsHost, READ_TIMEOUT_MS } from "../sapgui/host.js";
 import type { Transport } from "../sapgui/facts.js";
@@ -63,6 +63,8 @@ interface Connection {
   steps: Map<number, number>;
   /** Per mode: values typed in SAP GUI that SAP has not received yet (see Typed). */
   typed: Map<number, Typed[]>;
+  /** Per mode: the status bar messages of the last screens, with the step that brought each (passedMessages). */
+  messages?: Map<number, { step: number; line: string }[]>;
 }
 
 interface WindowFacts {
@@ -575,6 +577,23 @@ export function withTyped(s: DiagScreen, typed: Typed[]): DiagScreen {
   return copy;
 }
 
+/**
+ * Status messages of screens a step went through before the last one: SAP can answer with a screen and at
+ * once go on to another (FB50 after posting: "S: Document 100000006 was posted", then the empty entry
+ * screen with "E: Enter valid date"), and the first message would be lost. Said once each, without the
+ * last screen's own.
+ */
+export function passedMessages(kept: readonly { step: number; line: string }[], before: number, last: string | undefined): string[] {
+  const seen = new Set<string>(last ? [last] : []);
+  const out: string[] = [];
+  for (const m of kept) {
+    if (m.step <= before || seen.has(m.line)) continue;
+    seen.add(m.line);
+    out.push(`SAP also showed, on a screen this step went through: ${m.line.replace(/^sbar {2}status {2}/, "")}`);
+  }
+  return out;
+}
+
 /** "0010" and "10", "or" and "OR" are the same value as SAP shows it. */
 const sameValue = (a: string, b: string) => {
   const n = (v: string) => clean(v).toUpperCase().replace(/^0+(?=\d)/, "");
@@ -1012,6 +1031,7 @@ export class DiagDriver implements Driver {
     // The status bar is the view's (sbar line): the server puts an error, a warning or a termination first.
     const lines = [note];
     if (after && moved && sent.length) lines.push(...typedMisses(sent, after));
+    if (after && moved) lines.push(...passedMessages(this.conn.messages?.get(this.mode) ?? [], before, after.message ? statusLine(after.message) : undefined));
     // A termination message that was confirmed: SAP has ended the transaction, and the answer says so.
     if (after && moved && s.message?.type === "A" && after.message?.type !== "A")
       lines.push(`SAP ended transaction ${s.session.tcode ?? ""} after the termination message "${clean(s.message.text)}": input that was not saved there is lost. The screen below is where SAP went; start the transaction again to retry.`);
@@ -1248,9 +1268,14 @@ export function sapguiDiagSurface(env: Record<string, string | undefined>, optio
     port,
     log,
     onConnection(target) {
-      const c: Connection = { n: n++, target, decoder: new DiagDecoder(), open: true, traffic: new Traffic(), steps: new Map(), typed: new Map() };
-      c.decoder.onScreen = (_s, mode) => {
+      const c: Connection = { n: n++, target, decoder: new DiagDecoder(), open: true, traffic: new Traffic(), steps: new Map(), typed: new Map(), messages: new Map() };
+      c.decoder.onScreen = (screen, mode) => {
         c.steps.set(mode, (c.steps.get(mode) ?? 0) + 1);
+        if (screen.message?.text) {
+          const kept = (c.messages?.get(mode) ?? []).slice(-9);
+          kept.push({ step: c.steps.get(mode) ?? 0, line: statusLine(screen.message) });
+          c.messages?.set(mode, kept);
+        }
         c.traffic.screen(mode);
       };
       c.decoder.onTrouble = (mode) => c.traffic.trouble(mode);
