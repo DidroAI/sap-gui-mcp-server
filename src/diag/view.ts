@@ -160,6 +160,25 @@ function listLines(list: DiagList, maxRows: number): string[] {
   return out;
 }
 
+/**
+ * A node's texts. In a column tree whose items are named "C <n>" (MMBE's stock overview: "C          1" is the
+ * first column after the hierarchy), each value goes with its column's heading: "Full | Unrestricted use=312,000 |
+ * Reserved=100,000". Otherwise the distinct texts.
+ */
+function treeTexts(n: { text: string; items: Record<string, string> }, headers: string[]): string {
+  const entries = Object.entries(n.items);
+  const numbered = headers.length > 1 && entries.length > 1 && entries.every(([k]) => k.startsWith("&") || /^C\s*\d+$/.test(k));
+  if (!numbered) return [...new Set([n.text, ...entries.map(([, v]) => v)].map(one).filter(Boolean))].join(" | ");
+  const parts = [one(n.text)];
+  for (const [k, v] of entries) {
+    const i = /^C\s*(\d+)$/.exec(k);
+    if (!i || !one(v)) continue;
+    const head = headers[Number(i[1])];
+    parts.push(head ? `${one(head)}=${one(v)}` : one(v));
+  }
+  return parts.filter(Boolean).join(" | ");
+}
+
 /** The most nodes of a tree shown whole, closed folders included. */
 const WHOLE_TREE = 40;
 
@@ -190,7 +209,7 @@ function controlLines(c: DiagControl, maxRows: number): string[] {
     const on = new Set(shown);
     for (const n of (whole ? c.tree.nodes : shown).slice(0, budget)) {
       if (n.hidden) continue;
-      const texts = [...new Set([n.text, ...Object.values(n.items)].map(one).filter(Boolean))].join(" | ");
+      const texts = treeTexts(n, c.tree.headers);
       // Keys are written without SAP's leading blanks ("          1" is {1}); the actions take them either way.
       out.push(`  ${"  ".repeat(n.depth)}${n.folder ? (n.expanded ? "[-] " : "[+] ") : ""}${texts || "(no text)"}${n.key === c.tree.selected ? " (selected)" : ""}${n.disabled ? ` ${GREYED}` : ""}${on.has(n) ? "" : " (in a closed folder)"}  {${n.key.trim()}}`);
     }

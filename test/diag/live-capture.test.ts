@@ -13,6 +13,7 @@ import type { DiagScreen } from "../../src/diag/screen.js";
 import { diagView } from "../../src/diag/view.js";
 import type { Geometry } from "../../src/sapgui-diag/plan.js";
 import { planTree } from "../../src/sapgui-diag/plan.js";
+import { findTarget } from "../../src/sapgui-diag/index.js";
 
 function replay(name: string): DiagScreen[] {
   const buf = readFileSync(join(import.meta.dir, "../fixtures/diag", name));
@@ -74,6 +75,11 @@ describe("table controls from a live capture", () => {
     expect(t?.columns.find((c) => c.name === "MEPO1211-EBELP")?.title).toBe("Itm");
     expect(["MEPO1211-EBELP", "MEPO1211-EMATN", "MEPO1211-TXZ01", "MEPO1211-MENGE", "MEPO1211-MEINS"].map((c) => cell(s as DiagScreen, "TC_1211", 0, c))).toEqual(["10", "100-100", "Casings", "5", "PC"]);
     expect(t?.rows[0]?.cells[0]).toMatchObject({ kind: "button", fcode: "MEPO1211MSG" });
+    // A button's or a tab's function code is taken without its braces, as agents write it.
+    for (const [id, what] of [["MEV4000BUTTON", 'button "Collapse Header Ctrl+F5"'], ["{MEV4000BUTTON}", 'button "Collapse Header Ctrl+F5"'], ["TABHDT10", 'tab "Org. Data"']] as const) {
+      const f = findTarget(s as DiagScreen, { do: "press", id });
+      expect("target" in f && f.target.what).toBe(what);
+    }
     const bsart = s?.windows[0]?.elements.find((e) => e.name === "MEPO_TOPLINE-BSART");
     expect(bsart).toMatchObject({ kind: "dropdown", key: "NB", fcode: "MEDOCTYPE" });
   });
@@ -110,8 +116,9 @@ describe("other screens from a live capture", () => {
   test("MMBE: the stock tree shows its closed levels, and a key is taken without SAP's leading blanks", () => {
     const [s] = replay("mmbe-tree.bin");
     const v = diagView(s as DiagScreen);
-    expect(v).toContain("  [+] Full | 40,000 (selected)  {1}");
-    expect(v).toContain("        0001 Materiallager | 40,000 (in a closed folder)  {4}");
+    // Each value with its column's heading: "Unrestricted use", not a bare number among fourteen columns.
+    expect(v).toContain("  [+] Full | Unrestricted use=40,000 (selected)  {1}");
+    expect(v).toContain("        0001 Materiallager | Unrestricted use=40,000 (in a closed folder)  {4}");
     const tree = s?.windows[0]?.controls.find((c) => c.tree);
     expect(tree?.tree?.nodes[0]?.key).toBe("          1");
     const geo: Geometry = { at: () => [100, 100], cells: { cw: 8, ch: 20, x0: 0, y0: 0 } as never, controls: [{ cls: "SAPTreeList", rect: [100, 100, 400, 300] }] };
