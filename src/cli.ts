@@ -31,14 +31,15 @@ const HELP = `sap-ui-automation ${SERVER_VERSION}: an MCP server that sees and d
 
 Usage:
   sap-ui-automation            start the stdio server (what MCP clients run)
-  sap-ui-automation setup [claude-code|codex|claude-desktop|cursor|windsurf|vscode] [--dry-run]
-                                add the server to the MCP clients found on this machine
+  sap-ui-automation setup [claude-code|codex|claude-desktop|cursor|windsurf|vscode] [--extension] [--no-skills] [--dry-run]
+                                add the server to the MCP clients found on this machine, and its skills to
+                                Claude Code, Codex and Cursor (--no-skills: not the skills)
   sap-ui-automation init [--yes] [--force] [--dry-run]
                                 set this project up: sap.config.ts, sap-tests/example.sap.ts, agent skills,
                                 MCP clients, .gitignore (asks a few questions; --yes takes the defaults)
   sap-ui-automation install --skills [--target claude|codex|cursor|all] [--global] [--dry-run]
                                 copy the bundled agent skills to .claude/skills, .agents/skills, .cursor/rules
-                                (--global: ~/.claude/skills, ~/.codex/skills)
+                                (--global: ~/.claude/skills, ~/.agents/skills)
   sap-ui-automation doctor     check SAP GUI scripting and Chrome access on this machine
   sap-ui-automation sessions   list the SAP sessions found now
 ${EXTENSION_HELP}
@@ -106,7 +107,7 @@ async function main(argv: string[]): Promise<number> {
   }
   if (cmd === "setup") {
     const only = argv.slice(1).filter((a) => !a.startsWith("--"));
-    const r = setup({ dryRun: argv.includes("--dry-run"), only });
+    const r = setup({ dryRun: argv.includes("--dry-run"), extension: argv.includes("--extension"), skills: !argv.includes("--no-skills"), only });
     console.log(r.lines.join("\n"));
     return 0;
   }

@@ -159,7 +159,12 @@ export interface TableColumn {
 }
 
 /** A table control: its description, field names and, per row, cell descriptions, line numbers and values. `order`: column numbers (1-based) by display position. */
-export function tableControl(o: { program: string; name: string; title: string; columns: TableColumn[]; rows: { values: string[]; hidden?: boolean; readOnly?: boolean }[]; order?: number[]; total?: number }): Buffer[] {
+/**
+ * A table control as SAP sends it: the description, the scrolling item (lines, columns, lines on show, first
+ * column, first line on show, 0), the column names, then per row its cell description (sent again only when it
+ * differs from the one before, as SAP does) and its values. A push button cell is its function code and text.
+ */
+export function tableControl(o: { program: string; name: string; title: string; columns: TableColumn[]; rows: { values: string[]; hidden?: boolean; readOnly?: boolean }[]; order?: number[]; total?: number; first?: number }): Buffer[] {
   const n = o.columns.length;
   const head = Buffer.alloc(60);
   const orderAt = 131;
@@ -181,15 +186,22 @@ export function tableControl(o: { program: string; name: string; title: string; 
   const order = o.order ?? o.columns.map((_, i) => i + 1);
   const body = cat(head, o.program.padEnd(40), o.name.padEnd(30), [0], Buffer.concat(order.map(u16)), Buffer.alloc(2 * (n + 2), 0x51), Buffer.concat(o.columns.map((c) => u16(c.width))), [o.title.length], o.title.padEnd(60), [0], Buffer.concat(o.columns.map((c) => cat(c.title, [0]))));
   body.writeUInt16BE(body.length, 0);
-  const out = [idItem(0x09, 0x0e, body, true), idItem(0x0c, 0x02, cat(u32(1), u32(n), u32(o.rows.length), u32(0), u32(0), u32(0)), true), idItem(0x09, 0x0d, Buffer.concat(o.columns.map((c) => cat(c.name, [0]))), true)];
+  const out = [idItem(0x09, 0x0e, body, true), idItem(0x0c, 0x02, cat(u32(o.total ?? o.rows.length), u32(n), u32(o.rows.length), u32(0), u32(o.first ?? 0), u32(0)), true), idItem(0x09, 0x0d, Buffer.concat(o.columns.map((c) => cat(c.name, [0]))), true)];
+  let refs = 0;
+  let lastAttr = -1;
   o.rows.forEach((row, r) => {
     const attr = (row.readOnly ? PROTECTED : 0) | (row.hidden ? INVISIBLE : 0);
-    out.push(idItem(0x09, 0x11, Buffer.concat(o.columns.map((c) => cat(u16(r + 1), [c.etype ?? 130, 1, 1, 0, attr | (c.etype === 131 ? PROTECTED : 0), 0x20, 0x10]))), true));
-    out.push(idItem(0x09, 0x05, cat(u16(r + 1), u16(r + 1)), true));
+    if (attr !== lastAttr) {
+      refs = r + 1;
+      lastAttr = attr;
+      out.push(idItem(0x09, 0x11, Buffer.concat(o.columns.map((c) => cat(u16(refs), [c.etype ?? 130, 1, refs, 0, attr | (c.etype === 131 ? PROTECTED : 0), 0x20, 0x10]))), true));
+    }
+    out.push(idItem(0x09, 0x05, cat(u16(r + 1), u16(refs)), true));
     const cells = o.columns.map((c, i) => {
       const v = row.values[i] ?? "";
       if (c.etype === 124) return cat(v, [0, 0]);
       if (c.etype === 126) return cat([1, 0], "FEDCBA9876543210FEDCBA9876543210", [0, 0], v, [0], String(v.length), [0]);
+      if (c.etype === 115) return cat("=", c.name.split("-").pop() ?? "", [0], v.padEnd(c.width), [0]);
       return cat(v.padEnd(c.width), [0], String(c.width), [0], "0", [0]);
     });
     out.push(idItem(0x09, 0x08, Buffer.concat(cells), true));

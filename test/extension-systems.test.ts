@@ -258,6 +258,50 @@ describe("sap_systems and sap_logon", () => {
     expect(r.text).toMatch(/\* webgui +ABA \(800\) JDOE[^\n]*id=chrome:T9/);
   });
 
+  test("sap_logon newSession: a new session, its id, and SAP's system, client and user checked", async () => {
+    let surface!: FakeSurface;
+    const asked: unknown[] = [];
+    const ctx = await setup({
+      list: async () => [ECC],
+      logon: async (_n, o) => {
+        asked.push(o);
+        surface.add({ id: "chrome:T7", system: "ABA", client: "800", user: "JDOE", transaction: "SMEN" });
+        return { system: "ECC dev", client: "800", user: "JDOE", state: "logged_on", tabId: 7, targetId: "T7" };
+      },
+    });
+    surface = ctx.surface;
+    surface.add({ id: "chrome:T1", system: "ABA", client: "800", user: "JDOE" });
+    const r = await ctx.call("sap_logon", { system: "ECC dev", newSession: true });
+    expect(asked).toEqual([{ newSession: true }]);
+    expect(r.error).toBe(false);
+    expect(r.text).toContain("Session chrome:T7: new; verified: SAP shows ABA (800) JDOE.");
+    expect(r.text).toContain('Pass session "chrome:T7" on every call in this session.');
+  });
+
+  test("sap_logon newSession with an extension that reuses the open tab: an error, not a new session", async () => {
+    const { surface, call } = await setup({ list: async () => [ECC], logon: async () => ({ system: "ECC dev", client: "800", user: "JDOE", state: "already", tabId: 1, targetId: "T1" }) });
+    surface.add({ id: "chrome:T1", system: "ABA", client: "800", user: "JDOE" });
+    const r = await call("sap_logon", { system: "ECC dev", newSession: true });
+    expect(r.error).toBe(true);
+    expect(r.text).toContain("No new session was opened: the Chrome extension reused the open tab");
+    // Without newSession, the open tab is the answer, and said to be reused.
+    expect((await call("sap_logon", { system: "ECC dev" })).text).toContain("Session chrome:T1: reused (it was open already); verified: SAP shows ABA (800) JDOE.");
+  });
+
+  test("sap_logon: a session SAP shows no system for is said to be not verified yet", async () => {
+    let surface!: FakeSurface;
+    const ctx = await setup({
+      list: async () => [ECC],
+      logon: async () => {
+        surface.add({ id: "chrome:T8", title: "SAP Easy Access" });
+        return { system: "ECC dev", client: "800", user: "JDOE", state: "logged_on", tabId: 8, targetId: "T8" };
+      },
+    });
+    surface = ctx.surface;
+    const r = await ctx.call("sap_logon", { system: "ECC dev", newSession: true });
+    expect(r.text).toContain("Session chrome:T8: new; not verified yet: SAP shows no system, client or user in the tab");
+  }, 20_000);
+
   test("sap_logon: the extension's refusal comes back as the error, SAP's message included", async () => {
     const { call } = await setup({
       list: async () => [ECC],

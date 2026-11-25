@@ -18,8 +18,8 @@ type Env = Record<string, string | undefined>;
 /** An MV3 service worker sleeps after 30 s idle; when asleep it reconnects on its next wake-up. */
 const DEFAULT_WAIT_S = 35;
 
-const INSTALL = `Install the Agent Connector for SAP Systems extension: run \`npx -y sap-ui-automation extension install\`, then in Chrome open chrome://extensions, switch on Developer mode, click "Load unpacked" and choose the folder it names.`;
-const PAIR = `Pair it: click the Agent Connector icon in Chrome's toolbar and "Pair with This Computer" (or run \`npx -y sap-ui-automation extension pair\` and paste the code it prints).`;
+const INSTALL = `Install the UI Automation for SAP extension: run \`npx -y sap-ui-automation extension install\`, then in Chrome open chrome://extensions, switch on Developer mode, click "Load unpacked" and choose the folder it names.`;
+const PAIR = `Pair it: click the UI Automation for SAP icon in Chrome's toolbar and Pair in the side panel (or run \`npx -y sap-ui-automation extension pair\` and paste the code it prints).`;
 
 let relay: ExtensionRelay | undefined;
 /** When the relay started listening: the wait for the extension counts from then, not again for every call. */
@@ -52,6 +52,7 @@ export async function extensionRelay(env: Env = process.env): Promise<ExtensionR
     const { SERVER_VERSION } = await import("../../server.js");
     const r = new ExtensionRelay({ code: readOrCreateCode(env).code, version: SERVER_VERSION, ...(port !== undefined ? { port } : {}) });
     await r.start();
+    if (panel) r.setPanel(panel);
     startedAt = Date.now();
     relay = r;
     return r;
@@ -88,11 +89,11 @@ async function connected(r: ExtensionRelay, ms: number, stopOnRefusal = false): 
 /** The one step to take when no extension is connected. `chromeUp`: is Chrome running (undefined: unknown)? */
 function missingStep(info: ExtensionInfo, waitedS: number, chromeUp?: boolean): string {
   if (info.lastRefusal === "code")
-    return `The Agent Connector extension tried to connect with a pairing code that does not match this server's. Ask the user to click the extension's icon in Chrome and "Pair Again" (or run \`npx -y sap-ui-automation extension pair\` and paste the code it prints).`;
-  if (info.lastRefusal === "busy") return "Another sap-ui-automation is connected to the user's Agent Connector extension already (one server at a time). Ask the user to close the other agent app that uses it, then click Reconnect in the extension's Settings.";
-  if (info.attempts > 0) return `The Agent Connector extension reached the server but did not pair. ${PAIR}`;
+    return `The UI Automation for SAP extension tried to connect with a pairing code that does not match this server's. Ask the user to click the extension's icon in Chrome and Pair again (or run \`npx -y sap-ui-automation extension pair\` and paste the code it prints).`;
+  if (info.lastRefusal === "busy") return "Another sap-ui-automation is connected to the user's UI Automation for SAP extension already (one server at a time). Ask the user to close the other agent app that uses it, then click Reconnect in the extension's Settings.";
+  if (info.attempts > 0) return `The UI Automation for SAP extension reached the server but did not pair. ${PAIR}`;
   if (chromeUp === false) return `Google Chrome is not running, so the extension cannot connect. Ask the user to open Chrome (the extension connects within a few seconds), then try again.`;
-  return `No Agent Connector extension connected within ${waitedS} s${chromeUp ? " although Chrome is running" : ""}: it is not installed, switched off in chrome://extensions, or in another Chrome profile. ${INSTALL} Then: ${PAIR}`;
+  return `No UI Automation for SAP extension connected within ${waitedS} s${chromeUp ? " although Chrome is running" : ""}: it is not installed, switched off in chrome://extensions, or in another Chrome profile. ${INSTALL} Then: ${PAIR}`;
 }
 
 /** Is Google Chrome running? undefined when this cannot be told. */
@@ -144,7 +145,7 @@ export async function extensionEndpoint(env: Env = process.env, waitMs: number =
   const left = Math.max(MIN_WAIT_MS, startedAt + waitMs - Date.now());
   if (!(await connected(r, Math.min(waitMs, left)))) throw new Error(missingStep(r.extensionInfo(), Math.round((Date.now() - startedAt) / 1000)));
   const version = /(?:Chrome|Chromium)\/([\d.]+)/.exec(r.extensionInfo().userAgent ?? "")?.[1] ?? "";
-  return { url: r.cdpUrl, kind: "extension", from: `the Agent Connector extension in Chrome${version ? ` ${version}` : ""} (port ${r.port})` };
+  return { url: r.cdpUrl, kind: "extension", from: `the UI Automation for SAP extension in Chrome${version ? ` ${version}` : ""} (port ${r.port})` };
 }
 
 /**
@@ -167,6 +168,20 @@ async function connectedRelay(env: Env, start = false): Promise<ExtensionRelay> 
   throw new Error(missingStep(r.extensionInfo(), Math.round((Date.now() - startedAt) / 1000), up));
 }
 
+/** What the side panel shows of this server; kept for a relay started later. */
+let panel: Record<string, unknown> | undefined;
+
+/** The side panel's view of this server: the agent's name and what it may do. */
+export function panelInfo(info: Record<string, unknown>): void {
+  panel = info;
+  relay?.setPanel(info);
+}
+
+/** One step of the agent for the side panel's activity list; dropped while no relay runs. */
+export function panelActivity(event: Record<string, unknown>): void {
+  relay?.tell(event);
+}
+
 /** The SAP systems registered in the extension: what sap_systems lists and sap_logon opens. */
 export const extensionSystems = {
   list: async (env: Env = process.env): Promise<ExtensionSystem[]> => (await connectedRelay(env)).systems(),
@@ -179,6 +194,8 @@ export function systemsAccess(env: Env) {
     list: () => extensionSystems.list(env),
     logon: (name: string, options?: LogonOptions) => extensionSystems.logon(name, env, options),
     looksAt: (url: string) => originAllowed(url, allowedOrigins(env)),
+    panel: panelInfo,
+    activity: panelActivity,
   };
 }
 
@@ -194,9 +211,9 @@ export async function extensionDoctor(env: Env = process.env, waitMs: number = d
   const left = Math.max(MIN_WAIT_MS, startedAt + waitMs - Date.now());
   if (!(await connected(r, Math.min(waitMs, left), true))) {
     const info = r.extensionInfo();
-    if (info.lastRefusal === "code") return [{ ok: false, check, detail: "the extension is installed but holds another pairing code", fix: 'Click its icon and "Pair Again" (or run `npx -y sap-ui-automation extension pair` and paste the code it prints).' }];
+    if (info.lastRefusal === "code") return [{ ok: false, check, detail: "the extension is installed but holds another pairing code", fix: 'Click its icon and Pair again (or run `npx -y sap-ui-automation extension pair` and paste the code it prints).' }];
     if (info.attempts > 0) return [{ ok: false, check, detail: "the extension is installed but not paired with this server", fix: PAIR }];
-    return [{ ok: false, check, detail: `no Agent Connector extension connected to port ${r.port} within ${Math.round(waitMs / 1000)} s`, fix: `${INSTALL} Then: ${PAIR}` }];
+    return [{ ok: false, check, detail: `no UI Automation for SAP extension connected to port ${r.port} within ${Math.round(waitMs / 1000)} s`, fix: `${INSTALL} Then: ${PAIR}` }];
   }
   const info = r.extensionInfo();
   const version = /(?:Chrome|Chromium)\/([\d.]+)/.exec(info.userAgent ?? "")?.[1];
@@ -232,12 +249,12 @@ export async function stopExtensionRelay(): Promise<void> {
 export function extensionPairCommand(env: Env = process.env): string[] {
   const { code, file } = readOrCreateCode(env);
   return [
-    "Pairing code for the Agent Connector for SAP Systems extension:",
+    "Pairing code for the UI Automation for SAP extension:",
     "",
     `  ${formatCode(code)}`,
     "",
     file ? `It is kept in ${file} (readable only by you).` : "It comes from SAP_EXTENSION_CODE.",
-    "In Chrome, click the Agent Connector extension's icon, open \"Pair with a Code Instead\" and paste the code. Pair once per Chrome profile.",
+    "In Chrome, click the UI Automation for SAP extension's icon, open Pair with a code instead and paste the code. Pair once per Chrome profile.",
     "Not installed yet? Run `npx -y sap-ui-automation extension install`, open chrome://extensions, switch on Developer mode, click \"Load unpacked\" and choose the folder it names.",
   ];
 }

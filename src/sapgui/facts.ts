@@ -38,7 +38,8 @@ export interface Control {
   grid?: { cols: string[]; titles: string[]; rowCount: number; rows: string[][]; first?: number };
   /** `nodes` are the nodes on show from the `first` one on (0 when absent), up to the host's limit. */
   tree?: { shown: number; headers: string[]; nodes: TreeNode[]; first?: number };
-  buttons?: { id: string; text: string; tip: string }[];
+  /** A toolbar's buttons; `type` as SAP GUI names it: Button, Menu, ButtonAndMenu, ... */
+  buttons?: { id: string; text: string; tip: string; type?: string }[];
   /** A shell that could not be read. */
   error?: string;
 }

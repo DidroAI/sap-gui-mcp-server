@@ -136,7 +136,7 @@ more time with `"timeout"` in seconds, up to 600:
 ## How SAP screens behave
 
 A few rules an agent needs, from the
-[`sap-gui-drive` skill](https://github.com/DidroAI/sap-ui-automation/blob/main/skills/sap-gui-drive/SKILL.md):
+[`sap-ui-automation` skill](https://github.com/DidroAI/sap-ui-automation/blob/main/skills/sap-ui-automation/SKILL.md):
 
 - **Fields take effect on Enter.** `set` only types; SAP checks the input
   and fills dependent fields after `{"do":"key","key":0}`. Fill all fields

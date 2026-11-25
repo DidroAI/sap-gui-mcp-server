@@ -32,9 +32,9 @@ Lists are separated by commas or spaces and are not case-sensitive.
 | Variable | Default | Values | Effect |
 | --- | --- | --- | --- |
 | `SAP_SURFACES` | `sapgui,webgui,fiori` on Windows, `webgui,fiori` elsewhere | any of `sapgui`, `webgui`, `fiori` | which kinds of session to look for. Lower case |
-| `SAP_GUI_METHOD` | scripting | `diag` | `diag` reads SAP GUI for Windows from its network traffic instead of scripting (experimental). Any other value means scripting. See [Network reader](../guides/network-reader.md) |
+| `SAP_GUI_METHOD` | `auto` | `auto`, `scripting`, `diag` | how SAP GUI for Windows is read. `auto`: both SAP GUI scripting and the network reader (experimental) run, and the agent works in whichever session it needs. `scripting` or `diag`: only that one, for setups where nobody watches the agent. Any other value is an error at start. See [Network reader](../guides/network-reader.md) |
 | `SAP_CHROME_CDP` | the running Chrome, then Chrome Beta, then Edge, that allows remote debugging | `http://127.0.0.1:9333` | a Chrome DevTools endpoint (`http`, `https`, `ws` or `wss`). Nothing else is tried when it is set. See [Chrome](../guides/chrome.md) |
-| `SAP_BROWSER` | `launch` | `launch`, `attach`, `extension` | `launch`: the server starts Google Chrome with a profile of its own (the SAP window). `attach`: your everyday Chrome or Edge with remote debugging allowed. `extension`: your everyday Chrome through the Agent Connector extension. `SAP_CHROME_CDP` wins over it. See [Chrome](../guides/chrome.md#use-your-everyday-chrome-with-the-extension) |
+| `SAP_BROWSER` | `launch` | `launch`, `attach`, `extension` | `launch`: the server starts Google Chrome with a profile of its own (the SAP window). `attach`: your everyday Chrome or Edge with remote debugging allowed. `extension`: your everyday Chrome through the UI Automation for SAP extension. `SAP_CHROME_CDP` wins over it. See [Chrome](../guides/chrome.md#use-your-everyday-chrome-with-the-extension) |
 | `SAP_EXTENSION_PORT` | first free of 47823–47830 | a port | with `SAP_BROWSER=extension`, the local port where the extension connects |
 
 ## Network reader (`SAP_GUI_METHOD=diag`)

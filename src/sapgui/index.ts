@@ -24,7 +24,7 @@ import { type Action, ActionError, type Assessment, type Driver, type LookOption
 import { isLogonScreen, LOGON_REFUSAL } from "../core/words.js";
 import { assess } from "./assess.js";
 import type { Control, DoctorEngine, DoctorLocal, Screen, SessionFacts, SessionsFacts, Transport } from "./facts.js";
-import { fullView } from "./format.js";
+import { fullView, listsOnly } from "./format.js";
 import { vkeyNumber } from "./keys.js";
 import { HostError, MAX_TIMEOUT_MS, type PowershellPolicy, powershellPolicy, PsHost, READ_TIMEOUT_MS } from "./host.js";
 import { relativeId, resolve, resolveStrict } from "./resolve.js";
@@ -134,7 +134,7 @@ class SapguiDriver implements Driver {
   private async screen(reuse = false): Promise<Screen> {
     if (reuse && this.last && Date.now() - this.last.at < FRESH_MS) return this.last.screen;
     const paged = Object.keys(this.treeFrom).length > 0;
-    const screen = await this.ask<Screen>("screen", paged ? { treeFrom: this.treeFrom } : {});
+    const screen = listsOnly(await this.ask<Screen>("screen", paged ? { treeFrom: this.treeFrom } : {}));
     // A tree that is gone takes its place in the paging with it.
     if (paged && !Object.keys(this.treeFrom).every((id) => screen.windows.some((w) => w.controls.some((c) => c.id === id)))) this.treeFrom = {};
     this.last = { at: Date.now(), screen };
@@ -386,8 +386,19 @@ class SapguiDriver implements Driver {
       case "scroll":
         return this.scroll(target, (action.to ?? "next") as number | string, timeoutMs);
       case "toolbar":
+      {
         if (typeof action.button !== "string") throw new ActionError('toolbar needs "button": the id shown as {<id>}');
-        return this.run({ do: "toolbar", id, button: action.button }, `toolbar button ${action.button} in ${id}`, timeoutMs);
+        // A menu button: "value" is the entry to choose; without it the answer is the menu's entries.
+        const entry = action.value === undefined || action.value === "" ? undefined : String(action.value);
+        this.last = undefined;
+        this.treeFrom = {};
+        const r = await this.ask<{ menu?: [string, string][] }>("act", { action: { do: "toolbar", id, button: action.button, ...(entry ? { menu: entry } : {}) } }, timeoutMs);
+        if (r?.menu)
+          return r.menu.length
+            ? `${action.button} in ${id} is a menu: ${r.menu.map(([, t]) => t).join(", ")}. Choose one with "value", e.g. {"do":"toolbar","id":"${id}","button":"${action.button}","value":"${r.menu[0]?.[1]}"}.`
+            : `${action.button} in ${id} is a menu, and SAP GUI gave none of its entries.`;
+        return entry ? `toolbar button ${action.button} in ${id}, menu entry "${entry}"` : `toolbar button ${action.button} in ${id}`;
+      }
       default:
         throw new ActionError(`Unknown action "${doing}". SAP GUI takes: set, press, key, select, check, combo, okcode, f4, focus, dblclick, tree, grid, toolbar, scroll.`);
     }

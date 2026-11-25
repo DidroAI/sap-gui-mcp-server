@@ -92,7 +92,10 @@ function originOf(s: SessionInfo): string | undefined {
 export function sessionLine(s: SessionInfo, i: number, active: boolean): string {
   const sys = [s.system && `${s.system}${s.client ? ` (${s.client})` : ""}`, s.user].filter(Boolean).join(" ");
   const origin = originOf(s);
-  return `${i + 1}. ${active ? "* " : "  "}${s.surface.padEnd(6)} ${sys.padEnd(22)} ${(s.transaction ?? "").padEnd(8)} "${s.title ?? ""}"  [${s.where}]${origin ? `  origin=${origin}` : ""}  id=${s.id}`;
+  // A tab whose system SAP does not show yet (loading, a popup, not logged on) is not one to work in yet.
+  // Fiori: some launchpads never name their system, so only Web GUI, whose status bar always does.
+  const unverified = !s.system && s.surface === "webgui" ? "  (not verified: SAP shows no system yet; call sap_sessions again before using it)" : "";
+  return `${i + 1}. ${active ? "* " : "  "}${s.surface.padEnd(6)} ${sys.padEnd(22)} ${(s.transaction ?? "").padEnd(8)} "${s.title ?? ""}"  [${s.where}]${origin ? `  origin=${origin}` : ""}  id=${s.id}${unverified}`;
 }
 
 const place = (s: SessionInfo) => `${s.system ?? "?"}${s.client ? `/${s.client}` : ""}${s.transaction ? `, ${s.transaction}` : ""}${s.title ? ` ("${s.title}")` : ""}`;
@@ -248,6 +251,45 @@ export interface SystemsAccess {
   logon(system: string, options?: LogonOptions): Promise<LogonResult>;
   /** May the server look at a tab of this address (SAP_ALLOW_ORIGINS)? Absent: every registered system's. */
   looksAt?(url: string): boolean;
+  /** The extension's side panel: who the agent is and what it may do. */
+  panel?(info: Record<string, unknown>): void;
+  /** One step of the agent, for the side panel's activity list. */
+  activity?(event: Record<string, unknown>): void;
+}
+
+/** The agent's name as people know it, from the client's MCP name ("codex-mcp-client" is Codex). */
+export function agentName(client: { name?: string | undefined; title?: string | undefined } | undefined): string {
+  const n = `${client?.title ?? ""} ${client?.name ?? ""}`;
+  const known: [RegExp, string][] = [
+    [/claude[- ]?code/i, "Claude Code"],
+    [/claude/i, "Claude"],
+    [/codex/i, "Codex"],
+    [/cursor/i, "Cursor"],
+    [/windsurf/i, "Windsurf"],
+    [/visual studio code|vscode|copilot/i, "VS Code"],
+    [/gemini/i, "Gemini"],
+  ];
+  for (const [re, label] of known) if (re.test(n)) return label;
+  return (client?.title || client?.name || "Your agent").slice(0, 40);
+}
+
+/** The label a control has on a view ("Order" for `ctxtVBAK-VBELN  field  Order = ""`), for the side panel's activity. */
+export function labelOn(view: string | undefined, id: unknown): string {
+  if (!view || typeof id !== "string" || !id.trim()) return "";
+  const want = id.trim().replace(/\[\d+,\d+\]$/, "");
+  for (const l of view.split("\n")) {
+    const parts = l.trim().split("  ");
+    const got = (parts[0] ?? "").replace(/\[\d+,\d+\]$/, "");
+    if (got !== want && !got.endsWith(`/${want}`)) continue;
+    const label = (parts[2] ?? "").replace(/\s*=.*$/, "").replace(/^"|"$/g, "").trim();
+    return label.slice(0, 80);
+  }
+  return "";
+}
+
+/** What the side panel's settings say the agent may do: the server's policy, never a secret. */
+export function panelPolicy(policy: Policy): Record<string, unknown> {
+  return { write: policy.write, systems: policy.allowSystems, transactions: policy.allowTcodes, blocked: policy.blockTcodes, logoff: !!policy.allowLogoff };
 }
 
 const KIND_NAME: Record<string, string> = { webgui: "Web GUI", fiori: "Fiori launchpad", other: "SAP" };
@@ -260,7 +302,7 @@ const LOGON_NAME: Record<string, string> = {
 /** What stands from the last logon (ExtensionSystem.issue): the agent must not retry before the user acts. */
 const ISSUE_NAME: Record<string, string> = {
   wrong_password: "SAP refused its saved password: the user updates it in the extension before the next logon",
-  user_locked: "SAP said the user is locked: the user has it unlocked, then logs on from the extension's popup",
+  user_locked: "SAP said the user is locked: the user has it unlocked, then logs on from the extension's side panel",
 };
 
 /** One line per registered system. */
@@ -308,6 +350,23 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       websiteUrl: "https://github.com/DidroAI/sap-ui-automation",
     },
     { instructions: instructions(policy, !!systems) });
+  // The extension's side panel learns who the agent is once the client said its name.
+  const agent = () => agentName(server.server.getClientVersion());
+  if (systems?.panel) {
+    const tellPanel = () => systems.panel?.({ agent: server.server.getClientVersion() ? agent() : "", policy: panelPolicy(policy) });
+    tellPanel();
+    const before = server.server.oninitialized;
+    server.server.oninitialized = () => {
+      before?.();
+      tellPanel();
+    };
+  }
+  /** One step for the side panel: what ran, waits for the user, or was refused. Field values are cut short; the panel is local. */
+  const tell = (info: SessionInfo, action: NormalizedAction, state: "ran" | "waiting" | "refused" | "declined", label = labelOn(views.last(info.id), action.id)) => {
+    if (!systems?.activity) return;
+    const value = action.do === "key" ? String(action.key ?? "") : action.do === "set" || action.do === "okcode" || action.do === "open" || action.do === "combo" ? String(action.value ?? action.app ?? "").slice(0, 80) : "";
+    systems.activity({ state, do: action.do, label, value, transaction: info.transaction ?? "", title: (info.title ?? "").slice(0, 120), system: info.system ?? "", client: info.client ?? "", agent: agent(), at: Date.now() });
+  };
   const session = z.string().optional().describe("number, id, system, transaction or sapgui|webgui|fiori; default: the active one");
   const queue = new SessionQueue();
   /** The data of an answer, when structured output is on; undefined (nothing added) when it is off. */
@@ -380,10 +439,27 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     }
     const seen = n.from === "settings" ? undefined : notationIn(view);
     if (seen?.sign) n = { ...n, sign: seen.sign, spaced: seen.spaced === true, from: "screen" };
+    // A session of the same logon (an /o session) is the same user: it writes numbers and dates the same way.
+    if (!n.sign || !n.date) {
+      const sib = sameLogon(session);
+      if (!n.sign && sib?.sign) n = { ...n, sign: sib.sign, spaced: sib.spaced === true, ...(sib.from ? { from: sib.from } : {}) };
+      if (!n.date && sib?.date) n.date = sib.date;
+    }
     // Fiori writes dates by the browser's locale, not by the user's SAP setting.
     const date = view.startsWith("FIORI") ? undefined : dateFormatOf(view);
     if (date && !n.date) n.date = date;
     if (n.sign || n.date) notations.set(session, n);
+  }
+  /** What another session of the same surface, system, client and user knows of the notation. */
+  function sameLogon(session: string): Notation | undefined {
+    const me = registry.resolve(session);
+    if (!me?.system || !me.client || !me.user) return undefined;
+    for (const [id, n] of notations) {
+      if (id === session || !(n.sign || n.date)) continue;
+      const o = registry.resolve(id);
+      if (o && o.id === id && o.surface === me.surface && o.system === me.system && o.client === me.client && o.user === me.user) return n;
+    }
+    return undefined;
   }
   /** `answer` (which shows `view`, or part of it) with the session's NUMBERS line where it needs one. */
   async function said(d: Driver, session: string, view: string, answer: string): Promise<string> {
@@ -477,9 +553,13 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     return { ...r, content: [{ ...first, text: `${line}\n${first.text}` }, ...r.content.slice(1)] };
   }
 
-  /** Runs `f` when every call before it on the session has ended: one call at a time per session. */
-  async function serial(ref: string | undefined, label: string, f: () => Promise<CallToolResult>): Promise<CallToolResult> {
-    return queue.run(await laneOf(ref), label, async (turn) => withTurn(await f(), turn));
+  /**
+   * Runs `f` when every call before it on the session has ended: one call at a time per session. `f` gets
+   * the session the call queued for, so a sap_use, a logon or a new list while it waits does not move it.
+   */
+  async function serial(ref: string | undefined, label: string, f: (at: string | undefined) => Promise<CallToolResult>): Promise<CallToolResult> {
+    const lane = await laneOf(ref);
+    return queue.run(lane, label, async (turn) => withTurn(await f(lane === "*" ? ref : lane), turn));
   }
 
   server.registerTool(
@@ -488,8 +568,9 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       title: "List open SAP sessions",
       description:
         "The SAP sessions open (SAP GUI windows; Web GUI and Fiori tabs in Chrome); * marks the active one. Needed only with several sessions, or when a tool says none matches. " +
+          "Parallel work: one session per task and its `session` on every call; calls on different sessions run at once, calls on one session wait their turn. An okcode /o<tcode> opens a new session of the same logon. " +
         (systems
-          ? "A system that is not open: sap_systems lists the ones the user registered, sap_logon opens one and logs on."
+          ? "A system that is not open: sap_systems lists the ones the user registered, sap_logon opens one and logs on (newSession: true for another session in a new window)."
           : "None: ask the user to open SAP and log on; this server never logs on."),
       inputSchema: {},
       ...(structured ? { outputSchema: sessionsOutput } : {}),
@@ -510,7 +591,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   async function systemsHint(): Promise<string> {
     try {
       const list = await systems!.list();
-      if (!list.length) return "No system is registered in the Chrome extension either: ask the user to open SAP in Chrome and click Add This SAP Page in the extension's popup (the Agent Connector icon in Chrome's toolbar).";
+      if (!list.length) return "No system is registered in the Chrome extension either: ask the user to open SAP in Chrome and click Add this SAP page in the extension's side panel (the UI Automation for SAP icon in Chrome's toolbar).";
       return `Systems registered in the Chrome extension: ${list.map((x) => x.name).join(", ")}. sap_logon opens one and logs on.`;
     } catch (e) {
       return `(The Chrome extension did not answer: ${(e as Error).message})`;
@@ -530,7 +611,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       () =>
         answer(async () => {
           const list = await systems.list();
-          if (!list.length) return text("No SAP system is registered in the Chrome extension. Ask the user to open their SAP system in Chrome and click Add This SAP Page in the extension's popup (the Agent Connector icon in Chrome's toolbar). Never ask the user for a password.");
+          if (!list.length) return text("No SAP system is registered in the Chrome extension. Ask the user to open their SAP system in Chrome and click Add this SAP page in the extension's side panel (the UI Automation for SAP icon in Chrome's toolbar). Never ask the user for a password.");
           const lines = list.map((x, i) => systemLine(x, i) + (systems.looksAt && !systems.looksAt(x.url) ? " Outside SAP_ALLOW_ORIGINS: this server does not look at its tabs." : ""));
           return text([...lines, "", "sap_logon opens one and logs on. Passwords stay in the extension: this server never sees them, and never asks the user for one."].join("\n"));
         }),
@@ -541,19 +622,20 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       {
         title: "Open a registered SAP system and log on",
         description:
-          "Opens a system registered in the Chrome extension (sap_systems) in a Chrome tab, brings it to the front and logs on as its saved user: the extension types the password into SAP's logon page itself, and this server never sees it. A tab of the system that is logged on already (same client and user) is used as it is. The new session becomes the active one. On a single sign-on system it waits for SAP to log on by itself. When it stops (wrong password, locked user, new password needed, SAP asking about other logons, an identity provider), the answer says what to ask the user: never retry on your own, and never ask the user for a password.",
+          "Opens a system registered in the Chrome extension (sap_systems) in a Chrome tab, brings it to the front and logs on as its saved user: the extension types the password into SAP's logon page itself, and this server never sees it. A tab of the system that is logged on already (same client and user) is used as it is, unless newSession is true: then it opens another session in a new window (for parallel work; SAP may ask about other logons). The new session becomes the active one. On a single sign-on system it waits for SAP to log on by itself. When it stops (wrong password, locked user, new password needed, SAP asking about other logons, an identity provider), the answer says what to ask the user: never retry on your own, and never ask the user for a password.",
         inputSchema: {
           system: z.string().describe("the system's name, as sap_systems lists it"),
           otherLogons: z
             .enum(["keep"])
             .optional()
             .describe('only after the user said so: SAP asks whether to end the user\'s other logons, and "keep" continues without ending them'),
+          newSession: z.boolean().optional().describe("true: another session in a new window, even when one is open"),
         },
-        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
       },
-      ({ system, otherLogons }) =>
+      ({ system, otherLogons, newSession }) =>
         answer(async () => {
-          const r = await systems.logon(system, otherLogons ? { otherLogons } : {});
+          const r = await systems.logon(system, { ...(otherLogons ? { otherLogons } : {}), ...(newSession ? { newSession: true } : {}) });
           const who = `${r.user ? ` as ${r.user}` : ""}${r.client ? `, client ${r.client}` : ""}`;
           const head =
             r.state === "logged_on"
@@ -564,13 +646,17 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
                   ? `Opened ${r.system}; SAP logged on by itself (single sign-on).`
                   : `Opened ${r.system}. ${r.message || "SAP shows its logon page and no password is saved: ask the user to log on in the tab that is now in front, then call sap_sessions."}`;
           if (r.state === "needs_user") return text(head);
-          // The tab is shared again once SAP's logon page is gone: find its session.
+          // An extension older than newSession reuses the open tab: said as a failure, never as a new session.
+          if (newSession && r.state === "already")
+            return fail(`${head} No new session was opened: the Chrome extension reused the open tab, so it does not know newSession yet. Ask the user to update the extension (npx -y sap-ui-automation extension install, then reload it in chrome://extensions).`);
+          // The tab is shared again once SAP's logon page is gone: find its session, and wait until SAP shows who is logged on.
           const id = r.targetId ? `chrome:${r.targetId}` : undefined;
           let info: SessionInfo | undefined;
-          for (let i = 0; i < 20 && !info; i++) {
+          for (let i = 0; i < 20; i++) {
             const { sessions } = await registry.discover();
             info = sessions.find((s) => s.id === id);
-            if (!info) await new Promise((res) => setTimeout(res, 500));
+            if (info && (info.system || info.surface !== "webgui")) break;
+            await new Promise((res) => setTimeout(res, 500));
           }
           if (!info) {
             // SAP_ALLOW_ORIGINS narrows what the server looks at, below what the extension shares.
@@ -580,8 +666,20 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
             return text(`${head} Its tab is not listed as a SAP session yet: call sap_sessions in a moment.`);
           }
           registry.active = info.id;
+          // New or reused, its id, and whether SAP shows the system, client and user the logon was for.
+          const how = r.state === "already" ? "reused (it was open already)" : "new";
+          const shows = [info.system && `${info.system}${info.client ? ` (${info.client})` : ""}`, info.user].filter(Boolean).join(" ");
+          const differs = (r.client && info.client && info.client !== r.client) || (r.user && info.user && info.user.toUpperCase() !== r.user.toUpperCase());
+          const verified = !info.system
+            ? info.surface === "webgui"
+              ? "not verified yet: SAP shows no system, client or user in the tab (still loading, or a popup): call sap_sessions before using it"
+              : "the launchpad names no system (some do not): sap_look shows where it is"
+            : differs
+              ? `SAP shows ${shows}, not the logon's client ${r.client || "?"} and user ${r.user || "?"}: look at the tab before using it`
+              : `verified: SAP shows ${shows}`;
           const { sessions } = await registry.discover();
-          return text([head, "", ...sessions.map((s, i) => sessionLine(s, i, s.id === registry.active)), "", "The session marked * is the active one: go on with sap_look or sap_act."].join("\n"));
+          const next = newSession ? `Pass session "${info.id}" on every call in this session.` : "The session marked * is the active one: go on with sap_look or sap_act.";
+          return text([head, `Session ${info.id}: ${how}; ${verified}.`, "", ...sessions.map((s, i) => sessionLine(s, i, s.id === registry.active)), "", next].join("\n"));
         }),
     );
   }
@@ -598,8 +696,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     ({ session: raw }) =>
       answer(() =>
         leniently(raw, (ref) =>
-          serial(ref, "sap_use", async () => {
-            const { driver, info } = await attach(ref);
+          serial(ref, "sap_use", async (at) => {
+            const { driver, info } = await attach(at);
             registry.active = info.id;
             actShown.delete(info.id);
             const v = await driver.look({ compact: true });
@@ -627,7 +725,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       _meta: ALWAYS_LOAD,
     },
     ({ session: raw, full, diff, id, rows, cols }) =>
-      answer(() => leniently(raw, (ref) => serial(ref, "sap_look", () => look(ref, full, diff, id, rows, cols)))).then(confirmNotice),
+      answer(() => leniently(raw, (ref) => serial(ref, "sap_look", (at) => look(at, full, diff, id, rows, cols)))).then(confirmNotice),
   );
 
   async function look(ref: string | undefined, full: boolean | undefined, diff: boolean | undefined, id: string | undefined, rows: string | undefined, cols: string | undefined): Promise<CallToolResult> {
@@ -660,8 +758,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
 
   /** The screen as it is, whole, after `head`: the answer to "actions":[] and to {"do":"look"} in sap_act. */
   async function current(ref: string | undefined, head: string): Promise<CallToolResult> {
-    return serial(ref, "sap_look", async () => {
-      const { driver, info } = await attach(ref);
+    return serial(ref, "sap_look", async (at) => {
+      const { driver, info } = await attach(at);
       const v = await driver.look({ compact: true });
       actShown.delete(info.id);
       const shown = withStatus(views.present(info.id, v, true), v);
@@ -726,8 +824,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   async function perform(d: Driver, action: NormalizedAction, whole = false, risk?: string, clock?: { t0: number; judged: number; wanted: boolean }): Promise<CallToolResult> {
     const session = d.info.id;
     const a0 = Date.now();
-    // "/oVA03" opens the transaction in a new SAP GUI session: follow it there.
-    const opens = action.do === "okcode" && typeof action.value === "string" && /^\/o\S/i.test(action.value) && d.info.surface === "sapgui";
+    // "/oVA03" opens the transaction in a new session (SAP GUI: a window; Web GUI: a browser window): follow it there.
+    const opens = action.do === "okcode" && typeof action.value === "string" && /^\/o\S/i.test(action.value) && (d.info.surface === "sapgui" || d.info.surface === "webgui");
     const before = opens ? new Set((await registry.discover()).sessions.map((s) => s.id)) : undefined;
     // While a recording is on, an action that works becomes a step of it.
     const done = shortNote(await counted(session, () => recorder.act(d, action, risk, () => d.act(action))));
@@ -743,17 +841,22 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       screen().then((v) => ({ v, n: clock ? timed(done, d, clock.wanted, clock.t0, [["judge", clock.judged], ["act", acted - a0], ["answer", Date.now() - acted]]) : done }));
     if (before) {
       for (let i = 0; i < 10; i++) {
-        const fresh = (await registry.discover()).sessions.find((s) => s.surface === "sapgui" && !before.has(s.id));
+        const fresh = (await registry.discover()).sessions.find((s) => s.surface === d.info.surface && !before.has(s.id));
         if (fresh) {
           registry.active = fresh.id;
           const nd = await registry.driver(fresh.id);
           const { v, n } = await note(() => nd.look({ compact: true }));
-          return ok(`${n}\nA new session opened (${fresh.where}); it is now the active one. The previous session is still open (sap_sessions lists both).${line}\n\n${views.present(fresh.id, v, true)}`, v, fresh.id, nd);
+          return ok(`${n}\nA new session opened (${fresh.where}); it is now the active one. The previous session is still open (sap_sessions lists both): to work in one of them, pass its id, session "${fresh.id}" for this one and "${session}" for the one before.${line}\n\n${views.present(fresh.id, v, true)}`, v, fresh.id, nd);
         }
         await new Promise((r) => setTimeout(r, 500));
       }
       const { v, n } = await note(() => d.look({ compact: true }));
-      return ok(`${n}\nNo new session appeared within 5 s (SAP allows at most 6 per logon): this is still the previous session.${line}\n\n${views.present(session, v, whole)}`, v);
+      // SAP's own answer when the logon has all the sessions it allows (6 by default, rdisp/max_alt_modes).
+      const full = /maximum number of (sap gui )?sessions|maximale anzahl.*modi|nombre maximal de sessions/i.test(v);
+      const why = full
+        ? `SAP refused: this logon has all the sessions it allows. Close one you no longer need${systems ? ", or open another logon with sap_logon and newSession: true (each logon has its own sessions)" : ""}; answer SAP's popup first.`
+        : "No new session appeared within 5 s (SAP allows at most 6 per logon).";
+      return ok(`${n}\n${why} This is still the previous session.${line}\n\n${views.present(session, v, whole)}`, v);
     }
     // A menu entry, a favourite or a tree node can open a transaction no okcode named.
     const after = await d.refresh().catch(() => undefined);
@@ -861,8 +964,16 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
         const stale = staleWrite(parseScreen(seen), parseScreen(now));
         if (stale) return withTurn(fail(`Not run: ${stale}.\n\n${views.present(info.id, now, true)}`), turn);
       }
-      if (verdict.run) return withTurn(await perform(driver, action, whole, assessment.risk, { t0: q0, judged: Date.now() - q0, wanted }).catch((e: unknown) => failedOn(at, e)), turn);
-      if ("refused" in verdict) return withTurn(fail(`Refused: ${verdict.refused}`), turn);
+      if (verdict.run) {
+        const label = labelOn(views.last(info.id), action.id);
+        const r = await perform(driver, action, whole, assessment.risk, { t0: q0, judged: Date.now() - q0, wanted }).catch((e: unknown) => failedOn(at, e));
+        if (!r.isError) tell(info, action, "ran", label);
+        return withTurn(r, turn);
+      }
+      if ("refused" in verdict) {
+        tell(info, action, "refused");
+        return withTurn(fail(`Refused: ${verdict.refused}`), turn);
+      }
       if (!canElicit()) return withTurn(fail(`Refused: ${cannotAsk(verdict.confirm)}`), turn);
       box.held = { info, assessment, confirm: verdict.confirm };
       return undefined;
@@ -877,6 +988,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     const { info, assessment, confirm } = held;
     const shown = shownOf(info, action, assessment, actCount.get(info.id) ?? 0);
     const what = `${confirm}, on ${place(info)}`;
+    const label = labelOn(views.last(info.id), action.id);
+    tell(info, action, "waiting", label);
     let answer: Awaited<ReturnType<typeof server.server.elicitInput>>;
     try {
       answer = await server.server.elicitInput(
@@ -896,10 +1009,12 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
         answer.action === "decline"
           ? "the user declined"
           : "the confirmation was dismissed, or the client could not show it (a client run without a user, such as claude -p, dismisses every question): no yes came for";
+      tell(info, action, "declined", label);
       const said = `Not run: ${who} this action (${what}). Stop here: do not retry it or look for another way; tell the user it was not done and ask how to go on. ${LEAVE_UNSAVED}`;
       return withData(text(said), data((): ActOutput => ({ ran: 0, total: 1, stopped: { why: "declined", text: said.split(". Stop here")[0] as string }, screen: screenOfInfo(info) })));
     }
     const r = await serial(shown.session, actionText(action), () => runConfirmed(shown, whole));
+    tell(info, action, r.isError ? "declined" : "ran", label);
     // The agent does not see the dialog: without this line it told the user a confirmed popup "Yes" had saved
     // without asking them (live 2026-11-21, interactive Claude Code).
     const [first, ...more] = r.content;
@@ -1011,6 +1126,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
           break;
         }
         if (!j.verdict.run && "refused" in j.verdict) {
+          tell(j.info, s.action, "refused");
           end = { why: "refused", text: `${what} was refused: ${j.verdict.refused}`, error: true, next: n + 1 };
           break;
         }
@@ -1035,6 +1151,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
           break;
         }
         let said: string;
+        const label = labelOn(view ?? views.last(j.info.id), s.action.id);
         try {
           const d = driver;
           said = await counted(d.info.id, () => recorder.act(d, s.action, j.assessment.risk, () => d.act(s.action)));
@@ -1045,6 +1162,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
         }
         ran = n;
         remember(id, s.action);
+        tell(j.info, s.action, "ran", label);
         if (token !== undefined)
           await call?.sendNotification({ method: "notifications/progress", params: { progressToken: token, progress: i + 1, total: steps.length, message: `${what} done` } }).catch(() => {});
         lines.push(`${n}. ${shortNote(said)}${s.note ? ` ${s.note}` : ""}`);
@@ -1190,8 +1308,8 @@ ${writeRule(policy)}`,
       answer(() =>
         leniently(raw, (ref) =>
           // In the session's turn, as every other tool: never mid-action, never beside another call on the driver.
-          serial(ref, "screenshot", async () => {
-            const png = await (await registry.driver(ref)).screenshot();
+          serial(ref, "screenshot", async (at) => {
+            const png = await (await registry.driver(at)).screenshot();
             return { content: [{ type: "image", data: png.toString("base64"), mimeType: "image/png" }] };
           }),
         ),

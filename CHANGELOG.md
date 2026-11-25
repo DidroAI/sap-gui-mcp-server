@@ -4,16 +4,92 @@ All notable changes to this project are listed here. The project follows
 [Semantic Versioning](https://semver.org); before 1.0, a minor version may
 change the tools or the view format.
 
-## Unreleased
+## 0.2.0 (2026-11-25)
 
-### Changed (after 0.1.0)
+### Fixed
 
+- Log on from the extension's side panel failed with "The logon page looks
+  different from SAP's": the panel keeps the window's focus, so the logon page
+  never had it and the extension refused to type. The logon tab now gets focus
+  for typing.
+- Save (key 11) in Web GUI presses the Save button: Chrome could keep
+  Ctrl+S for itself, and the key did nothing.
+- SAP GUI for Windows: a selection screen (VA05, MMBE, ME23N) no longer
+  shows a 785-row list; only a classic list is a list.
+- A session opened with `/o` knows the number notation its sibling of the
+  same logon already showed, instead of `NUMBERS unknown`.
+- SAP GUI for Windows: buttons of a toolbar control (ME23N's document
+  overview) are pressed again; SAP GUI refused them. Menu buttons list
+  their entries and choose one with `"value"`.
+- Table rows whose only cells are unticked checkboxes read as empty rows.
+- A grid read with `cols` says which names matched no column.
+
+### Changed
+
+- The helper (`extension helper`) accepts the Chrome Web Store's copy of
+  the extension (`geglpbkaklfpmnbidfcpflegmdkjodkn`) as well as the
+  unpacked one.
+- SAP GUI for Windows is read both ways at once by default
+  (`SAP_GUI_METHOD` unset, or `auto`): SAP GUI scripting, and the network
+  reader for connections logged on through its router. `sap_sessions`
+  lists the sessions of both, and the agent works in the one it needs.
+  `SAP_GUI_METHOD=scripting` or `diag` keeps to one, for setups where
+  nobody watches the agent. `doctor` reports the two apart and is ready
+  when one works.
+- The skills carry the product's name: `sap-gui-drive` is now
+  `sap-ui-automation`, `sap-gui-cli` is now `sap-ui-automation-cli`. Their
+  descriptions name the transaction codes, business objects and phrasings
+  that should make an agent pick them. `setup` and `install --skills` remove
+  the copies they wrote under the old names, so the agent does not see each
+  skill twice.
+- `setup` installs the skills too, as the Cloud ALM server's setup does:
+  for Claude Code (`~/.claude/skills`), Codex (`~/.agents/skills`) and
+  Cursor, marked so that the next setup updates them; `--no-skills` leaves
+  them out. `install --skills --global` puts Codex's in `~/.agents/skills`,
+  where Codex reads a user's skills (was `~/.codex/skills`).
+- Parallel sessions: `sap_sessions` tells the agent how to work in several
+  sessions at once (one per task, `session` on every call). `sap_logon` has
+  `newSession: true`: another session in a new window, on the same system
+  or another, even when one is open. In Web GUI, `/o<tcode>` is followed
+  into the new browser window, as in SAP GUI. A call that waits for its
+  session's turn keeps to that session, even when another one becomes the
+  active one meanwhile.
+- `sap_logon` says whether the session is new or reused, its id, and
+  whether SAP shows the logon's system, client and user. An extension too
+  old for `newSession` is an error, not a reused tab that looks new.
+- `sap_sessions` marks a Web GUI tab SAP shows no system for yet as not
+  verified. At SAP's limit of sessions per logon, `/o` says so and points to
+  another logon.
+- The `sap-gui-drive` skill has a section on working in several sessions at
+  once.
+- The `sap-gui-drive` and `sap-gui-cli` skills are rewritten to follow the
+  Agent Skills authoring guidance: a description that says what the skill
+  does and when to use it, numbered steps, and current rules for sessions
+  (`/o` in Web GUI too and sent on its own, "not verified", SAP's limit of
+  sessions), numbers and Save.
 - The SAP window opens on an empty tab the first time, instead of a local
   page; after that it opens the last SAP address, as before.
 - `setup`, `doctor` and the error texts print commands as `npx -y
   sap-ui-automation ...`, which work without a global install.
 - `setup` points out entries left under the server's old names
   (`sap-gui-mcp-server`, `sap-gui`), which give the agent the tools twice.
+- The Chrome extension is now **UI Automation for SAP** (0.4.0) and opens
+  as a side panel beside the page instead of a popup. The panel names the
+  agent, says whether saves wait for your yes, lists each step the agent
+  takes in SAP (transaction, field, value), turns amber while a save waits
+  for your answer, and marks the system the agent works in. Systems are
+  cards that open in place to add or edit; each step of the activity is one
+  line that opens on a click. Settings gives the one command that connects
+  an agent, and shows what the agent may do, as set in the agent. The Pause
+  Sharing switch is gone:
+  Cancel on Chrome's debugging bar still stops sharing, and the panel offers
+  Share again.
+- `setup --extension` adds the server with `SAP_BROWSER=extension`, for
+  agents that should reach Chrome through the extension; an entry that is
+  already there is named, with what to add to its env.
+- With `SAP_BROWSER=extension`, the server sends the panel the agent's name,
+  its write policy and each step (`panel` and `activity` notes on the relay;
+  extension/PROTOCOL.md).
 
 Preparing the first public release.
 
@@ -106,7 +182,7 @@ Preparing the first public release.
 - Issue templates for bugs, features and new surfaces or transactions, each
   asking that business data be removed first.
 
-## 0.1.0 (unreleased)
+## 0.1.0 (2026-11-24)
 
 The first public version.
 

@@ -23,6 +23,7 @@ const PAGE = `<!doctype html><html lang="en"><head><title>Synthetic</title></hea
 <div id="cuaheader" lsdata="{1:'Synthetic\\x20screen'}">Synthetic screen</div>
 <input id="ToolbarOkCode" lsdata="{0:'FREETEXT',20:${sid("wnd[0]/tbar[0]/okcd", "GuiOKCodeField")}}">
 <div id="CANCEL" title="Cancel (F12)" onclick="post('vkey/12')" lsdata="{0:'Cancel',19:'F12',28:${sid("wnd[0]/tbar[0]/btn[12]", "GuiButton")}}">Cancel</div>
+<div id="SAVE" title="Save (Ctrl+S)" onclick="post('vkey/11')" lsdata="{0:'Save',19:'Ctrl+S',28:${sid("wnd[0]/tbar[0]/btn[11]", "GuiButton")}}">Save</div>
 <label id="L1" lsdata="{1:'F1',3:'Order',19:${sid("wnd[0]/usr/lblZ-ORDER", "GuiLabel")}}">Order</label>
 <input id="F1" value="" lsdata="{0:'x',20:${sid("wnd[0]/usr/ctxtZ-ORDER", "GuiCTextField")}}">
 <div id="sysInfoAreaMenuItemSAPITS_MBAR_TRANSACTION" lsdata="{13:'ZT01'}"></div>
@@ -169,6 +170,16 @@ describe.skipIf(!exe)("waits of a Web GUI action", () => {
     expect(r.note).toStartWith("pressed wnd[0]/tbar[0]/btn[12]");
     expect(await posted()).toEqual(["vkey/12"]);
     expect(r.ms).toBeLessThan(5000);
+  });
+
+  test("Save (key 11) presses the Save button, not Ctrl+S, which Chrome can keep for itself (live 2026-11-25)", async () => {
+    await open();
+    await page.evaluate(() => {
+      (window as unknown as { deafAll: boolean }).deafAll = true;
+    });
+    const r = await timed(() => act(session, { do: "key", key: 11 }));
+    expect(r.note).toStartWith("key Control+s (pressed wnd[0]/tbar[0]/btn[11])");
+    expect(await posted()).toEqual(["vkey/11"]);
   });
 
   test("an ISO date typed into a date field is typed in the user's format (ECC ME21N refused 2026-11-20, live 2026-11-23)", async () => {

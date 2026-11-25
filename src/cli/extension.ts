@@ -102,16 +102,16 @@ export async function extensionCommand(args: string[], out: (l: string) => void 
     try {
       const host = installNativeHost({ home, env: o.env ?? process.env });
       if (!host.registered.length) {
-        err(`Copied the helper to ${host.hostDir}, but no browser profile folder took it (is Chrome installed?). Pair by hand: run "npx -y sap-ui-automation extension pair" and paste the code into the extension's popup.`);
+        err(`Copied the helper to ${host.hostDir}, but no browser profile folder took it (is Chrome installed?). Pair by hand: run "npx -y sap-ui-automation extension pair" and paste the code into the extension's side panel.`);
         return 1;
       }
       out(`Installed the extension's helper in ${host.hostDir} (for ${host.registered.length} browser profile folder(s)).`);
     } catch (e) {
-      err(`Could not install the helper: ${(e as Error).message}. Pair by hand: run "npx -y sap-ui-automation extension pair" and paste the code into the extension's popup.`);
+      err(`Could not install the helper: ${(e as Error).message}. Pair by hand: run "npx -y sap-ui-automation extension pair" and paste the code into the extension's side panel.`);
       return 1;
     }
     out("");
-    out(`Restart Chrome, then click the Agent Connector icon (under the puzzle piece in Chrome's toolbar; pin it there) and "Pair with This Computer".`);
+    out(`Restart Chrome, then click the UI Automation for SAP icon (under the puzzle piece in Chrome's toolbar; pin it there) and Pair in the side panel.`);
     return 0;
   }
   if (sub === "install" || sub === "unpack") {
@@ -147,7 +147,7 @@ export async function extensionCommand(args: string[], out: (l: string) => void 
     out("");
     out(`In Chrome: open chrome://extensions, turn on Developer mode, click "Load unpacked" and pick ${to}.`);
     out(`(In the folder dialog on a Mac, press Cmd+Shift+G and type ${to}.)`);
-    out(paired ? `Then click the Agent Connector icon (under the puzzle piece in Chrome's toolbar; pin it there) and "Pair with This Computer".` : `Then run "npx -y sap-ui-automation extension pair" and paste the code into the extension's popup.`);
+    out(paired ? `Then click the UI Automation for SAP icon (under the puzzle piece in Chrome's toolbar; pin it there) and Pair in the side panel.` : `Then run "npx -y sap-ui-automation extension pair" and paste the code into the extension's side panel.`);
     out(`To update: run "npx -y sap-ui-automation@latest extension install" again, then click the reload arrow on the extension's card in chrome://extensions.`);
     return 0;
   }
@@ -164,7 +164,7 @@ export async function extensionCommand(args: string[], out: (l: string) => void 
       out(`Removed the extension's folder ${to}`);
     } else out(`No copy of the extension in ${to}. If you installed it elsewhere, run uninstall with that folder.`);
     out("");
-    out(`Last step, in Chrome: open chrome://extensions and click Remove on "Agent Connector for SAP Systems".`);
+    out(`Last step, in Chrome: open chrome://extensions and click Remove on "UI Automation for SAP".`);
     return 0;
   }
   err(`Usage:\n${EXTENSION_HELP}`);

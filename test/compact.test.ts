@@ -67,13 +67,13 @@ describe("compact", () => {
     expect(compact(FULL).split("\n")).toContain("btn[0]  button  Continue (Enter)");
   });
 
-  test("writes a table control as one line per row, with the filled cells and every checkbox", () => {
+  test("writes a table control as one line per row, with the filled cells and their checkboxes", () => {
     expect(out).toContain('tblZPROGTC_ITEMS  table  rows 2 (visible 2) "All items"  (cell id: <id>[col,row], e.g. txtZITM-POSNR[0,0])');
     // The id of each column once, from its cells (also empty ones), with where it cannot be changed.
     expect(out).toContain("  columns: 0 Item=txtZITM-POSNR (read-only in rows 0), 1 Material=ctxtZITM-MATNR, 2 Qty=txtZITM-QTY, 3 Done=chkZITM-DONE");
     expect(out).toContain("  row 0: Item=10; Material=WIDGET-1; Done [x]");
-    // An unchecked box is a box to tick: it is shown.
-    expect(out).toContain("  row 1: Done [ ]");
+    // An unchecked box on a line with no value is a blank line (ME23N draws boxes on every line); the columns line names its id.
+    expect(out).toContain("  row 1: (empty)");
     expect(out.some((l) => l.includes("[0,0]  field"))).toBe(false);
   });
 
@@ -139,6 +139,23 @@ describe("compact", () => {
     ]);
   });
 
+  test("a row whose only cells are unticked checkboxes is an empty row (ME23N's blank item lines)", () => {
+    const t = [
+      "wnd[0]/usr/tblT  table  rows 7 (visible 3); columns: Itm | Material | Returns | Free",
+      'wnd[0]/usr/tblT/txtZ-EBELP[0,0]  field  Itm = "10"  (read-only)',
+      "wnd[0]/usr/tblT/chkZ-RETPO[2,0]  checkbox  [ ] Returns",
+      "wnd[0]/usr/tblT/chkZ-UMSON[3,0]  checkbox  [x] Free",
+      "wnd[0]/usr/tblT/chkZ-RETPO[2,1]  checkbox  [ ] Returns",
+      "wnd[0]/usr/tblT/chkZ-UMSON[3,1]  checkbox  [ ] Free",
+      "wnd[0]/usr/tblT/chkZ-RETPO[2,2]  checkbox  [ ] Returns",
+      "wnd[0]/usr/tblT/chkZ-UMSON[3,2]  checkbox  [x] Free",
+    ].join("\n");
+    const rows = compact(t)
+      .split("\n")
+      .filter((l) => /^ {2}rows? /.test(l));
+    expect(rows).toEqual(["  row 0: Itm=10; Returns [ ]; Free [x]", "  row 1: (empty)", "  row 2: Returns [ ]; Free [x]"]);
+  });
+
   test("behind a popup a table keeps its line, so its rows keep their titles", () => {
     const t = [
       'WINDOW wnd[0]  "Main"',
@@ -156,7 +173,7 @@ describe("compact", () => {
   });
 
   test("with every rule off, the view is the one of before: full ids for buttons and shells, the table id on each row", () => {
-    const plain = compact(MAIN, { handles: false, repeatedButtons: false, dropdowns: false, lists: false, emptyColumns: false, shortRows: false, maxChars: 0 }).split("\n");
+    const plain = compact(MAIN, { handles: false, repeatedButtons: false, dropdowns: false, lists: false, emptyColumns: false, shortRows: false, emptyRuns: false, maxChars: 0 }).split("\n");
     expect(plain).toContain("wnd[0]/tbar[0]/btn[3]  button  Back (F3)");
     expect(plain).toContain("cntlGRID/shellcont/shell  grid  2 rows; columns: A=Col A | B=Col B");
     expect(plain).toContain("  tblZPROGTC_ITEMS row 0: Item=10; Material=WIDGET-1; Done [x]");

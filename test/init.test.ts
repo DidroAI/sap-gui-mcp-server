@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configFile, exampleTest, init } from "../src/cli/init.js";
-import { detectClients, setup } from "../src/cli/setup.js";
+import { codexTable, detectClients, setup } from "../src/cli/setup.js";
 import { cursorRule, installSkills, packageRoot, readIfThere, shippedSkills } from "../src/cli/skills.js";
 
 // Every test gets its own HOME and project folder, and sees no command on PATH:
@@ -34,7 +34,7 @@ describe("init", () => {
     expect(read(join(cwd, "sap.config.ts"))).toContain('write: "off"');
     expect(read(join(cwd, "sap-tests", "example.sap.ts"))).toContain('okcode("/nSU3")');
     // no client found: Claude Code's project skills still get installed
-    expect(existsSync(join(cwd, ".claude", "skills", "sap-gui-drive", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(cwd, ".claude", "skills", "sap-ui-automation", "SKILL.md"))).toBe(true);
     expect(read(join(cwd, ".gitignore"))).toBe("node_modules\n# sap-ui-automation: traces and test results hold screens of business data\n.sap-gui/\nsap-results/\n");
     expect(r.lines.some((l) => l.includes("MCP clients: none chosen"))).toBe(true);
     expect(r.lines.every((l) => !l.includes("\n"))).toBe(true);
@@ -72,22 +72,22 @@ describe("init", () => {
   test("an edited skill or Cursor rule is kept, and replaced with --force", async () => {
     // No client found: Claude Code's project skill.
     await init({ ...base(), yes: true });
-    const skill = join(cwd, ".claude", "skills", "sap-gui-drive", "SKILL.md");
+    const skill = join(cwd, ".claude", "skills", "sap-ui-automation", "SKILL.md");
     writeFileSync(skill, "mine");
     const r = await init({ ...base(), yes: true });
     expect(read(skill)).toBe("mine");
-    expect(r.lines).toContain(`– Claude Code skill sap-gui-drive: differs, kept (--force replaces it) (${join(".claude", "skills", "sap-gui-drive")})`);
+    expect(r.lines).toContain(`– Claude Code skill sap-ui-automation: differs, kept (--force replaces it) (${join(".claude", "skills", "sap-ui-automation")})`);
     const f = await init({ ...base(), yes: true, force: true });
-    expect(read(skill)).toBe(read(join(packageRoot(), "skills", "sap-gui-drive", "SKILL.md")));
-    expect(f.lines.some((l) => l.startsWith("• Claude Code skill sap-gui-drive: updated"))).toBe(true);
+    expect(read(skill)).toBe(read(join(packageRoot(), "skills", "sap-ui-automation", "SKILL.md")));
+    expect(f.lines.some((l) => l.startsWith("• Claude Code skill sap-ui-automation: updated"))).toBe(true);
     // Cursor found: its rule.
     mkdirSync(join(home, ".cursor"));
     await init({ ...base(), yes: true });
-    const rule = join(cwd, ".cursor", "rules", "sap-gui-drive.mdc");
+    const rule = join(cwd, ".cursor", "rules", "sap-ui-automation.mdc");
     writeFileSync(rule, "my rule");
     const c = await init({ ...base(), yes: true });
     expect(read(rule)).toBe("my rule");
-    expect(c.lines.some((l) => l.startsWith("– Cursor skill sap-gui-drive: differs, kept"))).toBe(true);
+    expect(c.lines.some((l) => l.startsWith("– Cursor skill sap-ui-automation: differs, kept"))).toBe(true);
     await init({ ...base(), yes: true, force: true });
     expect(read(rule)).toStartWith("---\ndescription:");
   });
@@ -117,7 +117,7 @@ describe("init", () => {
     const config = read(join(cwd, "sap.config.ts"));
     expect(config).toContain('system: "ABA/800"');
     expect(config).toContain('write: "confirm"');
-    expect(existsSync(join(cwd, ".cursor", "rules", "sap-gui-drive.mdc"))).toBe(true);
+    expect(existsSync(join(cwd, ".cursor", "rules", "sap-ui-automation.mdc"))).toBe(true);
     expect(existsSync(join(cwd, ".claude"))).toBe(false);
     expect(json(join(home, ".cursor", "mcp.json")).mcpServers["sap-ui-automation"].command).toBeString();
   });
@@ -137,38 +137,35 @@ describe("init", () => {
 describe("install --skills", () => {
   test("the package ships its skills, found from the module", () => {
     expect(existsSync(join(packageRoot(), "package.json"))).toBe(true);
-    expect(shippedSkills().map((s) => s.name)).toContain("sap-gui-drive");
+    expect(shippedSkills().map((s) => s.name)).toContain("sap-ui-automation");
   });
 
   test("Claude Code: project and --global, idempotent", () => {
     const first = installSkills({ targets: ["claude"], cwd, home, env: {} });
-    const file = join(cwd, ".claude", "skills", "sap-gui-drive", "SKILL.md");
-    expect(read(file)).toBe(read(join(packageRoot(), "skills", "sap-gui-drive", "SKILL.md")));
-    expect(first.lines.find((l) => l.includes("sap-gui-drive"))).toContain(`created (${join(".claude", "skills", "sap-gui-drive")})`);
-    expect(installSkills({ targets: ["claude"], cwd, home, env: {} }).lines.find((l) => l.includes("sap-gui-drive"))).toContain("unchanged");
+    const file = join(cwd, ".claude", "skills", "sap-ui-automation", "SKILL.md");
+    expect(read(file)).toBe(read(join(packageRoot(), "skills", "sap-ui-automation", "SKILL.md")));
+    expect(first.lines.find((l) => l.includes("sap-ui-automation"))).toContain(`created (${join(".claude", "skills", "sap-ui-automation")})`);
+    expect(installSkills({ targets: ["claude"], cwd, home, env: {} }).lines.find((l) => l.includes("sap-ui-automation"))).toContain("unchanged");
     writeFileSync(file, "old");
-    expect(installSkills({ targets: ["claude"], cwd, home, env: {} }).lines.find((l) => l.includes("sap-gui-drive"))).toContain("updated");
+    expect(installSkills({ targets: ["claude"], cwd, home, env: {} }).lines.find((l) => l.includes("sap-ui-automation"))).toContain("updated");
     installSkills({ targets: ["claude"], global: true, cwd, home, env: {} });
-    expect(existsSync(join(home, ".claude", "skills", "sap-gui-drive", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(home, ".claude", "skills", "sap-ui-automation", "SKILL.md"))).toBe(true);
   });
 
-  test("Codex: .agents/skills in the project, CODEX_HOME/skills with --global", () => {
+  test("Codex: .agents/skills in the project, ~/.agents/skills with --global", () => {
     installSkills({ targets: ["codex"], cwd, home, env: {} });
-    expect(existsSync(join(cwd, ".agents", "skills", "sap-gui-drive", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(cwd, ".agents", "skills", "sap-ui-automation", "SKILL.md"))).toBe(true);
     installSkills({ targets: ["codex"], global: true, cwd, home, env: {} });
-    expect(existsSync(join(home, ".codex", "skills", "sap-gui-drive", "SKILL.md"))).toBe(true);
-    const codexHome = join(root, "codex");
-    installSkills({ targets: ["codex"], global: true, cwd, home, env: { CODEX_HOME: codexHome } });
-    expect(existsSync(join(codexHome, "skills", "sap-gui-drive", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(home, ".agents", "skills", "sap-ui-automation", "SKILL.md"))).toBe(true);
   });
 
   test("Cursor: a .mdc rule picked by description; no user-level rules", () => {
     installSkills({ targets: ["cursor"], cwd, home, env: {} });
-    const rule = read(join(cwd, ".cursor", "rules", "sap-gui-drive.mdc"));
-    expect(rule).toStartWith("---\ndescription: Work in SAP screens");
+    const rule = read(join(cwd, ".cursor", "rules", "sap-ui-automation.mdc"));
+    expect(rule).toStartWith("---\ndescription: Works in SAP through");
     expect(rule).toContain("\nalwaysApply: false\n---\n");
-    expect(rule).not.toContain("name: sap-gui-drive");
-    expect(rule).toContain("# Working in SAP screens");
+    expect(rule).not.toContain("name: sap-ui-automation");
+    expect(rule).toContain("# Driving SAP screens");
     const g = installSkills({ targets: ["cursor"], global: true, cwd, home, env: {} });
     expect(g.lines[0]).toContain("no user-level rule files");
   });
@@ -190,6 +187,114 @@ describe("install --skills", () => {
     expect(readIfThere(file, "utf8")).toBe("hi");
     expect(readIfThere(file)?.equals(Buffer.from("hi"))).toBe(true);
     expect(() => readIfThere(cwd)).toThrow();
+  });
+});
+
+describe("setup --extension", () => {
+  test("a new entry gets SAP_BROWSER=extension; an existing one is told what to add", () => {
+    mkdirSync(join(home, ".cursor"), { recursive: true });
+    rmSync(join(home, ".cursor", "mcp.json"), { force: true });
+    setup({ dryRun: false, only: ["cursor"], cwd, onPath: none, extension: true }, {}, "linux", home);
+    expect(json(join(home, ".cursor", "mcp.json")).mcpServers["sap-ui-automation"].env).toEqual({ SAP_BROWSER: "extension" });
+    writeFileSync(join(home, ".cursor", "mcp.json"), JSON.stringify({ mcpServers: { "sap-ui-automation": { command: "x" } } }));
+    const again = setup({ dryRun: false, only: ["cursor"], cwd, onPath: none, extension: true }, {}, "linux", home);
+    expect(again.lines.find((l) => l.includes("already in"))).toContain('Add "SAP_BROWSER": "extension" to its "env".');
+    rmSync(join(home, ".cursor"), { recursive: true, force: true });
+  });
+  test("Codex's table carries the env", () => {
+    expect(codexTable(["npx", "-y", "sap-ui-automation"], { SAP_BROWSER: "extension" })).toContain('env = { SAP_BROWSER = "extension" }');
+  });
+});
+
+describe("setup: the skills too", () => {
+  const skillsIn = (dir: string) => (existsSync(dir) ? readdirSync(dir).sort() : []);
+
+  test("Codex and Cursor set up: the skills go to ~/.agents/skills, marked as this package's; Cursor reads them there", () => {
+    mkdirSync(join(home, ".codex"));
+    mkdirSync(join(home, ".cursor"));
+    const r = setup({ dryRun: false, only: ["codex", "cursor"], cwd, onPath: none }, {}, "linux", home);
+    const dir = join(home, ".agents", "skills");
+    expect(skillsIn(dir)).toEqual(["sap-ui-automation", "sap-ui-automation-cli"]);
+    expect(existsSync(join(dir, "sap-ui-automation", ".sap-ui-automation"))).toBe(true);
+    expect(read(join(dir, "sap-ui-automation", "SKILL.md"))).toBe(read(join(packageRoot(), "skills", "sap-ui-automation", "SKILL.md")));
+    expect(r.lines).toContain(`✓ Skills for Codex, Cursor: installed sap-ui-automation, sap-ui-automation-cli in ${join("~", ".agents", "skills")}.`);
+    expect(existsSync(join(home, ".cursor", "skills"))).toBe(false);
+  });
+
+  test("Claude Code alone: $CLAUDE_CONFIG_DIR/skills; only Cursor: ~/.cursor/skills", async () => {
+    const { userSkillDirs } = await import("../src/cli/skills.js");
+    expect(userSkillDirs(["claude-code", "cursor"], home, { CLAUDE_CONFIG_DIR: join(root, "cc") })).toEqual([{ dir: join(root, "cc", "skills"), clients: ["claude-code", "cursor"] }]);
+    expect(userSkillDirs(["cursor"], home, {})).toEqual([{ dir: join(home, ".cursor", "skills"), clients: ["cursor"] }]);
+    expect(userSkillDirs(["claude-desktop", "windsurf"], home, {})).toEqual([]);
+  });
+
+  test("again: this package's copies are replaced; a folder of the same name that is not ours stays", () => {
+    mkdirSync(join(home, ".codex"));
+    const dir = join(home, ".agents", "skills");
+    setup({ dryRun: false, only: ["codex"], cwd, onPath: none }, {}, "linux", home);
+    writeFileSync(join(dir, "sap-ui-automation", "SKILL.md"), "old copy");
+    mkdirSync(join(dir, "sap-ui-automation-cli"), { recursive: true });
+    rmSync(join(dir, "sap-ui-automation-cli"), { recursive: true });
+    mkdirSync(join(dir, "sap-ui-automation-cli"));
+    writeFileSync(join(dir, "sap-ui-automation-cli", "SKILL.md"), "---\nname: sap-ui-automation-cli\n---\nmine");
+    const r = setup({ dryRun: false, only: ["codex"], cwd, onPath: none }, {}, "linux", home);
+    expect(read(join(dir, "sap-ui-automation", "SKILL.md"))).toBe(read(join(packageRoot(), "skills", "sap-ui-automation", "SKILL.md")));
+    expect(read(join(dir, "sap-ui-automation-cli", "SKILL.md"))).toBe("---\nname: sap-ui-automation-cli\n---\nmine");
+    expect(r.lines).toContain(`– Skills for Codex: sap-ui-automation-cli in ${join("~", ".agents", "skills")} is not from this package, left as it is.`);
+  });
+
+  test("a copy from install --skills --global (no marker) counts as ours and is updated", () => {
+    mkdirSync(join(home, ".codex"));
+    installSkills({ targets: ["codex"], global: true, cwd, home, env: {} });
+    const dir = join(home, ".agents", "skills");
+    writeFileSync(join(dir, "sap-ui-automation", "SKILL.md"), read(join(dir, "sap-ui-automation", "SKILL.md")) + "\nedited");
+    setup({ dryRun: false, only: ["codex"], cwd, onPath: none }, {}, "linux", home);
+    expect(read(join(dir, "sap-ui-automation", "SKILL.md"))).toBe(read(join(packageRoot(), "skills", "sap-ui-automation", "SKILL.md")));
+    expect(existsSync(join(dir, "sap-ui-automation", ".sap-ui-automation"))).toBe(true);
+  });
+
+  test("copies under the old names (sap-gui-drive, sap-gui-cli) that this package wrote are removed; someone else's stay", () => {
+    mkdirSync(join(home, ".codex"));
+    const dir = join(home, ".agents", "skills");
+    mkdirSync(join(dir, "sap-gui-drive"), { recursive: true });
+    writeFileSync(join(dir, "sap-gui-drive", "SKILL.md"), "---\nname: sap-gui-drive\n---\nold");
+    writeFileSync(join(dir, "sap-gui-drive", ".sap-ui-automation"), "");
+    mkdirSync(join(dir, "sap-gui-cli"));
+    writeFileSync(join(dir, "sap-gui-cli", "SKILL.md"), "---\nname: sap-gui-cli\n---\nmine");
+    const dry = setup({ dryRun: true, only: ["codex"], cwd, onPath: none }, {}, "linux", home);
+    expect(dry.lines).toContain(`• Skills for Codex: would remove sap-gui-drive in ${join("~", ".agents", "skills")} (the old names).`);
+    expect(existsSync(join(dir, "sap-gui-drive"))).toBe(true);
+    const r = setup({ dryRun: false, only: ["codex"], cwd, onPath: none }, {}, "linux", home);
+    expect(r.lines).toContain(`✓ Skills for Codex: removed sap-gui-drive in ${join("~", ".agents", "skills")} (the old names).`);
+    expect(skillsIn(dir)).toEqual(["sap-gui-cli", "sap-ui-automation", "sap-ui-automation-cli"]);
+  });
+
+  test("install --skills removes this package's old-named copies and Cursor rules; init without --force keeps them", () => {
+    const old = join(cwd, ".claude", "skills", "sap-gui-drive");
+    mkdirSync(old, { recursive: true });
+    writeFileSync(join(old, "SKILL.md"), "---\nname: sap-gui-drive\n---\nUses the sap-ui-automation tools.");
+    mkdirSync(join(cwd, ".cursor", "rules"), { recursive: true });
+    writeFileSync(join(cwd, ".cursor", "rules", "sap-gui-cli.mdc"), "---\ndescription: x\n---\nsap-ui-automation CLI");
+    const kept = installSkills({ targets: ["claude", "cursor"], cwd, home, env: {}, overwrite: false });
+    expect(kept.lines.some((l) => l.startsWith("– Claude Code skill sap-gui-drive: the old name of sap-ui-automation, kept"))).toBe(true);
+    expect(existsSync(old)).toBe(true);
+    const r = installSkills({ targets: ["claude", "cursor"], cwd, home, env: {} });
+    expect(r.lines.some((l) => l.startsWith("• Claude Code skill sap-gui-drive: removed, now sap-ui-automation"))).toBe(true);
+    expect(r.lines.some((l) => l.startsWith("• Cursor skill sap-gui-cli: removed, now sap-ui-automation-cli"))).toBe(true);
+    expect(existsSync(old)).toBe(false);
+    expect(existsSync(join(cwd, ".cursor", "rules", "sap-gui-cli.mdc"))).toBe(false);
+  });
+
+  test("--no-skills, a dry run, and apps that read no skills write none", () => {
+    mkdirSync(join(home, ".codex"));
+    setup({ dryRun: false, only: ["codex"], cwd, onPath: none, skills: false }, {}, "linux", home);
+    expect(existsSync(join(home, ".agents"))).toBe(false);
+    const dry = setup({ dryRun: true, only: ["codex"], cwd, onPath: none }, {}, "linux", home);
+    expect(existsSync(join(home, ".agents"))).toBe(false);
+    expect(dry.lines).toContain(`• Skills for Codex: would install sap-ui-automation, sap-ui-automation-cli in ${join("~", ".agents", "skills")}.`);
+    mkdirSync(join(home, ".config", "devin"), { recursive: true });
+    const r = setup({ dryRun: false, only: ["windsurf"], cwd, onPath: none }, {}, "linux", home);
+    expect(r.lines.some((l) => l.includes("Skills"))).toBe(false);
   });
 });
 

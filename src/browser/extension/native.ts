@@ -25,7 +25,8 @@ export const NATIVE_HOST = "ai.didro.sap_ui_automation";
  * unpacked copy has the same id on every machine. A Web Store build gets its own
  * id, to be added here.
  */
-export const EXTENSION_IDS: readonly string[] = ["ojokfbbfoignpfeamomeappgfhapehma"];
+/** The unpacked extension (its id fixed by `key` in manifest.json), then the Chrome Web Store's. */
+export const EXTENSION_IDS: readonly string[] = ["ojokfbbfoignpfeamomeappgfhapehma", "geglpbkaklfpmnbidfcpflegmdkjodkn"];
 
 /** The browsers' user-level NativeMessagingHosts folders, with the browser folder that must exist for each. */
 export function hostManifestDirs(platform: NodeJS.Platform = process.platform, home: string = homedir(), env: Env = process.env): { browser: string; dir: string }[] {
