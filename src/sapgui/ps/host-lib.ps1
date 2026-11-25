@@ -590,6 +590,7 @@ function Op-Act($req) {
     if ([string]$a['col']) { M $o 'SetCurrentCell' @($row, [string]$a['col']) }
     if ($how -eq 'select') { S $o 'SelectedRows' ([string]$row) }
     elseif ($how -eq 'unselect') { M $o 'ClearSelection' $null }
+    elseif ($how -eq 'cell') { }
     else { M $o 'DoubleClickCurrentCell' $null }
   }
   elseif ($do -eq 'cell') {

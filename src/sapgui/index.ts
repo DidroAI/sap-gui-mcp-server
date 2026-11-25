@@ -28,7 +28,7 @@ import { esc, forAgent, fullView, listsOnly } from "./format.js";
 import { vkeyNumber } from "./keys.js";
 import { HostError, MAX_TIMEOUT_MS, type PowershellPolicy, powershellPolicy, PsHost, READ_TIMEOUT_MS } from "./host.js";
 import { relativeId, resolve, resolveStrict } from "./resolve.js";
-import { focusedRow, gridColumn, localKey, nextField, tableCell } from "./table.js";
+import { cellParts, focusedRow, gridColumn, localKey, nextField, tableCell, tableOfColumn } from "./table.js";
 
 const PREFIX = "sapgui:";
 /** How long a screen read may serve the step that follows it (assess, then act). */
@@ -328,6 +328,16 @@ class SapguiDriver implements Driver {
     }
     if (typeof action.id !== "string" || !action.id.trim()) throw new ActionError(`${doing} needs "id": a control id from sap_look`);
     const target = await this.target(screen, action);
+    // A column named by one of its cells' ids without the place, with a row: that row's cell, not the first one found.
+    if (target && action.row !== undefined && cellParts(target.id) && !/\[\d+,\d+\]$/.test(String(action.id).trim())) {
+      const p = cellParts(target.id) as { table: string; field: string };
+      return this.act({ ...action, id: p.table, col: p.field });
+    }
+    if (!target && action.row !== undefined) {
+      // A table's column named as the id, with a row: that table's cell.
+      const column = tableOfColumn(screen, action.id);
+      if (column) return this.act({ ...action, id: column.table.id, col: column.col });
+    }
     if (!target) throw new ActionError(`No control "${action.id}" on this screen. Use an id from sap_look (the screen may have changed).`);
     const id = target.id;
     switch (doing) {
@@ -430,7 +440,8 @@ class SapguiDriver implements Driver {
         }
         if (!isRow(action.row) || typeof action.col !== "string") throw new ActionError('grid needs "row" (a number from 0, from "row N:") and "col" (column id, e.g. "VBELN")');
         const how = action.how ?? "double";
-        if (!["double", "select"].includes(how)) throw new ActionError('grid "how" is double or select');
+        // "cell": the cursor on the cell, nothing opened or selected (as on a table control).
+        if (!["double", "select", "cell"].includes(how)) throw new ActionError('grid "how" is double, select or cell');
         const col = target.type === "GuiShell" && target.sub === "GridView" ? gridColumn(target, action.col) : action.col;
         return this.run({ do: "grid", id, row: action.row, col, how }, `grid ${how} row ${action.row}, column ${action.col} in ${id}`, timeoutMs);
       }

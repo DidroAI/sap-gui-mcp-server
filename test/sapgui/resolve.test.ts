@@ -64,6 +64,10 @@ describe("sapgui ids: a selection criterion by its name (MMBE, live 2026-11-25)"
     expect(resolveStrict(sel, "MS_WERKS-HIGH")).toEqual({ control: expect.objectContaining({ id: "wnd[0]/usr/ctxtMS_WERKS-HIGH" }) });
     expect(resolveStrict(sel, "VERNU")).toEqual({ control: expect.objectContaining({ id: "wnd[0]/usr/ctxtVERNU" }) });
     expect(resolveStrict(sel, "MS_NOPE")).toEqual({ none: true });
+    // Without the report's prefix (MM60, live): the one field that ends so.
+    expect(resolveStrict(sel, "ctxtWERKS-LOW")).toEqual({ control: expect.objectContaining({ id: "wnd[0]/usr/ctxtMS_WERKS-LOW" }) });
+    expect(resolveStrict(sel, "WERKS-HIGH")).toEqual({ control: expect.objectContaining({ id: "wnd[0]/usr/ctxtMS_WERKS-HIGH" }) });
+    expect(resolveStrict(sel, "MATNR-HIGH")).toEqual({ none: true });
   });
 });
 

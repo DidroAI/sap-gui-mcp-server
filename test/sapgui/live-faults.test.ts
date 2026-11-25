@@ -249,3 +249,29 @@ describe("sapgui: a table's dropdown cell and a pressed tab (FB50, MM02, live 20
     expect((await d.assess({ do: "press", id: "tabpSP12" })).risk).toBe("navigate");
   });
 });
+
+describe("sapgui: a column's id with a row means that table's cell; a grid's cell takes the cursor (VA01, VF01, VA05, live 2026-11-25)", () => {
+  const T = "wnd[0]/usr/tblSAPMV45ATCTRL_U_ERF_AUFTRAG";
+  const G = "wnd[0]/usr/cntlGRID1/shellcont/shell";
+  const screen = one([
+    { id: T, type: "GuiTableControl", name: "SAPMV45ATCTRL_U_ERF_AUFTRAG", rowCount: 10, visibleRowCount: 2, firstRow: 0, columns: ["Material", "Order Quantity"] },
+    { id: `${T}/ctxtRV45A-MABNR[1,0]`, type: "GuiCTextField", name: "RV45A-MABNR", text: "", changeable: true },
+    { id: `${T}/txtRV45A-KWMENG[2,0]`, type: "GuiTextField", name: "RV45A-KWMENG", text: "", changeable: true },
+    { id: `${T}/txtRV45A-KWMENG[2,1]`, type: "GuiTextField", name: "RV45A-KWMENG", text: "", changeable: true },
+    { id: G, type: "GuiShell", name: "shell", sub: "GridView", grid: { cols: ["VBELN", "NETWR"], titles: ["Doc", "Net"], rowCount: 2, rows: [["1", "2"], ["3", "4"]] } },
+  ]);
+  test("set with the column's id and a row: that row's cell", async () => {
+    const { d, acts } = await on(screen);
+    await d.act({ do: "set", id: "txtRV45A-KWMENG", row: 1, col: "2", value: "5" });
+    expect(acts).toEqual([{ do: "set", id: `${T}/txtRV45A-KWMENG[2,1]`, value: "5" }]);
+  });
+  test("without a row it is still no control", async () => {
+    const { d } = await on(screen);
+    await expect(d.act({ do: "set", id: "txtRV45A-KWMENG", value: "5" })).rejects.toThrow('No control "txtRV45A-KWMENG"');
+  });
+  test('grid how "cell" puts the cursor on the cell only', async () => {
+    const { d, acts } = await on(screen);
+    await d.act({ do: "grid", id: "cntlGRID1/shell", row: 0, col: "NETWR", how: "cell" });
+    expect(acts).toEqual([{ do: "grid", id: G, row: 0, col: "NETWR", how: "cell" }]);
+  });
+});
