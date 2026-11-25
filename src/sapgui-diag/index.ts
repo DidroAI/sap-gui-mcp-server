@@ -901,12 +901,13 @@ export class DiagDriver implements Driver {
           plan = planCombo(s, { ...action, do: "combo", key: action.value }, g);
           break;
         }
-        const target = resolveTarget(s, action);
+        // check: the box's state as on show, a tick of this step included, decides whether it is clicked.
+        const target = resolveTarget(action.do === "check" ? withTyped(s, this.typed()) : s, action);
         if (!target && /^(set|focus|check|click|dblclick|press|select|f4)$/.test(action.do)) throw new ActionError(noTargetText(s, String(action.id ?? action.name ?? "")));
         plan = planPlain(s, action, target, g, local(named));
         if (action.do === "set" && (target?.kind === "element" || target?.kind === "cell")) plan = { ...plan, note: this.keepTyped(target, String(action.value ?? ""), s) };
         // A box ticked without a function code stays in SAP GUI until the next Enter: kept like a typed value.
-        if (action.do === "check" && plan.answer === "no" && (target?.kind === "element" || target?.kind === "cell")) this.keepTicked(target, s);
+        if (action.do === "check" && plan.answer === "no" && plan.steps.length && (target?.kind === "element" || target?.kind === "cell")) this.keepTicked(target, s);
       }
     }
     const before = this.conn.steps.get(this.mode) ?? 0;

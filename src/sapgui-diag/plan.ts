@@ -570,7 +570,7 @@ export function planGridScroll(n: Named & { kind: "grid" }, to: number | string,
 /** What a plain action's id means (index.ts `resolveTarget`), as far as planning needs it. */
 export type PlainTarget =
   | { kind: "element"; element: DiagElement; window: DiagWindow; row: number; col: number; what: string }
-  | { kind: "cell"; window: DiagWindow; row: number; col: number; width: number; input: boolean; cellKind?: DiagElementKind; what: string }
+  | { kind: "cell"; window: DiagWindow; row: number; col: number; width: number; input: boolean; cellKind?: DiagElementKind; what: string; table?: string; index?: number; column?: number }
   | { kind: "list"; window: DiagWindow; row: number; col: number; what: string }
   | { kind: "tab"; window: DiagWindow; row: number; col: number; text: string; what: string }
   | { kind: "key"; key: { vkey: number; text: string }; what: string }
@@ -621,6 +621,15 @@ function controlAt(t: { window: DiagWindow; row: number; col: number }, want: "g
   return t.window.controls.find((c) => (want === "grid" ? c.grid : c.tree) && (t.row < 0 ? !c.area : c.area?.row === t.row && c.area?.col === t.col));
 }
 
+/** The state "check" asks for: on unless the value says off (false, "", " ", "false", "off", "no", 0). */
+export const wantsOn = (value: unknown): boolean => value === undefined || value === null || /^(x|true|1|on|yes)$/i.test(String(value).trim());
+
+/** A checkbox or radio button target and whether it is ticked now (on the screen as given, typed state included). */
+function boxState(x: PlainTarget): { kind: "checkbox" | "radio"; checked: boolean } | undefined {
+  const e = x.kind === "element" ? x.element : x.kind === "cell" && x.table !== undefined ? x.window.tables.find((t) => t.name === x.table)?.rows.find((r) => r.index === x.index)?.cells[x.column ?? -1] : undefined;
+  return e && (e.kind === "checkbox" || e.kind === "radio") ? { kind: e.kind, checked: !!e.checked } : undefined;
+}
+
 export function planPlain(s: DiagScreen, action: Action, target: PlainTarget | undefined, g: Geometry, local?: ReadonlyMap<string, boolean>): Plan {
   const w = activeWindow(s);
   const id = String(action.id ?? action.name ?? "");
@@ -660,6 +669,14 @@ export function planPlain(s: DiagScreen, action: Action, target: PlainTarget | u
       const misuse = plainMisuse(action, x);
       if (misuse) throw new ActionError(misuse);
       if (x.kind === "key") return { steps: [keyStep(x.key.vkey)], note: `pressed ${x.what}`, answer: "yes" };
+      if (action.do === "check") {
+        const box = boxState(x);
+        if (box) {
+          const on = wantsOn(action.value);
+          if (box.kind === "radio" && !on) throw new ActionError(`${x.what} is a radio button: it is turned off by choosing another one of its group.`);
+          if (box.checked === on) return { steps: [], note: `${x.what} was already ${on ? "ticked" : "unticked"}: nothing changed`, answer: "no" };
+        }
+      }
       if (x.kind === "node") {
         const c = controlAt(x, "tree");
         const key = /^\{(.+)\}$/.exec(id)?.[1];
