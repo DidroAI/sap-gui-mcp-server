@@ -89,6 +89,11 @@ It also says when no session was found, how many sessions of systems
 outside `SAP_ALLOW_SYSTEMS` are hidden, and the reason a surface could not
 be searched (for example, SAP GUI scripting is off).
 
+Several sessions can work at the same time: give each task its own session
+and pass its `session` on every call. Calls on different sessions run at
+once; calls on the same session wait their turn. The okcode `/o<tcode>`
+opens a new session.
+
 ## sap_use
 
 Makes a session the active one for `sap_look`, `sap_act` and the others.

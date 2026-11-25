@@ -544,6 +544,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       title: "List open SAP sessions",
       description:
         "The SAP sessions open (SAP GUI windows; Web GUI and Fiori tabs in Chrome); * marks the active one. Needed only with several sessions, or when a tool says none matches. " +
+          "Parallel work: one session per task and its `session` on every call; calls on different sessions run at once, calls on one session wait their turn. An okcode /o<tcode> opens a new session. " +
         (systems
           ? "A system that is not open: sap_systems lists the ones the user registered, sap_logon opens one and logs on."
           : "None: ask the user to open SAP and log on; this server never logs on."),
