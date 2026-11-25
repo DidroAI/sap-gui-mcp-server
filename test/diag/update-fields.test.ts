@@ -75,3 +75,29 @@ describe("fields SAP sends again without their text", () => {
     expect(field(screens[screens.length - 1], "ACGL_HEAD-BLDAT")).toMatchObject({ text: "", input: true });
   });
 });
+
+describe("a popup sent again as an update after SAP GUI's own call", () => {
+  // XD01's initial popup (2026-11-25): typing into a field with type-ahead makes SAP GUI call the server, which
+  // answers with the main window and the popup as updates that carry nothing: the popup's fields stay.
+  const withPopup = message([
+    ...screenHead({ tcode: "XD01", program: "SAPMF02D", dynpro: "0100", title: "Customer Create: Initial Screen" }),
+    windowStart({ index: 1, row: 1, col: 1, rows: 19, cols: 68 }),
+    sessionInfo(0x0d, "SAPMF02D".padEnd(40)),
+    sessionInfo(0x0e, "7100"),
+    RESET,
+    elementList(elem.label(6, 1, "Sales Organization"), elem.field(6, 24, "", { width: 4 }), elem.name(6, 24, "RF02D-VKORG")),
+    END,
+  ]);
+  const bothUpdated = message([windowStart({ rows: 20, cols: 100, update: true }), windowStart({ index: 1, row: 1, col: 1, rows: 19, cols: 68, update: true }), sessionInfo(0x0d, "SAPMF02D".padEnd(40)), sessionInfo(0x0e, "7100"), END]);
+  test("keeps its fields", () => {
+    const screens = run([[1, withPopup], [1, bothUpdated]]);
+    const s = screens[screens.length - 1];
+    expect(s?.windows.length).toBe(2);
+    expect(s?.windows[1]?.elements.some((e) => e.name === "RF02D-VKORG")).toBe(true);
+  });
+  test("a popup sent whole replaces what it had", () => {
+    const fresh = message([windowStart({ rows: 20, cols: 100, update: true }), windowStart({ index: 1, row: 1, col: 1, rows: 19, cols: 68 }), sessionInfo(0x0d, "SAPMF02D".padEnd(40)), sessionInfo(0x0e, "7100"), END]);
+    const screens = run([[1, withPopup], [1, fresh]]);
+    expect(screens[screens.length - 1]?.windows[1]?.elements ?? []).toEqual([]);
+  });
+});

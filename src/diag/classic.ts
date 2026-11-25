@@ -171,6 +171,8 @@ export class ClassicState {
   private path: Level[] = [];
   private last: DiagElement | undefined;
   private build: TableBuild | undefined;
+  /** The windows as they were before the last window start: a popup sent again as an update finds itself there. */
+  private closed: WindowState[] = [];
   /** Parts of the window kept from its last sending, while SAP sends only what changed: replaced by what comes at their place. */
   private carried = new Set<unknown>();
   private listPos: { row: number; col: number } | undefined;
@@ -347,7 +349,8 @@ export class ClassicState {
     w.size = { rows, cols };
     if (index > 0) w.position = { row: v[9] ?? 0, col: v[8] ?? 0 };
     // Menus, keys and GUI status are only sent when they change: a window sent again keeps them.
-    const before = this.windows[index];
+    // A popup sent again right after its main window was (an update of both) is found among those that one closed.
+    const before = this.windows[index] ?? this.closed[index];
     if (before) {
       w.menus = before.menus;
       w.toolbar = before.toolbar;
@@ -360,7 +363,8 @@ export class ClassicState {
     // error on the screen: the input fields and the message, not the labels, frames and buttons). What is not
     // sent again stays as it was. Seen in a capture: VA03's first screen after "not in the database".
     this.carried = new Set();
-    if (index === 0 && ((v[6] ?? 0) & 0x01) === 0 && before) {
+    // Byte 6 without 0x01 on a popup (0x10): the same, for the popup (XD01's initial popup after SAP GUI's type-ahead call).
+    if (((v[6] ?? 0) & 0x01) === 0 && before && (index === 0 || ((v[6] ?? 0) & 0x10) !== 0) && before.program && (index === 0 || before.modal)) {
       w.program = before.program;
       w.dynpro = before.dynpro;
       w.title = before.title;
@@ -372,6 +376,7 @@ export class ClassicState {
       for (const x of [...w.elements, ...w.tabstrips, ...w.tables]) this.carried.add(x);
     }
     // A window replaces itself and closes those above it.
+    this.closed = this.windows.slice(0);
     this.windows.length = Math.min(this.windows.length, index);
     while (this.windows.length < index) this.windows.push(newWindow(this.windows.length));
     this.windows[index] = w;

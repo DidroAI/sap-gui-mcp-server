@@ -38,7 +38,7 @@ export function windowStart(o: { index?: number; row?: number; col?: number; row
   const b = Buffer.alloc(16);
   const index = o.index ?? 0;
   // update: the same screen again with only what changed (byte 6 without 0x01).
-  b[6] = index > 0 ? 0x11 : o.update ? 0x00 : 0x01;
+  b[6] = (index > 0 ? 0x10 : 0x00) | (o.update ? 0 : 0x01);
   b[7] = index;
   b[8] = o.col ?? 0;
   b[9] = o.row ?? 0;
