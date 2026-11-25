@@ -4,7 +4,8 @@
  * 2. a full id that does not exist: its last segment (models rebuild ids and get the path wrong);
  * 3. the SAP field name ("VBAK-AUART") on the active window;
  * 4. a short id from the compact view: the end of a full id ("ctxtVBAK-AUART", "tblX/ctxtY[1,0]");
- * 5. a handle of the compact view (core/ids.ts): `cntlGRID1/shell`, `shellcont[1]/shell`.
+ * 5. a handle of the compact view (core/ids.ts): `cntlGRID1/shell`, `shellcont[1]/shell`;
+ * 6. a selection criterion's name ("MS_MATNR", "ctxtMS_MATNR"): its "from" field (MS_MATNR-LOW).
  * When several controls match by name, one the user can change wins, and a field wins over its label.
  * A handle that names several controls is not guessed: `resolveStrict` says which they are.
  */
@@ -44,6 +45,8 @@ export function resolve(screen: Screen, ident: string): Control | undefined {
   }
   let found = candidates(screen, screen.activeWindow ?? "wnd[0]").filter((c) => c.name === id);
   if (!found.length) found = candidates(screen).filter((c) => c.id.endsWith(`/${id}`));
+  // A selection criterion by its name ("MS_MATNR"): its "from" field, MS_MATNR-LOW (live, MMBE, 2026-11-25).
+  if (!found.length && !/-(LOW|HIGH)$/i.test(id)) return resolve(screen, `${id}-LOW`);
   if (!found.length) return undefined;
   const rank = (c: Control) => (c.changeable ? 0 : 2) + (c.type === "GuiLabel" ? 1 : 0);
   return [...found].sort((a, b) => rank(a) - rank(b))[0];
