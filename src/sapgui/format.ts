@@ -89,7 +89,8 @@ export function controlLines(c: Control): string[] {
     const value = t === "GuiPasswordField" ? "" : text;
     return [`${id}  field  ${esc(c.label) || tip} = "${value}"  (${c.changeable ? "edit" : "read-only"})`];
   }
-  if (t === "GuiLabel") return text ? [`${id}  label  ${text}`] : [];
+  // A value shown as text, named by the label before it (forAgent gives it that label).
+  if (t === "GuiLabel") return text ? [`${id}  label  ${c.label && esc(c.label) !== text ? `${esc(c.label)}: ` : ""}${text}`] : [];
   if (t === "GuiCheckBox") return [`${id}  checkbox  [${c.selected ? "x" : " "}] ${text || tip}`];
   if (t === "GuiRadioButton") return [`${id}  radio  [${c.selected ? "x" : " "}] ${text || tip}`];
   if (t === "GuiComboBox") {
@@ -128,6 +129,63 @@ export function listsOnly(s: Screen): Screen {
       if (!w.controls.some((x) => x.id.startsWith(inside) && LIST_CELL.test(x.id.slice(inside.length)))) delete c.scroll;
     }
   return s;
+}
+
+/** SAP GUI's own buttons in the system toolbar: a new window, a shortcut, its settings menu. Nothing of the transaction. */
+const GUI_BUTTONS = /^wnd\[\d+\]\/tbar\[0\]\/btn\[(418|419|446)\]$/;
+/** The prefix of a screen element's id that says its kind: "lbl", "ctxt", "txt", ... */
+const KIND = /^(lbl|ctxt|txt|cmb|chk|rad|pwd)(.+)$/;
+const last = (id: string) => id.slice(id.lastIndexOf("/") + 1);
+
+/**
+ * The screen as the agent's (compact) view shows it, without what SAP GUI
+ * adds around the transaction and the Web GUI view does not have:
+ *
+ * - the window's own line (the WINDOW line names it);
+ * - the status bar's panes (pane[0] repeats the status bar's message);
+ * - SAP GUI's buttons for a new window, a shortcut and its settings, the
+ *   "More" button of the toolbar (the buttons it folds away are on the view
+ *   anyway), and Enter in the main window's system toolbar (key Enter);
+ * - a field's label when it is its own line too ("lblVBAK-AUART label Order
+ *   Type" before the field that already says "Order Type").
+ *
+ * Measured live on FB50 (2026-11-25): 18 of 64 lines. Every control stays
+ * in the full view (sap_look full) and can still be acted on.
+ */
+export function forAgent(s: Screen): Screen {
+  return {
+    ...s,
+    windows: s.windows.map((w) => {
+      // Copies: a field may take a label's text, and the screen read stays as it was for the full view.
+      const all = w.controls.map((c) => ({ ...c }));
+      const fields = new Map<string, Control>();
+      const labels = new Set<string>();
+      for (const c of all) {
+        const k = KIND.exec(last(c.id));
+        if (k && k[1] !== "lbl") fields.set(`${c.id.slice(0, c.id.lastIndexOf("/") + 1)}${k[2]}`, c);
+        if (c.label) labels.add(esc(c.label));
+      }
+      const controls: Control[] = [];
+      for (const c of all) {
+        if (c.type === "GuiMainWindow" || c.type === "GuiModalWindow" || c.type === "GuiFrameWindow" || c.type === "GuiStatusPane") continue;
+        if (c.type === "GuiButton" && (GUI_BUTTONS.test(c.id) || last(c.id) === "btnvhmore" || (w.id === "wnd[0]" && c.id === "wnd[0]/tbar[0]/btn[0]"))) continue;
+        if (c.type === "GuiLabel") {
+          const k = KIND.exec(last(c.id));
+          const field = k?.[1] === "lbl" ? fields.get(`${c.id.slice(0, c.id.lastIndexOf("/") + 1)}${k[2]}`) : undefined;
+          const text = esc(c.text);
+          if (field && !esc(field.label) && text) {
+            // The field had no left label of its own: it takes this one's text, and the label's line goes.
+            field.label = text;
+            labels.add(text);
+            continue;
+          }
+          if (text && (labels.has(text) || (field && esc(field.label) === text))) continue;
+        }
+        controls.push(c);
+      }
+      return { ...w, controls };
+    }),
+  };
 }
 
 export function fullView(s: Screen): string {

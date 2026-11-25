@@ -24,7 +24,7 @@ import { type Action, ActionError, type Assessment, type Driver, type LookOption
 import { isLogonScreen, LOGON_REFUSAL } from "../core/words.js";
 import { assess } from "./assess.js";
 import type { Control, DoctorEngine, DoctorLocal, Screen, SessionFacts, SessionsFacts, Transport } from "./facts.js";
-import { fullView, listsOnly } from "./format.js";
+import { forAgent, fullView, listsOnly } from "./format.js";
 import { vkeyNumber } from "./keys.js";
 import { HostError, MAX_TIMEOUT_MS, type PowershellPolicy, powershellPolicy, PsHost, READ_TIMEOUT_MS } from "./host.js";
 import { relativeId, resolve, resolveStrict } from "./resolve.js";
@@ -149,7 +149,8 @@ class SapguiDriver implements Driver {
   async look(options: LookOptions): Promise<string> {
     const screen = await this.screen();
     const full = fullView(screen);
-    if (!options.id) return options.compact ? compact(full) : full;
+    // The compact view leaves out what SAP GUI adds around the transaction (forAgent); the full view keeps all.
+    if (!options.id) return options.compact ? compact(fullView(forAgent(screen))) : full;
     const target = this.strict(screen, options.id);
     const missing = () => new ActionError(`No control "${options.id}" on this screen. Use an id from sap_look (the screen may have changed).`);
     if (!target) throw missing();
