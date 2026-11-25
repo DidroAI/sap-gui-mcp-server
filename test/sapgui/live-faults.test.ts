@@ -30,6 +30,7 @@ const one = (controls: Control[], program = "ZSEL", dynpro = "1000"): Screen => 
   transaction: "ZT01",
   program,
   screen: dynpro,
+  language: "EN",
   activeWindow: "wnd[0]",
   windows: [{ id: "wnd[0]", title: "Synthetic", controls: [{ id: "wnd[0]", type: "GuiMainWindow", name: "wnd[0]", text: "Synthetic" }, ...controls] }],
 });
@@ -68,5 +69,54 @@ describe("sapgui: a selection screen is no list", () => {
     );
     const { d } = await on(list);
     expect(await d.look({ compact: false })).toContain("wnd[0]/usr  list  201 rows (visible 34; scroll for the others)");
+  });
+});
+
+describe("sapgui: a toolbar's menu button (ME23N's document overview, Selection variant)", () => {
+  const TB = "wnd[0]/shellcont[1]/shell/shellcont[1]/shell[0]";
+  const overview = one([
+    {
+      id: TB,
+      type: "GuiShell",
+      name: "shell",
+      sub: "Toolbar",
+      buttons: [
+        { id: "SELECT", text: "", tip: "Selection variant", type: "Menu" },
+        { id: "REFRESH", text: "", tip: "Refresh", type: "Button" },
+      ],
+    },
+  ]);
+  test("the view says it is a menu", async () => {
+    const { d } = await on(overview);
+    expect(await d.look({ compact: false })).toContain(`${TB}  toolbar  Selection variant {SELECT} (menu), Refresh {REFRESH}`);
+  });
+  test("without an entry: the host is asked for the menu, and the answer lists its entries", async () => {
+    const acts: unknown[] = [];
+    const host: Transport = {
+      async request<T>(op: string, params: Record<string, unknown> = {}): Promise<T> {
+        if (op === "screen") return structuredClone(overview) as T;
+        if (op === "act") {
+          acts.push(params.action);
+          return { done: true, menu: [["PO_QUERY", "Purchase orders"], ["POS_BY_USER_QUERY", "My purchase orders"]] } as T;
+        }
+        return { found: false } as T;
+      },
+      close() {},
+    };
+    const d = await sapguiSurface({}, { platform: "win32", transport: host }).open({ id: "sapgui:/app/con[0]/ses[0]", surface: "sapgui", where: "test" });
+    const answer = await d.act({ do: "toolbar", id: "shell[0]", button: "SELECT" });
+    expect(acts).toEqual([{ do: "toolbar", id: TB, button: "SELECT" }]);
+    expect(answer).toBe(`SELECT in ${TB} is a menu: Purchase orders, My purchase orders. Choose one with "value", e.g. {"do":"toolbar","id":"${TB}","button":"SELECT","value":"Purchase orders"}.`);
+  });
+  test("with an entry: it goes to the host as menu", async () => {
+    const { d, acts } = await on(overview);
+    await d.act({ do: "toolbar", id: "shell[0]", button: "SELECT", value: "My purchase orders" });
+    expect(acts).toEqual([{ do: "toolbar", id: TB, button: "SELECT", menu: "My purchase orders" }]);
+  });
+  test("the guard judges the entry: a safe button's plain entry navigates, an entry that saves or deletes commits", async () => {
+    const { d } = await on(overview);
+    expect((await d.assess({ do: "toolbar", id: "shell[0]", button: "REFRESH", value: "Purchase orders" })).risk).toBe("navigate");
+    expect((await d.assess({ do: "toolbar", id: "shell[0]", button: "REFRESH", value: "Delete" })).risk).toBe("commit");
+    expect((await d.assess({ do: "toolbar", id: "shell[0]", button: "SELECT", value: "Purchase orders" })).risk).toBe("navigate");
   });
 });

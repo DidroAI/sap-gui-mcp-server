@@ -386,8 +386,19 @@ class SapguiDriver implements Driver {
       case "scroll":
         return this.scroll(target, (action.to ?? "next") as number | string, timeoutMs);
       case "toolbar":
+      {
         if (typeof action.button !== "string") throw new ActionError('toolbar needs "button": the id shown as {<id>}');
-        return this.run({ do: "toolbar", id, button: action.button }, `toolbar button ${action.button} in ${id}`, timeoutMs);
+        // A menu button: "value" is the entry to choose; without it the answer is the menu's entries.
+        const entry = action.value === undefined || action.value === "" ? undefined : String(action.value);
+        this.last = undefined;
+        this.treeFrom = {};
+        const r = await this.ask<{ menu?: [string, string][] }>("act", { action: { do: "toolbar", id, button: action.button, ...(entry ? { menu: entry } : {}) } }, timeoutMs);
+        if (r?.menu)
+          return r.menu.length
+            ? `${action.button} in ${id} is a menu: ${r.menu.map(([, t]) => t).join(", ")}. Choose one with "value", e.g. {"do":"toolbar","id":"${id}","button":"${action.button}","value":"${r.menu[0]?.[1]}"}.`
+            : `${action.button} in ${id} is a menu, and SAP GUI gave none of its entries.`;
+        return entry ? `toolbar button ${action.button} in ${id}, menu entry "${entry}"` : `toolbar button ${action.button} in ${id}`;
+      }
       default:
         throw new ActionError(`Unknown action "${doing}". SAP GUI takes: set, press, key, select, check, combo, okcode, f4, focus, dblclick, tree, grid, toolbar, scroll.`);
     }

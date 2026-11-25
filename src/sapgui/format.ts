@@ -63,7 +63,7 @@ function shellLines(c: Control): string[] {
   } else if (c.sub === "TextEdit") {
     out.push(`${c.id}  text-editor  "${esc(c.text).slice(0, 2000)}"`);
   } else if (c.sub === "Toolbar") {
-    const buttons = (c.buttons ?? []).map((b) => `${esc(b.text) || esc(b.tip)} {${b.id}}`);
+    const buttons = (c.buttons ?? []).map((b) => `${esc(b.text) || esc(b.tip)} {${b.id}}${b.type === "Menu" ? " (menu)" : b.type === "ButtonAndMenu" ? " (also a menu)" : ""}`);
     if (buttons.length) out.push(`${c.id}  toolbar  ${buttons.join(", ")}`);
   } else if (c.sub === "HTMLViewer") {
     out.push(`${c.id}  html-viewer`);
