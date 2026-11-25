@@ -20,7 +20,8 @@
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
+import { setupSkills, userSkillDirs } from "./skills.js";
 
 export const NAME = "sap-ui-automation";
 const PACKAGE = "sap-ui-automation";
@@ -155,6 +156,10 @@ export interface SetupOptions {
   onPath?: ((cmd: string) => boolean) | undefined;
   /** Through the Chrome extension: the new entries get SAP_BROWSER=extension. */
   extension?: boolean | undefined;
+  /** Install the bundled skills for the apps set up (Claude Code, Codex, Cursor). Default: true. */
+  skills?: boolean | undefined;
+  /** Where the skills come from (tests). Default: this package. */
+  skillsRoot?: string | undefined;
 }
 
 export const CLIENTS = ["claude-code", "codex", "claude-desktop", "cursor", "windsurf", "vscode"] as const;
@@ -245,6 +250,9 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
   const lines: string[] = [`Command for MCP clients: ${command.join(" ")}`, ""];
   let changed = 0;
   let found = 0;
+  /** The apps that have the server now: they get the skills. */
+  const ready: Client[] = [];
+  let skillsChanged = false;
 
   if (want("claude-code")) {
     if (has("claude")) {
@@ -252,12 +260,14 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
       // From the home folder: a project's own .mcp.json must not count as installed.
       const has = runClaude(["mcp", "get", NAME], platform, home).status === 0;
       const envArgs = Object.entries(vars).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
+      if (has || opts.dryRun) ready.push("claude-code");
       if (has) lines.push(`✓ Claude Code: "${NAME}" is already configured (claude mcp get ${NAME}).${envNote}`);
       else if (opts.dryRun) lines.push(`• Claude Code: would run claude mcp add ${NAME} --scope user ${envArgs.length ? `${envArgs.join(" ")} ` : ""}-- ${command.join(" ")}`);
       else {
         const r = runClaude(["mcp", "add", NAME, "--scope", "user", ...envArgs, "--", ...command], platform, home);
         if (r.status === 0) {
           changed++;
+          ready.push("claude-code");
           lines.push(`✓ Claude Code: added "${NAME}" for your user. Restart Claude Code to load it.`);
         } else lines.push(`✗ Claude Code: claude mcp add failed: ${(r.stderr || r.stdout).trim().split("\n")[0]}`);
       }
@@ -271,6 +281,7 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
       found++;
       const text = existsSync(file) ? readFileSync(file, "utf8") : "";
       const present = codexHas(text);
+      if (present !== "unsure") ready.push("codex");
       if (present === "yes") lines.push(`✓ Codex: "${NAME}" is already in ${file}.${envNote}`);
       else if (present === "unsure") {
         lines.push(`✗ Codex: ${file} names "${NAME}" in a form setup does not read; check it, or add this table by hand:`);
@@ -303,6 +314,7 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
       found++;
       const r = addJsonServer(file, "mcpServers", withEnv({ command: command[0], args: command.slice(1) }), "Cursor", "Reload Cursor's MCP servers (Settings → MCP) to load it.", opts.dryRun);
       if (r.changed) changed++;
+      if (!r.line.startsWith("✗")) ready.push("cursor");
       lines.push(r.line, ...oldInJson(file, "mcpServers"));
     } else lines.push("– Cursor: not found (no ~/.cursor, no .cursor/mcp.json here).");
   }
@@ -326,10 +338,24 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
     lines.push(r.line, ...oldInJson(file, "servers"));
   }
 
+  // The skills, where each app that has the server reads them: the agent uses one when a task matches it.
+  if (opts.skills !== false && ready.length) {
+    const show = (p: string) => (p.startsWith(home + sep) ? join("~", relative(home, p)) : p);
+    const label: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor" };
+    for (const { dir, clients } of userSkillDirs(ready, home, env)) {
+      const { installed, left } = setupSkills(dir, opts.dryRun, opts.skillsRoot);
+      const who = clients.map((c) => label[c]).join(", ");
+      // Skills load when the app starts a new session: a restart, as for the server.
+      if (installed.length && !opts.dryRun) skillsChanged = true;
+      if (installed.length) lines.push(`${opts.dryRun ? "•" : "✓"} Skills for ${who}: ${opts.dryRun ? "would install" : "installed"} ${installed.join(", ")} in ${show(dir)}.`);
+      if (left.length) lines.push(`– Skills for ${who}: ${left.join(", ")} in ${show(dir)} ${left.length > 1 ? "are" : "is"} not from this package, left as ${left.length > 1 ? "they are" : "it is"}.`);
+    }
+  }
+
   if (!found) lines.push("", `No MCP client found. Add this command to your client's MCP settings by hand: ${command.join(" ")}`);
   lines.push(
     "",
-    changed ? "Next: restart the clients marked above, and ask your agent to look at your SAP screen." : "Next: ask your agent to look at your SAP screen.",
+    changed || skillsChanged ? "Next: restart the clients marked above, and ask your agent to look at your SAP screen." : "Next: ask your agent to look at your SAP screen.",
     "For Web GUI and Fiori, a Chrome window opens: open your SAP address there and log on, once.",
     "If it cannot see SAP, run npx -y sap-ui-automation doctor.",
   );

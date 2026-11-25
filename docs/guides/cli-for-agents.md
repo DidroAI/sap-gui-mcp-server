@@ -69,7 +69,7 @@ and a `sap-gui-cli` skill on driving SAP through these commands, into the
 agent's folder: `.claude/skills` (Claude), `.agents/skills` (Codex) or
 `.cursor/rules/<name>.mdc` (Cursor), chosen with
 `--target claude|codex|cursor|all`; `--global` uses `~/.claude/skills` and
-`$CODEX_HOME/skills` instead. `sap-gui init` does this as part of setting a project
+`~/.agents/skills` instead. `setup` installs them for the user as well. `sap-gui init` does this as part of setting a project
 up. The skill tells the agent
 how SAP screens behave: fields take effect on Enter, popups come first,
 value help instead of guessed codes, and never work around the write

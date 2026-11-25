@@ -54,10 +54,11 @@ from Chrome without closing it.
 ## setup
 
 ```sh
-sap-ui-automation setup [claude-code|codex|claude-desktop|cursor|windsurf|vscode]... [--dry-run]
+sap-ui-automation setup [claude-code|codex|claude-desktop|cursor|windsurf|vscode]... [--extension] [--no-skills] [--dry-run]
 ```
 
-Adds the server, as `sap-ui-automation`, to the MCP clients it finds:
+Adds the server, as `sap-ui-automation`, to the MCP clients it finds, and
+the bundled skills to those that read skills:
 
 | Client | How | Found when |
 | --- | --- | --- |
@@ -71,7 +72,23 @@ Adds the server, as `sap-ui-automation`, to the MCP clients it finds:
 | Option | Effect |
 | --- | --- |
 | `claude-code`, `codex`, `claude-desktop`, `cursor`, `windsurf`, `vscode` | only these clients; default every one found |
+| `--extension` | new entries get `SAP_BROWSER=extension` (through the Chrome extension) |
+| `--no-skills` | do not install the skills |
 | `--dry-run` | say what would change, change nothing |
+
+The skills (`sap-gui-drive`, `sap-gui-cli`) go where each app that has the
+server reads a user's skills, so the agent uses one when a task matches it:
+
+| App | Folder |
+| --- | --- |
+| Claude Code | `~/.claude/skills` (`$CLAUDE_CONFIG_DIR/skills` when set) |
+| Codex | `~/.agents/skills` |
+| Cursor | the Claude Code folder when Claude Code is set up too, else the Codex folder, else `~/.cursor/skills` |
+| Claude Desktop, Windsurf, VS Code | none: they read no skills from disk |
+
+Each skill folder it writes holds a `.sap-ui-automation` marker: running
+setup again replaces those copies with the current version, and a folder
+of the same name that is not from this package is left as it is.
 
 - It never overwrites an existing `sap-ui-automation` entry.
 - It keeps a `.bak` copy of a file before it changes it.

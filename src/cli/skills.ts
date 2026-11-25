@@ -3,8 +3,8 @@
  * and whatever else is in that folder) to where agents read them:
  *
  * - Claude Code: `.claude/skills/<name>/` in the project, or `~/.claude/skills/<name>/` (--global);
- * - Codex: `.agents/skills/<name>/` in the project, or `$CODEX_HOME/skills/<name>/`
- *   (default `~/.codex/skills`) with --global;
+ * - Codex: `.agents/skills/<name>/` in the project, or `~/.agents/skills/<name>/` (--global),
+ *   where Codex reads a user's skills;
  * - Cursor: `.cursor/rules/<name>.mdc` in the project (Cursor has no user rule files,
  *   so --global skips it); the SKILL.md frontmatter becomes a rule's
  *   `description` with `alwaysApply: false`, so Cursor picks it by description.
@@ -13,7 +13,7 @@
  * A file that differs is replaced, unless `overwrite` is false (init without
  * --force): then it is kept, as the user may have edited it.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -109,8 +109,8 @@ const LABEL: Record<SkillTarget, string> = { claude: "Claude Code", codex: "Code
 
 /** Where a target's skills go; undefined when the target has no such scope. */
 export function skillsDir(target: SkillTarget, global: boolean, cwd: string, home: string, env: Record<string, string | undefined>): string | undefined {
-  if (target === "claude") return global ? join(home, ".claude", "skills") : join(cwd, ".claude", "skills");
-  if (target === "codex") return global ? join(env.CODEX_HOME ?? join(home, ".codex"), "skills") : join(cwd, ".agents", "skills");
+  if (target === "claude") return global ? join(env.CLAUDE_CONFIG_DIR || join(home, ".claude"), "skills") : join(cwd, ".claude", "skills");
+  if (target === "codex") return join(global ? home : cwd, ".agents", "skills");
   return global ? undefined : join(cwd, ".cursor", "rules");
 }
 
@@ -156,4 +156,60 @@ export function installSkills(opts: InstallOptions): InstallResult {
     }
   }
   return { lines, files };
+}
+
+// ---------------------------------------------------------------- setup: the skills, for the user, with the MCP server
+
+/**
+ * Where each agent app reads a user's skills. Cursor also reads Claude Code's and the shared
+ * `~/.agents/skills` folder, so it gets a folder of its own only when neither is written.
+ * Claude Desktop, Windsurf and VS Code read no skills from disk.
+ */
+export function userSkillDirs(clients: string[], home: string, env: Record<string, string | undefined>): { dir: string; clients: string[] }[] {
+  const dirs: { dir: string; clients: string[] }[] = [];
+  if (clients.includes("claude-code")) dirs.push({ dir: join(env.CLAUDE_CONFIG_DIR || join(home, ".claude"), "skills"), clients: ["claude-code"] });
+  if (clients.includes("codex")) dirs.push({ dir: join(home, ".agents", "skills"), clients: ["codex"] });
+  if (clients.includes("cursor")) {
+    const shared = dirs[0];
+    if (shared) shared.clients.push("cursor");
+    else dirs.push({ dir: join(home, ".cursor", "skills"), clients: ["cursor"] });
+  }
+  return dirs;
+}
+
+/** Left in each skill folder setup writes, so that only those are replaced later. */
+export const SKILL_MARKER = ".sap-ui-automation";
+
+/**
+ * Whether a skill folder is one this package installed: it holds the marker, or (copied before the
+ * marker existed, by `install --skills --global`) a SKILL.md of that name that uses this server.
+ * A folder someone made themselves is not.
+ */
+export function ownSkill(target: string): boolean {
+  if (existsSync(join(target, SKILL_MARKER))) return true;
+  const text = readIfThere(join(target, "SKILL.md"), "utf8");
+  return !!text && new RegExp(`^name: ${target.split(/[\\/]/).pop()}$`, "m").test(text) && /\bsap-ui-automation\b/.test(text);
+}
+
+/**
+ * Copies the shipped skills into a folder, replacing this package's copies from an earlier version;
+ * a folder of the same name that is not ours stays. Returns what was installed and what was left.
+ */
+export function setupSkills(dir: string, dryRun: boolean, root: string = packageRoot()): { installed: string[]; left: string[] } {
+  const installed: string[] = [];
+  const left: string[] = [];
+  for (const skill of shippedSkills(root)) {
+    const target = join(dir, skill.name);
+    if (existsSync(target) && !ownSkill(target)) {
+      left.push(skill.name);
+      continue;
+    }
+    installed.push(skill.name);
+    if (dryRun) continue;
+    rmSync(target, { recursive: true, force: true });
+    mkdirSync(dir, { recursive: true });
+    cpSync(skill.dir, target, { recursive: true });
+    writeFileSync(join(target, SKILL_MARKER), "Installed by sap-ui-automation setup; replaced on the next setup.\n");
+  }
+  return { installed, left };
 }

@@ -152,14 +152,11 @@ describe("install --skills", () => {
     expect(existsSync(join(home, ".claude", "skills", "sap-gui-drive", "SKILL.md"))).toBe(true);
   });
 
-  test("Codex: .agents/skills in the project, CODEX_HOME/skills with --global", () => {
+  test("Codex: .agents/skills in the project, ~/.agents/skills with --global", () => {
     installSkills({ targets: ["codex"], cwd, home, env: {} });
     expect(existsSync(join(cwd, ".agents", "skills", "sap-gui-drive", "SKILL.md"))).toBe(true);
     installSkills({ targets: ["codex"], global: true, cwd, home, env: {} });
-    expect(existsSync(join(home, ".codex", "skills", "sap-gui-drive", "SKILL.md"))).toBe(true);
-    const codexHome = join(root, "codex");
-    installSkills({ targets: ["codex"], global: true, cwd, home, env: { CODEX_HOME: codexHome } });
-    expect(existsSync(join(codexHome, "skills", "sap-gui-drive", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(home, ".agents", "skills", "sap-gui-drive", "SKILL.md"))).toBe(true);
   });
 
   test("Cursor: a .mdc rule picked by description; no user-level rules", () => {
@@ -206,6 +203,66 @@ describe("setup --extension", () => {
   });
   test("Codex's table carries the env", () => {
     expect(codexTable(["npx", "-y", "sap-ui-automation"], { SAP_BROWSER: "extension" })).toContain('env = { SAP_BROWSER = "extension" }');
+  });
+});
+
+describe("setup: the skills too", () => {
+  const skillsIn = (dir: string) => (existsSync(dir) ? readdirSync(dir).sort() : []);
+
+  test("Codex and Cursor set up: the skills go to ~/.agents/skills, marked as this package's; Cursor reads them there", () => {
+    mkdirSync(join(home, ".codex"));
+    mkdirSync(join(home, ".cursor"));
+    const r = setup({ dryRun: false, only: ["codex", "cursor"], cwd, onPath: none }, {}, "linux", home);
+    const dir = join(home, ".agents", "skills");
+    expect(skillsIn(dir)).toEqual(["sap-gui-cli", "sap-gui-drive"]);
+    expect(existsSync(join(dir, "sap-gui-drive", ".sap-ui-automation"))).toBe(true);
+    expect(read(join(dir, "sap-gui-drive", "SKILL.md"))).toBe(read(join(packageRoot(), "skills", "sap-gui-drive", "SKILL.md")));
+    expect(r.lines).toContain(`✓ Skills for Codex, Cursor: installed sap-gui-cli, sap-gui-drive in ${join("~", ".agents", "skills")}.`);
+    expect(existsSync(join(home, ".cursor", "skills"))).toBe(false);
+  });
+
+  test("Claude Code alone: $CLAUDE_CONFIG_DIR/skills; only Cursor: ~/.cursor/skills", async () => {
+    const { userSkillDirs } = await import("../src/cli/skills.js");
+    expect(userSkillDirs(["claude-code", "cursor"], home, { CLAUDE_CONFIG_DIR: join(root, "cc") })).toEqual([{ dir: join(root, "cc", "skills"), clients: ["claude-code", "cursor"] }]);
+    expect(userSkillDirs(["cursor"], home, {})).toEqual([{ dir: join(home, ".cursor", "skills"), clients: ["cursor"] }]);
+    expect(userSkillDirs(["claude-desktop", "windsurf"], home, {})).toEqual([]);
+  });
+
+  test("again: this package's copies are replaced; a folder of the same name that is not ours stays", () => {
+    mkdirSync(join(home, ".codex"));
+    const dir = join(home, ".agents", "skills");
+    setup({ dryRun: false, only: ["codex"], cwd, onPath: none }, {}, "linux", home);
+    writeFileSync(join(dir, "sap-gui-drive", "SKILL.md"), "old copy");
+    mkdirSync(join(dir, "sap-gui-cli"), { recursive: true });
+    rmSync(join(dir, "sap-gui-cli"), { recursive: true });
+    mkdirSync(join(dir, "sap-gui-cli"));
+    writeFileSync(join(dir, "sap-gui-cli", "SKILL.md"), "---\nname: sap-gui-cli\n---\nmine");
+    const r = setup({ dryRun: false, only: ["codex"], cwd, onPath: none }, {}, "linux", home);
+    expect(read(join(dir, "sap-gui-drive", "SKILL.md"))).toBe(read(join(packageRoot(), "skills", "sap-gui-drive", "SKILL.md")));
+    expect(read(join(dir, "sap-gui-cli", "SKILL.md"))).toBe("---\nname: sap-gui-cli\n---\nmine");
+    expect(r.lines).toContain(`– Skills for Codex: sap-gui-cli in ${join("~", ".agents", "skills")} is not from this package, left as it is.`);
+  });
+
+  test("a copy from install --skills --global (no marker) counts as ours and is updated", () => {
+    mkdirSync(join(home, ".codex"));
+    installSkills({ targets: ["codex"], global: true, cwd, home, env: {} });
+    const dir = join(home, ".agents", "skills");
+    writeFileSync(join(dir, "sap-gui-drive", "SKILL.md"), read(join(dir, "sap-gui-drive", "SKILL.md")) + "\nedited");
+    setup({ dryRun: false, only: ["codex"], cwd, onPath: none }, {}, "linux", home);
+    expect(read(join(dir, "sap-gui-drive", "SKILL.md"))).toBe(read(join(packageRoot(), "skills", "sap-gui-drive", "SKILL.md")));
+    expect(existsSync(join(dir, "sap-gui-drive", ".sap-ui-automation"))).toBe(true);
+  });
+
+  test("--no-skills, a dry run, and apps that read no skills write none", () => {
+    mkdirSync(join(home, ".codex"));
+    setup({ dryRun: false, only: ["codex"], cwd, onPath: none, skills: false }, {}, "linux", home);
+    expect(existsSync(join(home, ".agents"))).toBe(false);
+    const dry = setup({ dryRun: true, only: ["codex"], cwd, onPath: none }, {}, "linux", home);
+    expect(existsSync(join(home, ".agents"))).toBe(false);
+    expect(dry.lines).toContain(`• Skills for Codex: would install sap-gui-cli, sap-gui-drive in ${join("~", ".agents", "skills")}.`);
+    mkdirSync(join(home, ".config", "devin"), { recursive: true });
+    const r = setup({ dryRun: false, only: ["windsurf"], cwd, onPath: none }, {}, "linux", home);
+    expect(r.lines.some((l) => l.includes("Skills"))).toBe(false);
   });
 });
 

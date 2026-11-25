@@ -80,7 +80,8 @@ args = ["-y", "sap-ui-automation"]
 ```
 
 Or let it configure the clients it finds (Claude Code, Codex, Claude
-Desktop, Cursor, Windsurf, VS Code), then check what it can reach:
+Desktop, Cursor, Windsurf, VS Code), with the skills that teach the agent
+SAP for Claude Code, Codex and Cursor, then check what it can reach:
 
 ```sh
 npx -y sap-ui-automation setup

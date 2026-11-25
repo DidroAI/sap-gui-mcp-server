@@ -17,6 +17,11 @@ change the tools or the view format.
 
 ### Changed (after 0.1.0)
 
+- `setup` installs the skills too, as the Cloud ALM server's setup does:
+  for Claude Code (`~/.claude/skills`), Codex (`~/.agents/skills`) and
+  Cursor, marked so that the next setup updates them; `--no-skills` leaves
+  them out. `install --skills --global` puts Codex's in `~/.agents/skills`,
+  where Codex reads a user's skills (was `~/.codex/skills`).
 - Parallel sessions: `sap_sessions` tells the agent how to work in several
   sessions at once (one per task, `session` on every call). `sap_logon` has
   `newSession: true`: another session in a new window, on the same system
