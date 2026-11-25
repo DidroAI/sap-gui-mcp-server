@@ -1,19 +1,17 @@
 ---
 name: sap-gui-cli
-description: Work in SAP screens from the shell with the sap-gui CLI — run a transaction, fill a screen, read a list, check a document in SAP GUI, Web GUI or Fiori. Use when a task means doing or checking something in an SAP system the user has open and the sap_* MCP tools are not available but a shell is.
+description: Drives SAP screens from the shell with the sap-gui CLI of sap-ui-automation (sap-gui look, act, okcode). Runs transactions, fills screens, reads lists and ALV grids and checks documents in SAP GUI for Windows, Web GUI and Fiori. Use when a task means doing or checking something in an SAP system (a transaction code such as VA01 or ME23N, an order, a material, a Fiori app) and the sap_* MCP tools are not available but a shell is.
 ---
 
-# Working in SAP screens with the `sap-gui` CLI
+# Driving SAP screens with the `sap-gui` CLI
 
-`sap-gui` (from [sap-ui-automation](https://github.com/DidroAI/sap-ui-automation);
-`npx sap-ui-automation <command>` works too) works in the SAP sessions the
-user already has open, as that user. It never logs on.
+`sap-gui` works in the SAP sessions the user has open, as that user and
+under their authorisations. It never logs on: with no session open, ask the
+user to open SAP. `npx -y sap-ui-automation <command>` is the same program.
 
 `look` prints a few short lines (header, status bar) and the path of a file
-with the whole screen; `act`, `okcode` and `open` print their whole answer:
-what ran, then the new screen, or on the same screen only the lines that
-changed. **Read the printed lines; open the file only when you need the
-screen** (to find an id, read values, see a list).
+with the whole screen. `act`, `okcode` and `open` print their whole answer:
+what ran, then the new screen, or only the lines that changed.
 
 ```
 $ sap-gui act set ctxtVBAK-AUART OR
@@ -24,36 +22,41 @@ CHANGED 1 of 48 lines on VA01 · "Create Standard Order: Overview" (same screen;
 screen: .sap-gui/screens/7-act.txt
 ```
 
-## The loop
+Read the printed lines. Open the file only when you need the screen: to
+find an id, read values or see a list.
 
-1. `sap-gui look` (or `sap-gui sessions`, then `sap-gui use <n>`, when
-   several are open). The printed header says where you are: transaction,
-   program, screen, system. Read the screen file once for the ids. To start
-   a transaction: `sap-gui okcode /nVA03` (it submits: no Enter after it).
-2. One `sap-gui act` per **screen**, on ids from the screen file: the fields
-   and the key that sends them as one JSON list,
-   `act '[{"do":"set","id":"ctxtVBAK-VKORG","value":"1000"},{"do":"key","key":0}]'`.
-   It ends at the first surprise (a failure, a popup, an E/W/A status, a
-   held write, another screen unless the next action's id is on it and it
-   does not write) and prints `Ran k of n actions. Stopped: ...`. A step's
-   `"expect":{"screen":"4001"}` (`{"screen":"*"}`: any screen) lets it go on
-   through a screen you know comes; a write on such a screen needs
-   `"unseen":true` on its step. `okcode /n<tcode>` and `open` go on into
-   the screen they open.
-   It prints what ran (ids as the screen names them), then the new screen,
-   or `CHANGED n of m lines` and those lines when it is the same screen
-   (`~` changed, `+` new, `-` gone, `=` context). A `look` right after it,
-   on the same screen, prints only `Unchanged since your last sap_act` and
-   the act's file.
-3. Read the **STATUS** line when there is one: `STATUS E:` is an error (the
-   step did not go through), `W:` a warning (Enter accepts it), `A:` an
-   abort. A success shows as the status bar line (`sbar  status  S: ...`).
-4. Read numbers with the **NUMBERS** line: `NUMBERS 1.234,56` means a
-   decimal comma ("1.000" is one thousand, "312,000" is 312). When it says
-   `NUMBERS unknown`, find the notation first (an amount with decimals on
-   another screen, or the user's defaults in SU3).
+## One screen, one command
 
-A long run of steps on one screen: `sap-gui look --print` prints all of it.
+1. **Find the screen.** `sap-gui look`, then read the screen file once for
+   the ids. `sap-gui okcode /nVA03` when the task names the transaction.
+   With several sessions open, `sap-gui sessions`, then `sap-gui use <n>`.
+2. **Send the whole screen in one `act`**: the fields, then the key that
+   submits them, as one JSON list in single quotes.
+
+   ```sh
+   sap-gui act '[{"do":"set","id":"ctxtVBAK-AUART","value":"OR"},{"do":"set","id":"ctxtVBAK-VKORG","value":"1000"},{"do":"key","key":0}]'
+   ```
+
+3. **Read the answer, not the screen again.** It prints what ran, then the
+   new screen or `CHANGED n of m lines` (`~` changed, `+` new, `-` gone,
+   `=` context). `Ran k of n actions. Stopped: ...` means the list ended
+   early: go on from the screen it shows with the actions that did not run.
+4. **Read the `STATUS` line.** `E`: nothing went through, correct the field
+   it names. `W`: Enter accepts it, when the warning is acceptable for the
+   task. `A`: an abort. Success is the status bar line (`sbar  status  S: ...`).
+5. **Report** what you read or saved, with the document number from the
+   status bar.
+
+A list ends at the first surprise: a failure, a popup, an E/W/A status, a
+held write, or another screen (unless the next action's id is on it and it
+does not write). `okcode /n<tcode>` and `open` go on into the screen they
+open. To go on through a screen you know comes, add
+`"expect":{"screen":"4001"}` to the step (`{"screen":"*"}`: any screen). A
+write on a screen the list reached after you sent it does not run: read
+that screen, then send the write, or add `"unseen":true` when you know it.
+
+A `look` right after an `act`, on the same screen, prints only
+`Unchanged since your last sap_act` and the act's file.
 
 ## Commands
 
@@ -63,7 +66,7 @@ sap-gui use <n|id|system|tcode>        make one the active session
 sap-gui look [--full] [--diff]         the screen (file); --print prints it
 sap-gui look --id <id> [--rows 100-150] [--cols VBELN,NETWR]   one control whole, a range of rows
 sap-gui look --id mbar | --id 'menu[2]'   the menus and their entries; one menu whole
-sap-gui act '<json>' [--full]          one action (below); '[...]' one screen's actions
+sap-gui act '<json>' [--full]          one action (below); '[...]' one screen's actions (20 at most)
 sap-gui okcode </nVA03>                same as act okcode: starts a transaction (no Enter after it)
 sap-gui open <'#Intent-action'>        same as act open: a Fiori launchpad app
 sap-gui screenshot                     a PNG (charts, HTML panels the text cannot show)
@@ -72,15 +75,16 @@ sap-gui replay <file>                  run a recorded test again, no model
 sap-gui daemon status | stop
 ```
 
-`look`, `act`, `okcode`, `open`, `screenshot` and `record` take `--session <ref>`. Exit codes: 0 done,
-1 error or refused (the message is on stderr), 2 usage.
+`look`, `act`, `okcode`, `open`, `screenshot` and `record` take
+`--session <ref>`. Exit codes: 0 done, 1 error or refused (the message is
+on stderr), 2 usage.
 
 ## Actions
 
-Quote JSON for the shell with single quotes. Shorthands for the common ones:
-`act set <id> <value>`, `press <id>`, `key <n>`, `okcode </nVA03>`,
-`select <id>`, `check <id> true|false`, `combo <id> [key]`, `f4 <id>`,
-`dblclick <id>`, `scroll <id> <row|next|prev|first|last>`, `open <intent>`.
+Shorthands for the common ones: `act set <id> <value>`, `press <id>`,
+`key <n>`, `select <id>`, `check <id> true|false`, `combo <id> [key]`,
+`f4 <id>`, `dblclick <id>`, `scroll <id> <row|next|prev|first|last>`.
+Everything else is JSON:
 
 ```
 {"do":"set","id":"ctxtVBAK-AUART","value":"OR"}     type into a field
@@ -102,36 +106,57 @@ Quote JSON for the shell with single quotes. Shorthands for the common ones:
 
 ## How SAP screens behave
 
-- **Fields take effect on Enter.** `set` only types; fill the screen, then
+- **Fields take effect on Enter.** `set` only types. Fill the screen, then
   `act key 0` once.
-- **Don't guess codes**: open the value help (`act f4 <id>`) and pick.
-- `/nVA03` leaves the transaction (unsaved input is lost); `/oVA03` opens a
-  new session (SAP GUI).
-- **Popups** (`wnd[1]`) come first: the screen below does not react until
-  they are answered.
-- **Long lists** show the rows on screen and the total: scroll, or
-  `look --id <id> --rows 100-150`. Do not conclude an entry is missing from
-  the rows on screen. A wide grid shows its first 15 columns and names the
-  others: read them with `--cols`.
-- **Back without saving**: `act key 3` (F3) or `act key 12`; when SAP asks
-  whether to save, answer No unless the user asked to save.
+- **Do not guess codes**: open the value help (`act f4 <id>`) and pick.
+- **`okcode /n<tcode>` drops unsaved input** in the current transaction.
+- **Popups come first.** A `WINDOW wnd[1]` blocks the screen below until it
+  is answered.
+- **A list shows the rows on screen and the total.** Never conclude that an
+  entry is missing from the rows on screen: scroll, or
+  `look --id <id> --rows 100-150`. A wide grid shows its first 15 columns
+  and names the others: read them with `--cols`.
+- **Numbers follow the user's notation.** Trust the `NUMBERS` line: with
+  `NUMBERS 1.234,56`, "1.000" is one thousand and "312,000" is 312. When it
+  says `NUMBERS unknown`, find the notation first (an amount with decimals
+  on another screen, or the user's defaults in SU3).
+- **Leaving without saving:** `act key 3` (Back) or `act key 12` (Cancel).
+  When SAP asks whether to save, answer No unless the user asked to save.
+
+## Several sessions
+
+`sap-gui okcode /oVA03` opens another session of the same logon (SAP GUI
+and Web GUI), and that session becomes the active one. Send it on its own:
+inside a list it is refused. Then pass `--session <id>` on every command
+instead of relying on the active session. A Web GUI session that
+`sap-gui sessions` marks "not verified" is still loading or shows a popup:
+list again before you work in it.
+
+A logon has a limit of sessions (6 unless the system sets another). When
+`/o` answers that the logon has all the sessions it allows, answer SAP's
+popup and reuse a session you no longer need. Do not send `/o` again.
 
 ## Writing to SAP
 
-Saving, posting, releasing, deleting change the system. The user's
-`SAP_WRITE` decides: `off` (default) refuses: tell the user what you would
-have saved, leave the transaction without saving (`okcode /n`) so SAP
-releases the document's lock, and stop; `confirm` refuses it too here, because the CLI
-cannot ask the user (only an MCP client can); `on` runs it, and your own
-command approval is the user's check. Before a save under `on`, describe
-the action to the user in plain words when they have not asked for it. Never work around the setting (no save codes in the command field).
+Saving, posting, releasing and deleting change the system for real. The
+user's `SAP_WRITE` setting decides what happens:
+
+- **off** (default) and **confirm**: the action is refused. The CLI cannot
+  ask the user, so confirm refuses here too. Tell the user what you would
+  have saved, leave the transaction without saving (`sap-gui okcode /n`) so
+  that SAP releases the document's lock, and stop.
+- **on**: the action runs, and the user's approval of your command is the
+  check. Before a save the user has not asked for, describe it in plain
+  words. Afterwards say what you saved, with the document number.
+
+Save with `sap-gui act key 11` on every surface (in Web GUI the CLI presses
+the toolbar's Save button for it).
+
+Never work around the setting, for example with a save code in the command
+field. The `SAP_*` settings are the user's decision: never set, export or
+change them yourself (no `SAP_WRITE=on` in front of a command), not even to
+repeat what is already set. Report a refused write to the user, who decides.
 
 The CLI keeps a background daemon per directory, started on the first call
-with that call's `SAP_*` settings. A call with other settings is refused:
-`sap-gui daemon stop` first, and only when the user asked for the new
-settings.
-
-The `SAP_*` settings are the user's. Never set, export or change them
-yourself (no `SAP_WRITE=on` in front of a command, no `export`), not even to
-repeat what is already set: a refused write is reported to the user, who
-decides.
+with that call's `SAP_*` settings. A call with other settings is refused.
+Run `sap-gui daemon stop` only when the user asked for the new settings.

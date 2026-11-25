@@ -162,10 +162,10 @@ describe("install --skills", () => {
   test("Cursor: a .mdc rule picked by description; no user-level rules", () => {
     installSkills({ targets: ["cursor"], cwd, home, env: {} });
     const rule = read(join(cwd, ".cursor", "rules", "sap-gui-drive.mdc"));
-    expect(rule).toStartWith("---\ndescription: Work in SAP screens");
+    expect(rule).toStartWith("---\ndescription: Drives SAP screens");
     expect(rule).toContain("\nalwaysApply: false\n---\n");
     expect(rule).not.toContain("name: sap-gui-drive");
-    expect(rule).toContain("# Working in SAP screens");
+    expect(rule).toContain("# Driving SAP screens");
     const g = installSkills({ targets: ["cursor"], global: true, cwd, home, env: {} });
     expect(g.lines[0]).toContain("no user-level rule files");
   });

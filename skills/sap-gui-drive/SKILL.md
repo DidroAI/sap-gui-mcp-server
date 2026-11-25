@@ -1,124 +1,125 @@
 ---
 name: sap-gui-drive
-description: Work in SAP screens with the sap-ui-automation MCP tools — run a transaction, fill a screen, read a list, check a document in SAP GUI, Web GUI or Fiori. Use whenever a task means doing or checking something in an SAP system the user has open.
+description: Drives SAP screens through the sap-ui-automation MCP tools (sap_look, sap_act, sap_sessions, sap_logon). Runs transactions, fills screens, reads lists and ALV grids, checks documents and works in several sessions at once, in SAP GUI for Windows, Web GUI and Fiori. Use when a task means doing or checking something in an SAP system (a transaction code such as VA01 or ME23N, an order, a material, a Fiori app) and the sap_* tools are available.
 ---
 
-# Working in SAP screens
+# Driving SAP screens with the sap_* tools
 
-The `sap-ui-automation` server ([sap-ui-automation](https://github.com/DidroAI/sap-ui-automation);
-its tools are named `sap_*`, whatever name the server was added under) works
-in the SAP sessions the user already has open, as that user. It never logs on, except with `sap_logon` to a system the user
-registered in the Chrome extension (`sap_systems` lists them; the extension types the password). Everything you do is what the user could
-do by hand, under their authorisations.
+The tools work in the SAP sessions the user has open, as that user and
+under their authorisations. They come from the `sap-ui-automation` MCP
+server (`sap-ui-automation:sap_look`; the tool names are the same under any
+server name). Each tool's description lists its actions and fields. This
+skill gives the order of work and how SAP behaves.
 
-## The loop
+## One screen, one call
 
-1. `sap_look` (or `sap_sessions` first when several systems are open), or
-   straight to `sap_act` `{"do":"okcode","value":"/nVA01"}` when the task
-   names the transaction. Read the header: transaction, program, screen and
-   system tell you where you are.
-2. One `sap_act` call per **screen**: the fields you see and the key that
-   sends them, as `{"actions":[{"do":"set",...},{"do":"set",...},{"do":"key","key":0}]}`.
-   The batch ends at the first surprise (a failure, a popup, an E/W/A status,
-   another screen, a write waiting for a yes) and the answer says
-   `Ran k of n actions. Stopped: ...`. A step's `"expect"`
-   (`{"screen":"4001"}`, `{"popup":true}`, `{"status":"W"}`) lets it go on
-   through what you know comes. A write on a screen the batch reached after
-   you sent it does not run unless its step says `"unseen": true`: read that
-   screen first unless you are sure of it. An `okcode` submits on its own:
-   send no Enter after it (a batch skips one that comes right after).
-3. Each answer is the new screen: read it before the next step instead of
-   calling `sap_look` again (a `sap_look` right after it, on the same screen,
-   starts with "Unchanged since your last sap_act"). On the same screen it
-   holds only what changed (`~` changed, `+` new, `-` gone, `=` context).
-4. Read the **status bar** first (`STATUS E: ...`, or `sbar  status` in the
-   view; toasts and popovers in Fiori). `E`: the step did not go through,
-   correct the field it names. `W`: Enter accepts it. `S`: done, document
-   numbers are there.
+1. **Find the screen.** `sap_look`, or straight to
+   `{"do":"okcode","value":"/nVA03"}` with `sap_act` when the task names
+   the transaction. With several sessions open, `sap_sessions` first.
+2. **Send the whole screen in one `sap_act`**: the fields you see, then the
+   key that submits them.
+
+   ```json
+   {"actions":[
+     {"do":"set","id":"ctxtVBAK-AUART","value":"OR"},
+     {"do":"set","id":"ctxtVBAK-VKORG","value":"1000"},
+     {"do":"key","key":0}]}
+   ```
+
+3. **Read the answer, not the screen again.** The answer is the new screen
+   (or only the lines that changed). `Ran k of n actions. Stopped: ...`
+   means the batch ended early, at a popup, a status message or another
+   screen: go on from the screen it shows with the actions that did not run.
+4. **Read the status bar first** (`STATUS E: ...`; toasts in Fiori).
+   `E`: nothing went through, correct the field it names. `W`: Enter
+   accepts it, when the warning is acceptable for the task. `S`: done.
+5. **Report** what you read or saved, with the document number from the
+   status bar.
+
+A write (Save, Post) on a screen the batch reached after you sent it does
+not run. Read that screen in the answer, then send the write. Mark the step
+`"unseen": true` only when you know the screen.
 
 ## How SAP screens behave
 
-- **Fields take effect on Enter.** `set` only types; SAP checks the input
-  and fills dependent fields after `{"do":"key","key":0}` (Enter). Fill all
-  fields of a screen, then press Enter once.
-- **Don't guess codes.** For a field that wants a code (order type, plant,
-  company code), open its value help with `{"do":"f4","id":...}` and pick
-  from the list rather than inventing a value.
-- **Transactions:** `{"do":"okcode","value":"/nVA03"}` leaves the current
-  transaction and starts another (unsaved input is lost);
-  `/oVA03` opens it in a new session (SAP GUI and Web GUI). In a Fiori tab, open an app
-  with `{"do":"open","app":"#PurchaseOrder-manage"}`; an okcode with an
-  intent (`/nPurchaseOrder-manage`, `#X-y`) does the same, and `/n` goes to
-  the launchpad's home page.
-- **Popups** are their own windows (`wnd[1]`, `wnd[2]`) above the screen.
-  Answer them before anything else: the screen below does not react while
-  a popup is open.
-- **Lists:** ALV grids show rows with a column header once; open an entry
-  with `{"do":"grid","id":...,"row":N,"col":"<column>","how":"double"}`.
-  Trees: `{"do":"tree","id":...,"node":"<key>","how":"double"}`.
-  A cell of an input table or grid: `{"do":"set","id":<table>,"row":N,"col":"<column>","value":...}`.
-  `"row"` is always the number the view prints ("row N:", counted in the
-  whole table or list); the server scrolls to the row. A line of a classic
-  list: `{"do":"dblclick","id":"usr","row":N,"col":<number in braces>}`.
-- **Long lists** show the rows on screen and the total. Move them with
-  `{"do":"scroll","id":...,"to":N}` (or `"next"`, `"prev"`, `"first"`,
-  `"last"`); read a range with `sap_look` and `"id"`, `"rows": "100-150"`.
-  Do not conclude from the rows on screen that an entry is missing.
-- **Dropdowns** show their current entry and how many they have.
-  `{"do":"combo","id":...}` without a key lists the entries; with
-  `"key"` it chooses one.
-- **Back without saving:** F3 (`key 3`) goes back, F12 (`key 12`) cancels.
-  If SAP asks whether to save, answer **No** unless the user asked you to
-  save.
+- **Fields take effect on Enter.** `set` only types. SAP checks the input
+  and fills dependent fields on Enter, so fill the screen, then press Enter
+  once.
+- **Do not guess codes** (order type, plant, company code): open the value
+  help with `{"do":"f4","id":...}` and pick from its list.
+- **`/n<tcode>` drops unsaved input** in the current transaction.
+- **Popups come first.** A `WINDOW wnd[1]` blocks the screen below until it
+  is answered.
+- **A list shows the rows on screen and the total.** Never conclude that an
+  entry is missing from the rows on screen: read the others with `sap_look`
+  and `"id"`, `"rows":"100-150"`. `"row"` in an action is the number the
+  view prints.
+- **Numbers follow the user's notation.** Trust the `NUMBERS` line of the
+  view: with `NUMBERS 1.234,56`, "1.000" is one thousand. When it says
+  `unknown`, find the notation before you read or type an amount.
+- **Leaving without saving:** Back (`key 3`) or Cancel (`key 12`). When SAP
+  asks whether to save, answer No unless the user asked you to save.
+- **Fiori:** open an app with `{"do":"open","app":"#PurchaseOrder-manage"}`.
+  The okcode `/n` goes to the launchpad's home page.
 
 ## Several sessions at once
 
-When the task has independent parts (look up one order while creating
-another, the same check in two systems), work them in parallel, one session
-per part:
+Use one session per independent part of a task (look up one order while
+creating another, the same check in two systems).
 
-1. **Get one session per part.** `/o<tcode>` opens another session of the
-   same logon; `sap_logon` with `"newSession": true` opens one in a new
-   window, on the same system or another (a logon has at most 6 sessions).
-   Use a session only when its answer says `new` or `reused` and
-   `verified` (or `sap_sessions` shows its system, client and user): a tab
-   marked "not verified" is still loading or shows a popup.
-2. **Pass its `session` id on every call**, never rely on the active one.
-   Calls on different sessions run at the same time; calls on one session
-   run in order.
-3. **Send the independent calls before waiting on any**, and keep the
-   dependent steps of each part in order in its own session.
-4. **Check each answer against its own part** (transaction, document
-   number in the status bar) and report each part as it finishes, so that
-   one stuck session does not hide another one's result.
-5. Asked to show that it ran in parallel: note when you sent each call and
-   when its answer came.
+1. **Get a session per part.**
+   - `{"do":"okcode","value":"/oVA03"}` opens another session of the same
+     logon (SAP GUI and Web GUI). Send it on its own: inside `actions` it
+     is refused.
+   - `sap_logon` with `"newSession": true` opens a new window with a logon
+     of its own, on the same system or another. Only servers set up with
+     the Chrome extension have `sap_logon`.
+
+   The new session becomes the active one.
+2. **Wait until it is verified.** Use a session when the `sap_logon` answer
+   says `verified`, or `sap_sessions` lists it with its system, client and
+   user. A Web GUI tab marked "not verified" is still loading or shows a
+   popup: call `sap_sessions` again before you work in it.
+3. **Pass `session` on every call**, with the id from the answer. Never rely
+   on the active session. Calls on different sessions run at the same time,
+   calls on one session run in order.
+4. **Send the independent calls together**, then check each answer against
+   its own part (transaction, document number) and report each part as it
+   finishes.
+
+A logon has a limit of sessions (6 unless the system sets another). When
+`/o` answers that the logon has all the sessions it allows, answer SAP's
+popup, then reuse a session you no longer need or open another logon with
+`sap_logon` and `"newSession": true`. Do not send `/o` again.
+
+## Logging on
+
+Without `sap_logon` the server never logs on: ask the user to open SAP.
+With it, log on only to a system `sap_systems` lists. When `sap_logon`
+stops (wrong password, locked user, SAP asking about other logons), tell the
+user what it says. Never retry on your own and never ask for a password.
 
 ## Writing to SAP
 
-Saving, posting, releasing or deleting changes the system for real. The
-server's write setting decides what happens:
+Saving, posting, releasing and deleting change the system for real. The
+user's write setting decides what happens, and `sap_act` says which one
+applies:
 
-- **off** (default): such actions are refused. Tell the user what you
-  would have saved and that writes are off, then stop: do not look for
-  another way.
+- **off** (default): the action is refused. Tell the user what you would
+  have saved and stop.
 - **confirm**: the client asks the user before the action runs. If they
-  decline, stop and ask how to go on. If the answer says this client cannot
-  ask the user, the write is refused: tell the user what you would have
-  saved, and stop.
-- **on**: actions run. Still say what you saved, with the document number
-  from the status bar.
+  decline, ask how to go on. A client that cannot ask gets the action
+  refused, as under off.
+- **on**: the action runs. Say what you saved, with the document number.
 
-Never work around the setting (for example by typing `/11` or a save
-function code into the command field).
+Save with `{"do":"key","key":"Save"}` on every surface (in Web GUI the
+server presses the toolbar's Save button for it).
 
-When a write did not run (refused, declined or not asked), and you had
-typed into the transaction or opened a document to change it, leave it
-without saving: `{"do":"okcode","value":"/n"}`, or Back and the "leave
-without saving" answer to SAP's question. That releases SAP's lock on the
-document. Don't leave it open for the user to save by hand unless they ask.
+Never work around the setting, for example with a save code in the command
+field or another route to the same change. The setting is the user's
+decision, not an obstacle.
 
-## When the view is not enough
-
-`sap_screenshot` shows the window as an image: use it for charts, HTML
-panels the text view marks as opaque, or to check a result visually.
+When a write did not run and you had typed into the transaction or opened a
+document to change it, leave without saving: `{"do":"okcode","value":"/n"}`,
+or Back and No to SAP's question. This releases SAP's lock on the document.
+Leave it open only when the user asks.

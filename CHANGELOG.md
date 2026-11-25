@@ -37,6 +37,11 @@ change the tools or the view format.
   another logon.
 - The `sap-gui-drive` skill has a section on working in several sessions at
   once.
+- The `sap-gui-drive` and `sap-gui-cli` skills are rewritten to follow the
+  Agent Skills authoring guidance: a description that says what the skill
+  does and when to use it, numbered steps, and current rules for sessions
+  (`/o` in Web GUI too and sent on its own, "not verified", SAP's limit of
+  sessions), numbers and Save.
 - The SAP window opens on an empty tab the first time, instead of a local
   page; after that it opens the last SAP address, as before.
 - `setup`, `doctor` and the error texts print commands as `npx -y
