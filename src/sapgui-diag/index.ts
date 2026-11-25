@@ -291,6 +291,12 @@ function lookup(w: DiagWindow, raw: string, action: Action, ci: boolean): Found 
     }
     return { none: true };
   }
+  // btn[N], as scripting names the toolbar's buttons: function key N (the tool's description says so).
+  const btn = /^btn\[(\d+)\]$/i.exec(raw);
+  if (btn) {
+    const k = [...w.toolbar, ...w.keys].find((x) => x.vkey === Number(btn[1]));
+    return k ? { target: { kind: "key", key: k, what: `button "${clean(k.text || k.tooltip) || k.key}"` } } : { none: true };
+  }
   const cell = /^(.+)\[(\d+)\]$/.exec(raw);
   if (cell) {
     const [, name = "", n = ""] = cell;
@@ -324,10 +330,17 @@ function lookup(w: DiagWindow, raw: string, action: Action, ci: boolean): Found 
   if (best.length > 1) return { several: best.map((e) => `@${e.row},${e.col} (${e.kind} ${e.name}${e.text ? ` "${clean(e.text).slice(0, 30)}"` : ""})`) };
   const e = best[0];
   if (e) return { target: { kind: "element", element: e, window: w, row: e.row, col: e.col, what: `${e.kind} ${e.name}` } };
-  // a toolbar button by its text ("Back", "Display document flow")
-  const k = [...w.toolbar, ...w.keys].find((x) => clean(x.text).toLowerCase() === raw.toLowerCase());
+  // a toolbar button by its text ("Back", "Display document flow") or tooltip, also with the key the view prints after it ("Display Document (F2)")
+  const said = [raw, raw.replace(/\s*\((?:(?:Shift|Ctrl|Alt)\+)*(?:F\d{1,2}|Enter|Esc|PageUp|PageDown|[A-Z])\)\s*$/i, "")].map((x) => x.trim().toLowerCase());
+  const k = [...w.toolbar, ...w.keys].find((x) => said.includes(clean(x.text).toLowerCase())) ?? [...w.toolbar, ...w.keys].find((x) => !clean(x.text) && said.includes(clean(x.tooltip).toLowerCase()));
   // Any action that clicks finds it too: so that the guard judges a focus or a check on it as pressing it.
-  if (k && /^(press|click|dblclick|select|focus|f4|set|check)$/.test(action.do)) return { target: { kind: "key", key: k, what: `button "${clean(k.text)}"` } };
+  if (k && /^(press|click|dblclick|select|focus|f4|set|check)$/.test(action.do)) return { target: { kind: "key", key: k, what: `button "${clean(k.text || k.tooltip)}"` } };
+  // a tab by its text ("Administration"), for the actions that open a tab
+  if (/^(press|click|select)$/.test(action.do)) {
+    const tabs = w.tabstrips.flatMap((ts) => ts.tabs).filter((x) => clean(x.text).toLowerCase() === said[0]);
+    const tab = tabs.length === 1 ? tabs[0] : undefined;
+    if (tab) return { target: { kind: "tab", window: w, row: tab.row, col: tab.col, text: clean(tab.text), what: `tab "${clean(tab.text)}"` } };
+  }
   return { none: true };
 }
 
