@@ -341,9 +341,17 @@ function Shell-Facts($o, $n) {
   } catch { $n.error = Error-Text $_ }
 }
 
+# A table control's cell is named by its place ("txtVBAP-POSNR[0,3]"): its prefix says its type and the
+# rest its name, as SAP GUI names them, so neither is asked (two COM calls of five per cell).
+$CELL_TYPES = @{ txt = 'GuiTextField'; ctxt = 'GuiCTextField'; pwd = 'GuiPasswordField'; chk = 'GuiCheckBox'; rad = 'GuiRadioButton'; cmb = 'GuiComboBox'; btn = 'GuiButton'; lbl = 'GuiLabel' }
+$CELL_ID = [regex]'/(txt|ctxt|pwd|chk|rad|cmb|btn|lbl)([^/\[]+)\[\d+,\d+\]$'
+
 function Walk($o, $list) {
-  $t = [string](T $o 'Type')
-  $n = @{ id = (Rel ([string](T $o 'Id'))); type = $t; name = [string](T $o 'Name') }
+  $id = Rel ([string](T $o 'Id'))
+  $cm = $CELL_ID.Match($id)
+  if ($cm.Success -and $id.Contains('/tbl')) { $t = $CELL_TYPES[$cm.Groups[1].Value]; $nm = $cm.Groups[2].Value }
+  else { $t = [string](T $o 'Type'); $nm = [string](T $o 'Name') }
+  $n = @{ id = $id; type = $t; name = $nm }
   [void]$list.Add($n)
   if ($t -eq 'GuiShell') { Shell-Facts $o $n }
   elseif ($t -eq 'GuiUserArea') {
@@ -360,10 +368,16 @@ function Walk($o, $list) {
   elseif ($t -eq 'GuiTextField' -or $t -eq 'GuiCTextField' -or $t -eq 'GuiPasswordField') {
     # A password field's content is never read.
     if ($t -ne 'GuiPasswordField') { $n.text = [string](T $o 'Text') }
-    $n.tip = [string](T $o 'Tooltip')
     $n.changeable = [bool](T $o 'Changeable')
-    $lab = T $o 'LeftLabel'
-    if ($null -ne $lab) { $n.label = [string](T $lab 'Text') }
+    # A table control's cell ("...[col,row]") is named by its column: no tooltip or label of its own is read,
+    # two COM calls fewer per cell (FB50's item table has 370 of the screen's 434 controls).
+    if (-not $n.id.EndsWith(']') -or $n.id -notmatch '\[\d+,\d+\]$') {
+      $n.tip = [string](T $o 'Tooltip')
+      $lab = T $o 'LeftLabel'
+      if ($null -ne $lab) { $n.label = [string](T $lab 'Text') }
+    }
+    # A field has no children: not asked (a failed COM call costs as much as a read).
+    return
   }
   elseif ($t -eq 'GuiCheckBox' -or $t -eq 'GuiRadioButton') {
     $n.text = [string](T $o 'Text')
@@ -584,6 +598,7 @@ function Op-Act($req) {
     if ([string]$a['col']) { M $o 'SetCurrentCell' @($row, [string]$a['col']) }
     if ($how -eq 'select') { S $o 'SelectedRows' ([string]$row) }
     elseif ($how -eq 'unselect') { M $o 'ClearSelection' $null }
+    elseif ($how -eq 'cell') { }
     else { M $o 'DoubleClickCurrentCell' $null }
   }
   elseif ($do -eq 'cell') {

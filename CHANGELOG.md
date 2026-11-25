@@ -4,6 +4,51 @@ All notable changes to this project are listed here. The project follows
 [Semantic Versioning](https://semver.org); before 1.0, a minor version may
 change the tools or the view format.
 
+## Unreleased
+
+### Fixed
+
+- SAP GUI for Windows: `set` into a field SAP keeps closed says why (after
+  an error or a warning SAP opens only the fields its message names)
+  instead of "The method got an invalid argument".
+- SAP GUI for Windows: a click on an ALV grid's or a table control's row
+  selects the row; it was refused as "not a button", and under
+  `SAP_WRITE=off` as a possible write.
+- SAP GUI for Windows: a field's id with another type in front
+  (`ctxtRF05L-BELNR` for `txtRF05L-BELNR`), a selection criterion's name
+  (`MS_MATNR`) and a table column written as the legend shows it
+  (`txtKONP-KBETR`) find their control.
+- SAP GUI for Windows: a table column's id with a `row` (`set` on
+  `txtRV45A-KWMENG` with row 1) is that row's cell; a dropdown in a table
+  cell takes `row` and `col`; `press` on a tab selects it; an ALV grid takes
+  `"how":"cell"`; `WERKS-LOW` finds `MS_WERKS-LOW` when only one field ends
+  so; the rows of a list without a scrollbar are read instead of refused.
+- An Enter right after an okcode that only expects "any screen" or "a
+  popup" is skipped like a bare one; it ran on the empty initial screen
+  ("Enter valid date").
+- `sap_act` with `actions` and a top-level `expect`, `"do":"look"` or `app`
+  runs the actions (the `expect` goes to the last one) instead of refusing
+  "one action or actions, not both"; an empty `sap_act` answers with the
+  screen.
+- After a table's columns were said once ("as listed before"), the next
+  change on that screen came back as the whole view: the diff printed the
+  old column legend as removed. It is now the changed lines only (VA02: 5.4k
+  characters to 170), on every surface.
+- The number notation is read from grouped quantities with three decimals
+  (`9.983,000`) and from tree nodes too (MMBE's stock overview said
+  `NUMBERS unknown`).
+
+### Changed
+
+- SAP GUI for Windows: the compact view leaves out SAP GUI's window line,
+  the status bar's panes, its own toolbar buttons (new window, shortcut,
+  settings, More, Enter), labels repeated on their fields and a selection
+  screen's text fields. The full view keeps them.
+- SAP GUI for Windows: typing into fields and moving the cursor no longer
+  read the screen again, and the guard judges an action on the read of the
+  moment before; a table control's cells are read without their tooltip
+  and label. Batches that fill a form are several times faster.
+
 ## 0.2.1 (2026-11-25)
 
 ### Fixed

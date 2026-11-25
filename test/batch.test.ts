@@ -198,7 +198,12 @@ describe("an Enter right after an okcode", () => {
   });
   test('"Enter" by name and any okcode count; an Enter that says more, or comes later, runs', async () => {
     expect(parseBatch([{ do: "okcode", value: "=SAVE" }, { do: "key", key: "enter" }]).map((s) => [s.n, s.action.do, s.note])).toEqual([[1, "okcode", "(skipped Enter: okcode already submits)"]]);
-    expect(parseBatch([{ do: "okcode", value: "/nZA03" }, { ...ENTER, expect: { popup: true } }])).toHaveLength(2);
+    // An Enter that only says "whatever comes" (any screen, a popup) is skipped too (SAP GUI FB50, live 2026-11-25: "Enter valid date").
+    expect(parseBatch([{ do: "okcode", value: "/nZA03" }, { ...ENTER, expect: { popup: true } }])).toHaveLength(1);
+    expect(parseBatch([{ do: "okcode", value: "/nZA03" }, { ...ENTER, expect: { screen: "*" } }])).toHaveLength(1);
+    // One that names what it is for runs.
+    expect(parseBatch([{ do: "okcode", value: "/nZA03" }, { ...ENTER, expect: { screen: "4001" } }])).toHaveLength(2);
+    expect(parseBatch([{ do: "okcode", value: "/nZA03" }, { ...ENTER, expect: { status: "W" } }])).toHaveLength(2);
     expect(parseBatch([{ do: "okcode", value: "/nZA03" }, CUSTOMER, ENTER])).toHaveLength(3);
     expect(parseBatch([{ do: "okcode", value: "/nZA03" }, { do: "look" }, ENTER])).toHaveLength(2);
   });
@@ -336,6 +341,23 @@ describe("a batch and the guard: each action has its own decision", () => {
     expect((await call("sap_act", { action: ENTER, actions: [ENTER] })).text).toBe('Send one action ("do" and its fields) or "actions", not both.');
     expect((await call("sap_act", { ...ENTER, actions: [ENTER] })).error).toBe(true);
     expect(sap.acts).toEqual([]);
+  });
+
+  test('beside "actions", a top-level expect, "do":"look" or "app" is taken as meant (live, Haiku, 2026-11-25)', async () => {
+    const { sap, call } = await setup();
+    const r = await call("sap_act", { actions: [OPEN], expect: { screen: "*" } });
+    expect(r.error).toBe(false);
+    expect(r.text.split("\n")[0]).toBe("Ran 1 action.");
+    const look = await call("sap_act", { actions: [CUSTOMER], do: "look", app: "sapgui" });
+    expect(look.error).toBe(false);
+    expect(dos(sap)).toEqual(["okcode", "set"]);
+    // Nothing at all: the screen, as for "actions": [].
+    const empty = await call("sap_act", {});
+    expect(empty.error).toBe(false);
+    expect(empty.text.split("\n")[0]).toBe("No action sent: this is the screen.");
+    // An action of its own beside "actions" is still ambiguous: nothing runs.
+    expect((await call("sap_act", { do: "press", id: "btn[8]", actions: [ENTER] })).text).toBe('Send one action ("do" and its fields) or "actions", not both.');
+    expect(dos(sap)).toEqual(["okcode", "set"]);
   });
 
   test("a recording gets one step per action of the batch, each with its own risk and screens", async () => {

@@ -1286,13 +1286,27 @@ ${writeRule(policy)}`,
   /** sap_act, once the session reference is settled. */
   async function act(ref: string | undefined, input: Record<string, unknown>, actions: unknown, action: unknown, full: boolean | undefined, call?: CallContext): Promise<CallToolResult> {
     // The action's fields at the top level, as the schema lists them; anything but the call's own keys goes with them.
-    const flat = Object.fromEntries(Object.entries(input).filter(([k, v]) => !CALL_KEYS.has(k) && v !== undefined));
+    let flat = Object.fromEntries(Object.entries(input).filter(([k, v]) => !CALL_KEYS.has(k) && v !== undefined));
+    if (actions !== undefined && action === undefined) {
+      // Beside "actions", keys that say nothing of an action of their own are taken as meant (live, Haiku, 2026-11-25,
+      // a fifth of batches on both surfaces): "expect" goes to the last action, "do":"look" is the screen the answer shows
+      // anyway, "app" names nothing. Any other action field is still refused.
+      const { expect: e, app: _app, do: d, ...rest } = flat;
+      if (d === undefined || isLook({ do: d })) {
+        flat = rest;
+        const last = Array.isArray(actions) ? actions.at(-1) : undefined;
+        if (e !== undefined && last && typeof last === "object" && !Array.isArray(last) && (last as Record<string, unknown>).expect === undefined)
+          actions = [...(actions as unknown[]).slice(0, -1), { ...(last as Record<string, unknown>), expect: e }];
+      }
+    }
     const one = Object.keys(flat).length > 0;
     if (actions !== undefined && (one || action !== undefined)) return fail('Send one action ("do" and its fields) or "actions", not both.');
     if (one && action !== undefined) return fail('Send the action\'s fields ("do", "id", ...) at the top level, not also inside "action".');
     if (actions !== undefined) return withAnyData(await runBatch(ref, actions, full === true, call), actions);
     // {"do":"look"}: not an action; the screen.
     if (isLook(one ? flat : action)) return withAnyData(await current(ref, "look is not an action: this is the screen."));
+    // Nothing at all (sent beside another sap_act in the same turn, live 2026-11-25): the screen, as for "actions": [].
+    if (!one && action === undefined) return withAnyData(await current(ref, "No action sent: this is the screen."));
     return withAnyData(await run(ref, one ? flat : action, full === true));
   }
 

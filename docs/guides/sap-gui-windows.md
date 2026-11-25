@@ -105,6 +105,24 @@ Windows.
   "<toolbar>","button":"<code>"}` answers the menu's entries;
   `"value":"<entry>"` chooses one. ME23N's document overview finds
   purchase orders this way (Selection variant, Purchase orders).
+- The compact view leaves out what SAP GUI adds around the transaction
+  and the Web GUI view does not have: the window's own line, the status
+  bar's panes, SAP GUI's buttons for a new window, a shortcut and its
+  settings, Enter in the main toolbar, a label repeated on the field beside
+  it, and a selection screen's texts ("Material", "to") that its fields
+  already carry. `sap_look` with `full` keeps them all, and every one can
+  still be acted on.
+- Ids are forgiving where agents slip: a field's id with another type in
+  front (`ctxtRF05L-BELNR` for `txtRF05L-BELNR`) and a selection
+  criterion's name (`MS_MATNR` for `MS_MATNR-LOW`) find the field; a
+  table's column may be given as the legend writes it (`txtKONP-KBETR`).
+- A click on an ALV grid's or a table control's row (`"do":"click"` with
+  `row`) selects the row and puts the cursor on the cell.
+- `set` into a field SAP keeps closed is refused with the reason: after an
+  error or a warning, SAP opens only the fields its message is about.
+- Typing into fields does not read the screen again: SAP GUI keeps typed
+  text to itself until Enter, so a batch of `set` actions costs one read
+  of the screen, not two per field.
 - `sap_screenshot` asks SAP GUI for an image of the window. A minimised
   window gives none.
 - An action waits up to 180 seconds for SAP, or its `timeout` (up to 600
@@ -123,7 +141,11 @@ Windows.
 - A list's view shows the rows on screen, numbered as cell ids count them;
   `sap_look` with `id` and `rows` numbers them in the whole list.
 - The number notation is learnt from screens: until one shows an amount
-  with decimals (`1.250,00`), screens with numbers such as `40,000` say
+  with decimals (`1.250,00`) or a grouped quantity (`9.983,000`, in a
+  field, a grid or a tree), screens with numbers such as `40,000` say
   `NUMBERS unknown`.
+- `GetObjectTree` (one call for a whole screen) crashed SAP GUI 8.00
+  compilation 1 here, so the host reads control by control: a screen of
+  about 430 controls (FB50 with its item table) takes about a second.
 - Safe and commit words are known in a handful of logon languages; in
   others more actions are held ([Safety model](../concepts/safety.md)).
