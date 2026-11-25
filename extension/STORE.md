@@ -10,15 +10,25 @@ The extension is distributed unpacked until the first store release.
 - **Category:** Developer Tools (alternative: Workflow & Planning)
 - **Description:**
 
-  > UI Automation for SAP lets an AI agent that runs on your own computer (through the open-source sap-ui-automation) work in your SAP systems in the Chrome you use every day. A side panel beside your SAP tabs shows each step the agent takes, in SAP's own words, and when it waits for your yes to save.
+  > UI Automation for SAP lets your AI agent work in SAP the way your team does: in Chrome, in Web GUI and Fiori, with your own logon and authorizations.
   >
-  > Register each SAP system once (Web GUI or Fiori launchpad address, client, language, user). Your agent can then list them, open one and log on, and work in its tabs: with your SAP authorizations, and only in the systems you registered.
+  > Hand it the repetitive work (looking up orders, checking documents, entering and updating data) and follow every step in a side panel next to your SAP tabs. Saves wait for your approval.
   >
-  > The agent never sees your password: the extension types it into SAP's logon page itself, in a tab the agent cannot see, and keeps it in your operating system's keychain. Nothing leaves your computer: the extension talks only to the local server on 127.0.0.1 and to your SAP systems.
+  > Built for SAP screens, not a generic browser driver. In our benchmark of over 1,600 runs of SAP Web GUI and Fiori tasks, with a similar success rate:
+  > • about 3.5x cheaper per task than Playwright MCP
+  > • nearly 3x faster than computer use
   >
-  > Requires the free helper and server: `npx -y sap-ui-automation extension helper` (Node.js 22 or later).
+  > • Register each SAP system once: your agent opens it and logs on by itself.
+  > • Your password stays in your operating system's keychain. The agent never sees it.
+  > • Works with Claude Code, Codex, Cursor and any MCP client, through the open-source sap-ui-automation package (npx -y sap-ui-automation setup --extension).
   >
   > Not affiliated with or endorsed by SAP SE. SAP, SAP Fiori and SAP S/4HANA are trademarks of SAP SE.
+
+  Figures: bench/docs/pilot-haiku-2026-11-23-compare.md (claude-haiku-5-5,
+  procedure mode, 1,673 runs): cost per run $0.0063 against $0.0217 for
+  Playwright MCP (3.4x); 31 s against 85 s for computer use (2.7x); success
+  86% against 90% and 89%. Update the figures when the benchmark is
+  published.
 
 - **Privacy policy URL:** https://github.com/DidroAI/sap-ui-automation/blob/main/extension/PRIVACY.md
 - **Homepage / support:** https://github.com/DidroAI/sap-ui-automation (issues for support)
@@ -80,18 +90,17 @@ local automation (such as Playwright's MCP bridge) follow the same model.
 - The unpacked id is `ojokfbbfoignpfeamomeappgfhapehma`, fixed by `key` in
   `manifest.json`. The native helper allows only the ids in `EXTENSION_IDS`
   (`src/browser/extension/native.ts`).
-- First store upload: include the private key (`key.pem`) in the zip's root
-  so that the store keeps this id; remove `"key"` from the uploaded
-  manifest. The key is held by the maintainers, outside the repository.
-  If the store gives another id (or for Edge Add-ons, which always does),
-  add it to `EXTENSION_IDS` and release the npm package before the store
-  version.
+- The store's id is `geglpbkaklfpmnbidfcpflegmdkjodkn`, given at the first
+  upload (2026-11-25; the private key behind the unpacked id is not kept, so
+  the store could not keep that one). It is in `EXTENSION_IDS` too.
+- A new store id (Edge Add-ons always gives its own) goes into
+  `EXTENSION_IDS`, and the npm package with it is released before the
+  store version is published.
 
 ## Building the upload
 
 ```sh
-npm run pack:extension                      # agent-connector-<version>.zip
-npm run pack:extension -- --key key.pem     # first upload only: keeps the id
+npm run pack:extension                      # ui-automation-for-sap-<version>.zip
 ```
 
 The zip holds what the extension runs, `LICENSE` and `PRIVACY.md`; the

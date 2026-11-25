@@ -26,6 +26,9 @@ change the tools or the view format.
 
 ### Changed (after 0.1.0)
 
+- The helper (`extension helper`) accepts the Chrome Web Store's copy of
+  the extension (`geglpbkaklfpmnbidfcpflegmdkjodkn`) as well as the
+  unpacked one.
 - SAP GUI for Windows is read both ways at once by default
   (`SAP_GUI_METHOD` unset, or `auto`): SAP GUI scripting, and the network
   reader for connections logged on through its router. `sap_sessions`
