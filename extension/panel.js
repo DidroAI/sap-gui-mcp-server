@@ -461,7 +461,7 @@ function systemRow(x, s) {
         el("div", { class: "card-title item-title", title: x.url }, el("span", { class: "card-name" }, x.name), el("span", { class: "tag" }, KIND[x.kind] || "SAP")),
         shown
           ? el("div", { class: `card-note item-note ${shown.type}` }, shown.type === "busy" ? el("span", { class: "spin-icon", icon: "spinner" }) : null, el("span", {}, shown.text))
-          : el("div", { class: "card-line" }, here ? el("span", { class: "here-label" }, "Agent here") : null, el("span", { class: "item-line" }, factsOf(x) || hostOf(x.url))),
+          : el("div", { class: "card-line" }, el("span", { class: "item-line" }, factsOf(x) || hostOf(x.url))),
       ),
       el(
         "div",

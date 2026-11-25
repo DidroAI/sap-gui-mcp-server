@@ -4,7 +4,7 @@
              deep green that says the agent is here.
    Palette   A warm paper canvas, a lighter paper for surfaces, warm ink for text and for the one
              primary action of a view. One accent, ledger green: the agent's presence (connected,
-             working, "Agent here", waiting for your yes), focus and links. Red only for what
+             working, the system it works in, waiting for your yes), focus and links. Red only for what
              failed. Every grey is warm; none is blue.
    Type      DM Sans for everything, Geist Mono for SAP's own codes (VA02, client, user fields).
              Both bundled (OFL). Weights 400, 500, 600; figures are tabular.
@@ -272,15 +272,12 @@ svg { display: block; width: 16px; height: 16px; }
 .card-head { display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 10px 6px 10px 12px; }
 .av { width: 30px; height: 30px; flex-shrink: 0; display: grid; place-items: center; border-radius: var(--r-sm); background: var(--tile); color: var(--ink); font-size: 11.5px; font-weight: 600; letter-spacing: 0; }
 .here .av { background: var(--accent); color: var(--primary-ink); }
-.here .tag { display: none; }
 .card-body { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; }
 .card-title { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .card-name { font-size: 13.5px; font-weight: 500; letter-spacing: -0.012em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-line { display: flex; align-items: center; font-size: 12px; line-height: 18px; color: var(--muted); min-width: 0; }
 .item-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
-.here-label { display: inline-flex; align-items: center; gap: 6px; margin-right: 8px; font-weight: 500; color: var(--accent-text); white-space: nowrap; }
-.here-label::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 .card-note { display: flex; align-items: flex-start; gap: 6px; font-size: 12px; line-height: 18px; color: var(--text); }
 .card-note.error { color: var(--danger); }
 .card-note.success { color: var(--accent-text); }

@@ -61,8 +61,8 @@ The panel then says **Ready. No agent connected.** Once an agent connects it
 names it ("Codex is connected"), says whether saves wait for your yes, and
 lists each step the agent takes in SAP (**Activity**): the transaction, the
 field and the value, in SAP's own words. When the agent waits for your yes to
-save, the panel turns amber and says where to answer (in the agent app). The
-system the agent works in is marked **Agent here**; **Settings** shows what
+save, the panel turns green and says where to answer (in the agent app). The
+system the agent works in is tinted green; **Settings** shows what
 the agent may do (saves, systems, blocked transactions), as set in the agent.
 
 ## Add your systems
