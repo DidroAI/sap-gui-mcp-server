@@ -82,16 +82,16 @@ to the current project only. Check it with `claude mcp get sap-ui-automation`, o
 in a session. Claude Code asks in interactive sessions; in `claude -p` a
 write under `confirm` does not run unless a hook answers.
 
-The **plugin** brings the server and two skills: `sap-gui-drive`, which teaches
-the agent how to work in SAP transactions with the tools, and `sap-gui-cli`,
+The **plugin** brings the server and two skills: `sap-ui-automation`, which teaches
+the agent how to work in SAP transactions with the tools, and `sap-ui-automation-cli`,
 the same work from the shell with the CLI. From your shell, the same is
 `claude plugin marketplace add DidroAI/sap-ui-automation` then
 `claude plugin install sap-ui-automation@sap-ui-automation`. The plugin starts the
 server with `SAP_WRITE` from your environment (default `off`). Its files:
 [`.claude-plugin/plugin.json`](https://github.com/DidroAI/sap-ui-automation/blob/main/.claude-plugin/plugin.json),
 [`.mcp.json`](https://github.com/DidroAI/sap-ui-automation/blob/main/.mcp.json),
-[`skills/sap-gui-drive`](https://github.com/DidroAI/sap-ui-automation/blob/main/skills/sap-gui-drive/SKILL.md),
-[`skills/sap-gui-cli`](https://github.com/DidroAI/sap-ui-automation/blob/main/skills/sap-gui-cli/SKILL.md).
+[`skills/sap-ui-automation`](https://github.com/DidroAI/sap-ui-automation/blob/main/skills/sap-ui-automation/SKILL.md),
+[`skills/sap-ui-automation-cli`](https://github.com/DidroAI/sap-ui-automation/blob/main/skills/sap-ui-automation-cli/SKILL.md).
 
 ## Claude Desktop
 

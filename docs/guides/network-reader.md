@@ -1,8 +1,8 @@
 # Network reader (no scripting)
 
 ::: warning Experimental
-This method has run against synthetic traffic and recorded captures only,
-not yet against SAP GUI itself. See [Limits](#limits).
+This method has run against SAP GUI for Windows on one ECC system, for
+read-only tasks only. Writes have not been tried live. See [Limits](#limits).
 :::
 
 When SAP GUI scripting is off, on your PC or on the SAP system, the server
@@ -26,8 +26,11 @@ row of tables, grids and lists, and tree nodes.
 
 ## Setup
 
-1. Set `SAP_GUI_METHOD=diag` in the server's environment. The server then
-   runs a SAProuter on `127.0.0.1:3298` (`SAP_DIAG_PORT` to change it).
+1. Nothing to set: on Windows the server runs a SAProuter on
+   `127.0.0.1:3298` (`SAP_DIAG_PORT` to change it) next to SAP GUI
+   scripting, and the agent sees the sessions of both. Set
+   `SAP_GUI_METHOD=diag` only to use the network reader alone, for example
+   where nobody watches the agent.
 2. In SAP Logon, edit the connection entry: put `/H/127.0.0.1/S/3298` at the
    start of its SAProuter string (before your company's router, if there is
    one), and log on again.
@@ -36,16 +39,18 @@ For example, a connection entry with no router of its own gets the
 SAProuter string `/H/127.0.0.1/S/3298`; one that had `/H/router.example.com/S/3299`
 gets `/H/127.0.0.1/S/3298/H/router.example.com/S/3299`.
 
-In Claude Code:
+To use the network reader alone, set the variable when you add the server,
+for example in Claude Code:
 
 ```sh
 claude mcp add sap-ui-automation --scope user -e SAP_GUI_METHOD=diag -- npx -y sap-ui-automation
 ```
 
-Then check with `doctor`:
+Then check with `doctor`. It reports scripting and the network reader
+apart, and is ready when one of them works:
 
 ```sh
-SAP_GUI_METHOD=diag npx -y sap-ui-automation doctor
+npx -y sap-ui-automation doctor
 ```
 
 It checks that the router listens, how many SAP GUI connections go through
@@ -93,7 +98,11 @@ counts both.
 ## Ids
 
 - A SAP field name: `VBAK-VBELN`.
-- A push button or a tab by its function code in braces: `{HEAD}`.
+- A push button or a tab by its function code in braces: `{HEAD}`. Without
+  the braces it is taken too, when it names one button or tab.
+- A tree node by its key, as the view writes it after the node (`{1}`).
+  SAP pads some keys with blanks (`"          1"`): the view leaves them out,
+  and `tree` takes a key with or without them.
 - A toolbar button or function key by its text: `Back`.
 - A table cell `FIELD[n]`, with the table's own row number as the view
   prints it. A row not on show is scrolled to first; if it does not come on
@@ -184,6 +193,11 @@ status message), by the status bar's message, and by the window each was
 first matched to without doubt. Showing the system and client in SAP GUI's
 status bar helps when several windows share a title.
 
+A session's id is `sapgui:diag:<connection>:<mode>`, for example
+`sapgui:diag:0:1` for the second session of the first logon. Pass that id
+as `session`: a bare number is a place in `sap_sessions`' list, not a
+session number. The answer to `/o` names both ids.
+
 ## Record and replay
 
 `sap_record` and `sap_replay` work with this method: a test names controls
@@ -226,10 +240,22 @@ logon go on.
 
 ## Limits
 
-- **Live status.** First run against SAP GUI for Windows on 20 November
-  2026: reading, batches, long lists, the guard and record and replay
-  work. Writes over this method have not been tried on a live system yet.
-  Expect to set `SAP_DIAG_CELL` on another theme or scaling.
+- **Live status.** Run against SAP GUI for Windows 8.00 on one ECC 6.0
+  system (client 800) on 20 and 25 November 2026, read-only, Quartz theme
+  at 100%:
+  - tested: selection screens, VA03 and VA02 with their item table controls
+    (scrolled too), VA05's grid, ME23N's item table and header tabs, MMBE's
+    stock tree, MB52's list, the SAP menu tree, a second session with `/o`,
+    `set` on a field that already holds a value, an error that leaves the
+    screen in place, batches, the guard, record and replay;
+  - not tried: writes, S/4HANA, other themes and scalings (expect to set
+    `SAP_DIAG_CELL`), SNC, several SAP GUI connections at once.
+- **A double-click in VA05 opens the order in change mode (VA02).** That
+  is VA05's own behaviour, not the reader's: to read an order, open it with
+  `/nVA03`.
+- **Small trees are shown whole.** A tree of up to 40 nodes shows the nodes
+  in closed folders too, marked `(in a closed folder)`: SAP sends them, and
+  MMBE's stock levels can be read without opening the folders.
 - **The router lives and dies with the server.** SAP GUI connects through
   the server's router, so when the server stops, SAP GUI's connection
   drops and you must log on again. Most MCP clients start the server per

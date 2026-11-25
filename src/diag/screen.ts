@@ -239,6 +239,8 @@ export interface DiagTableCell {
   key?: string;
   valueList?: string;
   maxLength?: number;
+  /** A push button's function code. */
+  fcode?: string;
   /** Typed in SAP GUI and not yet sent to SAP (see DiagElement.typed). */
   typed?: boolean;
 }

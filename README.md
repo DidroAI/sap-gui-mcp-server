@@ -80,7 +80,8 @@ args = ["-y", "sap-ui-automation"]
 ```
 
 Or let it configure the clients it finds (Claude Code, Codex, Claude
-Desktop, Cursor, Windsurf, VS Code), then check what it can reach:
+Desktop, Cursor, Windsurf, VS Code), with the skills that teach the agent
+SAP for Claude Code, Codex and Cursor, then check what it can reach:
 
 ```sh
 npx -y sap-ui-automation setup
@@ -147,7 +148,7 @@ Web GUI and Fiori work from Windows, macOS and Linux.
   [Benchmarks](docs/benchmarks.md)
 
 The same pages ship in the npm package under `docs/`, so an agent can read
-them offline. The [`sap-gui-drive` skill](skills/sap-gui-drive/SKILL.md)
+them offline. The [`sap-ui-automation` skill](skills/sap-ui-automation/SKILL.md)
 teaches an agent how SAP screens behave.
 
 ## Status

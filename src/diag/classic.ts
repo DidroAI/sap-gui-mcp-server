@@ -109,17 +109,29 @@ function newWindow(index: number): WindowState {
 }
 
 /** A dropdown's content: the 32-character id of its value list, then the selected key. */
-function comboValue(s: string): { key: string; valueList?: string } {
+function comboValue(s: string, codeLength = 0): { key: string; valueList?: string; fcode?: string } {
   const m = /([0-9A-F]{32})([\s\S]*)$/.exec(s);
-  return m ? { key: clean(m[2] ?? "").trim(), valueList: m[1] as string } : { key: s.replace(/[\x00-\x1f]/g, "").trim() };
+  if (!m) return { key: s.replace(/[\x00-\x1f]/g, "").trim() };
+  let rest = m[2] ?? "";
+  let fcode: string | undefined;
+  if (codeLength > 1 && rest.startsWith("=")) {
+    fcode = rest.slice(1, codeLength).trim();
+    rest = rest.slice(codeLength);
+  }
+  return { key: clean(rest).trim(), valueList: m[1] as string, ...(fcode ? { fcode } : {}) };
 }
 
 /** Table control while its items arrive. */
 interface TableBuild {
   table: DiagTable;
-  /** Cell descriptions of the row about to come: element type and attributes per column. */
-  refs?: { etype: number; attr: number }[];
-  line?: { index: number; screen: number };
+  /** Cell descriptions by their id (the first two bytes of each): element type and attributes per column. SAP sends a description once and names it in each row that uses it. */
+  refs: Map<number, { etype: number; attr: number }[]>;
+  /** The description sent last, for a row that names none. */
+  lastRefs?: { etype: number; attr: number }[];
+  /** The row about to come: its line on show (1-based) and the id of its cell description. */
+  line?: { index: number; refs: number };
+  /** The first line on show (0-based), from the table's scrolling item. */
+  firstRow: number;
 }
 
 export class ClassicState {
@@ -137,6 +149,8 @@ export class ClassicState {
   private path: Level[] = [];
   private last: DiagElement | undefined;
   private build: TableBuild | undefined;
+  /** Parts of the window kept from its last sending, while SAP sends only what changed: replaced by what comes at their place. */
+  private carried = new Set<unknown>();
   private listPos: { row: number; col: number } | undefined;
   private listFormat: Buffer | undefined;
   private listWidth = 0;
@@ -277,6 +291,21 @@ export class ClassicState {
       w.guiStatusProgram = before.guiStatusProgram;
     }
     this.chromeSent.set(w, before ? (this.chromeSent.get(before) ?? this.revision) : this.revision + 1);
+    // Byte 6 without 0x01 on the main window: the same screen again with only what changed (SAP's answer to an
+    // error on the screen: the input fields and the message, not the labels, frames and buttons). What is not
+    // sent again stays as it was. Seen in a capture: VA03's first screen after "not in the database".
+    this.carried = new Set();
+    if (index === 0 && ((v[6] ?? 0) & 0x01) === 0 && before) {
+      w.program = before.program;
+      w.dynpro = before.dynpro;
+      w.title = before.title;
+      w.elements = [...before.elements];
+      w.tabstrips = [...before.tabstrips];
+      w.tables = [...before.tables];
+      w.containers = [...before.containers];
+      if (before.list) w.list = before.list;
+      for (const x of [...w.elements, ...w.tabstrips, ...w.tables]) this.carried.add(x);
+    }
     // A window replaces itself and closes those above it.
     this.windows.length = Math.min(this.windows.length, index);
     while (this.windows.length < index) this.windows.push(newWindow(this.windows.length));
@@ -322,11 +351,15 @@ export class ClassicState {
         this.session.client = s();
         return;
       case 0x0d:
-        this.win().program = s();
+      case 0x0e: {
+        const w = this.win();
+        const value = s();
+        const before = sid === 0x0d ? w.program : w.dynpro;
+        if (this.carried.size && before && value !== before) this.dropCarried(w);
+        if (sid === 0x0d) w.program = value;
+        else w.dynpro = value;
         return;
-      case 0x0e:
-        this.win().dynpro = s();
-        return;
+      }
       case 0x0f:
         this.win().guiStatusProgram = s();
         return;
@@ -355,11 +388,17 @@ export class ClassicState {
     const i32 = (n: number) => (v.length >= 4 * n + 4 ? v.readInt32BE(4 * n) : 0);
     switch (sid) {
       case 0x02: {
-        // Six uint32. After a list start the first is the number of lines of the list.
+        // Six uint32. After a list start the first is the number of lines of the list. After a table control's
+        // description: its lines, columns, lines on show, first column, first line on show (0-based), and one not
+        // read. Seen in a capture: VA02 scrolled to its second item gave 3, 109, 4, 0, 1, 0.
         if (this.scrollOf === "list") {
           const w = this.win();
           w.list ??= { rows: [] };
           w.list.totalRows = i32(0);
+        } else if (this.scrollOf === "table" && this.build && v.length >= 20) {
+          this.build.table.totalRows = i32(0);
+          this.build.table.visibleRows = i32(2);
+          this.build.firstRow = i32(4);
         }
         this.scrollOf = undefined;
         return;
@@ -537,11 +576,14 @@ export class ClassicState {
         // One description per cell of the next row: row 2, element type 1, three bytes, attributes 1, two bytes.
         const refs: { etype: number; attr: number }[] = [];
         for (let i = 0; i + 9 <= v.length; i += 9) refs.push({ etype: v[i + 2] ?? 0, attr: v[i + 6] ?? 0 });
-        if (this.build) this.build.refs = refs;
+        if (this.build) {
+          if (v.length >= 2) this.build.refs.set(v.readUInt16BE(0), refs);
+          this.build.lastRefs = refs;
+        }
         return;
       }
       case 0x05:
-        if (this.build && v.length >= 4) this.build.line = { index: v.readUInt16BE(0), screen: v.readUInt16BE(2) };
+        if (this.build && v.length >= 4) this.build.line = { index: v.readUInt16BE(0), refs: v.readUInt16BE(2) };
         return;
       case 0x08:
         return this.tableRow(v);
@@ -589,9 +631,9 @@ export class ClassicState {
     const o = this.origin();
     const path = this.names();
     let strip = tabs ? w.tabstrips[w.tabstrips.length - 1] : undefined;
-    if (tabs && !strip) {
+    if (tabs && (!strip || this.carried.has(strip))) {
       strip = this.newTabstrip();
-      w.tabstrips.push(strip);
+      this.pushTabstrip(w, strip);
     }
     let lastTab: DiagTab | undefined;
     let i = 0;
@@ -638,6 +680,18 @@ export class ClassicState {
       if ((attr & BIT.valueHelp) !== 0) el.valueHelp = true;
       if (el.row < o.top || el.row >= o.bottom || el.col < o.left || el.col >= o.right) el.scrolledOut = true;
       this.element(el, a, body);
+      if (this.carried.size) {
+        const at = w.elements.findIndex((x) => this.carried.has(x) && x.row === el.row && x.col === el.col);
+        const old = w.elements[at];
+        // In an update a label comes with no text (00 00 00 00 00 00): it keeps the text it had.
+        if (old && etype === EL.label && !(body[2] ?? 0)) {
+          el.text = old.text;
+          el.width = old.width;
+          if (old.icon) el.icon = old.icon;
+          if (old.tooltip) el.tooltip = old.tooltip;
+        }
+        if (at >= 0) w.elements.splice(at, 1);
+      }
       w.elements.push(el);
       this.last = el;
     }
@@ -701,10 +755,18 @@ export class ClassicState {
     if (etype === EL.checkbox || etype === EL.radio) {
       // The state ("X" or blank), the width shown (2 bytes), 5 bytes that are 0 in every capture (not read),
       // the length of the text (2 bytes), the text: 58 00 04 00 00 00 00 00 00 04 "Done" is a ticked "Done".
+      // A box with a function code (it sends a request when ticked) has the code's length at bytes 5 and 7, and the
+      // text starts with it: 58 00 1e 00 00 03 00 03 00 1e "=C1Batch" is a ticked "Batch" with function code C1.
       el.kind = etype === EL.checkbox ? "checkbox" : "radio";
       el.checked = body[0] === 0x58;
       const length = body.length >= 10 ? body.readUInt16BE(8) : 0;
-      const it = iconText(clean(this.text(body.subarray(10, 10 + length))));
+      let raw = this.text(body.subarray(10, 10 + length));
+      const codeLength = body[5] ?? 0;
+      if (codeLength > 1 && raw.startsWith("=")) {
+        el.fcode = raw.slice(1, codeLength).trim();
+        raw = raw.slice(codeLength);
+      }
+      const it = iconText(clean(raw));
       el.text = it.text;
       if (it.tooltip) el.tooltip = it.tooltip;
       el.width = (body.length >= 3 ? body.readUInt16BE(1) : 0) || el.text.length;
@@ -712,8 +774,11 @@ export class ClassicState {
     }
     if (etype === EL.dropdown) {
       // Some bytes not read, then the 32-character id of the value list and the selected key.
+      // Byte 7 is the length of a function code ("=MEDOCTYPE"), sent between the value list's id and the key.
       el.kind = "dropdown";
-      const c = comboValue(decode(body, false));
+      const codeLength = body[7] ?? 0;
+      const c = comboValue(decode(body, false), codeLength);
+      if (c.fcode) el.fcode = c.fcode;
       el.key = c.key;
       el.text = c.key;
       if (c.valueList) el.valueList = c.valueList;
@@ -724,6 +789,16 @@ export class ClassicState {
     el.text = iconText(this.text(body).replace(/[\x00-\x1f]+/g, " ").trim()).text;
     el.width = el.text.length;
     this.note(`element type ${etype}`);
+  }
+
+  /** The screen is another one after all: nothing of the last one stays. */
+  private dropCarried(w: WindowState): void {
+    w.elements = w.elements.filter((x) => !this.carried.has(x));
+    w.tabstrips = w.tabstrips.filter((x) => !this.carried.has(x));
+    w.tables = w.tables.filter((x) => !this.carried.has(x));
+    w.containers = [];
+    delete w.list;
+    this.carried.clear();
   }
 
   private newTabstrip(): DiagTabstrip {
@@ -748,6 +823,12 @@ export class ClassicState {
       if (nameAt < v.length) strip.name = clean(decode(v.subarray(nameAt, Math.min(nameAt + 30, v.length)), false)).trim() || strip.name;
       if (activeAt > nameAt && activeAt < v.length) this.activeTab.set(strip, cstringAt(v, activeAt, this.utf8));
     }
+    this.pushTabstrip(w, strip);
+  }
+
+  /** A tabstrip sent anew takes the place of the one kept from the last sending. */
+  private pushTabstrip(w: WindowState, strip: DiagTabstrip): void {
+    if (this.carried.size) w.tabstrips = w.tabstrips.filter((x) => !(this.carried.has(x) && x.name === strip.name));
     w.tabstrips.push(strip);
   }
 
@@ -777,12 +858,13 @@ export class ClassicState {
     const table: DiagTable = { name: clean(decode(v.subarray(100, 130), false)).trim() || (level?.name ?? ""), program: clean(decode(v.subarray(60, 100), false)).trim(), title: "", row: o.row, col: o.col, width: level?.width || u16(6), height: level?.height || u16(8), columns: [], rows: [], totalRows: u16(13), visibleRows: u16(15), path: this.names().slice(0, -1) };
     const orderAt = u16(17) || 131;
     const widthsAt = u16(29) || orderAt + 2 * count + 2 * (count + 2);
-    const titleAt = u16(48) || widthsAt + 2 * count;
+    // A table without a title (ME23N's items) has 0 at 48: its column titles start right after the widths.
+    const titleAt = u16(48);
     const titlesAt = u16(50);
     const position = new Map<number, number>();
     for (let p = 0; p < count; p++) position.set(u16(orderAt + 2 * p) - 1, p);
     const titleLength = u16(52) || (v[titleAt - 1] ?? 0);
-    table.title = iconText(clean(this.text(v.subarray(titleAt, Math.min(titleAt + titleLength, titlesAt > titleAt ? titlesAt : v.length))))).text;
+    if (titleAt) table.title = iconText(clean(this.text(v.subarray(titleAt, Math.min(titleAt + titleLength, titlesAt > titleAt ? titlesAt : v.length))))).text;
     const titles = titlesAt > titleAt && titlesAt < v.length ? cstrings(v.subarray(titlesAt), this.utf8) : [];
     for (let c = 0; c < count; c++) {
       const it = iconText(clean(titles[c] ?? ""));
@@ -795,8 +877,9 @@ export class ClassicState {
       c.visible = table.width === 0 || col + c.width <= table.col + table.width;
       col += c.width + 1;
     }
+    if (this.carried.size) w.tables = w.tables.filter((x) => !(this.carried.has(x) && x.name === table.name));
     w.tables.push(table);
-    this.build = { table };
+    this.build = { table, refs: new Map(), firstRow: 0 };
     this.scrollOf = "table";
   }
 
@@ -818,7 +901,7 @@ export class ClassicState {
   private tableRow(v: Buffer): void {
     const b = this.build;
     if (!b) return;
-    const refs = b.refs ?? b.table.columns.map(() => ({ etype: EL.inputField, attr: BIT.readOnly }));
+    const refs = (b.line ? b.refs.get(b.line.refs) : undefined) ?? b.lastRefs ?? b.table.columns.map(() => ({ etype: EL.inputField, attr: BIT.readOnly }));
     const tokens = this.text(v).split("\0");
     const cells: DiagTableCell[] = [];
     let t = 0;
@@ -839,18 +922,23 @@ export class ClassicState {
         const maxLength = Number(tokens[t + 1] ?? "") || 0;
         t += 3;
         cells.push({ column, kind: "field", text: hidden ? "" : text, input: input && ref.etype !== EL.outputField, hidden, ...(maxLength ? { maxLength } : {}) });
+      } else if (ref.etype === EL.button) {
+        // A push button in the row: its function code ("=MEPO1211MSG"), then its text.
+        const fcode = (tokens[t] ?? "").replace(/^=/, "").trim();
+        const text = iconText((tokens[t + 1] ?? "").trim()).text;
+        t += 2;
+        cells.push({ column, kind: "button", text: hidden ? "" : text, input, hidden, ...(fcode ? { fcode } : {}) });
       } else {
         const text = iconText((tokens[t] ?? "").trim()).text;
         t += 3;
-        if (ref.etype !== EL.button) this.note(`table cell element type ${ref.etype}`);
-        cells.push({ column, kind: ref.etype === EL.button ? "button" : "other", text: hidden ? "" : text, input, hidden });
+        this.note(`table cell element type ${ref.etype}`);
+        cells.push({ column, kind: "other", text: hidden ? "" : text, input, hidden });
       }
     });
     if (t > tokens.length) this.note(`table ${b.table.name}: a row has fewer values than cells`);
-    const screen = b.line?.screen ?? b.table.rows.length + 1;
-    const index = (b.line?.index ?? b.table.rows.length + 1) - 1;
-    b.table.rows.push({ index, row: b.table.row + screen, empty: cells.every((c) => c.hidden || (!c.text && !c.checked)), cells });
-    delete b.refs;
+    // The row's line on show (1-based) is its screen row under the column titles; the table's line is that plus the scrolling.
+    const line = b.line?.index ?? b.table.rows.length + 1;
+    b.table.rows.push({ index: b.firstRow + line - 1, row: b.table.row + line, empty: cells.every((c) => c.hidden || (!c.text && !c.checked)), cells });
     delete b.line;
   }
 }

@@ -4,7 +4,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { policyFromEnv } from "../src/core/guard.js";
 import type { Action, Assessment } from "../src/core/types.js";
-import { createServer, statusTop, UNCHANGED, withStatus } from "../src/server.js";
+import { agentName, createServer, labelOn, statusTop, UNCHANGED, withStatus } from "../src/server.js";
 import { FakeSurface } from "./fakes.js";
 
 /** Save (key 11) commits; everything else navigates. */
@@ -753,10 +753,115 @@ describe("the NUMBERS line on screens that do not show the notation (P1)", () =>
     expect(acted[2]).toStartWith("TRANSACTION MB51");
     expect(acted[3]).toStartWith("NUMBERS 1.234,56");
   });
+  test("a session of the same logon (an /o session) takes the notation its sibling learnt; another user's does not", async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA", client: "800", user: "U1", transaction: "VA03" }, { view: VA03 });
+    expect((await call("sap_look", { session: "chrome:1" })).text).toContain("NUMBERS 1.234,56");
+    surface.add({ id: "chrome:2", system: "ABA", client: "800", user: "U1", transaction: "MB51" }, { view: MB51 });
+    surface.add({ id: "chrome:3", system: "ABA", client: "800", user: "U2", transaction: "MB51" }, { view: MB51 });
+    surface.add({ id: "chrome:4", system: "ABA", client: "900", user: "U1", transaction: "MB51" }, { view: MB51 });
+    await call("sap_sessions");
+    expect((await call("sap_look", { session: "chrome:2" })).text.split("\n")[1]).toStartWith("NUMBERS 1.234,56  (decimal comma");
+    expect((await call("sap_look", { session: "chrome:3" })).text.split("\n")[1]).toStartWith("NUMBERS unknown");
+    expect((await call("sap_look", { session: "chrome:4" })).text.split("\n")[1]).toStartWith("NUMBERS unknown");
+  });
   test("the user's setting, when the surface reads it, comes first", async () => {
     const { surface, call } = await setup();
     surface.add({ id: "chrome:1", system: "ABA", transaction: "MB51" }, { view: MB51, notation: { sign: ".", date: "MM/DD/YYYY" } });
     const v = (await call("sap_look")).text.split("\n");
     expect(v[1]).toBe('NUMBERS 1,234.56  (decimal point: "1,000" is one thousand, "1.000" is one; the user\'s setting; dates MM/DD/YYYY)');
+  });
+});
+
+describe("the extension's side panel", () => {
+  test("the agent's name, as people know it", () => {
+    expect(agentName({ name: "codex-mcp-client" })).toBe("Codex");
+    expect(agentName({ name: "claude-code" })).toBe("Claude Code");
+    expect(agentName({ name: "claude-ai", title: "Claude" })).toBe("Claude");
+    expect(agentName({ name: "cursor-vscode" })).toBe("Cursor");
+    expect(agentName({ name: "my-agent" })).toBe("my-agent");
+    expect(agentName(undefined)).toBe("Your agent");
+  });
+
+  test("a control's label, from the view the agent saw", () => {
+    const view = 'wnd[0]/usr/ctxtVBAK-VBELN  field  Order = "4711"  (edit)\nwnd[0]/tbar[0]/btn[11]  button  Save (Ctrl+S)';
+    expect(labelOn(view, "ctxtVBAK-VBELN")).toBe("Order");
+    expect(labelOn(view, "wnd[0]/tbar[0]/btn[11]")).toBe("Save (Ctrl+S)");
+    expect(labelOn(view, "btn[3]")).toBe("");
+    expect(labelOn(undefined, "x")).toBe("");
+  });
+
+  test("the panel hears the agent's name and policy, then each step: ran, waiting for the user's yes, declined", async () => {
+    const panels: Record<string, unknown>[] = [];
+    const steps: Record<string, unknown>[] = [];
+    const surface = new FakeSurface("webgui");
+    const systems = { list: async () => [], logon: async () => ({}) as never, panel: (p: Record<string, unknown>) => panels.push(p), activity: (e: Record<string, unknown>) => steps.push(e) };
+    const { server } = createServer({ policy: policyFromEnv({ SAP_WRITE: "confirm", SAP_BLOCK_TCODES: "SE38" }), surfaces: [surface], systems });
+    const client = new Client({ name: "codex-mcp-client", version: "0" }, { capabilities: { elicitation: { form: {} } } });
+    client.setRequestHandler(ElicitRequestSchema, async () => ({ action: "decline" }));
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(a), client.connect(b)]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(panels.at(-1)).toMatchObject({ agent: "Codex", policy: { write: "confirm", blocked: ["SE38"] } });
+    surface.add({ id: "chrome:1", system: "ABA", client: "800", transaction: "VA02" }, { assess });
+    await client.callTool({ name: "sap_act", arguments: { action: { do: "set", id: "ctxtA", value: "OR" } } });
+    await client.callTool({ name: "sap_act", arguments: { action: { do: "key", key: 11 } } });
+    expect(steps.map((s) => [s.state, s.do, s.value])).toEqual([
+      ["ran", "set", "OR"],
+      ["waiting", "key", "11"],
+      ["declined", "key", "11"],
+    ]);
+    expect(steps[0]).toMatchObject({ agent: "Codex", system: "ABA", client: "800", transaction: "VA02" });
+  });
+});
+
+describe("parallel sessions", () => {
+  test('"/oVA03" in Web GUI follows the new browser window SAP opened, as in SAP GUI', async () => {
+    const { surface, call } = await setup();
+    surface.add(
+      { id: "chrome:1", system: "ABA", client: "800", transaction: "SMEN" },
+      { onAct: (a) => (a.do === "okcode" && a.value === "/oVA03" ? void surface.add({ id: "chrome:2", system: "ABA", client: "800", transaction: "VA03" }) : undefined) },
+    );
+    const r = await call("sap_act", { action: { do: "okcode", value: "/oVA03" } });
+    expect(r.error).toBe(false);
+    expect(r.text).toContain("A new session opened");
+    // Its id, and the old one's: a bare number is a place in sap_sessions' list, which agents mistook for a window number.
+    expect(r.text).toContain('pass its id, session "chrome:2" for this one and "chrome:1" for the one before');
+    const list = await call("sap_sessions");
+    expect(list.text).toMatch(/\* webgui ABA \(800\).*VA03/);
+  });
+
+  test('"/o" at SAP\'s session limit: the answer says why, and that this is still the old session', async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA", client: "800", transaction: "SMEN" }, { view: 'WINDOW wnd[1]  "Information"\nwnd[1]/usr/txtMESSTXT1  "Maximum number of SAP GUI sessions reached"' });
+    const r = await call("sap_act", { action: { do: "okcode", value: "/oVA03" } });
+    expect(r.text).toContain("SAP refused: this logon has all the sessions it allows. Close one you no longer need; answer SAP's popup first. This is still the previous session.");
+  }, 20_000);
+
+  test("sap_sessions marks a Web GUI tab SAP shows no system for as not verified", async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA", client: "800", user: "JDOE" });
+    surface.add({ id: "chrome:2", title: "SAP Easy Access" });
+    const lines = (await call("sap_sessions")).text.split("\n");
+    expect(lines[0]).not.toContain("not verified");
+    expect(lines[1]).toContain("id=chrome:2  (not verified: SAP shows no system yet; call sap_sessions again before using it)");
+  });
+
+  test("a call keeps to the session it queued for, even when another becomes active while it waits", async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA", transaction: "VA01" }, { actMs: 200 });
+    surface.add({ id: "chrome:2", system: "ABA", transaction: "VA03" });
+    await call("sap_use", { session: "chrome:1" });
+    // An action holds session 1; a look on the active session (1) queues behind it.
+    const acting = call("sap_act", { action: { do: "set", id: "x", value: "1" } });
+    await new Promise((res) => setTimeout(res, 20));
+    const looking = call("sap_look", {});
+    await new Promise((res) => setTimeout(res, 20));
+    // Meanwhile another call makes session 2 the active one: on its own lane, it does not wait.
+    const used = await call("sap_use", { session: "chrome:2" });
+    expect(used.text).toContain("VA03");
+    await acting;
+    // The waiting look still reads session 1, the one it queued for.
+    expect((await looking).text).toContain("VA01");
   });
 });

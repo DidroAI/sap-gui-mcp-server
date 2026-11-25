@@ -446,8 +446,9 @@ async function run(session: WebGuiSession, a: Action): Promise<string> {
         const f = session.frame;
         const top = await f.evaluate(topWindowOpen);
         // Cancel (12) on the main window is its Cancel button: the browser's Escape in a field typed into
-        // only takes the typing back, and sends SAP nothing.
-        if (top > 0 || n === 12)
+        // only takes the typing back, and sends SAP nothing. Save (11) is its Save button: Chrome can keep
+        // Ctrl+S for itself (live 2026-11-25: the key did nothing, the button saved).
+        if (top > 0 || n === 12 || n === 11)
           for (const bar of [0, 1]) {
             const sid = `wnd[${top}]/tbar[${bar}]/btn[${n}]`;
             // Only a button of the popup itself counts.

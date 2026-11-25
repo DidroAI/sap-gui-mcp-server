@@ -347,10 +347,18 @@ export function assess(screen: Screen, action: Action, target?: Control): Assess
       const id = String(action.button ?? "");
       const b = target?.buttons?.find((x) => x.id === id);
       const label = b ? [b.text, b.tip].map((s) => s.trim()).find(Boolean) ?? id : id;
-      if (safeCode(id)) return { risk: "navigate", reason: `toolbar button "${label}"` };
+      // An entry of the button's menu ("value"): what the entry says counts, and an entry that acts never rides on a safe button.
+      const entry = action.value === undefined || action.value === "" ? undefined : String(action.value);
+      if (entry !== undefined) {
+        if (commitWord(entry) || commitCode(entry)) return commit(`menu entry "${entry}" of toolbar button "${label}"`);
+        if (safeWord(screen.language, entry) || safeCode(entry)) return { risk: "navigate", reason: `menu entry "${entry}" of toolbar button "${label}"` };
+        if (actWord(entry)) return notSafe(`menu entry "${entry}" of toolbar button "${label}" {${id}}`);
+      }
+      const what = entry === undefined ? `toolbar button "${label}"` : `menu entry "${entry}" of toolbar button "${label}"`;
+      if (safeCode(id)) return { risk: "navigate", reason: what };
       if (commitWord(b?.text, b?.tip) || commitCode(id)) return commit(`toolbar button "${label}" {${id}}`);
-      if (b && safeWord(screen.language, b.text, b.tip)) return { risk: "navigate", reason: `toolbar button "${label}"` };
-      return notSafe(`toolbar button "${label}" {${id}}`);
+      if (b && safeWord(screen.language, b.text, b.tip)) return { risk: "navigate", reason: what };
+      return notSafe(`${what} {${id}}`);
     }
     case "tree":
       return action.how === "expand" || action.how === "collapse" ? { risk: "read", reason: `${action.how} a tree node` } : { risk: "navigate", reason: "tree node" };

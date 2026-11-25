@@ -235,8 +235,8 @@ describe("diagView", () => {
       "r8  tree SIDE (shell 104)  3 nodes on show",
       "  [-] Menu  {Root}",
       "    [+] Folder (selected)  {N1}",
+      "      Inside (in a closed folder)  {N11}",
       "    (no text)  {N2}",
-      "  (1 more nodes in closed folders)",
       'r8  text-editor SIDE (shell 105) (read-only)  "Deliver to \\"gate 1\\""',
     ]);
   });

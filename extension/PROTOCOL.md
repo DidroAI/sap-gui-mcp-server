@@ -30,7 +30,7 @@ server keeps it in a file (`pairing.ts`: `~/.config/sap-ui-automation/extension-
 on Linux, `~/Library/Application Support/sap-ui-automation/…` on macOS,
 `%APPDATA%\sap-ui-automation\…` on Windows; mode 0600), created on first use;
 `SAP_EXTENSION_CODE` overrides it (tests, CI). `sap-ui-automation extension pair`
-prints it; the user pastes it into the extension popup once.
+prints it; the user pastes it into the extension's side panel once.
 
 Normalized code = uppercase, every character outside `[0-9A-Z]` removed, and
 Crockford's look-alikes mapped (`I`,`L` → `1`, `O` → `0`). The HMAC key is the
@@ -50,7 +50,7 @@ Handshake (JSON text frames), mutual, the code itself never crosses the wire:
    4 KiB (1009), and keeps at most 4 unauthenticated sockets open at once.
 
 A code is 26 characters after normalizing, on both sides (`SAP_EXTENSION_CODE`,
-the managed `pairingCode` and the popup refuse anything else): a fake relay
+the managed `pairingCode` and the side panel refuse anything else): a fake relay
 collects MACs over nonces it chooses, so a short code could be brute-forced
 offline.
 
@@ -102,9 +102,17 @@ Messages from the extension without `id`:
 | `{"type":"detached","tabId","reason"}` | `chrome.debugger.onDetach` (`target_closed`, `canceled_by_user`) |
 | `{"type":"ping"}` | every 20 s (keeps the MV3 service worker alive); relay answers `{"type":"pong"}` |
 
+Notes from the relay without `id`, for the side panel (no answer; an older
+extension ignores them):
+
+| Relay → ext | When |
+|---|---|
+| `{"type":"panel","agent","policy":{"write","systems","transactions","blocked","logoff"}}` | after `welcome`, and when the agent's client says its name: who the agent is ("Codex") and what `SAP_WRITE`, `SAP_ALLOW_SYSTEMS`, `SAP_ALLOW_TCODES`, `SAP_BLOCK_TCODES` and `SAP_ALLOW_LOGOFF` allow. Never a secret |
+| `{"type":"activity","state","do","label","value","transaction","title","system","client","agent","at"}` | a step of the agent: `ran`, `waiting` (for the user's yes), `refused` or `declined`; `label` is the control's label on the screen the agent saw, `value` what it typed (at most 80 characters). The extension keeps the last 80 in `chrome.storage.session` |
+
 ## Systems and logging on
 
-The user registers SAP systems in the popup. A system is
+The user registers SAP systems in the side panel. A system is
 `{"id","name","url","kind":"webgui"|"fiori"|"other","client","language","user","logon":"password"|"sso"|"manual","open","issue"?}`
 as the relay sees it; its password is never part of it. `issue` is SAP's last
 answer while it stands: `{"reason":"wrong_password"|"user_locked","at"}`.
@@ -124,7 +132,7 @@ registered system out.
    |                     |-- no: Chrome running? ---|  (macOS, Windows: start it,   |                               |                  |
    |                     |   and wait up to 35 s)   |   SAP_EXTENSION_START_CHROME) |                               |                  |
    |                     |                          |<== the extension dials in =====|  (every 30 s, at Chrome start, |                  |
-   |                     |                          |    pairing handshake, then     |   or when the popup opens)     |                  |
+   |                     |                          |    pairing handshake, then     |   or when the panel opens)     |                  |
    |                     |                          |    encrypted frames            |                               |                  |
    |                     |-- logon {system,          ->|-- {"type":"logon"} ---------->|  paused? registered?          |                  |
    |                     |   otherLogons?}           |                               |  a tab of it, logged on, same |                  |
@@ -163,7 +171,7 @@ asks the user to take:
 | Chrome runs, no extension dials in | "not installed, switched off in chrome://extensions, or in another Chrome profile", with the install and pair steps. |
 | The extension dials in with another code | "Ask the user to click the extension's icon and Pair Again". |
 | Another server holds the extension | "Another sap-ui-automation is connected … ask the user to close the other agent". |
-| Sharing is paused | error `paused`: "ask the user to click Resume Sharing in the extension's popup". |
+| Sharing is stopped (Cancel on Chrome's bar) | error `paused`: "ask the user to click Share again in the extension's side panel". |
 | The system is not registered | error `not_registered`, with the registered names: "ask the user to open it in Chrome and click Add This SAP Page. Never ask the user for a password." |
 
 ### `logon` request and its answers
@@ -185,8 +193,8 @@ agent what to ask the user (never for the password):
 
 | `reason` | When | The extension |
 |---|---|---|
-| `wrong_password` | SAP's logon page answers "name or password is not correct" | types nothing for this system again (by the server or the popup) until the user saves a new password: no lockout from retries |
-| `user_locked` | "user is locked", "too many failed attempts" | the server does not retry until the user clicks Log On in the popup |
+| `wrong_password` | SAP's logon page answers "name or password is not correct" | types nothing for this system again (by the server or the side panel) until the user saves a new password: no lockout from retries |
+| `user_locked` | "user is locked", "too many failed attempts" | the server does not retry until the user clicks Log on in the side panel |
 | `password_change` | SAP asks for a new password | leaves the tab at SAP's form, in front |
 | `multiple_logon` | SAP asks whether to end the user's other logons | leaves the question in the tab. With `otherLogons: "keep"` (after the user said so) it answers "continue without ending"; it never ends other logons |
 | `identity_provider` | a password system goes to another host's sign-in page | types nothing there |
@@ -197,7 +205,7 @@ agent what to ask the user (never for the password):
 | `paused`, `not_registered`, `password_unreadable` | before anything is opened | |
 
 A refusal that repeats an answer SAP gave earlier (a refused password, a
-lock) opened and typed nothing. The popup shows the standing answer in
+lock) opened and typed nothing. The side panel shows the standing answer in
 the system's row, with the one action that helps (Update Password).
 
 Each attempt submits SAP's form once. SAP's messages are read only from its
@@ -261,7 +269,7 @@ password field of its own (inside a frame, hidden at first, or a fake
 "session expired" form), and the server runs scripts in shared SAP pages by
 design. The firm guarantee is for passwords the *extension* types: always in
 a tab the server never had. A user who types a password should do so in a
-tab the extension opened (Log On or Open in the popup, or the tab
+tab the extension opened (Log on or Open in the side panel, or the tab
 `sap_logon` brought to the front).
 
 ### Request bodies
@@ -272,7 +280,7 @@ password field (form or JSON), and any request whose body Chrome left out,
 is forwarded without its body, and `Network.getRequestPostData` for it is
 refused. Web GUI's own JSON posts pass as they are.
 
-Only the user adds systems and passwords, in the popup. The relay has no
+Only the user adds systems and passwords, in the side panel. The relay has no
 request that adds, reads or changes a password or a system.
 
 The password comes from the OS keychain through the helper, or from
@@ -307,7 +315,7 @@ A tab is allowed when all hold:
 - the extension is not logging on in it (see Systems);
 - sharing is not paused. Clicking Cancel on Chrome's "started debugging this
   browser" bar (`onDetach` reason `canceled_by_user`) pauses sharing for the
-  whole browser until the user clicks Resume in the popup.
+  whole browser until the user clicks Share again in the side panel.
 
 An attached tab that navigates outside the allowed origins is detached at
 once, when the navigation starts (`tabRemoved` `left_origin`), so nothing of

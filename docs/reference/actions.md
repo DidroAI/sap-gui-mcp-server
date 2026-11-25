@@ -214,8 +214,9 @@ Runs a command in the command field. The only way to use the command field.
 ```
 
 - `/n<tcode>` leaves the transaction (unsaved input is lost) and starts
-  another; `/o<tcode>` opens a new session (SAP GUI for Windows: it becomes
-  the active one).
+  another; `/o<tcode>` opens a new session (SAP GUI for Windows: a new
+  window; Web GUI: a new browser window); the server follows it there, and
+  it becomes the active one.
 - `SAP_ALLOW_TCODES` and `SAP_BLOCK_TCODES` are checked against the command.
 - `/nex`, `/nend` and `/i` end sessions or the logon: refused unless
   `SAP_ALLOW_LOGOFF=on`.

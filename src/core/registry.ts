@@ -8,7 +8,12 @@ import { type Driver, NotOpenYet, type SessionInfo, type Surface, type SurfaceNa
 const SURFACE_NAMES: readonly string[] = ["sapgui", "webgui", "fiori"] satisfies SurfaceName[];
 
 /** A Web GUI tab and a Fiori tab can carry the same id (the Chrome target): the surface is part of the key. */
-const keyOf = (s: Pick<SessionInfo, "surface" | "id">) => `${s.surface}|${s.id}`;
+/** A surface and the way it is read ("sapgui (diag)"): SAP GUI can be read two ways at once, and each fails on its own. */
+const readerOf = (s: { surface?: string; name?: string; method?: string | undefined }) => {
+  const name = s.surface ?? s.name ?? "";
+  return s.method ? `${name} (${s.method})` : name;
+};
+const keyOf = (s: Pick<SessionInfo, "surface" | "id" | "method">) => `${readerOf(s)}|${s.id}`;
 
 const outside = (s: SessionInfo) => `System ${s.system ?? "(unknown)"}${s.client ? `/${s.client}` : ""} is outside SAP_ALLOW_SYSTEMS.`;
 
@@ -41,7 +46,8 @@ export class Registry {
   private lastErrors: string[] = [];
   private lastHint: string | undefined;
   /** The surface of every session id seen since the server started: a session that closed is still known by it. */
-  private surfaces_ = new Map<string, SurfaceName>();
+  /** Session id (lower case) to its reader, as readerOf names it. */
+  private surfaces_ = new Map<string, string>();
   active: string | undefined;
 
   constructor(
@@ -61,7 +67,7 @@ export class Registry {
             if (quiet && e instanceof NotOpenYet) closed.push(s);
             else {
               const message = (e as Error).message;
-              failed.set(message, [...(failed.get(message) ?? []), s.name]);
+              failed.set(message, [...(failed.get(message) ?? []), readerOf(s)]);
             }
             return [] as SessionInfo[];
           }),
@@ -73,7 +79,7 @@ export class Registry {
     const errors = [...failed].map(([message, names]) => `${names.join(", ")}: ${message}`);
     const failures = [...failed.values()].reduce((n, names) => n + names.length, 0);
     const sessions = found.filter((s) => systemAllowed(this.policy, s));
-    for (const s of sessions) this.surfaces_.set(s.id.toLowerCase(), s.surface);
+    for (const s of sessions) this.surfaces_.set(s.id.toLowerCase(), readerOf(s));
     this.last = sessions;
     this.lastErrors = errors;
     this.lastHint = sessions.length || found.length ? undefined : this.surfaces.map((s) => s.whenEmpty?.()).find(Boolean);
@@ -130,10 +136,11 @@ export class Registry {
     } catch {
       return undefined;
     }
-    const surface = this.surfaces_.get(r) ?? (SURFACE_NAMES.includes(r.split(":", 1)[0] ?? "") ? (r.split(":", 1)[0] as SurfaceName) : undefined);
+    const reader = this.surfaces_.get(r);
+    const surface = reader ? undefined : SURFACE_NAMES.includes(r.split(":", 1)[0] ?? "") ? (r.split(":", 1)[0] as SurfaceName) : undefined;
     const chrome = r.startsWith("chrome:");
-    if (!surface && !chrome) return undefined;
-    const same = this.last.filter((s) => (surface ? s.surface === surface : s.id.toLowerCase().startsWith("chrome:")));
+    if (!reader && !surface && !chrome) return undefined;
+    const same = this.last.filter((s) => (reader ? readerOf(s) === reader : surface ? s.surface === surface : s.id.toLowerCase().startsWith("chrome:")));
     return same.length === 1 ? same[0] : undefined;
   }
 
@@ -167,7 +174,9 @@ export class Registry {
     }
     try {
       if (!d) {
-        const surface = this.surfaces.find((s) => s.name === info.surface);
+        // SAP GUI can be read two ways at once: the session's method picks which.
+        const named = this.surfaces.filter((s) => s.name === info.surface);
+        const surface = named.find((s) => s.method === info.method) ?? (named.length === 1 ? named[0] : undefined);
         if (!surface) throw new Error(`No surface ${info.surface}`);
         d = await surface.open(info);
         this.drivers.set(key, d);

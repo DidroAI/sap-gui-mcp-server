@@ -207,6 +207,15 @@ describe("trees: the keyboard from the first line", () => {
     const p = planTree(screen(), { do: "tree", id: "TREE_CONT", node: "A1", how: "select" }, geo, new Map([["A", true]]));
     expect(keysOf(p)).toEqual(["click", `vk${VK.HOME}`, `vk${VK.DOWN}x2`]);
   });
+  test("a tree drawn below the top of its container (MMBE: HTML header, toolbar, column headers above it) is found", () => {
+    const low: Geometry = { ...geo, controls: [{ cls: "SAPTreeList", rect: [8 + 11, 128 + 27 * 4 + 111, 300, 150] }] };
+    const p = planTree(screen(), { do: "tree", id: "TREE_CONT", node: "C" }, low);
+    const click = p.steps[0] as { x: number; y: number };
+    expect(click.y).toBeGreaterThan(128 + 27 * 4 + 111);
+    // A tree list outside the container is not taken for it.
+    const away: Geometry = { ...geo, controls: [{ cls: "SAPTreeList", rect: [900, 700, 300, 150] }] };
+    expect(() => planTree(screen(), { do: "tree", id: "TREE_CONT", node: "C" }, away)).toThrow("was not found on the screen");
+  });
   test("already open, not a folder, unknown key", () => {
     expect(plan({ do: "tree", id: "TREE_CONT", node: "R", how: "expand" }).steps).toEqual([]);
     expect(() => plan({ do: "tree", id: "TREE_CONT", node: "C", how: "collapse" })).toThrow("not a folder");
