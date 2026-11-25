@@ -41,7 +41,7 @@ import { HostError, MAX_TIMEOUT_MS, powershellExe, PsHost, READ_TIMEOUT_MS } fro
 import type { Transport } from "../sapgui/facts.js";
 import { vkeyNumber } from "../sapgui/keys.js";
 import { type Cells, cellMetrics, cellPoint, cellsFromEnv, type HostWindow, pickWindow, type Rect } from "./geometry.js";
-import { type Geometry, type Named, namedControl, type Plan, plainMisuse, planCombo, planGrid, planGridScroll, planPage, planPlain, planTableRow, planToolbar, planTree, position, scrollables, scrollTarget, type Step, type TreeChange, toolbarKey, untypedKey } from "./plan.js";
+import { type ComboEntry, type Geometry, type Named, namedControl, type Plan, plainMisuse, planCombo, planGrid, planGridScroll, planGridSet, planPage, planPlain, planTableRow, planToolbar, planTree, position, scrollables, scrollTarget, type Step, type TreeChange, toolbarKey, untypedKey } from "./plan.js";
 import { type Hop, startRouter } from "./router.js";
 import { lookControl } from "./rows.js";
 import { MAYBE_REQUEST_MS, Traffic, type WaitOptions, waitNote, waitOptions } from "./traffic.js";
@@ -418,6 +418,9 @@ export function findTarget(s: DiagScreen, action: Action): Found {
  * among the columns. Any other action is returned as it is.
  */
 export function tableCell(s: DiagScreen, action: Action): Action {
+  // A grid's row as GRID[n] with a column: the grid's own shape, id, row and col.
+  const gridRow = /^(.+)\[(\d+)\]$/.exec(String(action.id ?? "").trim());
+  if (gridRow && action.row === undefined && action.col !== undefined && action.do === "set" && namedControl(s, gridRow[1])?.kind === "grid") return { ...action, id: gridRow[1] ?? "", row: Number(gridRow[2]) };
   if (typeof action.row !== "number" || !/^(set|check|combo|focus|f4|click|dblclick|press)$/.test(action.do)) return action;
   const raw = String(action.id ?? "").trim();
   const last = raw.includes("/") ? raw.slice(raw.lastIndexOf("/") + 1) : raw;
@@ -440,6 +443,19 @@ export function tableCell(s: DiagScreen, action: Action): Action {
   if (!c) throw new ActionError(`The table ${t.name} has no column "${want}": ${cols.map((x) => `${clean(x.title || x.tooltip)} ${x.name}`.trim()).join(", ")}.`);
   const { row, col: _col, ...rest } = action;
   return { ...rest, id: `${c.name}[${row}]` };
+}
+
+/** Does the action click or type into this table control (a cell, a row, a scroll)? */
+function touchesTable(s: DiagScreen, action: Action, table: string): boolean {
+  const n = namedControl(s, action.id);
+  if (n?.kind === "table" && n.table.name === table) return true;
+  if (n?.kind === "dropdown" && n.cell?.table.name === table) return true;
+  try {
+    const t = resolveTarget(s, action);
+    return t?.kind === "cell" && t.table === table;
+  } catch {
+    return false;
+  }
 }
 
 /** findTarget for one target: undefined when the id means nothing; a name that means several is refused. */
@@ -550,11 +566,11 @@ export function withTyped(s: DiagScreen, typed: Typed[]): DiagScreen {
     if (!w || w.program !== t.program || w.dynpro !== t.dynpro) continue;
     if (t.table) {
       const cell = w.tables.find((x) => x.name === t.table?.name)?.rows.find((r) => r.index === t.table?.index)?.cells[t.table.column];
-      if (cell) Object.assign(cell, t.checked !== undefined ? { checked: t.checked, typed: true } : { text: t.value, typed: true });
+      if (cell) Object.assign(cell, t.checked !== undefined ? { checked: t.checked, typed: true } : { text: t.value, typed: true, ...(cell.kind === "dropdown" ? { key: t.value } : {}) });
       continue;
     }
     const e = w.elements.find((x) => x.name === t.name && x.row === t.row && x.col === t.col);
-    if (e) Object.assign(e, t.checked !== undefined ? { checked: t.checked, typed: true } : { text: t.value, typed: true, required: false });
+    if (e) Object.assign(e, t.checked !== undefined ? { checked: t.checked, typed: true } : { text: t.value, typed: true, required: false, ...(e.kind === "dropdown" ? { key: t.value } : {}) });
   }
   return copy;
 }
@@ -681,7 +697,7 @@ export class DiagDriver implements Driver {
       ? "\nNOTE SAP's answer to the last step was lost or could not be read on the connection: this is the last screen read whole, and actions now go on from it. The session state is not known for sure: if SAP GUI shows another screen, press Enter in SAP GUI once and look again."
       : "";
     if (options.id?.trim().toLowerCase() === "mbar") return menuView(this.screen()) + recovered;
-    if (options.id) return (await lookControl({ screen: () => this.screen(), scrollTo: (id, row) => this.scrollTo(id, row).then(() => undefined) }, options)) + recovered;
+    if (options.id) return (await lookControl({ screen: () => this.screen(), scrollTo: (id, row) => this.scrollTo(id, row).then(() => undefined), entries: (id) => this.entriesOf(this.screen(), id) }, options)) + recovered;
     const view = diagView(withTyped(this.screen(), this.typed()), options.compact ? {} : { maxRows: 100_000 });
     if (recovered) return view + recovered;
     return this.conn.traffic.pending(this.mode) ? `${view}\nNOTE SAP is still working on a step: this screen is from before it and will change. Look again in a moment, and act when the step has ended.` : view;
@@ -780,7 +796,12 @@ export class DiagDriver implements Driver {
     const tIn = Date.now();
     for (const [i, step] of plan.steps.entries()) {
       if (i === plan.steps.length - 1) last = traffic.mark();
-      await this.send(session, main, step);
+      await this.send(session, main, step).catch((e: unknown) => {
+        // SAP GUI shows a popup the traffic did not describe (a message SAP GUI draws itself, such as a termination): say what to do.
+        if (main && e instanceof ActionError && /a popup is open/.test(e.message))
+          throw new ActionError(`${e.message}. SAP GUI shows a popup this reader did not get from the traffic (a message SAP GUI draws itself): see it with sap_screenshot, and close it with Enter ({"do":"key","key":0}) or Cancel (key 12).`);
+        throw e;
+      });
     }
     const inputEnd = Date.now();
     if (plan.tree) this.remember(plan.tree);
@@ -892,7 +913,12 @@ export class DiagDriver implements Driver {
     const o = waitOptions(action, this.shared.env, MAX_TIMEOUT_MS);
     const has = (v: unknown) => v !== undefined && v !== null && v !== "";
     // Without a choice, a dropdown only says what it can: no window is needed.
-    if (action.do === "combo" && !has(action.key) && !has(action.value)) return planCombo(s, action, NO_GEOMETRY).note;
+    if (action.do === "combo" && !has(action.key) && !has(action.value)) return planCombo(s, action, NO_GEOMETRY, await this.entriesOf(s, action.id)).note;
+    // A table SAP GUI scrolled sideways (a cell reached with Tab): where its cells are is known again with SAP's next screen.
+    const step0 = this.conn.steps.get(this.mode) ?? 0;
+    const sideways = this.sideways && this.sideways.step === step0 && this.sideways.mode === this.mode ? this.sideways.table : undefined;
+    if (sideways && touchesTable(s, action, sideways))
+      throw new ActionError(`SAP GUI scrolled the table ${sideways} sideways to reach a cell, so where its cells are on the screen is not known until SAP's next screen: nothing was done. Send what was typed with Enter ({"do":"key","key":0}) first, then go on in the table.`);
     if (action.do === "scroll") {
       let id = action.id;
       if (typeof id !== "string" || !id.trim()) {
@@ -921,7 +947,8 @@ export class DiagDriver implements Driver {
     let plan: Plan;
     switch (action.do) {
       case "combo":
-        plan = planCombo(s, action, g);
+        plan = planCombo(s, action, g, await this.entriesOf(s, action.id));
+        this.keepChosen(s, action, plan);
         break;
       case "tree":
         plan = planTree(s, action, g, local(named));
@@ -957,8 +984,13 @@ export class DiagDriver implements Driver {
           } else throw new ActionError(`${named.id} is a ${named.kind}: "row" and "node" go with a table, a grid or a tree.`);
           break;
         }
+        if (named?.kind === "grid" && action.do === "set") {
+          plan = planGridSet(s, action, g);
+          break;
+        }
         if (named?.kind === "dropdown" && action.do === "set") {
-          plan = planCombo(s, { ...action, do: "combo", key: action.value }, g);
+          plan = planCombo(s, { ...action, do: "combo", key: action.value }, g, await this.entriesOf(s, action.id));
+          this.keepChosen(s, action, plan);
           break;
         }
         // check: the box's state as on show, a tick of this step included, decides whether it is clicked.
@@ -971,6 +1003,7 @@ export class DiagDriver implements Driver {
       }
     }
     const before = this.conn.steps.get(this.mode) ?? 0;
+    if (plan.sideways) this.sideways = { table: plan.sideways, step: before, mode: this.mode };
     // The typed values this step sends to SAP: checked on the screen it brings.
     const sent = plan.answer !== "no" && plan.steps.length ? (this.conn.typed.get(this.mode) ?? []).filter((x) => x.step === before) : [];
     const note = await this.run(s, plan, wins, o, t0);
@@ -983,6 +1016,38 @@ export class DiagDriver implements Driver {
     if (after && moved && s.message?.type === "A" && after.message?.type !== "A")
       lines.push(`SAP ended transaction ${s.session.tcode ?? ""} after the termination message "${clean(s.message.text)}": input that was not saved there is lost. The screen below is where SAP went; start the transaction again to retry.`);
     return lines.join("\n");
+  }
+
+  /** The table SAP GUI scrolled sideways in this step, if any. */
+  private sideways: { table: string; step: number; mode: number } | undefined;
+
+  /** A dropdown's entry chosen without a function code stays in SAP GUI until the next Enter: kept like a typed value, by its key. */
+  private keepChosen(s: DiagScreen, action: Action, plan: Plan): void {
+    if (plan.answer !== "no" || !plan.steps.length) return;
+    const key = /^chose ([^ "]+) "/.exec(plan.note)?.[1] ?? /^chose "([^"]*)"/.exec(plan.note)?.[1];
+    let t: Target | undefined;
+    try {
+      t = resolveTarget(s, { do: "focus", id: String(action.id ?? "") });
+    } catch {
+      return;
+    }
+    if (key !== undefined && (t?.kind === "element" || t?.kind === "cell")) this.keepTyped(t, key, s);
+  }
+
+  /** Value lists read from SAP GUI's cache, by id: a list's id names its content, so it never changes. */
+  private readonly lists = new Map<string, ComboEntry[]>();
+
+  /** The entries of the dropdown an id names, from SAP GUI's cache on this PC (the input host reads it); none when not found. */
+  private async entriesOf(s: DiagScreen, id: unknown): Promise<ComboEntry[] | undefined> {
+    const n = typeof id === "string" ? namedControl(s, id) : undefined;
+    const list = n?.kind === "dropdown" ? n.element.valueList : undefined;
+    if (!list) return undefined;
+    const kept = this.lists.get(list);
+    if (kept) return kept;
+    const r = await this.host.request<{ entries?: ComboEntry[] }>("valueset", { list }, READ_TIMEOUT_MS).catch(() => undefined);
+    const entries = (r?.entries ?? []).filter((e) => typeof e?.key === "string" && typeof e?.value === "string");
+    if (entries.length) this.lists.set(list, entries);
+    return entries.length ? entries : undefined;
   }
 
   /** Keeps the new state of a checkbox or radio button until SAP gets it with the next step. */

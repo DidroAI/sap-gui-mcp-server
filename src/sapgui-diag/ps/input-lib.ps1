@@ -1,6 +1,7 @@
 # SAP GUI keyboard, mouse and window facts for the DIAG method, which reads
 # the screens from the traffic. The ops: windows, area, buttons, screenshot
-# and act (okcode, key, vk, press, click, dblclick, f4, set, type).
+# valueset (a dropdown's entries from SAP GUI's cache) and act (okcode, key, vk, press, click, dblclick,
+# f4, set, type, combo).
 #
 # It reads a SAP GUI window from Win32 and MSAA: its title, its screen area,
 # the status bar text (WM_GETTEXT) and the toolbar buttons with their keys.
@@ -356,6 +357,25 @@ function Screen-Area([IntPtr]$top) {
   [IntPtr]::Zero
 }
 
+# The entries of a dropdown's value list, from SAP GUI's own cache on this PC: SAP sends a list once and
+# then only its id (the traffic has "list C1FE..." and the key chosen); SAP GUI keeps the list in
+# %LOCALAPPDATA%\SAP\SAP GUI\Cache\...\DataP_sapvalueset<letter><id>cp<codepage>_<n>, an XML table with a
+# LINE per entry (KEY, VALUE) in the order the dropdown shows them. Nothing found: no entries.
+function Op-Valueset($req) {
+  $id = ([string]$req['list']).Trim()
+  if ($id -notmatch '^[0-9A-Fa-f]{32}$') { throw 'BAD_REQUEST: a value list id is 32 hex digits' }
+  $root = Join-Path $env:LOCALAPPDATA 'SAP\SAP GUI\Cache'
+  $out = New-List
+  if (-not (Test-Path $root)) { return @{ entries = $out } }
+  $f = Get-ChildItem -Path $root -Recurse -File -Filter "DataP_sapvalueset*$id*" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+  if ($null -eq $f) { return @{ entries = $out } }
+  $text = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($f.FullName))
+  foreach ($m in [regex]::Matches($text, '<LINE id="\d+" KEY ="([^"]*)" VALUE ="([^"]*)"\s*/>')) {
+    [void]$out.Add(@{ key = [System.Net.WebUtility]::HtmlDecode($m.Groups[1].Value); value = [System.Net.WebUtility]::HtmlDecode($m.Groups[2].Value) })
+  }
+  @{ entries = $out }
+}
+
 # The dynpro area of each window of a session (the session window, then its
 # popups), in screen pixels: what DIAG's character cells map onto.
 function Op-Area($req) {
@@ -474,6 +494,19 @@ function Op-Act($req) {
     [SapScreen]::Type([string]$a['value'])
   }
   elseif ($do -eq 'type') { [SapScreen]::Type([string]$a['value']) }
+  elseif ($do -eq 'combo') {
+    # A dropdown in one go, with no other window brought forward between its keys (that closes an open list):
+    # the click opens the list, then the entry by its text (type) or by its place (arrows: Home, Down n), Enter.
+    $p = Point $a
+    [SapScreen]::Click($p[0], $p[1], $false)
+    Start-Sleep -Milliseconds 350
+    if ($a['how'] -eq 'arrows') {
+      [SapScreen]::Key(0x24, $false, $false, $false)
+      for ($i = 0; $i -lt [int]$a['index']; $i++) { [SapScreen]::Key(0x28, $false, $false, $false) }
+    } else { [SapScreen]::Type([string]$a['value']) }
+    Start-Sleep -Milliseconds 150
+    [SapScreen]::Key(0x0D, $false, $false, $false)
+  }
   else { throw "UNKNOWN_ACTION: $do" }
   Start-Sleep -Milliseconds ([int]$(if ($null -ne $a['settle']) { $a['settle'] } else { 600 }))
   @{ done = $true }
@@ -499,6 +532,7 @@ function Start-Host {
       elseif ($op -eq 'area') { $res = Op-Area $req }
       elseif ($op -eq 'buttons') { $res = @{ buttons = (Frame-Buttons ([IntPtr][long]$req['session'])) } }
       elseif ($op -eq 'screenshot') { $res = Op-Screenshot $req }
+      elseif ($op -eq 'valueset') { $res = Op-Valueset $req }
       else { throw "UNKNOWN_OP: $op" }
       Write-Json @{ id = $id; ok = $true; result = $res } $sb
     } catch {

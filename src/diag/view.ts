@@ -81,7 +81,7 @@ function elementText(e: DiagElement): string {
       return `${box} ${one(e.text || e.label || "")} ${e.name}${at}${e.input ? "" : " (read-only)"}${e.typed ? " (ticked, sent with the next Enter)" : ""}`;
     }
     case "dropdown":
-      return `${e.name}${at}=dropdown ${e.input ? `[${e.key ?? ""}]` : quote(e.key ?? "")}`;
+      return `${e.name}${at}=dropdown ${e.input ? `[${e.key ?? ""}]` : quote(e.key ?? "")}${e.typed ? ` ${TYPED}` : ""}`;
     case "field":
       // An empty read-only field with a SAP name is kept (`NAME@17=""`): a check can say it is empty.
       if (!e.input && !e.text) return e.name ? `${e.name}${at}=""` : "";

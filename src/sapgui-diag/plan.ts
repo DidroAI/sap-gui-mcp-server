@@ -22,7 +22,7 @@ import { TYPED_VKEYS, vkeyNumber } from "../sapgui/keys.js";
 import { type Cells, gridPitch, type Rect, treePitch } from "./geometry.js";
 
 /** Windows virtual-key codes of the keys used here. */
-export const VK = { ENTER: 0x0d, ESCAPE: 0x1b, SPACE: 0x20, PAGEUP: 0x21, PAGEDOWN: 0x22, END: 0x23, HOME: 0x24, LEFT: 0x25, UP: 0x26, RIGHT: 0x27, DOWN: 0x28, F2: 0x71, F4: 0x73 } as const;
+export const VK = { TAB: 0x09, DELETE: 0x2e, ENTER: 0x0d, ESCAPE: 0x1b, SPACE: 0x20, PAGEUP: 0x21, PAGEDOWN: 0x22, END: 0x23, HOME: 0x24, LEFT: 0x25, UP: 0x26, RIGHT: 0x27, DOWN: 0x28, F2: 0x71, F4: 0x73 } as const;
 
 /** Why a virtual key cannot be sent with this method, or undefined when it can. */
 export function untypedKey(n: number): string | undefined {
@@ -47,6 +47,8 @@ export type Step = (
   | { do: "click" | "dblclick" | "f4"; x: number; y: number }
   | { do: "set"; x: number; y: number; value: string }
   | { do: "type"; value: string }
+  /** A dropdown in one input: click (opens its list), type the entry's text, Enter. `index`: its place in the list. */
+  | { do: "combo"; x: number; y: number; value: string; index?: number }
   /** A Windows button by its accessible name or description, inside `within` (screen pixels): BM_CLICK, no mouse. */
   | { do: "press"; name: string; within?: Rect }
 ) & { settle?: number };
@@ -77,6 +79,8 @@ export interface Plan {
   tree?: TreeChange;
   /** The name and tooltip of the toolbar button the plan presses, as found on the screen: judged again before it is pressed. */
   pressed?: string[];
+  /** A table control SAP GUI scrolls sideways with this input (a cell reached with Tab): its cells' places are not known until SAP's next screen. */
+  sideways?: string;
 }
 
 /** What planning needs to know of the window: pixels of cells, and the Windows controls that SAP GUI draws grids and trees in. */
@@ -333,6 +337,29 @@ export function planGrid(s: DiagScreen, action: Action, g: Geometry, howDefault 
   return { ...selectGridRow(g, row, rect, steps), note: `selected ${what}` };
 }
 
+/**
+ * set in a grid cell (an editable ALV grid, ME51N's items): the cursor to the cell with the keyboard, as
+ * "grid" with how "cell" does, then the value typed over what the cell holds. The grid keeps it until the
+ * next Enter, which sends the grid's changes to SAP.
+ */
+export function planGridSet(s: DiagScreen, action: Action, g: Geometry): Plan {
+  const n = need(s, action, ["grid"], "grid") as Named & { kind: "grid" };
+  const row = action.row;
+  if (typeof row !== "number" || !Number.isInteger(row) || row < 0) throw new ActionError(`set in a grid needs "row" and "col": {"do":"set","id":"${n.id}","row":0,"col":"<column>","value":"..."}`);
+  if (!n.control.area) throw new ActionError(`${n.id} is a value help's hit list: it takes no text. Choose a row with {"do":"grid","id":"${n.id}","row":${row}}.`);
+  const grid = n.control.grid;
+  if (grid && row >= grid.totalRows) throw new ActionError(`row ${row}: the grid ${n.id} has ${grid.totalRows} rows (0 to ${grid.totalRows - 1}).`);
+  const col = gridColumn(n.control, action.col);
+  if (col === undefined) throw new ActionError(`set in a grid needs "col": the column's name or title, e.g. {"do":"set","id":"${n.id}","row":${row},"col":"${grid?.columns[0]?.name ?? "<column>"}","value":"..."}`);
+  const { steps } = gridFocus(n, g, row, col);
+  const single = oneLine(String(action.value ?? ""));
+  return {
+    steps: [...steps, { do: "type", value: single.text, settle: 150 }],
+    note: `typed "${single.text}" into row ${row}, column ${String(action.col)} of ${n.id}; SAP gets it with the next Enter${single.had ? ` (${ONE_LINE_NOTE})` : ""}`,
+    answer: "maybe",
+  };
+}
+
 /** Selects a grid row: the row selector at the left edge, by mouse, when the row is on the first page; Shift+Space on the row otherwise. */
 function selectGridRow(g: Geometry, row: number, rect: Rect, focus: Step[]): Omit<Plan, "note"> {
   const pitch = gridPitch(g.cells);
@@ -364,27 +391,63 @@ export function planTableRow(n: Named & { kind: "table" }, row: number, g: Geome
 
 // ---- dropdowns ----
 
+/** An entry of a dropdown's value list, as SAP GUI keeps it (the input host reads it from SAP GUI's cache). */
+export interface ComboEntry {
+  key: string;
+  value: string;
+}
+
+/** The entry meant by a key or a text: the key, the text, then a text or key that starts with it, each only when it means one entry. */
+export function comboEntry(entries: readonly ComboEntry[], wanted: string): ComboEntry | undefined {
+  const w = lower(clean(wanted));
+  const one = (f: (e: ComboEntry) => boolean) => {
+    const hits = entries.filter(f);
+    return hits.length === 1 ? hits[0] : undefined;
+  };
+  return (
+    one((e) => clean(e.key) === clean(wanted)) ??
+    one((e) => lower(clean(e.key)) === w) ??
+    one((e) => lower(clean(e.value)) === w) ??
+    one((e) => lower(`${clean(e.key)} ${clean(e.value)}`) === w) ??
+    one((e) => lower(clean(e.value)).startsWith(w)) ??
+    one((e) => lower(clean(e.key)).startsWith(w))
+  );
+}
+
+const entryText = (e: ComboEntry) => (clean(e.key) ? `${clean(e.key)} "${clean(e.value)}"` : `"${clean(e.value)}"`);
+const entryList = (entries: readonly ComboEntry[], max = 60) => `${entries.slice(0, max).map(entryText).join(", ")}${entries.length > max ? `, and ${entries.length - max} more` : ""}`;
+
 /**
- * combo: chooses a dropdown entry. SAP GUI keeps a dropdown's entries
- * itself (the traffic gives the chosen key and the list's id only), so the
- * entry is chosen as a person does: a click opens the list, the entry's
- * text is typed (the list jumps to it), Enter takes it. The key it took is
- * read from the next screen.
+ * A dropdown. Its entries are not in the traffic, but SAP GUI keeps every value list it got in a cache on
+ * the PC: given them (`entries`), the choice is checked before any input and named by key and text. The
+ * input goes as one step to the input host (a click opens the list, the entry's text is typed, Enter), so
+ * that nothing brings another window forward while the list is open.
  */
-export function planCombo(s: DiagScreen, action: Action, g: Geometry): Plan {
+export function planCombo(s: DiagScreen, action: Action, g: Geometry, entries?: readonly ComboEntry[]): Plan {
   const n = need(s, action, ["dropdown"], "dropdown") as Named & { kind: "dropdown" };
   const e = n.element;
   const now = clean(e.key);
   const wanted = action.key ?? action.value;
-  if (wanted === undefined || wanted === null || clean(String(wanted)) === "")
+  const known = entries?.length ? entries : undefined;
+  const shown = known?.find((x) => clean(x.key) === now);
+  if (wanted === undefined || wanted === null || clean(String(wanted)) === "") {
+    if (known) return { steps: [], note: `${n.id} shows ${shown ? entryText(shown) : `"${now}"`}. Its entries (key "text"): ${entryList(known)}. Choose one by key or text: {"do":"combo","id":"${n.id}","key":"<key or text>"}`, answer: "no" };
     return {
       steps: [],
       note: `${n.id} shows "${now}". Its entries are not in the traffic (SAP GUI keeps them; SAP sends the chosen key and the list's id${e.valueList ? ` "${e.valueList}"` : ""} only). Choose one by the text the dropdown shows: {"do":"combo","id":"${n.id}","key":"<text or key>"}`,
       answer: "no",
     };
+  }
   if (!e.input) throw new ActionError(`${n.id} is read-only.`);
-  const text = clean(String(wanted));
-  if (lower(now) === lower(text)) return { steps: [], note: `${n.id} already has "${now}"`, answer: "no" };
+  const off = n.cell ? offScreenCell(n.cell.table, n.cell.table.columns.find((c) => c.name === e.name)?.index, n.id) : undefined;
+  if (off) throw new ActionError(off);
+  if (e.row > lastClickRow(n.window)) throw new ActionError(`${n.id} is at the bottom edge of SAP GUI's window, under its scroll bars, where a click lands elsewhere: nothing was done.${n.cell ? ` Scroll the table so that the row comes up ({"do":"scroll","id":"${n.cell.table.name}","to":${n.cell.row}}), then choose.` : " Make SAP GUI's window larger (maximize it)."}`);
+  const asked = clean(String(wanted));
+  const entry = known ? comboEntry(known, asked) : undefined;
+  if (known && !entry) throw new ActionError(`${n.id} has no entry "${asked}" (or more than one starts with it): nothing was chosen. Its entries (key "text"): ${entryList(known)}.`);
+  const key = entry ? clean(entry.key) : asked;
+  const text = entry ? clean(entry.value) : asked;
+  if (lower(now) === lower(key) || (!entry && lower(now) === lower(text))) return { steps: [], note: `${n.id} already has ${entry ? entryText(entry) : `"${now}"`}`, answer: "no" };
   const [x, y] = g.at(n.window, e.row, e.col, e.width);
   const keyAfter = (sc: DiagScreen): string | undefined => {
     const m = namedControl(sc, n.id);
@@ -393,18 +456,17 @@ export function planCombo(s: DiagScreen, action: Action, g: Geometry): Plan {
   const verdict = (sc: DiagScreen): string | undefined => {
     const k = keyAfter(sc);
     if (k === undefined) return undefined;
-    if (lower(k) === lower(text)) return `${n.id} now has "${k}"`;
-    return k === now ? `${n.id} still has "${k}": SAP GUI found no entry starting with "${text}"` : `${n.id} now has the key "${k}" (check that it is the entry meant by "${text}")`;
+    if (lower(k) === lower(key) || (!entry && lower(k) === lower(text))) return `${n.id} now has ${entry ? entryText(entry) : `"${k}"`}`;
+    const got = known?.find((x) => clean(x.key) === k);
+    if (k === now) return `${n.id} still has "${k}": the choice did not take (look, then choose again)`;
+    return `${n.id} now has ${got ? entryText(got) : `the key "${k}"`}, not the entry meant by "${asked}"`;
   };
   // A dropdown with a function code sends the choice to SAP at once; the others with the next Enter or function key.
   const sends = !!e.fcode;
+  const index = entry && known ? known.indexOf(entry) : -1;
   return {
-    steps: [
-      { do: "click", x, y, settle: 200 },
-      { do: "type", value: text, settle: 100 },
-      { do: "vk", vk: VK.ENTER, settle: 100 },
-    ],
-    note: `chose "${text}" in ${n.id}${sends ? "" : "; SAP gets it with the next Enter or function key"}`,
+    steps: [{ do: "combo", x, y, value: text, ...(index >= 0 ? { index } : {}), settle: 150 }],
+    note: `chose ${entry ? entryText(entry) : `"${text}"`} in ${n.id}${sends ? "" : "; SAP gets it with the next Enter or function key"}`,
     answer: sends ? "yes" : "no",
     ...(sends ? { confirm: (after: DiagScreen | undefined) => (after ? verdict(after) : undefined) } : { later: verdict }),
   };
@@ -630,6 +692,73 @@ function boxState(x: PlainTarget): { kind: "checkbox" | "radio"; checked: boolea
   return e && (e.kind === "checkbox" || e.kind === "radio") ? { kind: e.kind, checked: !!e.checked } : undefined;
 }
 
+/**
+ * A table cell in a column SAP GUI does not show: the table control is narrower than its columns, and the
+ * columns right of its edge are reached with its horizontal scrollbar, which this method does not move.
+ * A click computed for such a cell lands on another cell or field, so nothing is done there.
+ */
+export function offScreenCell(t: DiagTable | undefined, column: number | undefined, what: string): string | undefined {
+  const c = t?.columns.find((x) => x.index === column);
+  if (!t || !c || c.visible) return undefined;
+  const shown = [...t.columns].sort((a, b) => a.position - b.position).filter((x) => x.visible);
+  const last = shown[shown.length - 1];
+  return `${what}: the column "${clean(c.title || c.tooltip) || c.name}" is right of the part of the table ${t.name} that SAP GUI shows (up to "${clean(last?.title || last?.tooltip) || last?.name || "?"}"), and this method cannot scroll a table sideways: nothing was done, since a click there would land in another cell. Fill that value another way (the row's detail screen, if the transaction has one).`;
+}
+
+/**
+ * The last row of a window's screen area a click may go to. When the screen is taller or wider than the
+ * window, SAP GUI draws scroll bars over the area's bottom: VA01's second item line (row 19 of 20) lies under
+ * them, and a click there landed in the line above (2026-11-25).
+ */
+export function lastClickRow(w: DiagWindow): number {
+  const rows = w.scroll?.visibleRows || w.size.rows;
+  const scrolls = !!w.scroll && (w.scroll.rows > w.scroll.visibleRows || w.scroll.cols > w.scroll.visibleCols);
+  return rows - (scrolls ? 2 : 1);
+}
+
+/** The refusal for a click at a row SAP GUI's window does not show whole. */
+function belowWindow(x: PlainTarget): string | undefined {
+  if (x.kind !== "element" && x.kind !== "cell") return undefined;
+  if (x.row <= lastClickRow(x.window)) return undefined;
+  const t = x.kind === "cell" ? x.window.tables.find((tb) => tb.name === x.table) : undefined;
+  return `${x.what} is at the bottom edge of SAP GUI's window, under its scroll bars, where a click lands elsewhere: nothing was done.${t && x.kind === "cell" ? ` Scroll the table so that the row comes up ({"do":"scroll","id":"${t.name}","to":${x.index}}), then act on it.` : " Make SAP GUI's window larger (maximize it)."}`;
+}
+
+/** Cells the Tab key stops at in a table control's row: what takes input, buttons included (FB50, checked live). */
+const TAB_STOPS = new Set(["field", "dropdown", "checkbox", "radio", "button"]);
+
+/**
+ * A cell right of what SAP GUI shows, reached as a person does: a click into the nearest cell on show to its
+ * left that takes text, then Tab once per input cell up to it (SAP GUI scrolls the table sideways as the
+ * cursor moves). Undefined when there is no such cell, or a cell between is of a kind whose Tab stop is not
+ * known.
+ */
+export function tabReach(t: DiagTable, index: number, column: number): { anchor: DiagTable["columns"][number]; tabs: number; row: number } | undefined {
+  const r = t.rows.find((x) => x.index === index);
+  if (!r) return undefined;
+  const order = [...t.columns].sort((a, b) => a.position - b.position);
+  const at = order.findIndex((c) => c.index === column);
+  if (at < 0) return undefined;
+  let from = -1;
+  for (let i = at - 1; i >= 0; i--) {
+    const c = order[i] as DiagTable["columns"][number];
+    const cell = r.cells[c.index];
+    if (c.visible && cell && !cell.hidden && cell.input && cell.kind === "field") {
+      from = i;
+      break;
+    }
+  }
+  if (from < 0) return undefined;
+  let tabs = 0;
+  for (let i = from + 1; i <= at; i++) {
+    const cell = r.cells[(order[i] as DiagTable["columns"][number]).index];
+    if (!cell || cell.hidden || !cell.input) continue;
+    if (!TAB_STOPS.has(cell.kind)) return undefined;
+    tabs++;
+  }
+  return { anchor: order[from] as DiagTable["columns"][number], tabs, row: r.row };
+}
+
 export function planPlain(s: DiagScreen, action: Action, target: PlainTarget | undefined, g: Geometry, local?: ReadonlyMap<string, boolean>): Plan {
   const w = activeWindow(s);
   const id = String(action.id ?? action.name ?? "");
@@ -650,9 +779,36 @@ export function planPlain(s: DiagScreen, action: Action, target: PlainTarget | u
     case "set": {
       const x = t();
       if (x.kind !== "element" && x.kind !== "cell") throw new ActionError(`${x.what} does not take text.`);
+      const table = x.kind === "cell" ? x.window.tables.find((tb) => tb.name === x.table) : undefined;
+      const off = x.kind === "cell" ? offScreenCell(table, x.column, x.what) : undefined;
+      if (off && x.kind === "cell" && table && x.index !== undefined && x.column !== undefined) {
+        if (!x.input) throw new ActionError(`${x.what} is read-only.`);
+        const reach = tabReach(table, x.index, x.column);
+        if (!reach) throw new ActionError(off);
+        const low = belowWindow(x);
+        if (low) throw new ActionError(low);
+        const [ax, ay] = g.at(x.window, reach.row, reach.anchor.col, reach.anchor.width);
+        const single = oneLine(String(action.value ?? ""));
+        return {
+          steps: [
+            { do: "click", x: ax, y: ay, settle: 150 },
+            { do: "vk", vk: VK.TAB, count: reach.tabs, settle: 150 },
+            { do: "vk", vk: VK.HOME, settle: 40 },
+            { do: "vk", vk: VK.END, shift: true, settle: 40 },
+            { do: "vk", vk: VK.DELETE, settle: 40 },
+            { do: "type", value: single.text, settle: 150 },
+          ],
+          note: `typed into ${x.what}, reached with Tab from ${reach.anchor.name} (SAP GUI scrolled the table sideways); SAP gets it with the next Enter or function key`,
+          answer: "no",
+          sideways: table.name,
+        };
+      }
+      if (off) throw new ActionError(off);
       const misuse = plainMisuse(action, x);
       if (misuse) throw new ActionError(misuse);
       if (x.kind === "element" && !x.element.input) throw new ActionError(`${x.what} is read-only.`);
+      const low = belowWindow(x);
+      if (low) throw new ActionError(low);
       const [px, py] = g.at(x.window, x.row, x.col, x.kind === "cell" ? x.width : x.element.width);
       // Typed with the keyboard: a line break would be the Enter key, so it is typed as a space.
       const single = oneLine(String(action.value ?? ""));
@@ -669,6 +825,10 @@ export function planPlain(s: DiagScreen, action: Action, target: PlainTarget | u
       const misuse = plainMisuse(action, x);
       if (misuse) throw new ActionError(misuse);
       if (x.kind === "key") return { steps: [keyStep(x.key.vkey)], note: `pressed ${x.what}`, answer: "yes" };
+      const off = x.kind === "cell" ? offScreenCell(x.window.tables.find((tb) => tb.name === x.table), x.column, x.what) : undefined;
+      if (off) throw new ActionError(off);
+      const low = belowWindow(x);
+      if (low) throw new ActionError(low);
       if (action.do === "check") {
         const box = boxState(x);
         if (box) {
