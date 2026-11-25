@@ -398,6 +398,30 @@ export function findTarget(s: DiagScreen, action: Action): Found {
   return { none: true };
 }
 
+/**
+ * A table cell named as sap_act's description gives it on every surface, the table's id with "row" and
+ * "col" ({"do":"set","id":"TABLE","row":0,"col":"G/L acct"}), in the form the view and this method use:
+ * FIELD[n], n the table's own row number. The column by SAP name (or its part after "-"), title, or place
+ * among the columns. Any other action is returned as it is.
+ */
+export function tableCell(s: DiagScreen, action: Action): Action {
+  if (typeof action.row !== "number" || action.col === undefined || action.col === null || String(action.col).trim() === "") return action;
+  if (!/^(set|check|combo|focus|f4|click|dblclick|press)$/.test(action.do)) return action;
+  const raw = String(action.id ?? "").trim();
+  const last = raw.includes("/") ? raw.slice(raw.lastIndexOf("/") + 1) : raw;
+  const w = active(s);
+  const t = w.tables.find((x) => same(x.name, raw, true) || same(x.name, last, true) || same(`tbl${x.program}${x.name}`, last, true));
+  if (!t) return action;
+  const want = clean(String(action.col));
+  const cols = [...t.columns].sort((a, b) => a.position - b.position);
+  const tail = (n: string) => n.slice(n.lastIndexOf("-") + 1);
+  const byTitle = cols.filter((c) => clean(c.title || c.tooltip).toLowerCase() === want.toLowerCase());
+  const c = /^\d+$/.test(want) ? cols[Number(want)] : (cols.find((x) => same(x.name, want, true)) ?? cols.find((x) => same(tail(x.name), want, true)) ?? (byTitle.length === 1 ? byTitle[0] : undefined));
+  if (!c) throw new ActionError(`The table ${t.name} has no column "${want}": ${cols.map((x) => `${clean(x.title || x.tooltip)} ${x.name}`.trim()).join(", ")}.`);
+  const { row, col: _col, ...rest } = action;
+  return { ...rest, id: `${c.name}[${row}]` };
+}
+
 /** findTarget for one target: undefined when the id means nothing; a name that means several is refused. */
 export function resolveTarget(s: DiagScreen, action: Action): Target | undefined {
   const f = findTarget(s, action);
@@ -651,8 +675,9 @@ export class DiagDriver implements Driver {
     return kept;
   }
 
-  async assess(action: Action): Promise<Assessment> {
+  async assess(given: Action): Promise<Assessment> {
     const s = this.screen();
+    const action = tableCell(s, given);
     const target = resolveTarget(s, action);
     // An id that names nothing here is said as such, with the closest ids, not refused as a write the guard cannot see.
     if (!target && /^(set|focus|check|click|dblclick|press|select|f4)$/.test(action.do) && !((action.row !== undefined || action.node !== undefined) && namedControl(s, action.id)))
@@ -832,9 +857,10 @@ export class DiagDriver implements Driver {
     return p.first === start.first ? `${n.id} is already there: ${where}${notes}` : `scrolled ${n.id}: ${where}${notes}`;
   }
 
-  async act(action: Action): Promise<string> {
+  async act(given: Action): Promise<string> {
     const t0 = Date.now();
     let s = this.screen();
+    const action = tableCell(s, given);
     if (isLogonScreen(s.windows[0]?.program, s.windows[0]?.dynpro)) throw new ActionError(LOGON_REFUSAL);
     await this.idle();
     s = this.screen();
