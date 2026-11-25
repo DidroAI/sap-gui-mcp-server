@@ -59,6 +59,10 @@ describe("a table cell by the table, row and col", () => {
     expect(tableCell(s, { do: "set", id: "TABLE", row: 0, col: "2", value: "1" }).id).toBe("ACGL_ITEM-WRBTR[0]");
     expect(resolveTarget(s, tableCell(s, { do: "set", id: "TABLE", row: 1, col: "G/L acct", value: "1" }))?.what).toBe("ACGL_ITEM-HKONT in row 1");
   });
+  test("a column's field name with the row", () => {
+    expect(tableCell(s, { do: "set", id: "ACGL_ITEM-HKONT", row: 0, value: "476000" })).toEqual({ do: "set", id: "ACGL_ITEM-HKONT[0]", value: "476000" });
+    expect(tableCell(s, { do: "combo", id: "acgl_item-shkzg", row: 1, key: "H" }).id).toBe("ACGL_ITEM-SHKZG[1]");
+  });
   test("an unknown column is refused with the table's columns", () => {
     expect(() => tableCell(s, { do: "set", id: "TABLE", row: 0, col: "Cost center", value: "1" })).toThrow('The table TABLE has no column "Cost center": G/L acct ACGL_ITEM-HKONT, D/C ACGL_ITEM-SHKZG, Amount in doc.curr. ACGL_ITEM-WRBTR');
   });

@@ -405,11 +405,18 @@ export function findTarget(s: DiagScreen, action: Action): Found {
  * among the columns. Any other action is returned as it is.
  */
 export function tableCell(s: DiagScreen, action: Action): Action {
-  if (typeof action.row !== "number" || action.col === undefined || action.col === null || String(action.col).trim() === "") return action;
-  if (!/^(set|check|combo|focus|f4|click|dblclick|press)$/.test(action.do)) return action;
+  if (typeof action.row !== "number" || !/^(set|check|combo|focus|f4|click|dblclick|press)$/.test(action.do)) return action;
   const raw = String(action.id ?? "").trim();
   const last = raw.includes("/") ? raw.slice(raw.lastIndexOf("/") + 1) : raw;
   const w = active(s);
+  if (action.col === undefined || action.col === null || String(action.col).trim() === "") {
+    // A column's field name with the row ({"id":"VBAP-MATNR","row":2}): that cell, when no element has the name.
+    const bare = /^[a-z]+[A-Z%<*]/.test(last) ? last.replace(/^[a-z]+/, "") : last;
+    const column = w.tables.flatMap((t) => t.columns).find((c) => same(c.name, bare, true));
+    if (!column || w.elements.some((e) => same(e.name, bare, true))) return action;
+    const { row, ...rest } = action;
+    return { ...rest, id: `${column.name}[${row}]` };
+  }
   const t = w.tables.find((x) => same(x.name, raw, true) || same(x.name, last, true) || same(`tbl${x.program}${x.name}`, last, true));
   if (!t) return action;
   const want = clean(String(action.col));
