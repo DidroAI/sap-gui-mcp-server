@@ -533,9 +533,13 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     return { ...r, content: [{ ...first, text: `${line}\n${first.text}` }, ...r.content.slice(1)] };
   }
 
-  /** Runs `f` when every call before it on the session has ended: one call at a time per session. */
-  async function serial(ref: string | undefined, label: string, f: () => Promise<CallToolResult>): Promise<CallToolResult> {
-    return queue.run(await laneOf(ref), label, async (turn) => withTurn(await f(), turn));
+  /**
+   * Runs `f` when every call before it on the session has ended: one call at a time per session. `f` gets
+   * the session the call queued for, so a sap_use, a logon or a new list while it waits does not move it.
+   */
+  async function serial(ref: string | undefined, label: string, f: (at: string | undefined) => Promise<CallToolResult>): Promise<CallToolResult> {
+    const lane = await laneOf(ref);
+    return queue.run(lane, label, async (turn) => withTurn(await f(lane === "*" ? ref : lane), turn));
   }
 
   server.registerTool(
@@ -544,9 +548,9 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       title: "List open SAP sessions",
       description:
         "The SAP sessions open (SAP GUI windows; Web GUI and Fiori tabs in Chrome); * marks the active one. Needed only with several sessions, or when a tool says none matches. " +
-          "Parallel work: one session per task and its `session` on every call; calls on different sessions run at once, calls on one session wait their turn. An okcode /o<tcode> opens a new session. " +
+          "Parallel work: one session per task and its `session` on every call; calls on different sessions run at once, calls on one session wait their turn. An okcode /o<tcode> opens a new session of the same logon. " +
         (systems
-          ? "A system that is not open: sap_systems lists the ones the user registered, sap_logon opens one and logs on."
+          ? "A system that is not open: sap_systems lists the ones the user registered, sap_logon opens one and logs on (newSession: true for another session in a new window)."
           : "None: ask the user to open SAP and log on; this server never logs on."),
       inputSchema: {},
       ...(structured ? { outputSchema: sessionsOutput } : {}),
@@ -598,19 +602,20 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       {
         title: "Open a registered SAP system and log on",
         description:
-          "Opens a system registered in the Chrome extension (sap_systems) in a Chrome tab, brings it to the front and logs on as its saved user: the extension types the password into SAP's logon page itself, and this server never sees it. A tab of the system that is logged on already (same client and user) is used as it is. The new session becomes the active one. On a single sign-on system it waits for SAP to log on by itself. When it stops (wrong password, locked user, new password needed, SAP asking about other logons, an identity provider), the answer says what to ask the user: never retry on your own, and never ask the user for a password.",
+          "Opens a system registered in the Chrome extension (sap_systems) in a Chrome tab, brings it to the front and logs on as its saved user: the extension types the password into SAP's logon page itself, and this server never sees it. A tab of the system that is logged on already (same client and user) is used as it is, unless newSession is true: then it opens another session in a new window (for parallel work; SAP may ask about other logons). The new session becomes the active one. On a single sign-on system it waits for SAP to log on by itself. When it stops (wrong password, locked user, new password needed, SAP asking about other logons, an identity provider), the answer says what to ask the user: never retry on your own, and never ask the user for a password.",
         inputSchema: {
           system: z.string().describe("the system's name, as sap_systems lists it"),
           otherLogons: z
             .enum(["keep"])
             .optional()
             .describe('only after the user said so: SAP asks whether to end the user\'s other logons, and "keep" continues without ending them'),
+          newSession: z.boolean().optional().describe("true: another session in a new window, even when one is open"),
         },
-        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
       },
-      ({ system, otherLogons }) =>
+      ({ system, otherLogons, newSession }) =>
         answer(async () => {
-          const r = await systems.logon(system, otherLogons ? { otherLogons } : {});
+          const r = await systems.logon(system, { ...(otherLogons ? { otherLogons } : {}), ...(newSession ? { newSession: true } : {}) });
           const who = `${r.user ? ` as ${r.user}` : ""}${r.client ? `, client ${r.client}` : ""}`;
           const head =
             r.state === "logged_on"
@@ -638,7 +643,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
           }
           registry.active = info.id;
           const { sessions } = await registry.discover();
-          return text([head, "", ...sessions.map((s, i) => sessionLine(s, i, s.id === registry.active)), "", "The session marked * is the active one: go on with sap_look or sap_act."].join("\n"));
+          const next = newSession ? `Pass session "${info.id}" on every call in this session.` : "The session marked * is the active one: go on with sap_look or sap_act.";
+          return text([head, "", ...sessions.map((s, i) => sessionLine(s, i, s.id === registry.active)), "", next].join("\n"));
         }),
     );
   }
@@ -655,8 +661,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     ({ session: raw }) =>
       answer(() =>
         leniently(raw, (ref) =>
-          serial(ref, "sap_use", async () => {
-            const { driver, info } = await attach(ref);
+          serial(ref, "sap_use", async (at) => {
+            const { driver, info } = await attach(at);
             registry.active = info.id;
             actShown.delete(info.id);
             const v = await driver.look({ compact: true });
@@ -684,7 +690,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       _meta: ALWAYS_LOAD,
     },
     ({ session: raw, full, diff, id, rows, cols }) =>
-      answer(() => leniently(raw, (ref) => serial(ref, "sap_look", () => look(ref, full, diff, id, rows, cols)))).then(confirmNotice),
+      answer(() => leniently(raw, (ref) => serial(ref, "sap_look", (at) => look(at, full, diff, id, rows, cols)))).then(confirmNotice),
   );
 
   async function look(ref: string | undefined, full: boolean | undefined, diff: boolean | undefined, id: string | undefined, rows: string | undefined, cols: string | undefined): Promise<CallToolResult> {
@@ -717,8 +723,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
 
   /** The screen as it is, whole, after `head`: the answer to "actions":[] and to {"do":"look"} in sap_act. */
   async function current(ref: string | undefined, head: string): Promise<CallToolResult> {
-    return serial(ref, "sap_look", async () => {
-      const { driver, info } = await attach(ref);
+    return serial(ref, "sap_look", async (at) => {
+      const { driver, info } = await attach(at);
       const v = await driver.look({ compact: true });
       actShown.delete(info.id);
       const shown = withStatus(views.present(info.id, v, true), v);
@@ -783,8 +789,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   async function perform(d: Driver, action: NormalizedAction, whole = false, risk?: string, clock?: { t0: number; judged: number; wanted: boolean }): Promise<CallToolResult> {
     const session = d.info.id;
     const a0 = Date.now();
-    // "/oVA03" opens the transaction in a new SAP GUI session: follow it there.
-    const opens = action.do === "okcode" && typeof action.value === "string" && /^\/o\S/i.test(action.value) && d.info.surface === "sapgui";
+    // "/oVA03" opens the transaction in a new session (SAP GUI: a window; Web GUI: a browser window): follow it there.
+    const opens = action.do === "okcode" && typeof action.value === "string" && /^\/o\S/i.test(action.value) && (d.info.surface === "sapgui" || d.info.surface === "webgui");
     const before = opens ? new Set((await registry.discover()).sessions.map((s) => s.id)) : undefined;
     // While a recording is on, an action that works becomes a step of it.
     const done = shortNote(await counted(session, () => recorder.act(d, action, risk, () => d.act(action))));
@@ -800,7 +806,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       screen().then((v) => ({ v, n: clock ? timed(done, d, clock.wanted, clock.t0, [["judge", clock.judged], ["act", acted - a0], ["answer", Date.now() - acted]]) : done }));
     if (before) {
       for (let i = 0; i < 10; i++) {
-        const fresh = (await registry.discover()).sessions.find((s) => s.surface === "sapgui" && !before.has(s.id));
+        const fresh = (await registry.discover()).sessions.find((s) => s.surface === d.info.surface && !before.has(s.id));
         if (fresh) {
           registry.active = fresh.id;
           const nd = await registry.driver(fresh.id);
@@ -1262,8 +1268,8 @@ ${writeRule(policy)}`,
       answer(() =>
         leniently(raw, (ref) =>
           // In the session's turn, as every other tool: never mid-action, never beside another call on the driver.
-          serial(ref, "screenshot", async () => {
-            const png = await (await registry.driver(ref)).screenshot();
+          serial(ref, "screenshot", async (at) => {
+            const png = await (await registry.driver(at)).screenshot();
             return { content: [{ type: "image", data: png.toString("base64"), mimeType: "image/png" }] };
           }),
         ),

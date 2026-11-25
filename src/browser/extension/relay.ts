@@ -67,6 +67,8 @@ export interface ExtensionSystem {
 export interface LogonOptions {
   /** SAP asks whether to end the user's other logons, and the user said to keep them. */
   otherLogons?: "keep";
+  /** Another session in a new window, even when a tab of the system is logged on already. */
+  newSession?: boolean;
 }
 
 /** What the extension answers to "logon". */
@@ -487,7 +489,8 @@ export class ExtensionRelay {
    * withdrawn from this relay until the logon is over. The answer says who is logged on, or why not.
    */
   async logon(system: string, options: LogonOptions = {}): Promise<LogonResult> {
-    return (await this.request("logon", { system, ...(options.otherLogons ? { otherLogons: options.otherLogons } : {}) }, Math.max(this.requestTimeoutMs, LOGON_TIMEOUT_MS))) as LogonResult;
+    const params = { system, ...(options.otherLogons ? { otherLogons: options.otherLogons } : {}), ...(options.newSession ? { newSession: true } : {}) };
+    return (await this.request("logon", params, Math.max(this.requestTimeoutMs, LOGON_TIMEOUT_MS))) as LogonResult;
   }
 
   /** What the extension's side panel shows of this server (the agent, what it may do); sent again on every connection. */

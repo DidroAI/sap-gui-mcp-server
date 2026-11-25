@@ -15,8 +15,13 @@ change the tools or the view format.
 
 ### Changed (after 0.1.0)
 
-- `sap_sessions` tells the agent how to work in several sessions at once:
-  one session per task, `session` on every call, `/o<tcode>` for a new one.
+- Parallel sessions: `sap_sessions` tells the agent how to work in several
+  sessions at once (one per task, `session` on every call). `sap_logon` has
+  `newSession: true`: another session in a new window, on the same system
+  or another, even when one is open. In Web GUI, `/o<tcode>` is followed
+  into the new browser window, as in SAP GUI. A call that waits for its
+  session's turn keeps to that session, even when another one becomes the
+  active one meanwhile.
 - The SAP window opens on an empty tab the first time, instead of a local
   page; after that it opens the last SAP address, as before.
 - `setup`, `doctor` and the error texts print commands as `npx -y

@@ -253,7 +253,16 @@ describe.skipIf(!exe)("the extension in Chromium", () => {
     const page = await waitForPage(pw, `${WEBGUI}/app`);
     expect(await page.title()).toBe("SAP Easy Access");
     // A second logon finds the open tab.
-    expect((await relay.logon("Fake ECC")).state).toBe("already");
+    const again = await relay.logon("Fake ECC");
+    expect(again.state).toBe("already");
+    expect(again.targetId).toBe(r.targetId);
+    // Parallel work: newSession opens another session in a window of its own, even with one open; two at once.
+    const [one, two] = await Promise.all([relay.logon("Fake ECC", { newSession: true }), relay.logon("Fake ECC", { newSession: true })]);
+    expect([one.state, two.state]).toEqual(["logged_on", "logged_on"]);
+    expect(new Set([r.targetId, one.targetId, two.targetId]).size).toBe(3);
+    // The server gets all three once SAP shows the system: the first tab and the two new windows.
+    const apps = await waitForPages(pw, (p) => p.url().endsWith(`${WEBGUI}/app`), 3);
+    expect(apps.length).toBe(3);
     // The spy saw the traffic (the page's title went by), and no password in it.
     expect(wire.join("\n")).toContain("SAP Easy Access");
     expect(wire.join("\n")).not.toContain(PASSWORD);

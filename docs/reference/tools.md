@@ -14,7 +14,7 @@ So a server with the default settings lists seven tools.
 | [`sap_act`](#sap-act) | one action, or several (`actions`), then the new screen | always |
 | [`sap_screenshot`](#sap-screenshot) | a PNG of the window or tab | always |
 | `sap_systems` | lists the SAP systems registered in the Chrome extension (name, address, client, user, how it logs on) | `SAP_BROWSER=extension` |
-| `sap_logon` | opens a registered system and logs on; the extension fills SAP's logon page, the server never sees the password | `SAP_BROWSER=extension` |
+| `sap_logon` | opens a registered system and logs on; the extension fills SAP's logon page, the server never sees the password; `newSession: true` opens another session in a new window | `SAP_BROWSER=extension` |
 | [`sap_record`](#sap-record) | records the run as a test | always |
 | [`sap_replay`](#sap-replay) | runs a recorded test again, with no model | always |
 | [`sap_code_save`](#sap-code-save) | checks and saves a `*.sap.ts` test | `SAP_CODE_TOOLS=on` |
@@ -91,8 +91,15 @@ be searched (for example, SAP GUI scripting is off).
 
 Several sessions can work at the same time: give each task its own session
 and pass its `session` on every call. Calls on different sessions run at
-once; calls on the same session wait their turn. The okcode `/o<tcode>`
-opens a new session.
+once; calls on the same session wait their turn, and keep to that session
+even if another one becomes the active one meanwhile. To get more sessions:
+
+- the okcode `/o<tcode>` opens a new session of the same logon (SAP GUI: a
+  new window; Web GUI: a new browser window), and the server follows it;
+- with the Chrome extension, `sap_logon` with `newSession: true` opens a
+  system in a new window and logs on there, even when it is open already,
+  for the same system or another one. SAP may ask about the user's other
+  logons; the agent asks the user, as for any logon.
 
 ## sap_use
 

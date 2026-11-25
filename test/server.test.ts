@@ -802,3 +802,36 @@ describe("the extension's side panel", () => {
     expect(steps[0]).toMatchObject({ agent: "Codex", system: "ABA", client: "800", transaction: "VA02" });
   });
 });
+
+describe("parallel sessions", () => {
+  test('"/oVA03" in Web GUI follows the new browser window SAP opened, as in SAP GUI', async () => {
+    const { surface, call } = await setup();
+    surface.add(
+      { id: "chrome:1", system: "ABA", client: "800", transaction: "SMEN" },
+      { onAct: (a) => (a.do === "okcode" && a.value === "/oVA03" ? void surface.add({ id: "chrome:2", system: "ABA", client: "800", transaction: "VA03" }) : undefined) },
+    );
+    const r = await call("sap_act", { action: { do: "okcode", value: "/oVA03" } });
+    expect(r.error).toBe(false);
+    expect(r.text).toContain("A new session opened");
+    const list = await call("sap_sessions");
+    expect(list.text).toMatch(/\* webgui ABA \(800\).*VA03/);
+  });
+
+  test("a call keeps to the session it queued for, even when another becomes active while it waits", async () => {
+    const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA", transaction: "VA01" }, { actMs: 200 });
+    surface.add({ id: "chrome:2", system: "ABA", transaction: "VA03" });
+    await call("sap_use", { session: "chrome:1" });
+    // An action holds session 1; a look on the active session (1) queues behind it.
+    const acting = call("sap_act", { action: { do: "set", id: "x", value: "1" } });
+    await new Promise((res) => setTimeout(res, 20));
+    const looking = call("sap_look", {});
+    await new Promise((res) => setTimeout(res, 20));
+    // Meanwhile another call makes session 2 the active one: on its own lane, it does not wait.
+    const used = await call("sap_use", { session: "chrome:2" });
+    expect(used.text).toContain("VA03");
+    await acting;
+    // The waiting look still reads session 1, the one it queued for.
+    expect((await looking).text).toContain("VA01");
+  });
+});

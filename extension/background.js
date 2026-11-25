@@ -659,7 +659,7 @@ async function handleRequest(m) {
       return { systems: await systemsForServer() };
     case "logon":
       // The answer says who is logged on where, or why not: never the password.
-      return await logonSystem(m.system, { by: "server", otherLogons: m.otherLogons === "keep" ? "keep" : null });
+      return await logonSystem(m.system, { by: "server", otherLogons: m.otherLogons === "keep" ? "keep" : null, newSession: m.newSession === true });
     case "cdp": {
       const tabId = requireTabId(m);
       if (!allowedCache.has(tabId) || scope.paused) throw rpcError(`tab ${tabId} is not shared with sap-ui-automation`);
@@ -1728,7 +1728,10 @@ const logons = new Map(); // system id -> running logon promise
 
 // Opens a system and logs on to it. by: "server" (the relay asked) or "user" (the popup).
 // otherLogons: "keep" when the user said to keep their other logons (SAP's multiple logon question).
-async function logonSystem(ref, { by, otherLogons = null }) {
+// newSession: another session of the system in a new window, even when a tab is logged on already
+// (an agent working in several sessions at once).
+let newSessions = 0;
+async function logonSystem(ref, { by, otherLogons = null, newSession = false }) {
   const list = await getSystems();
   const sys = findSystem(list, ref);
   if (!sys) {
@@ -1741,16 +1744,18 @@ async function logonSystem(ref, { by, otherLogons = null }) {
     );
   }
   if (by === "server" && (await getConfig()).paused) throw logonError("paused", agentText("paused", sys));
-  if (logons.has(sys.id)) return logons.get(sys.id);
-  const p = doLogon(sys, by, otherLogons).finally(() => logons.delete(sys.id));
-  logons.set(sys.id, p);
+  // One logon a system at a time, but each new session is its own.
+  const key = newSession ? `${sys.id}#${++newSessions}` : sys.id;
+  if (logons.has(key)) return logons.get(key);
+  const p = doLogon(sys, by, otherLogons, newSession).finally(() => logons.delete(key));
+  logons.set(key, p);
   return p;
 }
 
-async function doLogon(sys, by, otherLogons) {
+async function doLogon(sys, by, otherLogons, newSession = false) {
   let r;
   try {
-    r = await doLogonSteps(sys, by, otherLogons);
+    r = await doLogonSteps(sys, by, otherLogons, newSession);
   } catch (e) {
     // What SAP answered stays on the system's row until the user acts on it.
     if (e && !e.held && ["wrong_password", "user_locked", "password_change", "multiple_logon", "identity_provider", "page_changed", "sap_error", "timeout", "refused"].includes(e.reason)) await setIssue(sys.id, { reason: e.reason, message: e.sapMessage || "" });
@@ -1774,7 +1779,7 @@ async function doLogon(sys, by, otherLogons) {
 // Tabs a logon runs in right now (the guard leaves them to it).
 const logonTabs = new Set();
 
-async function doLogonSteps(sys, by, otherLogons) {
+async function doLogonSteps(sys, by, otherLogons, newSession = false) {
   const base = { system: sys.name, client: sys.client || "", user: sys.user || "" };
   const host = new URL(sys.url).hostname;
   // A page of the system that SAP shows logged on: the launchpad or Easy Access; any page for an "other" system.
@@ -1798,7 +1803,7 @@ async function doLogonSteps(sys, by, otherLogons) {
   // 1. A tab of this system that SAP shows logged on (same client and user) is the answer. A tab at SAP's
   //    question about other logons is answered there when the user said so. Nothing is ever typed into a
   //    tab the server had: a page it ran scripts in could read the field.
-  const targets = await chrome.debugger.getTargets();
+  const targets = newSession ? [] : await chrome.debugger.getTargets();
   const candidates = targets.filter((t) => t.type === "page" && typeof t.tabId === "number" && tabOfSystem(sys, t.url) && !privateTabs.has(t.tabId));
   let multiTab = null;
   for (const t of candidates) {
@@ -1823,6 +1828,11 @@ async function doLogonSteps(sys, by, otherLogons) {
     if (otherLogons !== "keep") throw fail("multiple_logon", { tabId });
     privateTabs.add(tabId);
     await scheduleRecompute();
+  } else if (newSession) {
+    // A window of its own: sessions in tabs of one window take the front from each other, and Chrome slows the hidden ones.
+    const win = await chrome.windows.create({ url: "about:blank", focused: true });
+    tabId = win.tabs[0].id;
+    privateTabs.add(tabId);
   } else {
     const tab = await chrome.tabs.create({ url: "about:blank", active: true });
     tabId = tab.id;
@@ -1854,7 +1864,7 @@ async function doLogonSteps(sys, by, otherLogons) {
       if (sys.sso || !password) return { ...base, state: "needs_user", reason: "identity_provider", tabId, message: agentText("identity_provider", sys, "", state) };
       throw fail("identity_provider", { tabId, host: state.host });
     }
-    if (isApp(state)) return { ...base, state: sys.sso ? "sso" : "already", tabId };
+    if (isApp(state)) return { ...base, state: sys.sso ? "sso" : newSession ? "logged_on" : "already", tabId };
 
     if (state.kind === "logon") {
       if (!password) {

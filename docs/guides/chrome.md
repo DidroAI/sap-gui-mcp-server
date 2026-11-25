@@ -82,7 +82,8 @@ it.
    `"SAP_BROWSER": "extension"` to the `env` of sap-ui-automation in your
    agent's settings yourself. Restart the agent app. The agent then also
    has `sap_systems` (your registered systems) and `sap_logon` (open one and
-   log on).
+   log on). For parallel work, `sap_logon` with `newSession: true` opens
+   another session in a window of its own, on the same system or another.
 
 The side panel shows what the agent does in SAP, step by step, and when it
 waits for your yes to save. While the server works in a tab, Chrome shows
