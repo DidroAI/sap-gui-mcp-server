@@ -130,12 +130,20 @@ public static class SapScreen {
     return GetForegroundWindow() == h;
   }
 
+  [DllImport("user32.dll")] static extern uint MapVirtualKey(uint code, uint type);
+  /**
+   * Page Up/Down, End, Home, the arrows, Insert and Delete are the extended keys. Sent without that flag they are the
+   * number pad's, and with Num Lock on Windows lets Shift go for them: Shift+End then only moved to the end, so set
+   * typed after what the field held ("5045" became "50455045").
+   */
+  static bool Extended(byte vk) { return (vk >= 0x21 && vk <= 0x28) || vk == 0x2D || vk == 0x2E; }
   /** One key with modifiers (virtual key codes), to the foreground window. */
   public static void Key(byte vk, bool ctrl, bool shift, bool alt) {
     if (ctrl) keybd_event(0x11, 0, 0, UIntPtr.Zero);
     if (shift) keybd_event(0x10, 0, 0, UIntPtr.Zero);
     if (alt) keybd_event(0x12, 0, 0, UIntPtr.Zero);
-    keybd_event(vk, 0, 0, UIntPtr.Zero); keybd_event(vk, 0, 2, UIntPtr.Zero);
+    var scan = (byte)MapVirtualKey(vk, 0); uint ext = Extended(vk) ? 1u : 0u;
+    keybd_event(vk, scan, ext, UIntPtr.Zero); keybd_event(vk, scan, ext | 2u, UIntPtr.Zero);
     if (alt) keybd_event(0x12, 0, 2, UIntPtr.Zero);
     if (shift) keybd_event(0x10, 0, 2, UIntPtr.Zero);
     if (ctrl) keybd_event(0x11, 0, 2, UIntPtr.Zero);
@@ -165,6 +173,21 @@ public static class SapScreen {
   public static void LeaveMenu(IntPtr top) {
     for (int i = 0; i < 4 && InMenu(top); i++) { keybd_event(0x1B, 0, 0, UIntPtr.Zero); keybd_event(0x1B, 0, 2, UIntPtr.Zero); System.Threading.Thread.Sleep(80); }
     if (InMenu(top)) throw new InvalidOperationException("MENU_OPEN: a menu stays open in SAP GUI; close it, then ask again");
+  }
+  /** The window that has the keyboard focus in this window's thread. */
+  public static IntPtr Focus(IntPtr top) {
+    uint pid; var gi = new GUITHREADINFO(); gi.cb = Marshal.SizeOf(typeof(GUITHREADINFO));
+    if (!GetGUIThreadInfo(GetWindowThreadProcessId(top, out pid), ref gi)) return IntPtr.Zero;
+    return gi.focus;
+  }
+  [DllImport("user32.dll")] static extern IntPtr SetFocus(IntPtr h);
+  /** Gives the keyboard focus to a window of another thread. */
+  public static void GiveFocus(IntPtr h) {
+    uint pid; uint t = GetWindowThreadProcessId(h, out pid);
+    AttachThreadInput(GetCurrentThreadId(), t, true);
+    SetFocus(h);
+    AttachThreadInput(GetCurrentThreadId(), t, false);
+    System.Threading.Thread.Sleep(60);
   }
   /** Is a text caret showing in this window's thread? SAP GUI shows one only in a field that takes input. */
   public static bool HasCaret(IntPtr top) {
@@ -407,9 +430,13 @@ function Op-Act($req) {
     if ($edit -eq [IntPtr]::Zero) { throw 'NOT_FOUND: this window has no command field (it may be hidden: show it with the arrow next to the green tick)' }
     $r = [SapScreen]::Rect($edit)
     [SapScreen]::Click([int]($r[0] + $r[2] / 2), [int]($r[1] + $r[3] / 2), $false)
+    # A tree or grid (an ActiveX control) can keep the keyboard after the click: its Enter then never reaches the
+    # command field, and SAP GUI sends nothing. Give the field the focus, and check it has it before Enter.
+    if ([SapScreen]::Focus($top) -ne $edit) { [SapScreen]::GiveFocus($edit) }
     [SapScreen]::SetText($edit, [string]$a['value'])
     Start-Sleep -Milliseconds 80
     if ([SapScreen]::Text($edit) -ne [string]$a['value']) { throw 'FAILED: the command field did not take the text' }
+    if ([SapScreen]::Focus($top) -ne $edit) { throw 'FAILED: the command field did not take the keyboard focus (a control on the screen kept it); press Back or click a field, then send the okcode again' }
     [SapScreen]::Key(0x0D, $false, $false, $false)
   }
   elseif ($do -eq 'key') { Send-VKey ([int]$a['key']) }

@@ -374,6 +374,13 @@ export function findTarget(s: DiagScreen, action: Action): Found {
       if (hit?.target.kind === "element") return hit;
     }
   }
+  // A button's or a tab's function code without its braces ("MEV4000BUTTON", "T\06"): agents drop them. A tree
+  // node key is not taken this way.
+  for (const f of forms) {
+    if (/^\{.*\}$/.test(f) || f.includes("[") || f.startsWith("@")) continue;
+    const hit = unique(lookup(w, `{${f}}`, action, true));
+    if (hit && hit.target.kind !== "node") return hit;
+  }
   return { none: true };
 }
 
@@ -965,7 +972,7 @@ const NO_GEOMETRY: Geometry = {
 };
 
 function describe(c: Connection, mode: number, s: DiagScreen): SessionInfo {
-  const info: SessionInfo = { id: `${PREFIX}${c.n}:${mode}`, surface: "sapgui", method: "diag", where: `SAP GUI connection to ${c.target.host}:${c.target.service} through the DIAG router, mode ${mode}` };
+  const info: SessionInfo = { id: `${PREFIX}${c.n}:${mode}`, surface: "sapgui", method: "diag", where: `SAP GUI connection to ${c.target.host}:${c.target.service} through the DIAG router${mode ? " (a further session of that logon)" : ""}` };
   if (s.session.system) info.system = s.session.system;
   if (s.session.client) info.client = s.session.client;
   if (s.session.user) info.user = s.session.user;

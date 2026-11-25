@@ -813,6 +813,8 @@ describe("parallel sessions", () => {
     const r = await call("sap_act", { action: { do: "okcode", value: "/oVA03" } });
     expect(r.error).toBe(false);
     expect(r.text).toContain("A new session opened");
+    // Its id, and the old one's: a bare number is a place in sap_sessions' list, which agents mistook for a window number.
+    expect(r.text).toContain('pass its id, session "chrome:2" for this one and "chrome:1" for the one before');
     const list = await call("sap_sessions");
     expect(list.text).toMatch(/\* webgui ABA \(800\).*VA03/);
   });

@@ -829,7 +829,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
           registry.active = fresh.id;
           const nd = await registry.driver(fresh.id);
           const { v, n } = await note(() => nd.look({ compact: true }));
-          return ok(`${n}\nA new session opened (${fresh.where}); it is now the active one. The previous session is still open (sap_sessions lists both).${line}\n\n${views.present(fresh.id, v, true)}`, v, fresh.id, nd);
+          return ok(`${n}\nA new session opened (${fresh.where}); it is now the active one. The previous session is still open (sap_sessions lists both): to work in one of them, pass its id, session "${fresh.id}" for this one and "${session}" for the one before.${line}\n\n${views.present(fresh.id, v, true)}`, v, fresh.id, nd);
         }
         await new Promise((r) => setTimeout(r, 500));
       }
