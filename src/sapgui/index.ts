@@ -24,7 +24,7 @@ import { type Action, ActionError, type Assessment, type Driver, type LookOption
 import { isLogonScreen, LOGON_REFUSAL } from "../core/words.js";
 import { assess } from "./assess.js";
 import type { Control, DoctorEngine, DoctorLocal, Screen, SessionFacts, SessionsFacts, Transport } from "./facts.js";
-import { fullView } from "./format.js";
+import { fullView, listsOnly } from "./format.js";
 import { vkeyNumber } from "./keys.js";
 import { HostError, MAX_TIMEOUT_MS, type PowershellPolicy, powershellPolicy, PsHost, READ_TIMEOUT_MS } from "./host.js";
 import { relativeId, resolve, resolveStrict } from "./resolve.js";
@@ -134,7 +134,7 @@ class SapguiDriver implements Driver {
   private async screen(reuse = false): Promise<Screen> {
     if (reuse && this.last && Date.now() - this.last.at < FRESH_MS) return this.last.screen;
     const paged = Object.keys(this.treeFrom).length > 0;
-    const screen = await this.ask<Screen>("screen", paged ? { treeFrom: this.treeFrom } : {});
+    const screen = listsOnly(await this.ask<Screen>("screen", paged ? { treeFrom: this.treeFrom } : {}));
     // A tree that is gone takes its place in the paging with it.
     if (paged && !Object.keys(this.treeFrom).every((id) => screen.windows.some((w) => w.controls.some((c) => c.id === id)))) this.treeFrom = {};
     this.last = { at: Date.now(), screen };
