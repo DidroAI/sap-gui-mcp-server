@@ -80,18 +80,17 @@ local automation (such as Playwright's MCP bridge) follow the same model.
 - The unpacked id is `ojokfbbfoignpfeamomeappgfhapehma`, fixed by `key` in
   `manifest.json`. The native helper allows only the ids in `EXTENSION_IDS`
   (`src/browser/extension/native.ts`).
-- First store upload: include the private key (`key.pem`) in the zip's root
-  so that the store keeps this id; remove `"key"` from the uploaded
-  manifest. The key is held by the maintainers, outside the repository.
-  If the store gives another id (or for Edge Add-ons, which always does),
-  add it to `EXTENSION_IDS` and release the npm package before the store
-  version.
+- The store's id is `geglpbkaklfpmnbidfcpflegmdkjodkn`, given at the first
+  upload (2026-11-25; the private key behind the unpacked id is not kept, so
+  the store could not keep that one). It is in `EXTENSION_IDS` too.
+- A new store id (Edge Add-ons always gives its own) goes into
+  `EXTENSION_IDS`, and the npm package with it is released before the
+  store version is published.
 
 ## Building the upload
 
 ```sh
 npm run pack:extension                      # ui-automation-for-sap-<version>.zip
-npm run pack:extension -- --key key.pem     # first upload only: keeps the id
 ```
 
 The zip holds what the extension runs, `LICENSE` and `PRIVACY.md`; the
