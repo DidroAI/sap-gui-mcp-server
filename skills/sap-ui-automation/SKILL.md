@@ -92,6 +92,14 @@ A logon has a limit of sessions (6 unless the system sets another). When
 popup, then reuse a session you no longer need or open another logon with
 `sap_logon` and `"newSession": true`. Do not send `/o` again.
 
+## SAP GUI for Windows: two ways to read it
+
+`sap_sessions` lists SAP GUI sessions found by SAP GUI scripting and, for
+connections logged on through the server's router, by the network reader
+("through the DIAG router"). When one connection is listed both ways, use
+the scripting session: it reads more of the screen. Use the network reader's
+session when it is the only one listed, for example when scripting is off.
+
 ## Logging on
 
 Without `sap_logon` the server never logs on: ask the user to open SAP.

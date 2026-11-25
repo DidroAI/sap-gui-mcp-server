@@ -19,9 +19,12 @@ Mac, use Web GUI or Fiori.
 The default is `sapgui,webgui,fiori` on Windows and `webgui,fiori`
 elsewhere. An unknown name is an error at start.
 
-`SAP_GUI_METHOD` decides how the `sapgui` surface works: scripting (the
-default) or `diag`, which reads SAP GUI from its traffic. Only one method
-runs at a time.
+SAP GUI for Windows can be read two ways: SAP GUI scripting, or `diag`,
+which reads SAP GUI from its network traffic. By default both run:
+`sap_sessions` lists what each one sees (a session read from the traffic
+says "through the DIAG router"), and the agent works in the session it
+needs. `SAP_GUI_METHOD=scripting` or `SAP_GUI_METHOD=diag` keeps to one,
+for a setup where nobody watches the agent and the method must not change.
 
 ## How sessions are found
 

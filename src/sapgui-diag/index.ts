@@ -1171,6 +1171,7 @@ export function sapguiDiagSurface(env: Record<string, string | undefined>, optio
   const input = () => (host ??= new PsHost(env, { command: powershellExe(env), args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", INPUT_SCRIPT] }));
   return {
     name: "sapgui",
+    method: "diag",
     router,
     async discover() {
       await router.catch(() => undefined);

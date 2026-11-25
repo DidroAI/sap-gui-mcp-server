@@ -10,6 +10,7 @@ const AREAS: Record<string, string> = {
   webgui: "Chrome: Web GUI and Fiori",
   fiori: "Chrome: Web GUI and Fiori",
   sapgui: "SAP GUI for Windows",
+  "sapgui (diag)": "SAP GUI for Windows: network reader (DIAG)",
 };
 
 /** Wraps text to the terminal width, indenting every line. */
@@ -36,7 +37,8 @@ export async function doctorReport(surfaces: Surface[], version: string, platfor
   const areas = new Map<string, DoctorCheck[]>();
   const seen = new Set<string>();
   for (const s of surfaces) {
-    const area = AREAS[s.name] ?? s.name;
+    const key = s.method ? `${s.name} (${s.method})` : s.name;
+    const area = AREAS[key] ?? key;
     const list = areas.get(area) ?? [];
     areas.set(area, list);
     let checks: DoctorCheck[];
@@ -53,11 +55,21 @@ export async function doctorReport(surfaces: Surface[], version: string, platfor
     }
   }
   const out: string[] = [`sap-ui-automation ${version}`, ""];
+  // SAP GUI read both ways (SAP_GUI_METHOD unset): the two are alternatives, one that works is enough.
+  const gui = AREAS.sapgui ?? "";
+  const diag = AREAS["sapgui (diag)"] ?? "";
+  const either = areas.has(gui) && areas.has(diag);
+  const areaOk = (a: string) => (areas.get(a) ?? []).every((c) => c.ok);
+  const guiOk = areaOk(gui) || areaOk(diag);
   let ok = true;
   for (const [area, checks] of areas) {
     out.push(area);
+    if (either && (area === gui || area === diag)) {
+      ok &&= guiOk;
+      if (area === diag) out.push(`  ${wrap("Either way of reading SAP GUI is enough; the agent uses the one that sees your session.", "    ", width).slice(4)}`);
+    }
     for (const c of checks) {
-      ok &&= c.ok;
+      if (!(either && (area === gui || area === diag))) ok &&= c.ok;
       out.push(`  ${wrap(`${c.ok ? "✓" : "✗"} ${c.check}: ${c.detail}`, "    ", width).slice(4)}`);
       if (!c.ok && c.fix) out.push(wrap(`→ ${c.fix}`, "    ", width));
     }
