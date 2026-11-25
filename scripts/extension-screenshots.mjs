@@ -60,6 +60,12 @@ const VA02 = [
 const ecc = (more = {}) => sys("ecc", "ECC Sales", "webgui", more);
 const SCENES = [
   {
+    file: "0-first",
+    title: "Add your SAP system",
+    text: "Open it in a tab: the panel fills in its address. Add your user and password, and the agent can log on.",
+    state: { ...base, status: "ready", agentInfo: null, systems: [], currentTab: { tabId: 3, title: "SAP", shared: false, system: null, suggestion: { sapLike: true, kind: "webgui", name: "ECC 800", url: "http://localhost:8010/sap/bc/gui/sap/its/webgui", client: "800", language: "EN" } } },
+  },
+  {
     file: "1-working",
     title: "See what your agent does in SAP",
     text: "A column beside your SAP tabs: each step, in SAP's own words, as the agent takes it.",
@@ -82,6 +88,13 @@ const SCENES = [
     title: "Set up in a minute",
     text: "It talks only to your agent on this computer and to the SAP systems you add.",
     state: { ...base, status: "no_code", agentInfo: null, code: { set: false, managed: false, managedInvalid: false }, systems: [] },
+  },
+  {
+    file: "6-edit",
+    title: "Edit in place",
+    text: "A system's fields open under its row.",
+    view: "edit",
+    state: { ...base, systems: [ecc(), sys("s4", "S/4HANA Sandbox", "fiori")] },
   },
   {
     file: "5-settings",
@@ -154,6 +167,10 @@ try {
     await page.goto(`http://127.0.0.1:${port}/frame.html?${q}`);
     await page.waitForTimeout(800);
     if (s.view === "settings") await page.frameLocator("iframe").locator("#settings-open").click();
+    if (s.view === "edit") {
+      await page.frameLocator("iframe").locator(".item .more").first().click();
+      await page.frameLocator("iframe").locator(".menu-item", { hasText: "Edit" }).click();
+    }
     await page.waitForTimeout(300);
     const file = join(out, `${s.file}${process.env.DARK ? "-dark" : ""}.png`);
     await page.screenshot({ path: file });

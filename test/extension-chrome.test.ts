@@ -182,14 +182,16 @@ describe.skipIf(!exe)("the extension in Chromium", () => {
   test("pairs through its helper: no code copied", async () => {
     await popup.click("#pair").catch(() => {}); // shown while not paired; the worker may have paired by itself already
     expect(await relay.waitForExtension(20_000)).toBe(true);
-    await popup.waitForFunction(() => /connected$/.test(document.getElementById("status-title")?.textContent ?? ""), undefined, { timeout: 10_000 });
-    expect(await popup.textContent("#status-title")).toBe("Your agent is connected");
+    await popup.waitForFunction(async () => (await chrome.runtime.sendMessage({ cmd: "state" })).status === "connected", undefined, { timeout: 10_000 });
+    // No system yet: the panel asks for the first one.
+    expect(await popup.textContent("#status-title")).toBe("Add your first SAP system");
   }, 40_000);
 
   test("a system is registered in the panel; its password goes to the keychain", async () => {
     // No system yet: the empty state's one button.
     expect(await popup.isVisible("#add")).toBe(false);
-    await popup.click("#empty-add");
+    // No system yet: the form is open by itself.
+    await popup.waitForSelector("#f-name");
     await popup.fill("#f-name", "Fake ECC");
     await popup.fill("#f-url", `${origins[0]}${WEBGUI}`);
     await popup.fill("#f-client", "800");
@@ -199,8 +201,8 @@ describe.skipIf(!exe)("the extension in Chromium", () => {
     await popup.click("#save");
     await popup.waitForSelector("#edit-view", { state: "hidden" });
     await popup.waitForSelector(".item");
-    expect(await popup.locator(".item .item-line").allTextContents()).toEqual([`Web GUIClient 800${origins[0]!.slice(7)}`, "JDOE, password saved"]);
-    expect(await popup.getAttribute(".item .item-line", "title")).toBe(`${origins[0]}${WEBGUI}`);
+    expect(await popup.locator(".item .item-line").allTextContents()).toEqual(["Client 800; User JDOE"]);
+    expect(await popup.getAttribute(".item .item-title", "title")).toBe(`${origins[0]}${WEBGUI}`);
     expect(await popup.textContent(".item .go")).toBe("Log on");
     const stored = await popup.evaluate(() => chrome.storage.local.get(null));
     expect(JSON.stringify(stored)).not.toContain(PASSWORD);

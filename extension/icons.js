@@ -10,6 +10,7 @@ export const ICONS = {
   add: svg(o("M12 5v14M5 12h14")),
   more: svg(dot(5, 12) + dot(12, 12) + dot(19, 12)),
   back: svg(o("M15 18l-6-6 6-6", 2)),
+  chevron: svg(o("M9 6l6 6-6 6", 2)),
   settings: svg(o("M4 7h9M17 7h3M4 17h3M11 17h9") + o("M13 5h4v4h-4zM7 15h4v4H7z")),
   edit: svg(o("M15 5l4 4L9 19H5v-4zM13 7l4 4")),
   delete: svg(o("M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6")),

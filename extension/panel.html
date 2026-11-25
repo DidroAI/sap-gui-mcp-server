@@ -7,19 +7,16 @@
   <link rel="stylesheet" href="panel.css">
 </head>
 <body>
-  <!-- The bar: the product's own mark (never SAP's logo) and name, or Back and the view's name. -->
-  <header class="bar">
-    <button id="back" class="icon-btn" type="button" aria-label="Back" data-icon="back" hidden></button>
-    <span id="mark" class="mark" data-icon="mark" aria-hidden="true"></span>
-    <div id="product" class="product"><span class="product-name">UI Automation</span><span class="product-for">for SAP</span></div>
-    <h1 id="view-title" class="view-title" hidden></h1>
-    <button id="settings-open" class="icon-btn" type="button" aria-label="Settings" data-icon="settings"></button>
-  </header>
+  <!-- Chrome's side panel shows the extension's icon and name above this page: no brand bar here. -->
 
-  <!-- Main: what the agent does now, what it did, and the systems. -->
+  <!-- Main: what the agent does now, the systems, what it did. -->
   <div id="main-view" class="view main-view">
     <section id="status" class="status" aria-live="polite">
-      <div class="status-head"><span id="status-dot" class="dot" aria-hidden="true"></span><span id="status-title" class="status-title">Starting</span></div>
+      <div class="status-head">
+        <span id="status-dot" class="dot" aria-hidden="true"></span>
+        <span id="status-title" class="status-title">Starting</span>
+        <button id="settings-open" class="icon-btn" type="button" aria-label="Settings" data-icon="settings"></button>
+      </div>
       <p id="status-detail" class="status-detail"></p>
       <p id="status-step" class="status-step" hidden></p>
       <div id="status-actions" class="status-actions"></div>
@@ -36,32 +33,35 @@
       <button id="automation-close" class="icon-btn small" type="button" aria-label="Close" data-icon="close"></button>
     </aside>
 
-    <section id="activity" class="activity" aria-label="Activity">
-      <div class="sh"><h2>Activity</h2><button id="clear-activity" class="link" type="button" hidden>Clear</button></div>
-      <div id="activity-list" class="activity-list"></div>
-      <div id="activity-empty" class="empty-box">
-        <span class="empty-icon" data-icon="list"></span>
-        <span>Nothing yet. Each step the agent takes in SAP is listed here.</span>
+    <section id="systems-section" class="section systems" aria-label="Systems">
+      <div class="section-head-row">
+        <button id="systems-toggle" class="section-head" type="button" aria-expanded="true" aria-controls="systems-body">
+          <h2>Systems</h2><span data-icon="chevron" class="chevron"></span>
+        </button>
+        <button id="add-icon" class="icon-btn small" type="button" aria-label="Add system" title="Add system" data-icon="add"></button>
       </div>
-    </section>
-
-    <section id="systems-section" class="systems" aria-label="Systems">
-      <div id="list-head" class="sh"><h2>Systems <span id="count" class="count"></span></h2><button id="add" class="btn ghost xs" type="button">Add system</button></div>
-      <ul id="systems" class="list" aria-label="Your SAP systems"></ul>
-      <button id="add-current" class="add-current" type="button" hidden>
-        <span class="add-current-icon" data-icon="add"></span>
-        <span class="add-current-text"><span class="add-current-title">Add this SAP page</span><span id="add-current-detail" class="add-current-detail"></span></span>
-      </button>
-      <div id="empty" class="empty-systems" hidden>
-        <p id="empty-text"></p>
-        <p id="empty-where" class="empty-where" hidden></p>
-        <div class="row-actions">
-          <button id="empty-add" class="btn primary" type="button">Add this SAP page</button>
-          <button id="empty-manual" class="btn ghost" type="button">Enter address instead</button>
-        </div>
+      <div id="systems-body" class="module section-body">
+        <ul id="systems" class="list" aria-label="Your SAP systems"></ul>
+        <button id="add-current" class="module-foot" type="button" hidden>
+          <span data-icon="add"></span>
+          <span class="foot-text"><span class="foot-title">Add this SAP page</span><span id="add-current-detail" class="foot-detail"></span></span>
+        </button>
+        <button id="add" class="module-foot" type="button"><span data-icon="add"></span><span class="foot-title">Add system</span></button>
       </div>
       <p id="list-error" class="msg error" role="alert" hidden></p>
-      <p id="pw-note" class="foot-note"></p>
+    </section>
+
+    <section id="activity" class="section activity" aria-label="Activity" hidden>
+      <div class="section-head-row">
+        <button id="activity-toggle" class="section-head" type="button" aria-expanded="true" aria-controls="activity-body">
+          <h2>Activity</h2><span data-icon="chevron" class="chevron"></span>
+        </button>
+        <button id="clear-activity" class="link quiet" type="button">Clear</button>
+      </div>
+      <div id="activity-body" class="module section-body">
+        <div id="activity-list" class="activity-list"></div>
+        <button id="activity-more" class="module-foot quiet" type="button" hidden></button>
+      </div>
     </section>
   </div>
 
@@ -110,94 +110,93 @@
         <div class="step-body"><div class="step-title">Ask your agent</div></div>
       </li>
     </ol>
-    <section class="trust" aria-label="What to expect">
-      <p><span data-icon="monitor"></span><span>It works only in the systems you add.</span></p>
-      <p><span data-icon="shield"></span><span>It asks you before it saves anything.</span></p>
-      <p><span data-icon="lock"></span><span id="trust-pw">Passwords stay in your keychain. The agent never sees them.</span></p>
-    </section>
   </div>
-
-  <!-- Add or edit a system: labels above fields. -->
-  <form id="edit-view" class="view form" hidden autocomplete="off" novalidate>
-    <div class="field">
-      <label class="label" for="f-name">Name</label>
-      <input id="f-name" class="input" type="text" placeholder="ECC Dev" required maxlength="60" aria-required="true" aria-describedby="f-name-error">
-      <p id="f-name-error" class="hint error" hidden></p>
-    </div>
-    <div class="field">
-      <label class="label" for="f-url">Address</label>
-      <input id="f-url" class="input" type="url" placeholder="https://sap.example.com/sap/bc/ui2/flp" required aria-required="true" aria-describedby="f-url-error f-url-hint f-url-http">
-      <p id="f-url-error" class="hint error" hidden></p>
-      <p id="f-url-hint" class="hint">The address of the Web GUI or the Fiori launchpad.</p>
-      <p id="f-url-http" class="hint warning" hidden>This address isn't encrypted (http), so the password crosses the network readable. Use https if the system offers it.</p>
-    </div>
-    <div class="two">
-      <div class="field">
-        <label class="label" for="f-client">Client</label>
-        <input id="f-client" class="input mono" type="text" inputmode="numeric" placeholder="100" maxlength="3" aria-describedby="f-client-hint">
-        <p id="f-client-hint" class="hint">Empty: the system's default.</p>
-      </div>
-      <div class="field">
-        <label class="label" for="f-language">Language</label>
-        <input id="f-language" class="input mono" type="text" placeholder="EN" maxlength="2" aria-describedby="f-language-hint">
-        <p id="f-language-hint" class="hint">Such as EN or DE.</p>
-      </div>
-    </div>
-    <label class="checkbox"><input id="f-sso" type="checkbox" aria-describedby="f-sso-hint"><span>Use single sign-on</span></label>
-    <p id="f-sso-hint" class="hint checkbox-hint">SAP logs you on by itself; no user or password needed.</p>
-    <div id="cred-fields">
-      <div class="field">
-        <label class="label" for="f-user">User</label>
-        <input id="f-user" class="input mono" type="text" maxlength="40" autocapitalize="characters" aria-describedby="f-user-hint">
-        <p id="f-user-hint" class="hint">Your SAP user, if the extension should log on for you.</p>
-      </div>
-      <div class="field">
-        <label class="label" for="f-password">Password</label>
-        <div class="input-group">
-          <input id="f-password" type="password" autocomplete="new-password" aria-describedby="pw-where">
-          <button id="f-show" class="icon-btn small" type="button" aria-label="Show password" aria-pressed="false" data-icon="show"></button>
-        </div>
-        <p id="pw-where" class="hint"></p>
-      </div>
-    </div>
-    <p class="note plain"><span data-icon="lock"></span><span>Your agent never sees the password. The extension types it into SAP's logon page itself.</span></p>
-    <p id="edit-error" class="msg error" role="alert" hidden></p>
-    <div class="form-footer">
-      <button id="save" class="btn primary" type="submit">Save</button>
-      <button id="cancel" class="btn ghost" type="button">Cancel</button>
-    </div>
-  </form>
 
   <!-- Settings: what the agent may do (set in the agent), the connection, and about. -->
   <div id="settings-view" class="view settings-view" hidden>
-    <div class="sh"><h2>What the agent can do</h2><p>Set in your agent</p></div>
-    <dl id="can" class="rows"></dl>
-    <p id="can-hint" class="foot-note"></p>
-
-    <div class="sh"><h2>Connection</h2></div>
-    <dl id="about" class="rows"></dl>
-    <p id="managed" class="foot-note" hidden></p>
-
-    <details id="advanced" class="advanced">
-      <summary>Advanced</summary>
-      <form id="port-form" class="advanced-body">
-        <label for="port" class="label">Port. Leave empty unless your agent uses a fixed one.</label>
-        <div class="inline">
-          <input id="port" class="input mono" type="text" inputmode="numeric" maxlength="5" placeholder="Automatic">
-          <button class="btn" type="submit">Save</button>
-          <button id="reconnect" class="btn ghost" type="button">Reconnect</button>
-        </div>
-      </form>
-    </details>
-
-    <p class="privacy">This extension talks only to your agent on this computer and to your SAP systems. Your agent's provider sees what the agent reads.</p>
-    <p class="links"><a id="privacy" href="https://github.com/DidroAI/sap-ui-automation/blob/main/extension/PRIVACY.md" target="_blank" rel="noopener">Privacy</a><a href="https://github.com/DidroAI/sap-ui-automation" target="_blank" rel="noopener">Source on GitHub</a></p>
-    <div class="spacer"></div>
-    <footer class="settings-footer">
+    <div class="sub-bar">
+      <button id="back" class="icon-btn" type="button" aria-label="Back" data-icon="back"></button>
+      <h1 class="sub-title">Settings</h1>
+    </div>
+    <section class="block">
+      <h2>What the agent can do</h2>
+      <dl id="can" class="module pairs"></dl>
+      <p id="can-hint" class="hint"></p>
+    </section>
+    <section class="block">
+      <h2>Connection</h2>
+      <dl id="about" class="module pairs"></dl>
+      <p id="managed" class="hint" hidden></p>
+      <details id="advanced" class="help">
+        <summary>Change the port</summary>
+        <form id="port-form" class="advanced-body">
+          <label for="port" class="hint">Leave empty unless your agent uses a fixed one.</label>
+          <div class="inline">
+            <input id="port" class="input mono" type="text" inputmode="numeric" maxlength="5" placeholder="Automatic">
+            <button class="btn" type="submit">Save</button>
+            <button id="reconnect" class="btn ghost" type="button">Reconnect</button>
+          </div>
+        </form>
+      </details>
+    </section>
+    <section class="block">
+      <h2>About</h2>
+      <p class="text">This extension talks only to your agent on this computer and to your SAP systems. Your agent's provider sees what the agent reads.</p>
+      <p class="links"><a id="privacy" href="https://github.com/DidroAI/sap-ui-automation/blob/main/extension/PRIVACY.md" target="_blank" rel="noopener">Privacy</a><a href="https://github.com/DidroAI/sap-ui-automation" target="_blank" rel="noopener">Source on GitHub</a></p>
+      <p id="version" class="hint"></p>
+    </section>
+    <section class="block">
       <button id="unpair" class="btn danger" type="button">Unpair</button>
-      <span id="version" class="foot-note"></span>
-    </footer>
+    </section>
   </div>
+
+  <!-- Add or edit a system: placed under the row it edits, or under the list for a new one. -->
+  <template id="edit-template">
+    <form id="edit-view" class="edit-form" autocomplete="off" novalidate>
+      <div class="field">
+        <label class="label" for="f-name">Name</label>
+        <input id="f-name" class="input" type="text" placeholder="ECC Dev" required maxlength="60" aria-required="true" aria-describedby="f-name-error">
+        <p id="f-name-error" class="hint error" hidden></p>
+      </div>
+      <div class="field">
+        <label class="label" for="f-url">Address</label>
+        <input id="f-url" class="input" type="url" placeholder="https://sap.example.com/sap/bc/ui2/flp" required aria-required="true" aria-describedby="f-url-error f-url-hint f-url-http">
+        <p id="f-url-error" class="hint error" hidden></p>
+        <p id="f-url-hint" class="hint">The Web GUI or Fiori launchpad address.</p>
+        <p id="f-url-http" class="hint warning" hidden>Not encrypted (http): the password crosses the network readable. Use https if the system offers it.</p>
+      </div>
+      <div class="two">
+        <div class="field">
+          <label class="label" for="f-client">Client</label>
+          <input id="f-client" class="input mono" type="text" inputmode="numeric" placeholder="100" maxlength="3">
+        </div>
+        <div class="field">
+          <label class="label" for="f-language">Language</label>
+          <input id="f-language" class="input mono" type="text" placeholder="EN" maxlength="2">
+        </div>
+      </div>
+      <label class="checkbox"><input id="f-sso" type="checkbox"><span>Single sign-on (no user or password)</span></label>
+      <div id="cred-fields" class="two">
+        <div class="field">
+          <label class="label" for="f-user">User</label>
+          <input id="f-user" class="input mono" type="text" maxlength="40" autocapitalize="characters">
+        </div>
+        <div class="field">
+          <label class="label" for="f-password">Password</label>
+          <div class="input-group">
+            <input id="f-password" type="password" autocomplete="new-password" aria-describedby="pw-where">
+            <button id="f-show" class="icon-btn small" type="button" aria-label="Show password" aria-pressed="false" data-icon="show"></button>
+          </div>
+        </div>
+      </div>
+      <p id="pw-where" class="hint"></p>
+      <p id="edit-error" class="msg error" role="alert" hidden></p>
+      <div class="form-footer">
+        <button id="save" class="btn primary" type="submit">Save</button>
+        <button id="cancel" class="btn ghost" type="button">Cancel</button>
+      </div>
+    </form>
+  </template>
 
   <!-- What an action did, for screen readers (rows are drawn again and again). -->
   <p id="announcer" class="sr" role="status" aria-live="polite"></p>

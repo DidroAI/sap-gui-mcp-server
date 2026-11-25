@@ -30,7 +30,8 @@ function sentenceCase(label: string): boolean {
 
 describe("the side panel's look", () => {
   test("colours come from the tokens only; the tokens are the Didro platform's", () => {
-    expect(rules.match(/#[0-9a-f]{3,8}\b/gi) ?? []).toEqual([]);
+    // In a declaration's value, not a selector such as #add.
+    expect([...rules.matchAll(/\{([^{}]*)\}/g)].flatMap((m) => m[1]!.match(/#[0-9a-f]{3,8}\b/gi) ?? [])).toEqual([]);
     expect(js.match(/#[0-9a-f]{3,8}\b/gi) ?? []).toEqual([]);
     expect(icons.match(/#[0-9a-f]{3,8}\b/gi) ?? []).toEqual([]);
     for (const t of ["--ink: #101114;", "--canvas: #fdfcfb;", "--border: #d4cdcd;", "--divider: #ebe6e6;", "--accent: #a31329;", "--accent-surface: #f8e9e8;"]) expect(light).toContain(t);

@@ -2,10 +2,17 @@ import { normalizeCode, CODE_LENGTH } from "./code.js";
 import { ICONS } from "./icons.js";
 
 const $ = (id) => document.getElementById(id);
+// The one add/edit form: moved under the row it edits, or under the list for a new system.
+const form = document.getElementById("edit-template").content.firstElementChild.cloneNode(true);
+form.hidden = true;
+document.getElementById("systems-body").append(form);
 let activeTabId = null;
 let state = null;
 let editing = null; // the system being edited ({} for a new one), or null
 let settingsOpen = false;
+let formClosed = false; // the user closed the first-system form: the add box stands in for it
+let formTouched = false; // the user typed in the form: a new tab's address no longer refills it
+const collapsed = { systems: false, activity: false };
 let confirming = null; // id of the system whose removal (or forgotten password) is being confirmed
 let confirmAction = "remove";
 let focusConfirm = false;
@@ -61,7 +68,6 @@ const ago = (t) => {
 // ---------------------------------------------------------------- views
 
 function view(s) {
-  if (editing) return "edit";
   if (settingsOpen) return "settings";
   if (needsPairing(s)) return "pair";
   return "main";
@@ -69,16 +75,18 @@ function view(s) {
 const needsPairing = (s) => !!s && !s.code.managed && (s.status === "no_code" || s.status === "wrong_code");
 
 function showView(name) {
-  for (const v of ["main", "pair", "edit", "settings"]) $(`${v}-view`).hidden = v !== name;
-  const sub = name === "edit" || name === "settings";
-  $("back").hidden = !sub;
-  $("mark").hidden = sub;
-  $("product").hidden = sub;
-  $("view-title").hidden = !sub;
-  $("settings-open").hidden = sub;
-  document.querySelector(".bar").classList.toggle("sub", sub);
-  if (name === "settings") $("view-title").textContent = "Settings";
-  if (name === "edit") $("view-title").textContent = editing && editing.id ? `Edit ${editing.name}` : "Add system";
+  for (const v of ["main", "pair", "settings"]) $(`${v}-view`).hidden = v !== name;
+}
+
+// Sections fold; the choice is kept for this panel's life.
+const SECTION = { systems: "systems-section", activity: "activity" };
+let activityAll = false;
+for (const k of Object.keys(SECTION)) {
+  $(`${k}-toggle`).addEventListener("click", () => {
+    collapsed[k] = !collapsed[k];
+    $(`${k}-toggle`).setAttribute("aria-expanded", String(!collapsed[k]));
+    $(SECTION[k]).classList.toggle("folded", collapsed[k]);
+  });
 }
 
 $("settings-open").addEventListener("click", () => {
@@ -88,7 +96,6 @@ $("settings-open").addEventListener("click", () => {
   $("back").focus();
 });
 $("back").addEventListener("click", () => {
-  if (editing) return stopEdit();
   settingsOpen = false;
   if (state) render(state);
   $("settings-open").focus();
@@ -130,6 +137,14 @@ function setStatus({ dot = "", title, detail = "", step = null, tone = "", shimm
 }
 
 function renderStatus(s) {
+  if (!s.systems.length && !s.paused && !["busy", "untrusted", "tampered", "bad_managed_code"].includes(s.status)) {
+    const sug = currentSuggestion(s);
+    return setStatus({
+      dot: "none",
+      title: "Add your first SAP system",
+      detail: sug ? "This tab is an SAP system: its address is filled in below." : "Open it in a Chrome tab to fill in its address, or type it below.",
+    });
+  }
   const loggingOn = s.systems.find((x) => x.loggingOn);
   const last = s.activity && s.activity[s.activity.length - 1];
   const agent = agentOf(s);
@@ -185,7 +200,7 @@ function renderStatus(s) {
   }
   return setStatus({
     title: "Ready. No agent connected.",
-    detail: s.systems.length ? "Ask Claude, Codex or Cursor to do something in SAP. It connects by itself." : "Add your SAP system below, then ask your agent to work in it.",
+    detail: "Ask your agent to do something in SAP. It connects by itself.",
     help: true,
   });
 }
@@ -243,11 +258,10 @@ let activityDrawn = "";
 function renderActivity(s) {
   const list = s.activity || [];
   const agent = agentOf(s);
-  const key = JSON.stringify([list.length, list.length && list[list.length - 1].at, list.length && list[list.length - 1].state, agent, Math.floor(Date.now() / 30000)]);
+  const key = JSON.stringify([activityAll, list.length, list.length && list[list.length - 1].at, list.length && list[list.length - 1].state, agent, Math.floor(Date.now() / 30000)]);
   if (key === activityDrawn) return;
   activityDrawn = key;
-  $("activity-empty").hidden = list.length > 0;
-  $("clear-activity").hidden = list.length === 0;
+  $("activity").hidden = list.length === 0;
   // Steps in one transaction of one system make a group; the newest group first, its steps in order.
   const groups = [];
   for (const e of list) {
@@ -257,24 +271,34 @@ function renderActivity(s) {
       g.last = e.at;
     } else groups.push({ transaction: e.transaction, system: e.system, title: e.title, items: [e], last: e.at });
   }
-  const box = $("activity-list");
-  const atTop = box.scrollTop < 8;
-  box.replaceChildren(
-    ...groups
-      .slice(-12)
-      .reverse()
-      .map((g) =>
-        el(
-          "div",
-          { class: "group" },
-          el("div", { class: "group-head" }, el("span", {}, g.transaction ? el("span", { class: "tx mono" }, g.transaction) : null, g.transaction ? "  " : "", g.title || g.system || "SAP"), el("span", {}, ago(g.last))),
-          ...g.items.slice(-20).map((e) => activityLine(e, agent)),
-        ),
+  // The newest steps first; a few unless the user asked for all, as Jira shows "Show more".
+  const LIMIT = 8;
+  let left = activityAll ? Infinity : LIMIT;
+  const shown = [];
+  for (const g of groups.slice().reverse()) {
+    if (left <= 0) break;
+    const items = g.items.slice(-Math.min(left, g.items.length));
+    left -= items.length;
+    shown.push(
+      el(
+        "div",
+        { class: "group" },
+        el("div", { class: "group-head" }, el("span", {}, g.transaction ? el("span", { class: "tx mono" }, g.transaction) : null, g.transaction ? "  " : "", g.title || g.system || "SAP"), el("span", {}, ago(g.last))),
+        ...items.map((e) => activityLine(e, agent)),
       ),
-  );
-  if (atTop) box.scrollTop = 0;
+    );
+  }
+  $("activity-list").replaceChildren(...shown);
+  const more = $("activity-more");
+  more.hidden = list.length <= LIMIT;
+  more.textContent = activityAll ? "Show fewer" : `Show all ${list.length} steps`;
 }
 $("clear-activity").addEventListener("click", () => send({ cmd: "clearActivity" }).then(refresh));
+$("activity-more").addEventListener("click", () => {
+  activityAll = !activityAll;
+  activityDrawn = "";
+  if (state) renderActivity(state);
+});
 
 // ---------------------------------------------------------------- pairing
 
@@ -292,7 +316,6 @@ function renderPairing(s) {
   // Without the helper, pairing with a code is the way: the step opens for it.
   if (!helper) $("step-pair").className = "step current";
   $("pair").hidden = !helper;
-  $("trust-pw").textContent = `Passwords stay in ${keychainName(s)}. The agent never sees them.`;
 }
 
 async function pairNow() {
@@ -363,12 +386,9 @@ function primaryOf(x) {
   return { label: logsOn ? "Log on" : "Open", run: () => openSystem(x) };
 }
 
-function logonText(x) {
-  if (x.sso) return "Single sign-on";
-  const who = x.user ? `${x.user}, ` : "";
-  if (x.passwordIn === "keychain") return `${who}password saved`;
-  if (x.passwordIn === "profile") return `${who}password in this profile`;
-  return `${who}you type the password`;
+/** "Client 800; User IDADMIN": the second line of a row. */
+function factsOf(x) {
+  return [x.client && `Client ${x.client}`, x.sso ? "Single sign-on" : x.user && `User ${x.user}`].filter(Boolean).join("; ");
 }
 
 function systemRow(x, s) {
@@ -403,17 +423,10 @@ function systemRow(x, s) {
     el(
       "div",
       { class: "item-body" },
-      el("div", { class: "item-title" }, el("span", {}, x.name), here ? el("span", { class: "here-label" }, "Agent here") : null),
-      el(
-        "div",
-        { class: "item-line", title: x.url },
-        el("span", { class: "tag" }, KIND[x.kind] || "SAP"),
-        x.client ? el("span", {}, "Client ", el("span", { class: "mono" }, x.client)) : null,
-        el("span", { class: "host" }, hostOf(x.url)),
-      ),
+      el("div", { class: "item-title", title: x.url }, el("span", { class: "item-name" }, x.name), el("span", { class: "tag" }, KIND[x.kind] || "SAP"), here ? el("span", { class: "here-label" }, "Agent here") : null),
       shown
         ? el("div", { class: `item-note ${shown.type}` }, shown.type === "busy" ? el("span", { class: "spin-icon", icon: "spinner" }) : null, el("span", {}, shown.text))
-        : el("div", { class: "item-line logon" }, logonText(x)),
+        : el("div", { class: "item-line" }, factsOf(x) || hostOf(x.url)),
     ),
     el(
       "div",
@@ -452,6 +465,8 @@ function suggestionLine(sug) {
 let rowsDrawn = "";
 
 function renderSystems(s) {
+  // While the form is open the rows stay as they are: it sits among them.
+  if (editing) return;
   // The rows are drawn again only when what they show changed: a click never lands on a row being replaced.
   const drawn = JSON.stringify([s.systems, [...notes], [...opening], confirming, s.agent && s.agent.system, s.status]);
   if (drawn !== rowsDrawn) {
@@ -466,27 +481,12 @@ function renderSystems(s) {
 
   const has = s.systems.length > 0;
   const sug = currentSuggestion(s);
-  $("add").hidden = !has;
-  $("count").textContent = has ? String(s.systems.length) : "";
-  $("empty").hidden = has;
-  $("add-current").hidden = !(has && sug);
+  // No system yet: the section is only the form; its head would repeat the status.
+  $("systems-toggle").parentElement.hidden = !has;
+  $("add-current").hidden = !sug;
+  $("add").hidden = !!sug && !has;
   if (sug) $("add-current-detail").textContent = suggestionLine(sug);
-  $("pw-note").textContent = s.helper.ok && s.helper.keychain ? `Passwords stay in ${keychainName(s)}. The agent never sees them.` : "";
-
-  if (!has) {
-    const add = $("empty-add");
-    $("empty-where").hidden = !sug;
-    if (sug) {
-      $("empty-text").textContent = "This tab is an SAP system. Add it, and your agent can open it and log on.";
-      $("empty-where").textContent = suggestionLine(sug);
-      add.textContent = "Add this SAP page";
-      $("empty-manual").hidden = false;
-    } else {
-      $("empty-text").textContent = "Open your SAP system in a tab (the Web GUI or the Fiori launchpad), then add it here.";
-      add.textContent = "Add system";
-      $("empty-manual").hidden = true;
-    }
-  }
+  if (!has && !formClosed) startEdit(null, sug ? { name: sug.name, url: sug.url, client: sug.client, language: sug.language } : null, "none", true);
 }
 
 function addFromCurrent() {
@@ -529,7 +529,7 @@ async function removeSystem(x) {
   const next = ids[ids.indexOf(x.id) + 1] || ids[ids.indexOf(x.id) - 1];
   await send({ cmd: "deleteSystem", id: x.id }).catch((e) => showListError(e.message));
   await refresh();
-  ($("systems").querySelector(`.item[data-id="${next}"] .more`) || [$("add"), $("empty-add"), $("empty-manual")].find((b) => b.offsetParent))?.focus();
+  ($("systems").querySelector(`.item[data-id="${next}"] .more`) || [$("add-current"), $("add"), $("f-name")].find((b) => b.offsetParent))?.focus();
 }
 
 function cancelRemove(x) {
@@ -623,9 +623,12 @@ document.addEventListener("scroll", () => closeMenu(), { passive: true, capture:
 
 // ---------------------------------------------------------------- edit
 
-function startEdit(x, prefill, focus) {
+/** Opens the form under the row of `x`, or under the list for a new system. `first`: the first system's form, open by itself. */
+function startEdit(x, prefill, focus, first = false) {
   closeMenu();
-  editing = x || {};
+  editing = x ? { ...x } : {};
+  editing.first = first;
+  formTouched = false;
   const v = { name: "", url: "", client: "", language: "", user: "", sso: false, ...(prefill || {}), ...(x || {}) };
   $("f-name").value = v.name;
   $("f-url").value = v.url;
@@ -636,7 +639,7 @@ function startEdit(x, prefill, focus) {
   const pw = $("f-password");
   pw.value = "";
   pw.type = "password";
-  pw.placeholder = x && x.passwordIn ? "Saved; type a new one to replace it" : "";
+  pw.placeholder = x && x.passwordIn ? "Saved" : "";
   setIcon($("f-show"), "show");
   $("f-show").setAttribute("aria-label", "Show password");
   $("f-show").setAttribute("aria-pressed", "false");
@@ -645,23 +648,41 @@ function startEdit(x, prefill, focus) {
     $(f).removeAttribute("aria-invalid");
     $(`${f}-error`).hidden = true;
   }
+  $("save").textContent = x ? "Save" : "Add";
   updateCredFields();
-  showView("edit");
+  // Under its row when editing; after the list when adding. The add boxes give way to it.
+  for (const r of $("systems").querySelectorAll(".item.editing")) r.classList.remove("editing");
+  const row = x && $("systems").querySelector(`.item[data-id="${x.id}"]`);
+  if (row) {
+    // A list item holds the form under the row it edits.
+    const slot = el("li", { class: "form-slot" });
+    row.after(slot);
+    slot.append(form);
+    row.classList.add("editing");
+  } else $("systems").after(form);
+  form.hidden = false;
+  $("add").hidden = true;
+  $("add-current").hidden = true;
+  if (collapsed.systems) $("systems-toggle").click();
+  if (focus === "none") return;
   (focus === "password" ? pw : v.name ? (v.sso ? $("save") : $("f-user")) : $("f-name")).focus();
 }
 
 function stopEdit(savedId) {
   const id = (editing && editing.id) || savedId;
   const isNew = !(editing && editing.id) && !!savedId;
+  if (editing && editing.first && !savedId) formClosed = true;
   editing = null;
   rowsDrawn = "";
   $("f-password").value = "";
+  form.hidden = true;
+  $("systems-body").append(form);
+  for (const slot of $("systems").querySelectorAll(".form-slot")) slot.remove();
   if (state) render(state);
-  else showView("main");
   // Back on the row: its More button after an edit, its main button for a new system.
   const row = id && $("systems").querySelector(`.item[data-id="${id}"] ${isNew ? ".go" : ".more"}`);
   if (row) row.focus();
-  else [$("add"), $("empty-add")].find((b) => b.offsetParent)?.focus();
+  else [$("add-current"), $("add")].find((b) => b.offsetParent)?.focus();
 }
 
 function updateCredFields() {
@@ -691,6 +712,7 @@ function updateHttpWarning() {
 }
 
 $("f-sso").addEventListener("change", updateCredFields);
+form.addEventListener("input", () => (formTouched = true));
 $("f-url").addEventListener("input", updateHttpWarning);
 for (const f of ["f-name", "f-url"]) {
   $(f).addEventListener("input", () => {
@@ -721,9 +743,8 @@ $("edit-view").addEventListener("keydown", (e) => {
   }
 });
 $("add").addEventListener("click", () => startEdit(null));
+$("add-icon").addEventListener("click", () => (editing ? $("f-name").focus() : startEdit(null)));
 $("add-current").addEventListener("click", addFromCurrent);
-$("empty-add").addEventListener("click", addFromCurrent);
-$("empty-manual").addEventListener("click", () => startEdit(null));
 
 $("edit-view").addEventListener("submit", (e) => {
   e.preventDefault();
@@ -782,7 +803,7 @@ $("edit-view").addEventListener("submit", (e) => {
 // ---------------------------------------------------------------- settings
 
 const WRITE_SETTING = { confirm: "Ask me first", off: "Off, the agent only reads", on: "Run without asking" };
-const dlRow = (k, ...v) => el("div", {}, el("dt", {}, k), el("dd", {}, ...v));
+const dlRow = (k, ...v) => el("div", { class: "pair" }, el("dt", {}, k), el("dd", {}, ...v));
 const tags = (list) => list.map((t) => el("span", { class: "tag mono" }, t));
 
 function renderSettings(s) {
@@ -796,7 +817,7 @@ function renderSettings(s) {
       dlRow("Blocked", ...(p.blocked.length ? tags(p.blocked) : ["None"])),
       dlRow("Log off", p.logoff ? "Allowed" : "Never"),
     );
-    $("can-hint").textContent = `Change these in ${info.agent || "your agent"}'s settings for this tool, then start a new chat.`;
+    $("can-hint").textContent = `Set in ${info.agent || "your agent"}'s settings for this tool.`;
   } else {
     $("can").replaceChildren(dlRow("Saves", "Shown once your agent connects"));
     $("can-hint").textContent = "";
@@ -816,7 +837,7 @@ function renderSettings(s) {
   portInput.disabled = s.portSetting.managed;
   $("managed").hidden = !s.managedOrigins.length;
   $("managed").textContent = `Sites set by your organization: ${s.managedOrigins.join(", ")}`;
-  $("unpair").hidden = s.code.managed || !s.code.set;
+  $("unpair").closest(".block").hidden = s.code.managed || !s.code.set;
   $("version").textContent = `Version ${s.version}. Not affiliated with SAP SE.`;
 }
 
@@ -871,6 +892,11 @@ function render(s) {
     renderActivity(s);
     // While the menu is open the rows stay as they are, so it keeps its anchor.
     if ($("menu").hidden) renderSystems(s);
+    // The first system's form follows the tab in front until the user types in it.
+    if (editing && editing.first && !formTouched) {
+      const sug = currentSuggestion(s);
+      if (sug && $("f-url").value !== sug.url) startEdit(null, { name: sug.name, url: sug.url, client: sug.client, language: sug.language }, "none", true);
+    }
   } else if (v === "pair") renderPairing(s);
   else if (v === "settings") renderSettings(s);
 }
