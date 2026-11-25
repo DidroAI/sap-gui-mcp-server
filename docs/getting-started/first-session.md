@@ -90,7 +90,6 @@ they do not.
 The [`sap-ui-automation` skill](https://github.com/DidroAI/sap-ui-automation/blob/main/skills/sap-ui-automation/SKILL.md)
 teaches an agent how SAP screens behave: fields take effect on Enter,
 popups first, value help (F4) instead of guessed codes, F3 or F12 to leave
-without saving, and never working around the write setting. The Claude Code
-plugin installs it; for other agents, copy the folder into their skills
-directory (for Claude Code without the plugin: `~/.claude/skills/`). It
-also ships in the npm package, under `skills/`.
+without saving, and never working around the write setting. `setup` and
+the Claude Code plugin install it; `sap-ui-automation install --skills`
+puts it in a project. It also ships in the npm package, under `skills/`.
