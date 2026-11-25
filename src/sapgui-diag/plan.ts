@@ -465,7 +465,7 @@ export function planCombo(s: DiagScreen, action: Action, g: Geometry, entries?: 
   const sends = !!e.fcode;
   const index = entry && known ? known.indexOf(entry) : -1;
   return {
-    steps: [{ do: "combo", x, y, value: text, ...(index >= 0 ? { index } : {}), settle: 150 }],
+    steps: [{ do: "combo", x, y, value: text, ...(index >= 0 ? { index } : {}), settle: 500 }],
     note: `chose ${entry ? entryText(entry) : `"${text}"`} in ${n.id}${sends ? "" : "; SAP gets it with the next Enter or function key"}`,
     answer: sends ? "yes" : "no",
     ...(sends ? { confirm: (after: DiagScreen | undefined) => (after ? verdict(after) : undefined) } : { later: verdict }),
@@ -711,6 +711,8 @@ export function offScreenCell(t: DiagTable | undefined, column: number | undefin
  * them, and a click there landed in the line above (2026-11-25).
  */
 export function lastClickRow(w: DiagWindow): number {
+  // A popup is sized to its content: its last row (the answer buttons) is on show.
+  if (w.modal || w.index > 0) return Number.MAX_SAFE_INTEGER;
   const rows = w.scroll?.visibleRows || w.size.rows;
   const scrolls = !!w.scroll && (w.scroll.rows > w.scroll.visibleRows || w.scroll.cols > w.scroll.visibleCols);
   return rows - (scrolls ? 2 : 1);

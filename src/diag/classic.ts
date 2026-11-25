@@ -132,13 +132,13 @@ export function layoutColumns(table: DiagTable): void {
   const first = table.firstColumn && table.firstColumn > fixed ? table.firstColumn : 0;
   let col = table.col + 2;
   order.forEach((c, i) => {
-    if (first && i >= fixed && i < first) {
-      c.col = col;
-      c.visible = false;
-      return;
-    }
     c.col = col;
-    c.visible = table.width === 0 || col + c.width <= table.col + table.width;
+    // Scrolled sideways, only the fixed columns are taken as on show: where SAP GUI draws the others was right
+    // for FB50 and wrong for ME21N (a click typed into Handover Location), so they are reached with Tab.
+    if (first && i >= fixed) {
+      c.visible = false;
+      if (i < first) return;
+    } else c.visible = table.width === 0 || col + c.width <= table.col + table.width;
     col += c.width + 1;
   });
 }

@@ -74,6 +74,8 @@ describe("a row under the scroll bars of SAP GUI's window", () => {
   test("is refused, with the scroll that brings the row up", () => {
     expect(lastClickRow(va01)).toBe(18);
     expect(lastClickRow(w)).toBe(19);
+    // A popup's last row holds its answer buttons: on show.
+    expect(lastClickRow({ ...va01, index: 1, modal: true } as DiagWindow)).toBe(Number.MAX_SAFE_INTEGER);
     expect(p3({ do: "set", id: "MEPO1211-EMATN[0]", value: "M-12" }).steps.map((x) => x.do)).toEqual(["set"]);
     expect(() => p3({ do: "set", id: "MEPO1211-EMATN[1]", value: "M-13" })).toThrow('under its scroll bars, where a click lands elsewhere: nothing was done. Scroll the table so that the row comes up ({"do":"scroll","id":"TC_1211","to":1})');
     expect(() => p3({ do: "click", id: "MEPO1211-EMATN[1]" })).toThrow("under its scroll bars");

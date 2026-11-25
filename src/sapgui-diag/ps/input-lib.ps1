@@ -504,7 +504,8 @@ function Op-Act($req) {
       [SapScreen]::Key(0x24, $false, $false, $false)
       for ($i = 0; $i -lt [int]$a['index']; $i++) { [SapScreen]::Key(0x28, $false, $false, $false) }
     } else { [SapScreen]::Type([string]$a['value']) }
-    Start-Sleep -Milliseconds 150
+    # The list takes the typed text a moment after the keys: Enter too soon takes the entry before.
+    Start-Sleep -Milliseconds 300
     [SapScreen]::Key(0x0D, $false, $false, $false)
   }
   else { throw "UNKNOWN_ACTION: $do" }
