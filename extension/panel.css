@@ -13,7 +13,7 @@
    Depth     Hairlines in warm grey; the systems are one grouped list on the paper. What is being
              edited or floats (the form, the menu) lifts with a soft shadow.
    Icons     One set on a 24 grid, 1.75 stroke, round caps and joins.
-   Dark      Warm, not blue-black: dark umber paper, the primary button turns paper, the green
+   Dark      Warm charcoal, not black: lifted enough to read at a glance, the primary button turns paper, the green
              brightens.
 
    Colours live in the two token blocks only. */
@@ -63,37 +63,37 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --ink: #f2ede3;
-    --text: #c4bdaf;
-    --muted: #958d7e;
-    --faint: #645e53;
-    --bg: #161411;
-    --surface: #1e1b17;
-    --well: #12100e;
-    --hover: #2a2620;
-    --press: #332e27;
-    --line: #2c2823;
-    --line-strong: #403a32;
-    --ring: rgba(255, 244, 220, 0.08);
-    --ring-strong: rgba(255, 244, 220, 0.15);
-    --shadow: rgba(0, 0, 0, 0.4);
-    --lift: rgba(0, 0, 0, 0.6);
-    --primary: #f2ede3;
+    --ink: #f5f1e8;
+    --text: #d6cfc2;
+    --muted: #aba393;
+    --faint: #7a7366;
+    --bg: #24211d;
+    --surface: #2d2a25;
+    --well: #1f1c19;
+    --hover: #37332d;
+    --press: #403b34;
+    --line: #3b3731;
+    --line-strong: #504a41;
+    --ring: rgba(255, 244, 220, 0.10);
+    --ring-strong: rgba(255, 244, 220, 0.18);
+    --shadow: rgba(0, 0, 0, 0.25);
+    --lift: rgba(0, 0, 0, 0.45);
+    --primary: #f5f1e8;
     --primary-hover: #ffffff;
     --primary-ink: #1d1b17;
     --primary-edge: rgba(255, 255, 255, 0);
-    --accent: #7fc29b;
-    --accent-text: #8fcca8;
-    --accent-soft: #1b2a21;
-    --accent-line: #2f5240;
-    --danger: #ec8b78;
-    --danger-soft: #2e1a15;
-    --danger-line: #6b3428;
-    --tile: #2c2822;
-    --mark-tile: #f2ede3;
+    --accent: #8fd0aa;
+    --accent-text: #9dd8b5;
+    --accent-soft: #2a3d31;
+    --accent-line: #456f57;
+    --danger: #f09682;
+    --danger-soft: #3d2621;
+    --danger-line: #7a4134;
+    --tile: #3d3832;
+    --mark-tile: #f5f1e8;
     --mark-glyph: #1d1b17;
     --mark-dot: #2f6b4f;
-    --shimmer: #645e53;
+    --shimmer: #7a7366;
     color-scheme: dark;
   }
 }

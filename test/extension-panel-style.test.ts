@@ -38,7 +38,7 @@ describe("the side panel's look", () => {
     expect(js.match(/#[0-9a-f]{3,8}\b/gi) ?? []).toEqual([]);
     expect(icons.match(/#[0-9a-f]{3,8}\b/gi) ?? []).toEqual([]);
     for (const t of ["--ink: #1d1b17;", "--bg: #f6f3ec;", "--surface: #fdfbf6;", "--primary: #1d1b17;", "--accent: #2f6b4f;", "--accent-text: #2a5e46;", "--danger: #b3402f;"]) expect(light).toContain(t);
-    for (const t of ["--bg: #161411;", "--surface: #1e1b17;", "--primary: #f2ede3;", "--accent: #7fc29b;"]) expect(dark).toContain(t);
+    for (const t of ["--bg: #24211d;", "--surface: #2d2a25;", "--primary: #f5f1e8;", "--accent: #8fd0aa;"]) expect(dark).toContain(t);
     // Not SAP's blue, and none of the looks that were turned down (crimson, amber, the default blue).
     for (const no of ["#0070f2", "#a31329", "#3b63f3", "#3b82f6", "#111214", "#0c9a6c"]) expect(css.toLowerCase()).not.toContain(no);
     // The primary action is ink, not the accent; the accent is the agent's presence.
