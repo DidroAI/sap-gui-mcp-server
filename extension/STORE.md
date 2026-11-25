@@ -46,6 +46,7 @@ it is how the agent opens a system without ever holding the password.
 | `debugger` | Attaches only to tabs of the SAP systems the user registered (and granted site access to), to let the user's local automation server (127.0.0.1, paired with a one-time code) read and operate SAP's screens through the DevTools Protocol, and to type the user's saved SAP password into SAP's logon page. It never attaches to other tabs, and refuses commands that reach other sites, cookies or the browser. |
 | `nativeMessaging` | Talks to the extension's own helper (installed by the user with npm) to read the local pairing code and to keep SAP passwords in the operating system's keychain instead of the browser. |
 | `storage` | Keeps the user's list of SAP systems and settings in `chrome.storage.local` (never sync). |
+| `sidePanel` | Shows the extension's interface in Chrome's side panel, next to the user's SAP tabs: the SAP systems the user registered (to add, open or log on to them), each step the user's agent takes in SAP, and its requests to save, so the user can follow and stop the agent while it works. |
 | `alarms` | Wakes the service worker every 30 seconds to reconnect to the local server when the user's agent starts. |
 | Optional host permissions `http://*/*`, `https://*/*` | Requested one site at a time, at the moment the user saves an SAP system, for that system's host only. Never requested for all sites; patterns matching every host are ignored. |
 
