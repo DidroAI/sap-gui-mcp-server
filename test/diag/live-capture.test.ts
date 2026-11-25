@@ -57,7 +57,7 @@ describe("table controls from a live capture", () => {
     // The head lists the columns that hold something in the rows on show, not all 109.
     expect(v).toContain("Item VBAP-POSNR | Material RV45A-MABNR");
     expect(v).not.toContain("Batch VBAP-CHARG");
-    expect(v).toMatch(/109 columns: .* \| \(\d+ more, empty in the rows on show\)/);
+    expect(v).toMatch(/109 columns: .* \| \(\d+ more, empty and read-only in the rows on show\)/);
   });
 
   test("VA02 scrolled to its second item: the first line on show is item 20, line 1 of the table", () => {
