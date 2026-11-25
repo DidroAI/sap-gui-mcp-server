@@ -31,7 +31,7 @@ import { codeOf } from "./sdk/code.js";
 import { type ActOutput, actOutput, screenOf, screenOfInfo, sessionsData, sessionsOutput, structuredFromEnv, withData } from "./structured.js";
 
 export const SERVER_NAME = "sap-ui-automation";
-export const SERVER_VERSION = "0.1.0";
+export const SERVER_VERSION = "0.2.1";
 /** Claude Code defers MCP tools until searched for, except those marked so. */
 const ALWAYS_LOAD = { "anthropic/alwaysLoad": true };
 

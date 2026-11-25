@@ -37,6 +37,15 @@ describe("Claude Desktop extension manifest", () => {
     expect(manifest.server.mcp_config.args).toEqual(["${__dirname}/dist/cli.js"]);
   });
 
+  test("the server and the SDK report the package's version (--version, serverInfo, recordings)", async () => {
+    const { SERVER_VERSION } = await import("../src/server.js");
+    const { SDK_VERSION } = await import("../src/sdk/session.js");
+    expect(SERVER_VERSION).toBe(pkg.version);
+    expect(SDK_VERSION).toBe(pkg.version);
+    const plugin = JSON.parse(readFileSync(join(import.meta.dir, "..", ".claude-plugin", "plugin.json"), "utf8"));
+    expect(plugin.version).toBe(pkg.version);
+  });
+
   test("server.json (the MCP Registry entry) names this package and its version", () => {
     const server = JSON.parse(readFileSync(join(import.meta.dir, "..", "server.json"), "utf8"));
     expect(server.name).toBe(pkg.mcpName);

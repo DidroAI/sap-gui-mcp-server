@@ -15,8 +15,9 @@ The format is described in
 
 ## Replay it
 
-Log on to Web GUI in Chrome yourself (the server never logs on), with
-remote debugging allowed (see [Chrome](../../docs/guides/chrome.md)). Then:
+Log on to Web GUI in Chrome yourself (the server never logs on): in the
+SAP window that `npx -y sap-ui-automation browser` opens, or in the Chrome
+of another browser mode (see [Chrome](../../docs/guides/chrome.md#choose-a-browser-mode)). Then:
 
 ```sh
 npx -y sap-ui-automation replay examples/recorded-test/va03-display-order.saptest.json \

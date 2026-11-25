@@ -21,16 +21,20 @@ Pick your client below. Each one names the server `sap-ui-automation`.
 ::: tip The quick way
 `setup` finds Claude Code, Codex, Claude Desktop, Cursor, Windsurf and
 VS Code on this machine and adds the server to each, without touching an
-existing `sap-ui-automation` entry:
+existing `sap-ui-automation` entry. It also installs the skills
+`sap-ui-automation` and `sap-ui-automation-cli` for Claude Code, Codex and Cursor
+(`--no-skills` to skip them):
 
 ```sh
 npx -y sap-ui-automation setup --dry-run   # show what it would change
 npx -y sap-ui-automation setup             # change it
 ```
 
-It adds no settings, so writes stay off. Then run `npx -y sap-ui-automation doctor` to
-check what the server can reach (SAP GUI scripting, Chrome). Or have your
-agent do all of it: [Set up with your agent](setup-prompt.md).
+It adds no settings, so writes stay off. With the Chrome extension, run
+`setup --extension`: new entries get `SAP_BROWSER=extension`. Then run
+`npx -y sap-ui-automation doctor` to check what the server can reach (SAP
+GUI scripting, Chrome). Or have your agent do all of it: [Set up with your
+agent](setup-prompt.md).
 :::
 
 ::: warning Windows
@@ -312,7 +316,8 @@ with no arguments.
 ## Check it
 
 1. Run `npx -y sap-ui-automation doctor`. It checks SAP GUI scripting (on
-   Windows) and Chrome, and says what to do for each ✗.
+   Windows) and Chrome, and says what to do for each ✗
+   ([FAQ and troubleshooting](../faq.md)).
 2. Restart your client, open an SAP screen, and ask: *"Look at my SAP screen
    and tell me what you see."* The agent should call `sap_sessions` and
    `sap_look`.
