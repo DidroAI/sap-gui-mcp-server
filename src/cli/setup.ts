@@ -343,11 +343,12 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
     const show = (p: string) => (p.startsWith(home + sep) ? join("~", relative(home, p)) : p);
     const label: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor" };
     for (const { dir, clients } of userSkillDirs(ready, home, env)) {
-      const { installed, left } = setupSkills(dir, opts.dryRun, opts.skillsRoot);
+      const { installed, left, removed } = setupSkills(dir, opts.dryRun, opts.skillsRoot);
       const who = clients.map((c) => label[c]).join(", ");
       // Skills load when the app starts a new session: a restart, as for the server.
       if (installed.length && !opts.dryRun) skillsChanged = true;
       if (installed.length) lines.push(`${opts.dryRun ? "•" : "✓"} Skills for ${who}: ${opts.dryRun ? "would install" : "installed"} ${installed.join(", ")} in ${show(dir)}.`);
+      if (removed.length) lines.push(`${opts.dryRun ? "•" : "✓"} Skills for ${who}: ${opts.dryRun ? "would remove" : "removed"} ${removed.join(", ")} in ${show(dir)} (the old names).`);
       if (left.length) lines.push(`– Skills for ${who}: ${left.join(", ")} in ${show(dir)} ${left.length > 1 ? "are" : "is"} not from this package, left as ${left.length > 1 ? "they are" : "it is"}.`);
     }
   }

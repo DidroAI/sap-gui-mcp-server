@@ -1,6 +1,6 @@
 ---
-name: sap-gui-drive
-description: Drives SAP screens through the sap-ui-automation MCP tools (sap_look, sap_act, sap_sessions, sap_logon). Runs transactions, fills screens, reads lists and ALV grids, checks documents and works in several sessions at once, in SAP GUI for Windows, Web GUI and Fiori. Use when a task means doing or checking something in an SAP system (a transaction code such as VA01 or ME23N, an order, a material, a Fiori app) and the sap_* tools are available.
+name: sap-ui-automation
+description: Works in SAP through the sap-ui-automation MCP tools (sap_look, sap_act, sap_sessions, sap_logon). Opens transactions, reads and fills screens, reads ALV lists, looks up, creates or changes documents, and runs several SAP sessions in parallel, in SAP GUI for Windows, Web GUI (SAP GUI for HTML) and Fiori, on ECC or S/4HANA. Use this skill whenever the user wants something looked up, checked, created or changed in SAP, even if they name no tool or say only a transaction code (VA03, ME23N, MM03, FB03, MIGO) or a business object (sales order, purchase order, material, customer, vendor, invoice, delivery, goods receipt, Fiori app). Also use it to log on to an SAP system. Read it before the first sap_* call.
 ---
 
 # Driving SAP screens with the sap_* tools

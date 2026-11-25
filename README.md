@@ -148,7 +148,7 @@ Web GUI and Fiori work from Windows, macOS and Linux.
   [Benchmarks](docs/benchmarks.md)
 
 The same pages ship in the npm package under `docs/`, so an agent can read
-them offline. The [`sap-gui-drive` skill](skills/sap-gui-drive/SKILL.md)
+them offline. The [`sap-ui-automation` skill](skills/sap-ui-automation/SKILL.md)
 teaches an agent how SAP screens behave.
 
 ## Status

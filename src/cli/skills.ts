@@ -133,6 +133,18 @@ export function installSkills(opts: InstallOptions): InstallResult {
       lines.push(`– ${LABEL[target]} skills: Cursor has no user-level rule files; run without --global in the project.`);
       continue;
     }
+    for (const old of Object.keys(OLD_SKILL_NAMES)) {
+      // A Cursor rule has no folder to mark: one under an old name that uses this server is ours.
+      const path = target === "cursor" ? join(dir, `${old}.mdc`) : join(dir, old);
+      const ours = target === "cursor" ? /\bsap-ui-automation\b/.test(readIfThere(path, "utf8") ?? "") : existsSync(path) && ownSkill(path);
+      if (!ours) continue;
+      if (!overwrite) {
+        lines.push(`– ${LABEL[target]} skill ${old}: the old name of ${OLD_SKILL_NAMES[old]}, kept (--force removes it) (${show(path)})`);
+        continue;
+      }
+      if (!dryRun) rmSync(path, { recursive: true, force: true });
+      lines.push(`• ${LABEL[target]} skill ${old}: ${dryRun ? "would be removed" : "removed"}, now ${OLD_SKILL_NAMES[old]} (${show(path)})`);
+    }
     for (const skill of skills) {
       let state: FileState;
       let shown: string;
@@ -177,6 +189,12 @@ export function userSkillDirs(clients: string[], home: string, env: Record<strin
   return dirs;
 }
 
+/**
+ * The skills' names before 0.2 (renamed 2026-11-25 to carry the product's name). A copy left under an
+ * old name would give the agent the same skill twice, so setup and install remove the ones this package wrote.
+ */
+export const OLD_SKILL_NAMES: Record<string, string> = { "sap-gui-drive": "sap-ui-automation", "sap-gui-cli": "sap-ui-automation-cli" };
+
 /** Left in each skill folder setup writes, so that only those are replaced later. */
 export const SKILL_MARKER = ".sap-ui-automation";
 
@@ -188,16 +206,25 @@ export const SKILL_MARKER = ".sap-ui-automation";
 export function ownSkill(target: string): boolean {
   if (existsSync(join(target, SKILL_MARKER))) return true;
   const text = readIfThere(join(target, "SKILL.md"), "utf8");
-  return !!text && new RegExp(`^name: ${target.split(/[\\/]/).pop()}$`, "m").test(text) && /\bsap-ui-automation\b/.test(text);
+  const name = new RegExp(`^name: ${target.split(/[\\/]/).pop()}$`, "m");
+  // The name line itself carries "sap-ui-automation" now: the rest of the file must use the server.
+  return !!text && name.test(text) && /\bsap-ui-automation\b/.test(text.replace(name, ""));
 }
 
 /**
  * Copies the shipped skills into a folder, replacing this package's copies from an earlier version;
  * a folder of the same name that is not ours stays. Returns what was installed and what was left.
  */
-export function setupSkills(dir: string, dryRun: boolean, root: string = packageRoot()): { installed: string[]; left: string[] } {
+export function setupSkills(dir: string, dryRun: boolean, root: string = packageRoot()): { installed: string[]; left: string[]; removed: string[] } {
   const installed: string[] = [];
   const left: string[] = [];
+  const removed: string[] = [];
+  for (const old of Object.keys(OLD_SKILL_NAMES)) {
+    const target = join(dir, old);
+    if (!existsSync(target) || !ownSkill(target)) continue;
+    removed.push(old);
+    if (!dryRun) rmSync(target, { recursive: true, force: true });
+  }
   for (const skill of shippedSkills(root)) {
     const target = join(dir, skill.name);
     if (existsSync(target) && !ownSkill(target)) {
@@ -211,5 +238,5 @@ export function setupSkills(dir: string, dryRun: boolean, root: string = package
     cpSync(skill.dir, target, { recursive: true });
     writeFileSync(join(target, SKILL_MARKER), "Installed by sap-ui-automation setup; replaced on the next setup.\n");
   }
-  return { installed, left };
+  return { installed, left, removed };
 }

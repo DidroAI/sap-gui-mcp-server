@@ -1,6 +1,6 @@
 ---
-name: sap-gui-cli
-description: Drives SAP screens from the shell with the sap-gui CLI of sap-ui-automation (sap-gui look, act, okcode). Runs transactions, fills screens, reads lists and ALV grids and checks documents in SAP GUI for Windows, Web GUI and Fiori. Use when a task means doing or checking something in an SAP system (a transaction code such as VA01 or ME23N, an order, a material, a Fiori app) and the sap_* MCP tools are not available but a shell is.
+name: sap-ui-automation-cli
+description: Works in SAP from the shell with the sap-gui command of sap-ui-automation (sap-gui look, act, okcode, sessions). Opens transactions, reads and fills screens, reads ALV lists, looks up, creates or changes documents, in SAP GUI for Windows, Web GUI (SAP GUI for HTML) and Fiori, on ECC or S/4HANA. Use this skill whenever the user wants something looked up, checked, created or changed in SAP and there are no sap_* tools in your tool list but you can run shell commands, or when the user asks for the sap-gui CLI. It applies even if the user names no tool or says only a transaction code (VA03, ME23N, MM03, FB03, MIGO) or a business object (sales order, purchase order, material, customer, vendor, invoice, delivery, goods receipt, Fiori app).
 ---
 
 # Driving SAP screens with the `sap-gui` CLI

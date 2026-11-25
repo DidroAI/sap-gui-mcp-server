@@ -64,8 +64,8 @@ that ([Security](../security.md#what-the-agent-can-do)).
 ## Teaching the agent
 
 `sap-gui install --skills` copies the bundled skills, among them
-[`sap-gui-drive`](https://github.com/DidroAI/sap-ui-automation/blob/main/skills/sap-gui-drive/SKILL.md)
-and a `sap-gui-cli` skill on driving SAP through these commands, into the
+[`sap-ui-automation`](https://github.com/DidroAI/sap-ui-automation/blob/main/skills/sap-ui-automation/SKILL.md)
+and a `sap-ui-automation-cli` skill on driving SAP through these commands, into the
 agent's folder: `.claude/skills` (Claude), `.agents/skills` (Codex) or
 `.cursor/rules/<name>.mdc` (Cursor), chosen with
 `--target claude|codex|cursor|all`; `--global` uses `~/.claude/skills` and

@@ -76,7 +76,7 @@ the bundled skills to those that read skills:
 | `--no-skills` | do not install the skills |
 | `--dry-run` | say what would change, change nothing |
 
-The skills (`sap-gui-drive`, `sap-gui-cli`) go where each app that has the
+The skills (`sap-ui-automation`, `sap-ui-automation-cli`) go where each app that has the
 server reads a user's skills, so the agent uses one when a task matches it:
 
 | App | Folder |

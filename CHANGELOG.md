@@ -17,6 +17,12 @@ change the tools or the view format.
 
 ### Changed (after 0.1.0)
 
+- The skills carry the product's name: `sap-gui-drive` is now
+  `sap-ui-automation`, `sap-gui-cli` is now `sap-ui-automation-cli`. Their
+  descriptions name the transaction codes, business objects and phrasings
+  that should make an agent pick them. `setup` and `install --skills` remove
+  the copies they wrote under the old names, so the agent does not see each
+  skill twice.
 - `setup` installs the skills too, as the Cloud ALM server's setup does:
   for Claude Code (`~/.claude/skills`), Codex (`~/.agents/skills`) and
   Cursor, marked so that the next setup updates them; `--no-skills` leaves
