@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thank you for the report. **Leave real SAP data out**: replace customer names, numbers, texts, host names and user names in views and logs with made-up ones. Security issues go through [SECURITY.md](https://github.com/DidroAI/sap-ui-automation/blob/main/SECURITY.md), not here.
+        Thank you for the report. Setup does not work? Use "Setup problem" instead. **Leave real SAP data out**: replace customer names, numbers, texts, host names and user names in views and logs with made-up ones. Security issues go through [SECURITY.md](https://github.com/DidroAI/sap-ui-automation/blob/main/SECURITY.md), not here.
   - type: textarea
     id: what
     attributes:
@@ -34,8 +34,10 @@ body:
         - Web GUI (SAP GUI for HTML)
         - Fiori launchpad
         - Web GUI app inside the Fiori launchpad
+        - The Chrome extension (SAP_BROWSER=extension)
         - Record and replay, or export
-        - Command line (setup, doctor, sessions)
+        - SDK or test runner
+        - Command line (setup, doctor, sessions, sap-gui)
         - Not specific to a surface
     validations:
       required: true
@@ -60,7 +62,7 @@ body:
     id: browser
     attributes:
       label: Browser and version
-      description: For Web GUI and Fiori. For example "Chrome 146" or "Edge 145".
+      description: For Web GUI and Fiori. For example "Chrome 146" or "Edge 145", and the browser mode (SAP_BROWSER launch, attach or extension).
   - type: input
     id: client
     attributes:

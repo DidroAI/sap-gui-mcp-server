@@ -16,14 +16,21 @@ To report a vulnerability, see
 - **No telemetry, no analytics, no update checks.** It sends nothing to
   Didro or to any other third party.
 - **It talks only to what the user already uses:** SAP GUI on the same
-  machine, the user's Chrome or Edge through its local DevTools endpoint,
+  machine, Chrome through its local DevTools endpoint (a Chrome window the
+  server starts, the user's Chrome or Edge, or the user's Chrome through
+  the extension's local port),
   and, with the network reader only, the SAP system or router SAP GUI is
   already connected to.
 - **Screen content goes to the MCP client, and from there to the model
   provider the user chose.** That is the only path off the machine, and
   the user controls it.
 - **No credentials.** It never logs on, never stores a password, never
-  types into a password field. It works in sessions the user opened.
+  types into a password field. It works in sessions the user opened. The
+  optional Chrome extension is the exception the user chooses: it keeps
+  the passwords of the systems registered in it in the system's keychain
+  and types them into SAP's logon page itself; the server and the agent
+  never see them
+  ([extension/PRIVACY.md](https://github.com/DidroAI/sap-ui-automation/blob/main/extension/PRIVACY.md)).
 - **Writes are off by default.** Anything that may save is refused until
   the user changes `SAP_WRITE`.
 - **Files are written only to local folders**, named by environment

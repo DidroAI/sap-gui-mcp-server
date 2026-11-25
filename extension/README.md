@@ -25,7 +25,8 @@ Fiori and SAP S/4HANA are trademarks of SAP SE.
 
 ## Install (Mac, Windows, Linux)
 
-The extension is not in the Chrome Web Store yet. You need Node.js 20 or
+The extension is in review in the Chrome Web Store and not published
+there yet; until then, load it unpacked as below. You need Node.js 22 or
 later (`node --version` in a terminal; if it is missing, install it from
 nodejs.org).
 

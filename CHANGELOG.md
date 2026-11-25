@@ -4,6 +4,31 @@ All notable changes to this project are listed here. The project follows
 [Semantic Versioning](https://semver.org); before 1.0, a minor version may
 change the tools or the view format.
 
+## Unreleased
+
+### Fixed
+
+- `--version`, the MCP server's `serverInfo` and new recordings said
+  0.1.0 in the 0.2.0 release.
+
+### Documentation
+
+- A "Choose your setup" page sends each reader to the right guide in four
+  questions, with a table of which surface runs on which system.
+- The Chrome guide starts with the three browser modes (`launch`, the
+  default; `attach`; `extension`). It described `attach` as the default.
+  One section says how to install the extension, which is in review in
+  the Chrome Web Store.
+- The README is shorter: what it is, where it runs, a quick start per way
+  of working, status and limits.
+- Added: the `browser` and `extension` commands, `export --to sap-ts`, the
+  variables `SAP_CHROME_PATH`, `SAP_START_URL`, `SAP_CHROME_PROFILE`,
+  `SAP_CHROME_ARGS`, `SAP_EXTENSION_WAIT` and `SAP_EXTENSION_START_CHROME`,
+  FAQ entries for the launch and extension modes, and the install step the
+  SDK needs in a project.
+- Security pages cover the extension's local port and its passwords.
+- A "Setup problem" issue template that asks for the output of `doctor`.
+
 ## 0.2.0 (2026-11-25)
 
 ### Fixed

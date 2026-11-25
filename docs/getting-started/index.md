@@ -11,11 +11,18 @@ the SAP screens you already have open**:
   launchpad.
 
 It finds your open sessions by itself and works in them as you, under your
-SAP authorisations. It never logs on and never stores a password. Actions
-that may write to SAP are refused unless you allow them.
+SAP authorisations. The server never logs on and never sees a password
+(with the optional Chrome extension, the extension logs on for you and
+keeps the password in your keychain). Actions that may write to SAP are
+refused unless you allow them.
 
-> Status: 0.1.0, the first public version. It works on real systems, but
-> parts are young: each guide lists the limits of its surface. MIT licence.
+Not sure which parts you need? [Choose your setup](choose.md) asks four
+questions.
+
+> Status: 0.2, early. It works on real systems, but parts are young, and
+> each guide lists the limits of its surface. Experimental: the network
+> reader for SAP GUI without scripting. The Chrome extension is in review
+> in the Chrome Web Store and is loaded unpacked until then. MIT licence.
 
 ## Requirements
 
@@ -32,7 +39,7 @@ that may write to SAP are refused unless you allow them.
 | --- | --- |
 | SAP GUI for Windows | Windows, SAP GUI for Windows, scripting enabled in SAP GUI **and** allowed on the SAP system ([details](../guides/sap-gui-windows.md)) |
 | SAP GUI for Windows without scripting (experimental) | Windows, SAP GUI for Windows, a connection entry you can edit in SAP Logon, no SNC encryption ([details](../guides/network-reader.md)) |
-| Web GUI | Chrome 144 or later (or Edge) with remote debugging allowed, and a Web GUI tab open and logged on: its address contains `/sap/bc/gui/sap/its/webgui` ([details](../guides/chrome.md)) |
+| Web GUI | Google Chrome, and a Web GUI tab open and logged on: its address contains `/sap/bc/gui/sap/its/webgui`. By default the server starts its own Chrome window for this; it can also use your Chrome ([details](../guides/chrome.md#choose-a-browser-mode)) |
 | Fiori | The same Chrome, and a Fiori launchpad tab open and logged on (for example `/sap/bc/ui2/flp`) |
 
 Web GUI and Fiori work from Windows, macOS and Linux. SAP GUI for Java
@@ -73,8 +80,10 @@ CHANGED 1 of 18 lines (same screen; sap_look shows all of it):
 
 ## Next
 
+- [Choose your setup](choose.md): which guide fits your SAP front end and
+  your agent.
 - [Install in your client](installation.md): add the server to Claude Code,
-  Codex, Claude Desktop or Cursor.
+  Codex, Claude Desktop, Cursor, Windsurf or VS Code.
 - [Set up with your agent](setup-prompt.md): a prompt that has your agent
   install and check everything for you.
 - [Your first session](first-session.md): open SAP, ask, and see what the

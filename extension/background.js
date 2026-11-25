@@ -1,4 +1,4 @@
-// Agent Connector for SAP Systems (sap-ui-automation's Chrome extension): MV3 service worker.
+// UI Automation for SAP (sap-ui-automation's Chrome extension): MV3 service worker.
 //
 // Keeps the user's SAP systems (name, address, client, language, user) and
 // their saved passwords, and logs on to them by filling SAP's logon page

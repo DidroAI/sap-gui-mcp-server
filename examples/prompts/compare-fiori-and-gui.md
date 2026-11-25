@@ -3,8 +3,9 @@
 **Settings:** `SAP_WRITE=off`. `SAP_ALLOW_ORIGINS` with your SAP host, for
 example `https://sap.example.com`.
 
-**Before:** log on to the Fiori launchpad in Chrome (remote debugging
-allowed) and to SAP GUI or Web GUI for the same system.
+**Before:** log on to the Fiori launchpad in Chrome (in the SAP window, or
+the Chrome of your [browser mode](../../docs/guides/chrome.md#choose-a-browser-mode))
+and to SAP GUI or Web GUI for the same system.
 
 ## Prompt
 
