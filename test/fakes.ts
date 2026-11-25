@@ -31,10 +31,14 @@ export class FakeSurface implements Surface {
   /** Every call the drivers received, in order. */
   log: { op: "assess" | "act" | "act-end" | "look" | "screenshot"; action?: Action; options?: LookOptions }[] = [];
 
-  constructor(readonly name: SurfaceName) {}
+  constructor(
+    readonly name: SurfaceName,
+    /** A second way to read the surface (SAP GUI's "diag"): its sessions carry it. */
+    readonly method?: string,
+  ) {}
 
   add(info: Partial<SessionInfo> & { id: string }, more: Omit<FakeSession, "info"> = {}): FakeSession {
-    const s: FakeSession = { info: { surface: this.name, where: `fake ${info.id}`, ...info }, ...more };
+    const s: FakeSession = { info: { surface: this.name, where: `fake ${info.id}`, ...(this.method ? { method: this.method } : {}), ...info }, ...more };
     this.sessions.push(s);
     return s;
   }

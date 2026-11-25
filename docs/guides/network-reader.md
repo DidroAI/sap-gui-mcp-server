@@ -26,8 +26,11 @@ row of tables, grids and lists, and tree nodes.
 
 ## Setup
 
-1. Set `SAP_GUI_METHOD=diag` in the server's environment. The server then
-   runs a SAProuter on `127.0.0.1:3298` (`SAP_DIAG_PORT` to change it).
+1. Nothing to set: on Windows the server runs a SAProuter on
+   `127.0.0.1:3298` (`SAP_DIAG_PORT` to change it) next to SAP GUI
+   scripting, and the agent sees the sessions of both. Set
+   `SAP_GUI_METHOD=diag` only to use the network reader alone, for example
+   where nobody watches the agent.
 2. In SAP Logon, edit the connection entry: put `/H/127.0.0.1/S/3298` at the
    start of its SAProuter string (before your company's router, if there is
    one), and log on again.
@@ -36,16 +39,18 @@ For example, a connection entry with no router of its own gets the
 SAProuter string `/H/127.0.0.1/S/3298`; one that had `/H/router.example.com/S/3299`
 gets `/H/127.0.0.1/S/3298/H/router.example.com/S/3299`.
 
-In Claude Code:
+To use the network reader alone, set the variable when you add the server,
+for example in Claude Code:
 
 ```sh
 claude mcp add sap-ui-automation --scope user -e SAP_GUI_METHOD=diag -- npx -y sap-ui-automation
 ```
 
-Then check with `doctor`:
+Then check with `doctor`. It reports scripting and the network reader
+apart, and is ready when one of them works:
 
 ```sh
-SAP_GUI_METHOD=diag npx -y sap-ui-automation doctor
+npx -y sap-ui-automation doctor
 ```
 
 It checks that the router listens, how many SAP GUI connections go through

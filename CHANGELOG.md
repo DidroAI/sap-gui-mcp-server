@@ -17,6 +17,13 @@ change the tools or the view format.
 
 ### Changed (after 0.1.0)
 
+- SAP GUI for Windows is read both ways at once by default
+  (`SAP_GUI_METHOD` unset, or `auto`): SAP GUI scripting, and the network
+  reader for connections logged on through its router. `sap_sessions`
+  lists the sessions of both, and the agent works in the one it needs.
+  `SAP_GUI_METHOD=scripting` or `diag` keeps to one, for setups where
+  nobody watches the agent. `doctor` reports the two apart and is ready
+  when one works.
 - The skills carry the product's name: `sap-gui-drive` is now
   `sap-ui-automation`, `sap-gui-cli` is now `sap-ui-automation-cli`. Their
   descriptions name the transaction codes, business objects and phrasings

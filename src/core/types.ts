@@ -161,6 +161,8 @@ export interface DiscoverOptions {
 /** A surface finds sessions and opens drivers on them. */
 export interface Surface {
   readonly name: SurfaceName;
+  /** A second way to read the same surface (SAP GUI: "diag"); its sessions carry the same `method`. */
+  readonly method?: string | undefined;
   /** Sessions open right now. Never logs on. Opens nothing but, without `quiet`, the SAP window in Chrome. */
   discover(options?: DiscoverOptions): Promise<SessionInfo[]>;
   open(session: SessionInfo): Promise<Driver>;

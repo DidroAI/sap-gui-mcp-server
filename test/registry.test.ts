@@ -164,3 +164,24 @@ describe("messages and references", () => {
     expect(registry.resolve("va03")?.id).toBe("chrome:1");
   });
 });
+
+describe("SAP GUI read two ways at once (auto)", () => {
+  test("each session opens through the reader that found it, and one reader failing leaves the other's sessions", async () => {
+    const scripting = new FakeSurface("sapgui");
+    const diag = new FakeSurface("sapgui", "diag");
+    const registry = new Registry([scripting, diag], policyFromEnv({}));
+    scripting.add({ id: "sapgui:/app/con[0]/ses[0]", system: "ABA", client: "800" });
+    diag.add({ id: "sapgui:diag:0:0", system: "S4H", client: "100" });
+    expect((await registry.discover()).sessions.map((s) => s.id)).toEqual(["sapgui:/app/con[0]/ses[0]", "sapgui:diag:0:0"]);
+    await registry.driver("sapgui:diag:0:0");
+    expect([scripting.opened, diag.opened]).toEqual([0, 1]);
+    await registry.driver("sapgui:/app/con[0]/ses[0]");
+    expect([scripting.opened, diag.opened]).toEqual([1, 1]);
+    diag.failWith = "router down";
+    const found = await registry.discover();
+    expect(found.errors).toEqual(["sapgui (diag): router down"]);
+    expect(found.allFailed).toBe(false);
+    await registry.driver("sapgui:/app/con[0]/ses[0]");
+    expect(scripting.opened).toBe(1);
+  });
+});
