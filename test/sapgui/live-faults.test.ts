@@ -68,7 +68,7 @@ describe("sapgui: a selection screen is no list", () => {
       "120",
     );
     const { d } = await on(list);
-    expect(await d.look({ compact: false })).toContain("wnd[0]/usr  list  201 rows (visible 34; scroll for the others)");
+    expect(await d.look({ compact: false })).toContain("wnd[0]/usr  list  201 rows (visible 34; scroll for the others, or read them in one call: sap_look with this id and \"rows\")");
   });
 });
 

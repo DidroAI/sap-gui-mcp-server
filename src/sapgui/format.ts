@@ -82,7 +82,8 @@ export function controlLines(c: Control): string[] {
   const tip = esc(c.tip);
   // A classic list that scrolls: its cells (lbl[col,row]) follow as their own lines.
   if (t === "GuiUserArea" && c.scroll)
-    return [`${id}  list  ${c.scroll.maximum + c.scroll.pageSize} rows (visible ${c.scroll.pageSize}${c.scroll.position ? `, first ${c.scroll.position}` : ""}; scroll for the others)`];
+    // Live (ME2L, S/4, 2026-11-25): agents scrolled page by page; one sap_look with rows reads the whole list.
+    return [`${id}  list  ${c.scroll.maximum + c.scroll.pageSize} rows (visible ${c.scroll.pageSize}${c.scroll.position ? `, first ${c.scroll.position}` : ""}; scroll for the others, or read them in one call: sap_look with this id and "rows")`];
   if (t === "GuiMenubar") return [`${id}  menubar  ${(c.menus ?? []).map((m, i) => `${esc(m)} {menu[${i}]}`).join(", ")}`];
   if (SKIP.has(t)) return [];
   if (t === "GuiTextField" || t === "GuiCTextField" || t === "GuiPasswordField") {

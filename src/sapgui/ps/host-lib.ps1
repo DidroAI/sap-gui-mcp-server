@@ -341,9 +341,17 @@ function Shell-Facts($o, $n) {
   } catch { $n.error = Error-Text $_ }
 }
 
+# A table control's cell is named by its place ("txtVBAP-POSNR[0,3]"): its prefix says its type and the
+# rest its name, as SAP GUI names them, so neither is asked (two COM calls of five per cell).
+$CELL_TYPES = @{ txt = 'GuiTextField'; ctxt = 'GuiCTextField'; pwd = 'GuiPasswordField'; chk = 'GuiCheckBox'; rad = 'GuiRadioButton'; cmb = 'GuiComboBox'; btn = 'GuiButton'; lbl = 'GuiLabel' }
+$CELL_ID = [regex]'/(txt|ctxt|pwd|chk|rad|cmb|btn|lbl)([^/\[]+)\[\d+,\d+\]$'
+
 function Walk($o, $list) {
-  $t = [string](T $o 'Type')
-  $n = @{ id = (Rel ([string](T $o 'Id'))); type = $t; name = [string](T $o 'Name') }
+  $id = Rel ([string](T $o 'Id'))
+  $cm = $CELL_ID.Match($id)
+  if ($cm.Success -and $id.Contains('/tbl')) { $t = $CELL_TYPES[$cm.Groups[1].Value]; $nm = $cm.Groups[2].Value }
+  else { $t = [string](T $o 'Type'); $nm = [string](T $o 'Name') }
+  $n = @{ id = $id; type = $t; name = $nm }
   [void]$list.Add($n)
   if ($t -eq 'GuiShell') { Shell-Facts $o $n }
   elseif ($t -eq 'GuiUserArea') {
