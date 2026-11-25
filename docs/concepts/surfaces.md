@@ -7,7 +7,7 @@ view format and the same actions.
 | Surface | Name in `sap_sessions` | How the server reaches it | Runs on |
 | --- | --- | --- | --- |
 | SAP GUI for Windows | `sapgui` | SAP GUI scripting, through Windows PowerShell; or, experimental, SAP GUI's network traffic (`SAP_GUI_METHOD=diag`) | Windows |
-| SAP GUI for HTML (Web GUI) | `webgui` | your Chrome, through its remote debugging connection | Windows, macOS, Linux |
+| SAP GUI for HTML (Web GUI) | `webgui` | Chrome, through the DevTools protocol: a Chrome window the server starts, your Chrome with remote debugging, or your Chrome through the extension (`SAP_BROWSER`) | Windows, macOS, Linux |
 | SAP Fiori | `fiori` | the same Chrome, through SAPUI5 in the page | Windows, macOS, Linux |
 
 SAP GUI for Java (macOS, Linux) has no scripting and is not supported: on a
@@ -38,8 +38,9 @@ there is nothing to register.
 - **SAP GUI for Windows (`diag`):** every connection that goes through the
   server's local SAProuter is listed, with each of its SAP GUI sessions.
   See [Network reader](../guides/network-reader.md).
-- **Web GUI and Fiori:** the server attaches to your running Chrome (or the
-  one `SAP_CHROME_CDP` names) and gives each tab one owner: a tab whose
+- **Web GUI and Fiori:** the server works in the Chrome `SAP_BROWSER`
+  names (by default a Chrome window it starts, the SAP window) and gives
+  each tab one owner: a tab whose
   address contains `/sap/bc/gui/sap/its/webgui`, or that holds Web GUI's
   own controls, is Web GUI; a tab that runs SAPUI5 and is a launchpad is
   Fiori; any other tab is left alone. See [Chrome: Web GUI and

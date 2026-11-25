@@ -1,32 +1,71 @@
 # Chrome: Web GUI and Fiori
 
-SAP GUI for HTML (Web GUI) and SAP Fiori are read and driven in the Chrome
-you already use, through Chrome's remote debugging connection. This works
-from Windows, macOS and Linux, and needs nothing on the SAP system.
+SAP GUI for HTML (Web GUI) and SAP Fiori are read and driven in Google
+Chrome. This works on Windows, macOS and Linux, and needs nothing on the SAP
+system. You log on to SAP yourself; the server never does.
 
-## Allow remote debugging
+## Choose a browser mode
 
-In Chrome 144 or later:
+`SAP_BROWSER` says which Chrome the server works in. Set it in the `env` of
+the server in your MCP client, or in the shell before a CLI command.
+
+| Mode | Which Chrome | What you do once | What the server can see |
+| --- | --- | --- | --- |
+| `launch` (default) | a Chrome window the server starts, with a profile of its own (the SAP window) | log on to SAP in that window | only that window |
+| `attach` | your running Chrome or Edge | allow remote debugging in `chrome://inspect` | every tab of that browser; it reads only SAP tabs |
+| `extension` | your everyday Chrome, through the UI Automation for SAP extension | install and pair the extension, register your SAP systems | only the tabs of the systems you registered |
+
+- Start with `launch`: nothing to switch on in Chrome.
+- Use `extension` when you want your normal profile and its single sign-on,
+  or want the extension to log on for you with a saved password.
+- Use `attach` for a Chrome you already work in, when you cannot install
+  the extension.
+
+`SAP_CHROME_CDP`, when set, wins over all three ([below](#a-chrome-started-with-a-debugging-port)).
+Each mode is checked by `npx -y sap-ui-automation doctor`.
+
+## The SAP window (`launch`, the default)
+
+1. Install Google Chrome if it is not there. The server looks for Chrome in
+   the usual places (on Linux also Chromium); `SAP_CHROME_PATH` names
+   another one.
+2. Run `npx -y sap-ui-automation browser`. A Chrome window opens.
+3. Open your Web GUI or Fiori launchpad address there and log on.
+
+The agent opens the same window by itself the first time it needs SAP, so
+step 2 is optional. The window keeps its own profile (cookies, logons) in
+`~/.local/share/sap-ui-automation/chrome` on Linux,
+`~/Library/Application Support/sap-ui-automation/chrome` on macOS and
+`%LOCALAPPDATA%\sap-ui-automation\chrome` on Windows, so you log on once and
+the next session starts logged on where SAP allows it. It opens on the last
+SAP address it saw, or on `SAP_START_URL`.
+
+The server never closes this window: closing it is up to you. Only its tabs
+are looked at; your everyday Chrome is left alone.
+
+| Variable | Effect |
+| --- | --- |
+| `SAP_CHROME_PATH` | the Chrome or Chromium program file, when the server does not find it |
+| `SAP_START_URL` | the address a new SAP window opens on |
+| `SAP_CHROME_PROFILE` | another profile folder for the SAP window |
+| `SAP_CHROME_ARGS` | extra Chrome switches, separated by spaces |
+
+## Your Chrome with remote debugging (`attach`)
+
+Set `SAP_BROWSER=attach`. Then, in Chrome 144 or later:
 
 1. Open `chrome://inspect/#remote-debugging`.
 2. Tick **Allow remote debugging for this browser instance**.
-3. Run `npx -y sap-ui-automation doctor`. Chrome asks you to allow the
-   connection: click **Allow**. You have 45 seconds.
+3. Run `SAP_BROWSER=attach npx -y sap-ui-automation doctor`. Chrome asks you
+   to allow the connection: click **Allow**. You have 45 seconds.
 
 Chrome asks for each new connection. The server keeps one connection open
 while it runs, so Chrome asks again only when the server connects anew (it
 was restarted, or the connection dropped).
 
-## How the server finds Chrome
-
-The server attaches to the Chrome you are using, in this order:
-
-1. `SAP_CHROME_CDP`, if you set it, e.g. `http://127.0.0.1:9222`. Nothing
-   else is tried then.
-2. Your running Chrome, once you allow remote debugging as above. Chrome
-   stable is tried first, then Chrome beta, then Microsoft Edge. Chrome
-   then writes its port to a file named `DevToolsActivePort` in its profile
-   folder, and the server reads it there.
+The server tries Chrome stable first, then Chrome Beta, then Microsoft
+Edge. Chrome writes its port to a file named `DevToolsActivePort` in its
+profile folder, and the server reads it there.
 
 The server does not attach to port 9222 by itself: a browser listening
 there may belong to another tool (a test runner, another agent). One
@@ -50,7 +89,7 @@ SAP_CHROME_CDP=http://127.0.0.1:9333 npx -y sap-ui-automation sessions
 ```
 
 This is also the way for a Chrome older than 144, which has no switch in
-`chrome://inspect`.
+`chrome://inspect`. Nothing else is tried when `SAP_CHROME_CDP` is set.
 
 ### Microsoft Edge
 
@@ -59,42 +98,67 @@ and is likely to work. Firefox and Safari are not supported.
 
 ## Use your everyday Chrome with the extension
 
-Instead of remote debugging, the server can reach your Chrome through the
-**UI Automation for SAP** extension: no `chrome://inspect`
-switch, your normal profile with its SSO, and only the tabs of the SAP
-systems you register are shared. The extension also keeps your systems'
-logons: the agent can say "log on to ECC Dev", and the extension types the
-password into SAP's logon page itself. The agent and the server never see
-it.
+With `SAP_BROWSER=extension` the server reaches your Chrome through the
+**UI Automation for SAP** extension: no `chrome://inspect` switch, your
+normal profile with its single sign-on, and only the tabs of the SAP systems
+you register are shared. The extension can also keep your systems' logons:
+the agent can say "log on to ECC Dev", and the extension types the password
+into SAP's logon page itself. The agent and the server never see it.
 
-1. `npx -y sap-ui-automation extension install` copies the extension to
-   `~/sap-ui-automation-extension` and installs its helper (pairing in one click,
-   passwords in your keychain). In Chrome, open `chrome://extensions`, turn
-   on **Developer mode**, click **Load unpacked** and pick that folder.
-   Pin the icon (puzzle piece, then the pin), and restart Chrome once if it
-   was open during the install.
-2. Click the UI Automation for SAP icon: it opens a side panel beside the
-   page. Click **Pair**.
-3. Open your SAP system in a tab and click **Add this SAP page** in the panel. Add
-   user and password if the extension should log on for you.
-4. Run `npx -y sap-ui-automation setup --extension` (it adds the server
+### Install the extension
+
+The extension is in review in the Chrome Web Store. Until it is published
+there, load it unpacked:
+
+1. Run `npx -y sap-ui-automation extension install`. It copies the
+   extension to `~/sap-ui-automation-extension` (or the folder you name
+   after `install`) and installs its helper, which pairs the extension in
+   one click and keeps saved passwords in your system's keychain.
+2. In Chrome, open `chrome://extensions`, turn on **Developer mode**, click
+   **Load unpacked** and pick that folder. On a Mac, press Cmd+Shift+G in
+   the dialog and type the folder.
+3. Pin the icon (puzzle piece, then the pin). If Chrome was open during
+   step 1, restart it once: Chrome finds the helper at start.
+
+<!-- When the store listing is public: put its link here, and say that
+`npx -y sap-ui-automation extension helper` installs the helper for the
+store's copy. Every other page links to this section. -->
+
+To update an unpacked copy, run `npx -y sap-ui-automation@latest extension
+install` again, then click the reload arrow on the extension's card in
+`chrome://extensions`.
+
+### Pair and register your systems
+
+1. Click the UI Automation for SAP icon: it opens a side panel beside the
+   page. Click **Pair**. (Without the helper: run
+   `npx -y sap-ui-automation extension pair`, open **Pair with a code
+   instead** in the panel and paste the code.)
+2. Open your SAP system in a tab and click **Add this SAP page** in the
+   panel. Add user and password if the extension should log on for you.
+3. Run `npx -y sap-ui-automation setup --extension` (it adds the server
    with `SAP_BROWSER=extension` to your agent apps), or add
    `"SAP_BROWSER": "extension"` to the `env` of sap-ui-automation in your
-   agent's settings yourself. Restart the agent app. The agent then also
-   has `sap_systems` (your registered systems) and `sap_logon` (open one and
-   log on). For parallel work, `sap_logon` with `newSession: true` opens
-   another session in a window of its own, on the same system or another.
+   agent's settings yourself. An entry `setup` made before keeps its
+   settings: add the variable to it by hand. Restart the agent app.
+4. Check: `SAP_BROWSER=extension npx -y sap-ui-automation doctor`. It waits
+   up to 35 seconds for the extension to connect.
+
+The agent then also has `sap_systems` (your registered systems) and
+`sap_logon` (open one and log on). For parallel work, `sap_logon` with
+`newSession: true` opens another session in a window of its own, on the
+same system or another.
 
 The side panel shows what the agent does in SAP, step by step, and when it
 waits for your yes to save. While the server works in a tab, Chrome shows
 "UI Automation for SAP started debugging this browser". Clicking **Cancel**
 there stops the sharing until you click **Share again** in the side panel.
-`npx -y sap-ui-automation extension uninstall` removes the helper and the
-saved passwords. See
+`npx -y sap-ui-automation extension uninstall` removes the helper, the
+saved passwords and the copied folder. See
 [extension/README.md](https://github.com/DidroAI/sap-ui-automation/blob/main/extension/README.md)
 for what happens on a wrong password or a locked user, where passwords are
-kept, permissions, IT deployment and limits. SAP is a trademark of SAP SE;
-the extension is not affiliated with SAP.
+kept, permissions, IT deployment and limits. The extension is not
+affiliated with SAP SE.
 
 ## Which tabs are SAP's
 
@@ -117,9 +181,11 @@ named by their title.
 
 ## What remote debugging gives away
 
-Remote debugging gives the server (and so the agent using it) access to
-every tab of that browser, not only SAP tabs. The server only reads tabs it
-recognises as SAP, but:
+In `attach` mode, and with `SAP_CHROME_CDP`, remote debugging gives the
+server (and so the agent using it) access to every tab of that browser, not
+only SAP tabs. The SAP window (`launch`) holds only what you open in it, and
+the extension shares only your registered systems' tabs. The server only
+reads tabs it recognises as SAP, but in `attach` mode:
 
 - consider a separate Chrome profile for SAP work;
 - set `SAP_ALLOW_ORIGINS` to look only at your SAP hosts, for example
@@ -203,13 +269,17 @@ busy indicators only, which is faster.
 
 ## What `doctor` checks
 
-- Chrome: which browser it attached to, its version, and how;
+- Chrome: in `launch` mode, where Chrome is and whether the SAP window
+  runs; in `attach` mode and with `SAP_CHROME_CDP`, which browser it
+  attached to, its version, and how; in `extension` mode, whether the
+  extension is installed, paired and connected;
 - the origins `SAP_ALLOW_ORIGINS` allows, when set;
 - how many web page tabs are open;
 - the Web GUI tabs, with system, client and transaction;
 - the Fiori tabs, with SAPUI5 version, system, client and user.
 
-When no Chrome is found, it says the one step to take.
+When no Chrome is found, it says the one step to take. Each failure and
+its fix: [FAQ and troubleshooting](../faq.md#troubleshooting-chrome-web-gui-and-fiori).
 
 ## Limits
 

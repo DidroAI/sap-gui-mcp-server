@@ -5,6 +5,21 @@ open, acts on it with the same actions as `sap_act`, and checks the screen
 with assertions that wait. It goes through the same guard as the MCP server:
 `SAP_WRITE`, `SAP_ALLOW_SYSTEMS` and the transaction lists apply.
 
+## Set up
+
+The SDK and the test runner import the package, so install it in your
+project (Node.js 22.18 or later runs the TypeScript files as they are):
+
+```sh
+npm install --save-dev sap-ui-automation
+npx sap-ui-automation init         # sap.config.ts, sap-tests/example.sap.ts, skills, MCP clients
+npx sap-ui-automation test --list  # what would run
+npx sap-ui-automation test         # needs an SAP session open, logged on
+```
+
+Without the install, `test` stops with `Cannot find package
+'sap-ui-automation'`.
+
 ## A script
 
 ```ts
