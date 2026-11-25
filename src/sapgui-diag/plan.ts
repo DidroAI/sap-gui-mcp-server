@@ -222,7 +222,9 @@ export function planTree(s: DiagScreen, action: Action, g: Geometry, local?: Rea
 
 export function planNode(n: Named & { kind: "tree" }, key: string, how: "double" | "select" | "expand" | "collapse", g: Geometry, local?: ReadonlyMap<string, boolean>): Plan {
   const all = n.control.tree?.nodes ?? [];
-  const node = all.find((x) => x.key === key) ?? all.find((x) => x.key.toLowerCase() === key.toLowerCase());
+  // SAP pads keys with blanks ("          1"), which the view leaves out and agents drop: a key is taken without them.
+  const bare = key.trim().toLowerCase();
+  const node = all.find((x) => x.key === key) ?? all.find((x) => x.key.toLowerCase() === key.toLowerCase()) ?? all.find((x) => x.key.trim().toLowerCase() === bare);
   if (!node) throw new ActionError(`No node {${key}} in the tree ${n.id}. Use a key shown as {key} in the view.`);
   const shown = shownNodes(n.control, local);
   const line = shown.findIndex((x) => x.key === node.key);
@@ -230,9 +232,9 @@ export function planNode(n: Named & { kind: "tree" }, key: string, how: "double"
     const byKey = new Map(all.map((x) => [x.key, x]));
     let closed: DiagTreeNode | undefined;
     for (let p = byKey.get(node.parent); p; p = byKey.get(p.parent)) if (!(local?.get(p.key) ?? p.expanded)) closed = p;
-    throw new ActionError(`The node {${node.key}} is ${node.hidden ? "hidden" : `inside a closed folder: expand {${closed?.key ?? node.parent}} first`}.`);
+    throw new ActionError(`The node {${node.key.trim()}} is ${node.hidden ? "hidden" : `inside a closed folder: expand {${(closed?.key ?? node.parent).trim()}} first`}.`);
   }
-  const named = `node "${clean(node.text) || node.key}" {${node.key}} of ${n.id}`;
+  const named = `node "${clean(node.text) || node.key.trim()}" {${node.key.trim()}} of ${n.id}`;
   const state = shown[line] as DiagTreeNode;
   const kids = all.some((x) => x.parent === node.key);
   if (how === "expand" || how === "collapse") {

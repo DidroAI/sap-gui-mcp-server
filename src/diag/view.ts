@@ -119,7 +119,8 @@ function tableLines(t: DiagTable, maxRows: number): string[] {
       if (!cell || cell.hidden) continue;
       if (cell.kind === "checkbox" || cell.kind === "radio") {
         if (cell.checked || cell.typed) cells.push(`${handle(c.index)}=[${cell.checked ? "x" : " "}]${cell.typed ? " (ticked, sent with the next Enter)" : ""}`);
-      } else if (cell.kind === "button" || cell.kind === "other") cells.push(`${handle(c.index)}=<${one(cell.text)}>${cell.kind === "other" ? " (element this reader cannot classify)" : ""}`);
+      } else if (cell.kind === "button" && !cell.text) continue;
+      else if (cell.kind === "button" || cell.kind === "other") cells.push(`${handle(c.index)}=<${one(cell.text)}>${cell.kind === "other" ? " (element this reader cannot classify)" : ""}`);
       else if (cell.text || cell.typed) cells.push(`${handle(c.index)}=${cell.input ? `[${one(cell.text)}]` : one(cell.text)}${cell.typed ? ` ${TYPED}` : ""}`);
     }
     out.push(`  row ${r.index} r${r.row}: ${cells.join("; ")}`);
@@ -171,13 +172,19 @@ function controlLines(c: DiagControl, maxRows: number): string[] {
       if (visible) shown.push(n);
     }
     const out = [`${where}tree ${id}  ${shown.length} nodes on show${c.tree.headers.length ? `; columns: ${c.tree.headers.map(one).join(" | ")}` : ""}`];
-    for (const n of shown.slice(0, maxRows * 4)) {
+    // SAP often sends the nodes of closed folders too (MMBE's stock levels): a small tree is shown whole, those marked.
+    const budget = maxRows * 4;
+    const whole = c.tree.nodes.length <= budget;
+    const on = new Set(shown);
+    for (const n of (whole ? c.tree.nodes : shown).slice(0, budget)) {
+      if (n.hidden) continue;
       const texts = [...new Set([n.text, ...Object.values(n.items)].map(one).filter(Boolean))].join(" | ");
-      out.push(`  ${"  ".repeat(n.depth)}${n.folder ? (n.expanded ? "[-] " : "[+] ") : ""}${texts || "(no text)"}${n.key === c.tree.selected ? " (selected)" : ""}${n.disabled ? ` ${GREYED}` : ""}  {${n.key}}`);
+      // Keys are written without SAP's leading blanks ("          1" is {1}); the actions take them either way.
+      out.push(`  ${"  ".repeat(n.depth)}${n.folder ? (n.expanded ? "[-] " : "[+] ") : ""}${texts || "(no text)"}${n.key === c.tree.selected ? " (selected)" : ""}${n.disabled ? ` ${GREYED}` : ""}${on.has(n) ? "" : " (in a closed folder)"}  {${n.key.trim()}}`);
     }
-    if (shown.length > maxRows * 4) out.push(`  ... ${shown.length - maxRows * 4} more nodes on show`);
+    if (shown.length > budget) out.push(`  ... ${shown.length - budget} more nodes on show`);
     const closed = c.tree.nodes.length - shown.length;
-    if (closed > 0) out.push(`  (${closed} more nodes in closed folders)`);
+    if (closed > 0 && !whole) out.push(`  (${closed} more nodes in closed folders)`);
     return out;
   }
   if (c.kind === "text") return [`${where}text-editor ${id}${c.readOnly ? " (read-only)" : ""}  ${quote(c.text ?? "")}`];
