@@ -210,6 +210,49 @@ export class ClassicState {
     }
   }
 
+  /**
+   * The values SAP GUI sends with a request: element lists in the areas of the window on top, the fields the
+   * user typed into with their new text. They become the text of the fields at those places, so that a field
+   * SAP later sends again without its text keeps what the user typed (elementList).
+   */
+  clientValues(items: DiagItem[]): void {
+    const w = this.windows[this.windows.length - 1];
+    if (!w) return;
+    const path = this.path;
+    this.path = [];
+    try {
+      for (const it of items) {
+        if (!hasId(it.type)) continue;
+        if (it.id === ID.area) {
+          if (it.sid === 0x01) this.path = [];
+          const kind = LEVELS.get(it.sid);
+          if (kind && it.value.length >= 9) this.path.push({ kind, name: "", row: it.value.readUInt16BE(1), col: it.value.readUInt16BE(3), width: it.value.readUInt16BE(5), height: it.value.readUInt16BE(7) });
+        } else if (it.id === ID.screen && it.sid === 0x02) this.clientElements(w, it.value);
+      }
+    } catch (e) {
+      this.note(`values from SAP GUI not read: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      this.path = path;
+    }
+  }
+
+  private clientElements(w: WindowState, v: Buffer): void {
+    const o = this.origin();
+    for (let i = 0; i + 13 <= v.length; ) {
+      const n = v.readUInt16BE(i);
+      if (n < 13 || i + n > v.length) return;
+      const a = v.subarray(i, i + n);
+      i += n;
+      const etype = a[4] ?? 0;
+      const body = a.subarray(13);
+      if ((etype !== EL.inputField && etype !== EL.outputField) || body.length < 6) continue;
+      const row = o.row + a.readUInt16BE(8);
+      const col = o.col + a.readUInt16BE(10);
+      const e = w.elements.find((x) => x.kind === "field" && x.input && !x.hidden && x.row === row && x.col === col);
+      if (e) e.text = clean(this.text(body.subarray(6, 6 + (body[2] ?? 0)))).trim();
+    }
+  }
+
   /** A new step begins: the status bar of the last one is gone. */
   clearMessage(): void {
     this.message = undefined;
@@ -635,6 +678,10 @@ export class ClassicState {
       strip = this.newTabstrip();
       this.pushTabstrip(w, strip);
     }
+    if (strip && this.tabsKept.has(strip)) {
+      strip.tabs = [];
+      this.tabsKept.delete(strip);
+    }
     let lastTab: DiagTab | undefined;
     let i = 0;
     while (i + 13 <= v.length) {
@@ -683,10 +730,12 @@ export class ClassicState {
       if (this.carried.size) {
         const at = w.elements.findIndex((x) => this.carried.has(x) && x.row === el.row && x.col === el.col);
         const old = w.elements[at];
-        // In an update a label comes with no text (00 00 00 00 00 00): it keeps the text it had.
-        if (old && etype === EL.label && !(body[2] ?? 0)) {
+        // In an update a label comes with no text (00 00 00 00 00 00): it keeps the text it had. So does a field
+        // sent without its text (its length 0, the width given): SAP GUI keeps showing what it held (FB50 closes
+        // its header fields after a warning and sends them so).
+        if (old && FIELDS.has(etype) && !(body[2] ?? 0) && (etype === EL.label || (old.kind === "field" && !el.hidden))) {
           el.text = old.text;
-          el.width = old.width;
+          if (etype === EL.label || !el.width) el.width = old.width;
           if (old.icon) el.icon = old.icon;
           if (old.tooltip) el.tooltip = old.tooltip;
         }
@@ -826,11 +875,26 @@ export class ClassicState {
     this.pushTabstrip(w, strip);
   }
 
-  /** A tabstrip sent anew takes the place of the one kept from the last sending. */
+  /**
+   * A tabstrip sent anew takes the place of the one kept from the last sending. In an update SAP may send
+   * its description without its tab buttons (FB50 after a warning): it keeps the tabs it had, until a tab
+   * list comes for it.
+   */
   private pushTabstrip(w: WindowState, strip: DiagTabstrip): void {
-    if (this.carried.size) w.tabstrips = w.tabstrips.filter((x) => !(this.carried.has(x) && x.name === strip.name));
+    if (this.carried.size) {
+      const old = w.tabstrips.find((x) => this.carried.has(x) && x.name === strip.name);
+      if (old && !strip.tabs.length && old.tabs.length) {
+        strip.tabs = old.tabs.map((t) => ({ ...t }));
+        this.tabsKept.add(strip);
+        this.markActiveTab(strip);
+      }
+      w.tabstrips = w.tabstrips.filter((x) => !(this.carried.has(x) && x.name === strip.name));
+    }
     w.tabstrips.push(strip);
   }
+
+  /** Tabstrips whose tabs were kept from the last sending: a tab list for them replaces those tabs. */
+  private tabsKept = new WeakSet<DiagTabstrip>();
 
   private activeTab = new WeakMap<DiagTabstrip, string>();
 

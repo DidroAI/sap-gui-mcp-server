@@ -34,10 +34,11 @@ export function idItem(id: number, sid: number, value: Buffer | string | number[
 export const sizedItem = (type: number, value: Buffer | number[] = []): Buffer => cat([type], value);
 export const END = sizedItem(0x0c);
 
-export function windowStart(o: { index?: number; row?: number; col?: number; rows?: number; cols?: number } = {}): Buffer {
+export function windowStart(o: { index?: number; row?: number; col?: number; rows?: number; cols?: number; update?: boolean } = {}): Buffer {
   const b = Buffer.alloc(16);
   const index = o.index ?? 0;
-  b[6] = index > 0 ? 0x11 : 0x01;
+  // update: the same screen again with only what changed (byte 6 without 0x01).
+  b[6] = index > 0 ? 0x11 : o.update ? 0x00 : 0x01;
   b[7] = index;
   b[8] = o.col ?? 0;
   b[9] = o.row ?? 0;
@@ -132,6 +133,8 @@ export const elem = {
     const fcodeAt = 22 + padded.length + 1;
     return element(116, 0, index, 0x20, cat([padded.length, 1, 3], u16(fcodeAt), u16(22), u16(fcodeAt + id.length + 2), padded, [0], `=${id}`, [0], id, [0, 0]), active ? 0x40 : 0);
   },
+  /** A field SAP sends again without its text (the text's length 0): in an update, SAP GUI keeps what it shows. */
+  unsent: (row: number, col: number, width: number, o: { readOnly?: boolean; label?: boolean } = {}): Buffer => element(o.label ? 132 : 130, row, col, o.readOnly || o.label ? PROTECTED : 0, [0, 0, 0, width, 0, width]),
   /** An element type the decoder does not know. */
   unknown: (row: number, col: number, text: string): Buffer => element(99, row, col, 0, text),
 };
