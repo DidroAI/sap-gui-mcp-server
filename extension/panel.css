@@ -1,9 +1,9 @@
 /* UI Automation for SAP: the side panel's identity, "Ledger".
 
    Idea      A well-made tool from a studio, calm beside SAP's grey: warm paper, dark ink, and one
-             deep green that says the agent is here.
+             deep blue that says the agent is here, the blue of the mark.
    Palette   A warm paper canvas, a lighter paper for surfaces, warm ink for text and for the one
-             primary action of a view. One accent, ledger green: the agent's presence (connected,
+             primary action of a view. One accent, the mark's blue: the agent's presence (connected,
              working, the system it works in, waiting for your yes), focus and links. Red only for what
              failed. Every grey is warm; none is blue.
    Type      DM Sans for everything, Geist Mono for SAP's own codes (VA02, client, user fields).
@@ -14,7 +14,7 @@
              edited or floats (the form, the menu) lifts with a soft shadow.
    Mark      A soft pointer lit from inside, on a navy tile: the one place blue appears.
    Icons     One set on a 24 grid, 1.75 stroke, round caps and joins.
-   Dark      Warm charcoal, not black: lifted enough to read at a glance, the primary button turns paper, the green
+   Dark      Warm charcoal, not black: lifted enough to read at a glance, the primary button turns paper, the blue
              brightens.
 
    Colours live in the two token blocks only. */
@@ -42,10 +42,10 @@
   --primary-hover: #35322b;
   --primary-ink: #fdfbf6;
   --primary-edge: rgba(255, 255, 255, 0.10);
-  --accent: #2f6b4f;
-  --accent-text: #2a5e46;
-  --accent-soft: #e4ede5;
-  --accent-line: #b5cdbb;
+  --accent: #2a5fc9;
+  --accent-text: #2453b3;
+  --accent-soft: #e7edf9;
+  --accent-line: #b6c9ee;
   --danger: #b3402f;
   --danger-soft: #f8e9e3;
   --danger-line: #e5b5a8;
@@ -87,10 +87,10 @@
     --primary-hover: #ffffff;
     --primary-ink: #1d1b17;
     --primary-edge: rgba(255, 255, 255, 0);
-    --accent: #8fd0aa;
-    --accent-text: #9dd8b5;
-    --accent-soft: #2a3d31;
-    --accent-line: #456f57;
+    --accent: #7fb0ff;
+    --accent-text: #9cc1ff;
+    --accent-soft: #26324a;
+    --accent-line: #40609a;
     --danger: #f09682;
     --danger-soft: #3d2621;
     --danger-line: #7a4134;

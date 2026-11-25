@@ -61,8 +61,8 @@ The panel then says **Ready. No agent connected.** Once an agent connects it
 names it ("Codex is connected"), says whether saves wait for your yes, and
 lists each step the agent takes in SAP (**Activity**): the transaction, the
 field and the value, in SAP's own words. When the agent waits for your yes to
-save, the panel turns green and says where to answer (in the agent app). The
-system the agent works in is tinted green; **Settings** shows what
+save, the panel turns blue and says where to answer (in the agent app). The
+system the agent works in is tinted blue; **Settings** shows what
 the agent may do (saves, systems, blocked transactions), as set in the agent.
 
 ## Add your systems
@@ -269,7 +269,7 @@ security rules are in [PROTOCOL.md](PROTOCOL.md); the review that shaped
 this version is in [REVIEW.md](REVIEW.md).
 
 The side panel's look is "Ledger": warm paper, dark ink for text and the main
-action, one deep green for the agent's presence, and a warm dark theme that
+action, one deep blue for the agent's presence, and a warm dark theme that
 follows the system's. The typeface is DM Sans, with Geist Mono for SAP's codes
 (both bundled in `fonts/` under the SIL Open Font License, see
 `fonts/DMSans-OFL.txt` and `fonts/GeistMono-OFL.txt`; nothing is fetched). Its

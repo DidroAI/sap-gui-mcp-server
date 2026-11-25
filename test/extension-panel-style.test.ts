@@ -1,5 +1,5 @@
 /**
- * The side panel's identity, "Ledger": colours only from the tokens (warm ink, one deep green
+ * The side panel's identity, "Ledger": colours only from the tokens (warm ink, one deep blue
  * accent, a warm paper canvas with lighter paper surfaces), rounded surfaces held by a ring and a
  * soft shadow instead of grey outlines, DM Sans and Geist Mono bundled as local files (nothing fetched),
  * sentence case on buttons and headings, no "·" or "•" separators, and no SAP artwork.
@@ -32,13 +32,13 @@ function sentenceCase(label: string): boolean {
 }
 
 describe("the side panel's look", () => {
-  test("colours come from the tokens only; warm ink, one green accent, a paper canvas", () => {
+  test("colours come from the tokens only; warm ink, one blue accent, a paper canvas", () => {
     // In a declaration's value, not a selector such as #add.
     expect([...rules.matchAll(/\{([^{}]*)\}/g)].flatMap((m) => m[1]!.match(/#[0-9a-f]{3,8}\b/gi) ?? [])).toEqual([]);
     expect(js.match(/#[0-9a-f]{3,8}\b/gi) ?? []).toEqual([]);
     expect(icons.match(/#[0-9a-f]{3,8}\b/gi) ?? []).toEqual([]);
-    for (const t of ["--ink: #1d1b17;", "--bg: #f6f3ec;", "--surface: #fdfbf6;", "--primary: #1d1b17;", "--accent: #2f6b4f;", "--accent-text: #2a5e46;", "--danger: #b3402f;"]) expect(light).toContain(t);
-    for (const t of ["--bg: #24211d;", "--surface: #2d2a25;", "--primary: #f5f1e8;", "--accent: #8fd0aa;"]) expect(dark).toContain(t);
+    for (const t of ["--ink: #1d1b17;", "--bg: #f6f3ec;", "--surface: #fdfbf6;", "--primary: #1d1b17;", "--accent: #2a5fc9;", "--accent-text: #2453b3;", "--danger: #b3402f;"]) expect(light).toContain(t);
+    for (const t of ["--bg: #24211d;", "--surface: #2d2a25;", "--primary: #f5f1e8;", "--accent: #7fb0ff;"]) expect(dark).toContain(t);
     // Not SAP's blue, and none of the looks that were turned down (crimson, amber, the default blue).
     for (const no of ["#0070f2", "#a31329", "#3b63f3", "#3b82f6", "#111214", "#0c9a6c"]) expect(css.toLowerCase()).not.toContain(no);
     // The primary action is ink, not the accent; the accent is the agent's presence.
