@@ -1288,6 +1288,7 @@ ${writeRule(policy)}`,
     // The action's fields at the top level, as the schema lists them; anything but the call's own keys goes with them.
     const flat = Object.fromEntries(Object.entries(input).filter(([k, v]) => !CALL_KEYS.has(k) && v !== undefined));
     const one = Object.keys(flat).length > 0;
+    if (actions !== undefined && one && !("do" in flat)) return fail(`${Object.keys(flat).map((k) => `"${k}"`).join(", ")} next to "actions" belongs inside an action of "actions" (each step has its own, e.g. [{"do":"key","key":0,"expect":{"popup":true}}]). Nothing ran.`);
     if (actions !== undefined && (one || action !== undefined)) return fail('Send one action ("do" and its fields) or "actions", not both.');
     if (one && action !== undefined) return fail('Send the action\'s fields ("do", "id", ...) at the top level, not also inside "action".');
     if (actions !== undefined) return withAnyData(await runBatch(ref, actions, full === true, call), actions);
