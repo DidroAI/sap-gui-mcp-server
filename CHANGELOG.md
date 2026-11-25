@@ -45,6 +45,11 @@ change the tools or the view format.
     `screen`, the mouse wheel); clicks follow the scroll SAP reports, and a
     field under the window's edge is refused with that scroll instead of
     being clicked where another field is.
+  - A popup SAP sends again as an update (after SAP GUI's type-ahead call)
+    keeps its fields; it came back empty.
+  - `set` clicks again when a dropdown chosen just before swallowed the click,
+    and types nothing when the cursor still did not come; a second cell
+    further right in a row reached with Tab goes on with Tab.
   - When SAP GUI shows a popup the traffic did not describe, the refusal
     says so and how to close it.
 
