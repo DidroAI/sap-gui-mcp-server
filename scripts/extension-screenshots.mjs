@@ -146,12 +146,10 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 function frame(title, text, scene) {
   // A browser window: the SAP page on the left (a plain stand-in, never SAP's look or logo), the side panel on the right.
   return `<!doctype html><meta charset="utf-8"><style>
-  @font-face { font-family: "Instrument Sans"; font-weight: 400; src: url("/fonts/InstrumentSans-Latin-400.woff2"); }
-  @font-face { font-family: "Instrument Sans"; font-weight: 600; src: url("/fonts/InstrumentSans-Latin-600.woff2"); }
-  body { margin: 0; width: 1280px; height: 800px; display: grid; grid-template-columns: 1fr 380px; background: #fdfcfb; font-family: "Instrument Sans", system-ui, sans-serif; color: #101114; }
-  .page { display: flex; flex-direction: column; justify-content: center; padding: 0 88px; border-right: 1px solid #d4cdcd; background: #f7f3f2; }
-  h1 { font-size: 46px; line-height: 1.1; margin: 0 0 20px; letter-spacing: -0.025em; font-weight: 600; }
-  p { font-size: 21px; line-height: 1.45; margin: 0; color: #555258; max-width: 30ch; }
+  body { margin: 0; width: 1280px; height: 800px; display: grid; grid-template-columns: 1fr 380px; background: #ffffff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: #1d2433; }
+  .page { display: flex; flex-direction: column; justify-content: center; padding: 0 88px; border-right: 1px solid #e3e6ec; background: #f5f6f8; }
+  h1 { font-size: 46px; line-height: 1.1; margin: 0 0 20px; letter-spacing: -0.02em; font-weight: 650; }
+  p { font-size: 21px; line-height: 1.45; margin: 0; color: #4b5468; max-width: 30ch; }
   iframe { width: 380px; height: 800px; border: 0; display: block; }
   </style><div class="page"><h1>${esc(title)}</h1><p>${esc(text)}</p></div><iframe src="/panel.html?s=${encodeURIComponent(scene)}"></iframe>`;
 }
@@ -180,11 +178,9 @@ try {
   const tile = await browser.newPage({ viewport: { width: 440, height: 280 } });
   await tile.goto(`http://127.0.0.1:${port}/frame.html?tile=1`);
   await tile.setContent(`<!doctype html><meta charset="utf-8"><style>
-    @font-face { font-family: "Instrument Sans"; font-weight: 600; src: url("http://127.0.0.1:${port}/fonts/InstrumentSans-Latin-600.woff2"); }
-    @font-face { font-family: "Instrument Sans"; font-weight: 400; src: url("http://127.0.0.1:${port}/fonts/InstrumentSans-Latin-400.woff2"); }
-    body{margin:0;width:440px;height:280px;display:grid;place-items:center;background:#fdfcfb;font-family:"Instrument Sans",system-ui,sans-serif;color:#101114}
-    div{display:flex;align-items:center;gap:18px}img{display:block;width:72px;height:72px}
-    h1{font-size:30px;margin:0;font-weight:600;letter-spacing:-0.025em}p{margin:2px 0 0;color:#71696d;font-size:18px}</style>
+    body{margin:0;width:440px;height:280px;display:grid;place-items:center;background:#f5f6f8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;color:#1d2433}
+    div{display:flex;align-items:center;gap:18px}img{display:block;width:72px;height:72px;border-radius:14px}
+    h1{font-size:30px;margin:0;font-weight:600;letter-spacing:-0.025em}p{margin:2px 0 0;color:#6b7489;font-size:18px}</style>
     <div><img src="http://127.0.0.1:${port}/icons/128.png" alt=""><span><h1>UI Automation</h1><p>for SAP</p></span></div>`);
   await tile.waitForTimeout(300);
   await tile.screenshot({ path: join(out, "promo-440x280.png") });

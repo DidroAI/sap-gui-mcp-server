@@ -53,7 +53,8 @@ function hostOf(u) {
     return u;
   }
 }
-const KEYCHAIN_NAME = { "macOS Keychain": "your macOS keychain", "Windows (DPAPI)": "your Windows account's protected storage" };
+// The helper's keychain, as people call it: macOS, Windows (DPAPI, this Windows user only), Linux (Secret Service).
+const KEYCHAIN_NAME = { "macOS Keychain": "your macOS keychain", "Windows (DPAPI)": "Windows' protected storage", "Secret Service (secret-tool)": "your system keyring" };
 function keychainName(s) {
   const h = s && s.helper;
   return (h && h.keychain && KEYCHAIN_NAME[h.keychain]) || "your keychain";
@@ -76,6 +77,7 @@ const needsPairing = (s) => !!s && !s.code.managed && (s.status === "no_code" ||
 
 function showView(name) {
   for (const v of ["main", "pair", "settings"]) $(`${v}-view`).hidden = v !== name;
+  $("settings-open").hidden = name === "settings";
 }
 
 // Sections fold; the choice is kept for this panel's life.
@@ -161,8 +163,8 @@ function renderStatus(s) {
   }
   if (s.status === "busy") {
     return setStatus({
-      dot: "amber",
-      tone: "amber",
+      dot: "accent",
+      tone: "accent",
       title: "Another agent app is connected",
       detail: "Your agent talks to one Chrome at a time. Close the other app or Chrome profile, then reconnect.",
       actions: [el("button", { class: "btn", type: "button", onclick: () => send({ cmd: "reconnect" }).then(() => setTimeout(refresh, 300)) }, "Reconnect")],
@@ -185,8 +187,8 @@ function renderStatus(s) {
   if (connected && last && last.state === "waiting" && Date.now() - last.at < WAIT_MS) {
     const what = last.do === "key" ? objectText(last) : [verbOf({ ...last, state: "ran" }), objectText(last)].filter(Boolean).join(" ");
     return setStatus({
-      dot: "amber pulse",
-      tone: "amber",
+      dot: "accent pulse",
+      tone: "accent",
       title: `${agent} wants to save in ${placeOf(s, last)}`,
       detail: `Answer in ${agent}. Nothing is saved until you say yes.`,
       step: [last.transaction ? el("code", {}, last.transaction) : null, last.transaction ? "  " : null, what].filter(Boolean),
@@ -247,11 +249,51 @@ function objectNode(e) {
   return el("span", {}, e.label || "", e.label && e.value ? " " : "", e.value ? el("b", {}, e.value) : null);
 }
 
-function activityLine(e, agent) {
-  if (e.state === "waiting") return el("div", { class: "act waiting" }, el("span", { class: "verb" }, "Save"), el("span", { class: "what" }, `Waiting for your answer in ${agent}`));
-  if (e.state === "refused") return el("div", { class: "act refused" }, el("span", { class: "verb" }, "Blocked"), el("span", { class: "what" }, verbOf(e), " ", objectNode(e)));
-  if (e.state === "declined") return el("div", { class: "act declined" }, el("span", { class: "verb" }, "Not run"), el("span", { class: "what" }, verbOf(e), " ", objectNode(e)));
-  return el("div", { class: "act" }, el("span", { class: "verb" }, verbOf(e)), el("span", { class: "what" }, objectNode(e)));
+/** One step on one line; a click shows where and when. */
+function stepRow(e, agent, open) {
+  const text =
+    e.state === "waiting"
+      ? [el("b", {}, "Save"), ` waits for your answer in ${agent}`]
+      : e.state === "refused"
+        ? [el("b", {}, "Blocked: "), `${verbOf(e)} ${objectText(e)}`]
+        : e.state === "declined"
+          ? [`Not saved: ${verbOf({ ...e, state: "ran" })} ${objectText(e)}`]
+          : [`${verbOf(e)} `, el("b", {}, objectText(e))];
+  const id = `${e.at}-${e.do}`;
+  const row = el(
+    "li",
+    { class: `act-row ${e.state}` },
+    el(
+      "button",
+      { class: "act-line", type: "button", "aria-expanded": open ? "true" : "false", onclick: () => toggleStep(id) },
+      el("span", { class: "dot", "aria-hidden": "true" }),
+      el("span", { class: "act-text" }, e.transaction ? el("span", { class: "tx" }, e.transaction) : null, ...text),
+      el("span", { class: "act-time" }, ago(e.at)),
+    ),
+  );
+  if (open) {
+    const line = (k, v) => (v ? el("div", {}, el("span", { class: "k" }, k), v) : null);
+    row.append(
+      el(
+        "div",
+        { class: "act-more" },
+        line("Screen", [e.transaction, e.title].filter(Boolean).join("  ")),
+        line("System", [e.system, e.client && `client ${e.client}`].filter(Boolean).join(", ")),
+        line("Field", e.label),
+        line("Value", e.do === "key" ? objectText(e) : e.value),
+        line("Time", new Date(e.at).toLocaleTimeString()),
+      ),
+    );
+  }
+  return row;
+}
+
+const openSteps = new Set();
+function toggleStep(id) {
+  if (openSteps.has(id)) openSteps.delete(id);
+  else openSteps.add(id);
+  activityDrawn = "";
+  if (state) renderActivity(state);
 }
 
 let activityDrawn = "";
@@ -262,33 +304,10 @@ function renderActivity(s) {
   if (key === activityDrawn) return;
   activityDrawn = key;
   $("activity").hidden = list.length === 0;
-  // Steps in one transaction of one system make a group; the newest group first, its steps in order.
-  const groups = [];
-  for (const e of list) {
-    const g = groups[groups.length - 1];
-    if (g && g.transaction === e.transaction && g.system === e.system && e.at - g.last < 10 * 60 * 1000) {
-      g.items.push(e);
-      g.last = e.at;
-    } else groups.push({ transaction: e.transaction, system: e.system, title: e.title, items: [e], last: e.at });
-  }
-  // The newest steps first; a few unless the user asked for all, as Jira shows "Show more".
-  const LIMIT = 8;
-  let left = activityAll ? Infinity : LIMIT;
-  const shown = [];
-  for (const g of groups.slice().reverse()) {
-    if (left <= 0) break;
-    const items = g.items.slice(-Math.min(left, g.items.length));
-    left -= items.length;
-    shown.push(
-      el(
-        "div",
-        { class: "group" },
-        el("div", { class: "group-head" }, el("span", {}, g.transaction ? el("span", { class: "tx mono" }, g.transaction) : null, g.transaction ? "  " : "", g.title || g.system || "SAP"), el("span", {}, ago(g.last))),
-        ...items.map((e) => activityLine(e, agent)),
-      ),
-    );
-  }
-  $("activity-list").replaceChildren(...shown);
+  // The newest first; a few unless the user asked for all.
+  const LIMIT = 6;
+  const shown = list.slice().reverse().slice(0, activityAll ? list.length : LIMIT);
+  $("activity-list").replaceChildren(...shown.map((e) => stepRow(e, agent, openSteps.has(`${e.at}-${e.do}`))));
   const more = $("activity-more");
   more.hidden = list.length <= LIMIT;
   more.textContent = activityAll ? "Show fewer" : `Show all ${list.length} steps`;
@@ -396,17 +415,21 @@ function systemRow(x, s) {
     const forget = confirmAction === "forget";
     return el(
       "li",
-      { class: "item confirming", "data-id": x.id },
+      { class: "card item confirming", "data-id": x.id },
       el(
         "div",
-        { class: "item-body" },
-        el("div", { class: "item-title" }, forget ? `Forget the password of ${x.name}?` : `Remove ${x.name}?`),
-        el("div", { class: "item-line" }, forget ? "It is deleted from your keychain; you type it at the next logon." : x.passwordIn ? "Its saved password is deleted too." : "You can add it again later."),
+        { class: "card-head" },
         el(
           "div",
-          { class: "row-actions" },
-          el("button", { class: "btn danger", type: "button", "data-autofocus": true, onclick: () => (forget ? ((confirming = null), forgetPassword(x)) : removeSystem(x)) }, forget ? "Forget" : "Remove"),
-          el("button", { class: "btn ghost", type: "button", onclick: () => cancelRemove(x) }, "Cancel"),
+          { class: "card-body" },
+          el("div", { class: "card-title item-title" }, el("span", { class: "card-name" }, forget ? `Forget the password of ${x.name}?` : `Remove ${x.name}?`)),
+          el("div", { class: "card-line item-line" }, forget ? "You type it at the next logon." : x.passwordIn ? "Its saved password is deleted too." : "You can add it again later."),
+          el(
+            "div",
+            { class: "row-actions" },
+            el("button", { class: "btn ghost", type: "button", onclick: () => cancelRemove(x) }, "Cancel"),
+            el("button", { class: "btn danger", type: "button", "data-autofocus": true, onclick: () => (forget ? ((confirming = null), forgetPassword(x)) : removeSystem(x)) }, forget ? "Forget" : "Remove"),
+          ),
         ),
       ),
     );
@@ -419,36 +442,40 @@ function systemRow(x, s) {
   const shown = busy ? { text: x.passwordIn && !x.sso ? "Logging on" : "Opening", type: "busy" } : note || issue;
   return el(
     "li",
-    { class: `item${here ? " here" : ""}`, "data-id": x.id },
+    { class: `card item${here ? " here" : ""}`, "data-id": x.id },
     el(
       "div",
-      { class: "item-body" },
-      el("div", { class: "item-title", title: x.url }, el("span", { class: "item-name" }, x.name), el("span", { class: "tag" }, KIND[x.kind] || "SAP"), here ? el("span", { class: "here-label" }, "Agent here") : null),
-      shown
-        ? el("div", { class: `item-note ${shown.type}` }, shown.type === "busy" ? el("span", { class: "spin-icon", icon: "spinner" }) : null, el("span", {}, shown.text))
-        : el("div", { class: "item-line" }, factsOf(x) || hostOf(x.url)),
-    ),
-    el(
-      "div",
-      { class: "item-actions" },
-      // Busy: aria-disabled, not disabled, so that the focus stays on the button.
-      el("button", { class: "btn go", type: "button", "aria-disabled": busy ? "true" : null, title: x.url, onclick: () => !busy && primary.run() }, primary.label),
-      el("button", {
-        class: "icon-btn more",
-        type: "button",
-        icon: "more",
-        title: "More",
-        "aria-label": `More for ${x.name}`,
-        "aria-haspopup": "menu",
-        "aria-expanded": "false",
-        onclick: (e) => openMenu(e.currentTarget, x),
-        onkeydown: (e) => {
-          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-            e.preventDefault();
-            openMenu(e.currentTarget, x, e.key === "ArrowUp");
-          }
-        },
-      }),
+      { class: "card-head" },
+      el(
+        "div",
+        { class: "card-body" },
+        el("div", { class: "card-title item-title", title: x.url }, el("span", { class: "card-name" }, x.name), el("span", { class: "tag" }, KIND[x.kind] || "SAP")),
+        shown
+          ? el("div", { class: `card-note item-note ${shown.type}` }, shown.type === "busy" ? el("span", { class: "spin-icon", icon: "spinner" }) : null, el("span", {}, shown.text))
+          : el("div", { class: "card-line" }, here ? el("span", { class: "here-label" }, "Agent here") : null, el("span", { class: "item-line" }, factsOf(x) || hostOf(x.url))),
+      ),
+      el(
+        "div",
+        { class: "card-actions" },
+        // Busy: aria-disabled, not disabled, so that the focus stays on the button.
+        el("button", { class: "btn go", type: "button", "aria-disabled": busy ? "true" : null, title: x.url, onclick: () => !busy && primary.run() }, primary.label),
+        el("button", {
+          class: "icon-btn more",
+          type: "button",
+          icon: "more",
+          title: "More",
+          "aria-label": `More for ${x.name}`,
+          "aria-haspopup": "menu",
+          "aria-expanded": "false",
+          onclick: (e) => openMenu(e.currentTarget, x),
+          onkeydown: (e) => {
+            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+              e.preventDefault();
+              openMenu(e.currentTarget, x, e.key === "ArrowUp");
+            }
+          },
+        }),
+      ),
     ),
   );
 }
@@ -482,7 +509,7 @@ function renderSystems(s) {
   const has = s.systems.length > 0;
   const sug = currentSuggestion(s);
   // No system yet: the section is only the form; its head would repeat the status.
-  $("systems-toggle").parentElement.hidden = !has;
+  $("systems-toggle").hidden = !has;
   $("add-current").hidden = !sug;
   $("add").hidden = !!sug && !has;
   if (sug) $("add-current-detail").textContent = suggestionLine(sug);
@@ -650,16 +677,14 @@ function startEdit(x, prefill, focus, first = false) {
   }
   $("save").textContent = x ? "Save" : "Add";
   updateCredFields();
-  // Under its row when editing; after the list when adding. The add boxes give way to it.
-  for (const r of $("systems").querySelectorAll(".item.editing")) r.classList.remove("editing");
+  // Inside its card when editing; in a new card at the end when adding. The add boxes give way to it.
+  for (const r of $("systems").querySelectorAll(".editing")) r.classList.remove("editing");
+  for (const c of $("systems").querySelectorAll(".new-card")) c.remove();
   const row = x && $("systems").querySelector(`.item[data-id="${x.id}"]`);
-  if (row) {
-    // A list item holds the form under the row it edits.
-    const slot = el("li", { class: "form-slot" });
-    row.after(slot);
-    slot.append(form);
-    row.classList.add("editing");
-  } else $("systems").after(form);
+  const card = row || el("li", { class: "card new-card" }, first ? null : el("div", { class: "new-title" }, "New system"));
+  if (!row) $("systems").append(card);
+  card.append(form);
+  card.classList.add("editing");
   form.hidden = false;
   $("add").hidden = true;
   $("add-current").hidden = true;
@@ -677,7 +702,8 @@ function stopEdit(savedId) {
   $("f-password").value = "";
   form.hidden = true;
   $("systems-body").append(form);
-  for (const slot of $("systems").querySelectorAll(".form-slot")) slot.remove();
+  for (const c of $("systems").querySelectorAll(".new-card")) c.remove();
+  for (const r of $("systems").querySelectorAll(".editing")) r.classList.remove("editing");
   if (state) render(state);
   // Back on the row: its More button after an edit, its main button for a new system.
   const row = id && $("systems").querySelector(`.item[data-id="${id}"] ${isNew ? ".go" : ".more"}`);
@@ -707,7 +733,6 @@ function updateHttpWarning() {
   } catch {}
   const warn = http && !$("f-sso").checked;
   $("f-url-http").hidden = !warn;
-  $("f-url-hint").hidden = warn;
   $("f-url").classList.toggle("warning", warn);
 }
 
@@ -743,7 +768,6 @@ $("edit-view").addEventListener("keydown", (e) => {
   }
 });
 $("add").addEventListener("click", () => startEdit(null));
-$("add-icon").addEventListener("click", () => (editing ? $("f-name").focus() : startEdit(null)));
 $("add-current").addEventListener("click", addFromCurrent);
 
 $("edit-view").addEventListener("submit", (e) => {
@@ -802,44 +826,55 @@ $("edit-view").addEventListener("submit", (e) => {
 
 // ---------------------------------------------------------------- settings
 
-const WRITE_SETTING = { confirm: "Ask me first", off: "Off, the agent only reads", on: "Run without asking" };
-const dlRow = (k, ...v) => el("div", { class: "pair" }, el("dt", {}, k), el("dd", {}, ...v));
+const WRITE_SETTING = { confirm: "ask you first", off: "are off: the agent only reads", on: "run without asking" };
+const fact = (...parts) => el("li", {}, ...parts);
 const tags = (list) => list.map((t) => el("span", { class: "tag mono" }, t));
 
 function renderSettings(s) {
   const info = s.agentInfo;
   const p = info && info.policy;
+  const connected = s.status === "connected";
+  $("agent-line").replaceChildren(
+    ...(connected ? [el("span", { class: "dot green", "aria-hidden": "true" }), " ", `${(info && info.agent) || "Your agent"} is connected now.`] : ["No agent is connected right now."]),
+  );
+  // What the agent may do: only once the server said it.
+  $("can-block").hidden = !(p && p.write);
   if (p && p.write) {
     $("can").replaceChildren(
-      dlRow("Saves", WRITE_SETTING[p.write]),
-      dlRow("Systems", p.systems.length ? p.systems.join(", ") : "Any you open"),
-      ...(p.transactions.length ? [dlRow("Allowed", ...tags(p.transactions))] : []),
-      dlRow("Blocked", ...(p.blocked.length ? tags(p.blocked) : ["None"])),
-      dlRow("Log off", p.logoff ? "Allowed" : "Never"),
+      fact("Saves: ", el("b", {}, WRITE_SETTING[p.write])),
+      fact("Systems: ", el("b", {}, p.systems.length ? p.systems.join(", ") : "any you open")),
+      ...(p.transactions.length ? [fact("Only these transactions: ", ...tags(p.transactions))] : []),
+      ...(p.blocked.length ? [fact("Blocked: ", ...tags(p.blocked))] : []),
     );
     $("can-hint").textContent = `Set in ${info.agent || "your agent"}'s settings for this tool.`;
-  } else {
-    $("can").replaceChildren(dlRow("Saves", "Shown once your agent connects"));
-    $("can-hint").textContent = "";
   }
-  const connected = s.status === "connected";
-  const agentRow = connected
-    ? [el("span", { class: "dot green", "aria-hidden": "true" }), `${(info && info.agent) || "Agent"}, connected`]
-    : ["Not connected"];
+  const kc = s.helper.ok && s.helper.keychain ? KEYCHAIN_NAME[s.helper.keychain] || s.helper.keychain : null;
   $("about").replaceChildren(
-    dlRow("Agent", ...agentRow),
-    dlRow("Pairing", s.code.managed ? "Set by your organization" : s.code.set ? "Paired" : "Not paired"),
-    dlRow("Passwords", s.helper.ok ? (s.helper.keychain ? (s.helper.keychain === "macOS Keychain" ? "macOS keychain" : s.helper.keychain === "Windows (DPAPI)" ? "Windows protected storage" : s.helper.keychain) : "Not saved (no keychain)") : "Helper not installed"),
-    dlRow("Port", connected ? el("span", { class: "mono" }, String(s.port)) : s.portSetting.managed ? "Set by your organization" : "Automatic"),
+    fact(s.code.managed ? "Paired by your organization" : s.code.set ? "Paired with the helper on this computer" : "Not paired"),
+    fact(kc ? `Passwords are kept in ${kc}` : s.helper.ok ? "No keychain found: passwords are not saved, you log on in the tab" : "Helper not installed: passwords are not saved"),
+    ...(connected ? [fact("Port ", el("b", { class: "mono" }, String(s.port)))] : []),
   );
   const portInput = $("port");
   if (document.activeElement !== portInput) portInput.value = s.portSetting.value ?? "";
   portInput.disabled = s.portSetting.managed;
   $("managed").hidden = !s.managedOrigins.length;
   $("managed").textContent = `Sites set by your organization: ${s.managedOrigins.join(", ")}`;
-  $("unpair").closest(".block").hidden = s.code.managed || !s.code.set;
+  $("unpair-row").hidden = s.code.managed || !s.code.set;
   $("version").textContent = `Version ${s.version}. Not affiliated with SAP SE.`;
 }
+
+// Copy buttons: the command goes to the clipboard; the button says so for a moment.
+document.addEventListener("click", (e) => {
+  const b = e.target.closest && e.target.closest("[data-copy]");
+  if (!b) return;
+  navigator.clipboard.writeText(b.dataset.copy).then(
+    () => {
+      b.textContent = "Copied";
+      setTimeout(() => (b.textContent = "Copy"), 1500);
+    },
+    () => (b.textContent = "Select and copy"),
+  );
+});
 
 $("port-form").addEventListener("submit", async (e) => {
   e.preventDefault();

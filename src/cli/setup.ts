@@ -60,9 +60,11 @@ export function launchCommand(argv1: string, platform: NodeJS.Platform, installe
 }
 
 /** The TOML table Codex reads. */
-export function codexTable(command: string[]): string {
+export function codexTable(command: string[], env: Record<string, string> = {}): string {
   const q = (s: string) => JSON.stringify(s);
-  return `\n[mcp_servers.${NAME}]\ncommand = ${q(command[0] ?? "")}\nargs = [${command.slice(1).map(q).join(", ")}]\n`;
+  const vars = Object.entries(env);
+  const envLine = vars.length ? `env = { ${vars.map(([k, v]) => `${k} = ${q(v)}`).join(", ")} }\n` : "";
+  return `\n[mcp_servers.${NAME}]\ncommand = ${q(command[0] ?? "")}\nargs = [${command.slice(1).map(q).join(", ")}]\n${envLine}`;
 }
 
 function claudeDesktopConfig(platform: NodeJS.Platform, env: Env, home: string): string | undefined {
@@ -151,6 +153,8 @@ export interface SetupOptions {
   cwd?: string | undefined;
   /** Whether a command is on PATH (tests replace it). */
   onPath?: ((cmd: string) => boolean) | undefined;
+  /** Through the Chrome extension: the new entries get SAP_BROWSER=extension. */
+  extension?: boolean | undefined;
 }
 
 export const CLIENTS = ["claude-code", "codex", "claude-desktop", "cursor", "windsurf", "vscode"] as const;
@@ -202,7 +206,12 @@ function addJsonServer(file: string, key: string, entry: Record<string, unknown>
   if (!isPlainObject(config)) return { line: `✗ ${label}: ${file} does not hold a JSON object; ${byHand}`, changed: false };
   const servers = config[key] ?? {};
   if (!isPlainObject(servers)) return { line: `✗ ${label}: "${key}" in ${file} is not an object; ${byHand}`, changed: false };
-  if (servers[NAME]) return { line: `✓ ${label}: "${NAME}" is already in ${file}.`, changed: false };
+  if (servers[NAME]) {
+    const env = (entry.env ?? {}) as Record<string, string>;
+    const old = isPlainObject(servers[NAME]) && isPlainObject((servers[NAME] as Record<string, unknown>).env) ? ((servers[NAME] as Record<string, unknown>).env as Record<string, unknown>) : {};
+    const missing = Object.entries(env).filter(([k, v]) => old[k] !== v);
+    return { line: `✓ ${label}: "${NAME}" is already in ${file}.${missing.length ? ` Add ${missing.map(([k, v]) => `"${k}": "${v}"`).join(", ")} to its "env".` : ""}`, changed: false };
+  }
   if (dryRun) return { line: `• ${label}: would add "${NAME}" to ${file}.`, changed: false };
   mkdirSync(dirname(file), { recursive: true });
   backup(file);
@@ -229,6 +238,10 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
   const cwd = opts.cwd ?? process.cwd();
   const command = launchCommand(argv1, platform, has(PACKAGE), process.execPath);
   const want = (c: string) => !opts.only?.length || opts.only.includes(c);
+  // --extension: the server reaches Chrome through the extension. Only new entries get it; an existing one is named.
+  const vars: Record<string, string> = opts.extension ? { SAP_BROWSER: "extension" } : {};
+  const withEnv = (entry: Record<string, unknown>) => (opts.extension ? { ...entry, env: vars } : entry);
+  const envNote = opts.extension ? ` If it does not have SAP_BROWSER=extension yet, add it to its env.` : "";
   const lines: string[] = [`Command for MCP clients: ${command.join(" ")}`, ""];
   let changed = 0;
   let found = 0;
@@ -238,10 +251,11 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
       found++;
       // From the home folder: a project's own .mcp.json must not count as installed.
       const has = runClaude(["mcp", "get", NAME], platform, home).status === 0;
-      if (has) lines.push(`✓ Claude Code: "${NAME}" is already configured (claude mcp get ${NAME}).`);
-      else if (opts.dryRun) lines.push(`• Claude Code: would run claude mcp add ${NAME} --scope user -- ${command.join(" ")}`);
+      const envArgs = Object.entries(vars).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
+      if (has) lines.push(`✓ Claude Code: "${NAME}" is already configured (claude mcp get ${NAME}).${envNote}`);
+      else if (opts.dryRun) lines.push(`• Claude Code: would run claude mcp add ${NAME} --scope user ${envArgs.length ? `${envArgs.join(" ")} ` : ""}-- ${command.join(" ")}`);
       else {
-        const r = runClaude(["mcp", "add", NAME, "--scope", "user", "--", ...command], platform, home);
+        const r = runClaude(["mcp", "add", NAME, "--scope", "user", ...envArgs, "--", ...command], platform, home);
         if (r.status === 0) {
           changed++;
           lines.push(`✓ Claude Code: added "${NAME}" for your user. Restart Claude Code to load it.`);
@@ -257,15 +271,15 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
       found++;
       const text = existsSync(file) ? readFileSync(file, "utf8") : "";
       const present = codexHas(text);
-      if (present === "yes") lines.push(`✓ Codex: "${NAME}" is already in ${file}.`);
+      if (present === "yes") lines.push(`✓ Codex: "${NAME}" is already in ${file}.${envNote}`);
       else if (present === "unsure") {
         lines.push(`✗ Codex: ${file} names "${NAME}" in a form setup does not read; check it, or add this table by hand:`);
-        lines.push(...codexTable(command).trim().split("\n").map((l) => `    ${l}`));
-      } else if (opts.dryRun) lines.push(`• Codex: would add to ${file}:${codexTable(command)}`);
+        lines.push(...codexTable(command, vars).trim().split("\n").map((l) => `    ${l}`));
+      } else if (opts.dryRun) lines.push(`• Codex: would add to ${file}:${codexTable(command, vars)}`);
       else {
         mkdirSync(dirname(file), { recursive: true });
         backup(file);
-        writeAtomic(file, text + codexTable(command));
+        writeAtomic(file, text + codexTable(command, vars));
         changed++;
         lines.push(`✓ Codex: added "${NAME}" to ${file}. Start a new Codex session to load it.`);
       }
@@ -277,7 +291,7 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
     const file = claudeDesktopConfig(platform, env, home);
     if (file && existsSync(dirname(file))) {
       found++;
-      const r = addJsonServer(file, "mcpServers", { command: command[0], args: command.slice(1) }, "Claude Desktop", "Quit and reopen Claude Desktop to load it.", opts.dryRun);
+      const r = addJsonServer(file, "mcpServers", withEnv({ command: command[0], args: command.slice(1) }), "Claude Desktop", "Quit and reopen Claude Desktop to load it.", opts.dryRun);
       if (r.changed) changed++;
       lines.push(r.line, ...oldInJson(file, "mcpServers"));
     } else lines.push("– Claude Desktop: not found.");
@@ -287,7 +301,7 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
     const file = cursorConfig(cwd, home) ?? (opts.only?.includes("cursor") ? join(home, ".cursor", "mcp.json") : undefined);
     if (file) {
       found++;
-      const r = addJsonServer(file, "mcpServers", { command: command[0], args: command.slice(1) }, "Cursor", "Reload Cursor's MCP servers (Settings → MCP) to load it.", opts.dryRun);
+      const r = addJsonServer(file, "mcpServers", withEnv({ command: command[0], args: command.slice(1) }), "Cursor", "Reload Cursor's MCP servers (Settings → MCP) to load it.", opts.dryRun);
       if (r.changed) changed++;
       lines.push(r.line, ...oldInJson(file, "mcpServers"));
     } else lines.push("– Cursor: not found (no ~/.cursor, no .cursor/mcp.json here).");
@@ -297,7 +311,7 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
     const file = windsurfConfig(platform, env, home);
     if (windsurfFound(platform, env, home) || opts.only?.includes("windsurf")) {
       found++;
-      const r = addJsonServer(file, "mcpServers", { command: command[0], args: command.slice(1) }, "Windsurf (Devin Desktop)", "Refresh its MCP servers (Cascade → MCP) to load it.", opts.dryRun);
+      const r = addJsonServer(file, "mcpServers", withEnv({ command: command[0], args: command.slice(1) }), "Windsurf (Devin Desktop)", "Refresh its MCP servers (Cascade → MCP) to load it.", opts.dryRun);
       if (r.changed) changed++;
       lines.push(r.line, ...oldInJson(file, "mcpServers"));
     } else lines.push("– Windsurf (Devin Desktop): not found.");
@@ -307,7 +321,7 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
   if (want("vscode") && (opts.only?.includes("vscode") || existsSync(join(cwd, ".vscode", "mcp.json")))) {
     found++;
     const file = join(cwd, ".vscode", "mcp.json");
-    const r = addJsonServer(file, "servers", { type: "stdio", command: command[0], args: command.slice(1) }, "VS Code", "Start it from the MCP view (or reload the window).", opts.dryRun);
+    const r = addJsonServer(file, "servers", withEnv({ type: "stdio", command: command[0], args: command.slice(1) }), "VS Code", "Start it from the MCP view (or reload the window).", opts.dryRun);
     if (r.changed) changed++;
     lines.push(r.line, ...oldInJson(file, "servers"));
   }

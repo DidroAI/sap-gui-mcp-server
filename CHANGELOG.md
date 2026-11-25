@@ -18,11 +18,16 @@ change the tools or the view format.
   as a side panel beside the page instead of a popup. The panel names the
   agent, says whether saves wait for your yes, lists each step the agent
   takes in SAP (transaction, field, value), turns amber while a save waits
-  for your answer, and marks the system the agent works in. Settings shows
-  what the agent may do, as set in the agent. The look follows the Didro
-  platform (Instrument Sans, bundled). The Pause Sharing switch is gone:
+  for your answer, and marks the system the agent works in. Systems are
+  cards that open in place to add or edit; each step of the activity is one
+  line that opens on a click. Settings gives the one command that connects
+  an agent, and shows what the agent may do, as set in the agent. The Pause
+  Sharing switch is gone:
   Cancel on Chrome's debugging bar still stops sharing, and the panel offers
   Share again.
+- `setup --extension` adds the server with `SAP_BROWSER=extension`, for
+  agents that should reach Chrome through the extension; an entry that is
+  already there is named, with what to add to its env.
 - With `SAP_BROWSER=extension`, the server sends the panel the agent's name,
   its write policy and each step (`panel` and `activity` notes on the relay;
   extension/PROTOCOL.md).

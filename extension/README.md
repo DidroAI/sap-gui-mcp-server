@@ -268,7 +268,6 @@ gives Playwright a browser endpoint. The logon flow, its answers and the
 security rules are in [PROTOCOL.md](PROTOCOL.md); the review that shaped
 this version is in [REVIEW.md](REVIEW.md).
 
-The side panel follows the Didro platform's look: square boxes, warm
-hairlines, Instrument Sans (bundled, SIL Open Font License, in `fonts/`), one
-crimson action per view, and a dark theme that follows the system's. Its icons
-and mark are drawn for this extension; no SAP artwork.
+The side panel keeps to a simple look: the system's own font, rounded cards,
+one blue for actions, and a dark theme that follows the system's. Its icons and
+mark are drawn for this extension; no SAP artwork.

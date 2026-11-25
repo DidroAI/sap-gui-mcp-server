@@ -1,7 +1,7 @@
 /**
- * The side panel follows the Didro platform's kit (monorepo apps/web/src/ui): colours only from
- * the tokens (crimson accent, warm hairlines), square boxes, Instrument Sans bundled, sentence
- * case on buttons and headings, no "·" or "•" separators, and no SAP artwork.
+ * The side panel is simple and quiet: colours only from the tokens (one blue accent), rounded
+ * cards, the system's own font (nothing bundled, nothing fetched), sentence case on buttons and
+ * headings, no "·" or "•" separators, and no SAP artwork.
  */
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
@@ -29,24 +29,23 @@ function sentenceCase(label: string): boolean {
 }
 
 describe("the side panel's look", () => {
-  test("colours come from the tokens only; the tokens are the Didro platform's", () => {
+  test("colours come from the tokens only; one blue accent", () => {
     // In a declaration's value, not a selector such as #add.
     expect([...rules.matchAll(/\{([^{}]*)\}/g)].flatMap((m) => m[1]!.match(/#[0-9a-f]{3,8}\b/gi) ?? [])).toEqual([]);
     expect(js.match(/#[0-9a-f]{3,8}\b/gi) ?? []).toEqual([]);
     expect(icons.match(/#[0-9a-f]{3,8}\b/gi) ?? []).toEqual([]);
-    for (const t of ["--ink: #101114;", "--canvas: #fdfcfb;", "--border: #d4cdcd;", "--divider: #ebe6e6;", "--accent: #a31329;", "--accent-surface: #f8e9e8;"]) expect(light).toContain(t);
-    expect(dark).toContain("--accent: #e0475c;");
+    for (const t of ["--accent: #3b63f3;", "--bg: #ffffff;", "--border: #e3e6ec;"]) expect(light).toContain(t);
+    expect(dark).toContain("--accent: #7b96ff;");
   });
 
-  test("square: no rounded corners but the status dots; flat: no shadows but the 2 px bars", () => {
-    for (const m of rules.matchAll(/border-radius:\s*([^;]+);/g)) expect(["0", "50%"]).toContain(m[1]!.trim());
-    for (const m of rules.matchAll(/box-shadow:\s*([^;]+);/g)) expect(m[1]!).toMatch(/^inset (2px 0 0|0 0 0 1px) var\(--[a-z-]+\)$/);
+  test("rounded: cards, buttons and fields take the radius tokens", () => {
+    for (const sel of [".card {", ".btn {", ".input, .input-group {", ".status {", ".acts {"]) expect(rules.slice(rules.indexOf(sel), rules.indexOf("}", rules.indexOf(sel)))).toMatch(/border-radius: var\(--r(-sm)?\)/);
   });
 
-  test("Instrument Sans, bundled with its licence; nothing fetched", () => {
-    expect(light).toMatch(/--font: "Instrument Sans"/);
-    for (const w of [400, 500, 600]) expect(existsSync(resolve(dir, `fonts/InstrumentSans-Latin-${w}.woff2`))).toBe(true);
-    expect(existsSync(resolve(dir, "fonts/InstrumentSans-LICENSE.txt"))).toBe(true);
+  test("the system's font; nothing bundled, nothing fetched", () => {
+    expect(light).toMatch(/--font: -apple-system, BlinkMacSystemFont, "Segoe UI"/);
+    expect(css).not.toContain("@font-face");
+    expect(existsSync(resolve(dir, "fonts"))).toBe(false);
     for (const m of css.matchAll(/url\(([^)]+)\)/g)) expect(m[1]!).not.toMatch(/https?:/);
     expect(html).not.toMatch(/(?:src="https?:|<link[^>]+href="https?:)/);
   });

@@ -7,22 +7,24 @@
   <link rel="stylesheet" href="panel.css">
 </head>
 <body>
-  <!-- Chrome's side panel shows the extension's icon and name above this page: no brand bar here. -->
+  <!-- The bar: the product's own mark (never SAP's logo), its name, and settings. -->
+  <header class="bar">
+    <span class="mark" data-icon="mark" aria-hidden="true"></span>
+    <div class="product"><span class="product-name">UI Automation</span><span class="product-for">for SAP</span></div>
+    <button id="settings-open" class="icon-btn" type="button" aria-label="Settings" data-icon="settings"></button>
+  </header>
 
   <!-- Main: what the agent does now, the systems, what it did. -->
   <div id="main-view" class="view main-view">
     <section id="status" class="status" aria-live="polite">
-      <div class="status-head">
-        <span id="status-dot" class="dot" aria-hidden="true"></span>
-        <span id="status-title" class="status-title">Starting</span>
-        <button id="settings-open" class="icon-btn" type="button" aria-label="Settings" data-icon="settings"></button>
-      </div>
+      <div class="status-head"><span id="status-dot" class="dot" aria-hidden="true"></span><span id="status-title" class="status-title">Starting</span></div>
       <p id="status-detail" class="status-detail"></p>
       <p id="status-step" class="status-step" hidden></p>
       <div id="status-actions" class="status-actions"></div>
       <details id="help" class="help" hidden>
         <summary>Agent not connecting?</summary>
-        <p>In your agent's settings for this tool, set <code>SAP_BROWSER=extension</code>, then start a new chat.</p>
+        <p>Run this in a terminal, then restart your agent app:</p>
+        <p class="copy-line"><code>npx -y sap-ui-automation setup --extension</code><button class="btn small copy" type="button" data-copy="npx -y sap-ui-automation setup --extension">Copy</button></p>
       </details>
     </section>
 
@@ -33,34 +35,31 @@
       <button id="automation-close" class="icon-btn small" type="button" aria-label="Close" data-icon="close"></button>
     </aside>
 
-    <section id="systems-section" class="section systems" aria-label="Systems">
-      <div class="section-head-row">
-        <button id="systems-toggle" class="section-head" type="button" aria-expanded="true" aria-controls="systems-body">
-          <h2>Systems</h2><span data-icon="chevron" class="chevron"></span>
-        </button>
-        <button id="add-icon" class="icon-btn small" type="button" aria-label="Add system" title="Add system" data-icon="add"></button>
-      </div>
-      <div id="systems-body" class="module section-body">
-        <ul id="systems" class="list" aria-label="Your SAP systems"></ul>
-        <button id="add-current" class="module-foot" type="button" hidden>
+    <section id="systems-section" class="section" aria-label="Systems">
+      <button id="systems-toggle" class="section-head" type="button" aria-expanded="true" aria-controls="systems-body">
+        <h2>Systems</h2><span data-icon="chevron" class="chevron"></span>
+      </button>
+      <div id="systems-body" class="section-body">
+        <ul id="systems" class="cards" aria-label="Your SAP systems"></ul>
+        <button id="add-current" class="add-card" type="button" hidden>
           <span data-icon="add"></span>
-          <span class="foot-text"><span class="foot-title">Add this SAP page</span><span id="add-current-detail" class="foot-detail"></span></span>
+          <span class="add-text"><span class="add-title">Add this SAP page</span><span id="add-current-detail" class="add-detail"></span></span>
         </button>
-        <button id="add" class="module-foot" type="button"><span data-icon="add"></span><span class="foot-title">Add system</span></button>
+        <button id="add" class="add-card" type="button"><span data-icon="add"></span><span class="add-title">Add system</span></button>
+        <p id="list-error" class="msg error" role="alert" hidden></p>
       </div>
-      <p id="list-error" class="msg error" role="alert" hidden></p>
     </section>
 
-    <section id="activity" class="section activity" aria-label="Activity" hidden>
+    <section id="activity" class="section" aria-label="Activity" hidden>
       <div class="section-head-row">
         <button id="activity-toggle" class="section-head" type="button" aria-expanded="true" aria-controls="activity-body">
           <h2>Activity</h2><span data-icon="chevron" class="chevron"></span>
         </button>
-        <button id="clear-activity" class="link quiet" type="button">Clear</button>
+        <button id="clear-activity" class="link" type="button">Clear</button>
       </div>
-      <div id="activity-body" class="module section-body">
-        <div id="activity-list" class="activity-list"></div>
-        <button id="activity-more" class="module-foot quiet" type="button" hidden></button>
+      <div id="activity-body" class="section-body">
+        <ol id="activity-list" class="acts"></ol>
+        <button id="activity-more" class="link more" type="button" hidden></button>
       </div>
     </section>
   </div>
@@ -73,22 +72,21 @@
     </div>
     <ol class="steps">
       <li id="step-helper" class="step">
-        <span class="num" data-n="01"></span>
+        <span class="num" data-n="1"></span>
         <div class="step-body">
           <div class="step-title">Install the helper</div>
           <div id="helper-body" class="step-text">
-            <p>In a terminal, run:</p>
-            <p class="cmd"><code>npx -y sap-ui-automation extension helper</code></p>
-            <p>Then restart Chrome.</p>
+            <p>In a terminal, run this, then restart Chrome:</p>
+            <p class="copy-line"><code>npx -y sap-ui-automation extension helper</code><button class="btn small copy" type="button" data-copy="npx -y sap-ui-automation extension helper">Copy</button></p>
           </div>
         </div>
       </li>
       <li id="step-pair" class="step">
-        <span class="num" data-n="02"></span>
+        <span class="num" data-n="2"></span>
         <div class="step-body">
           <div class="step-title">Pair Chrome with the helper</div>
           <div class="step-text">One click. After this, only your agent on this computer can use the extension.</div>
-          <button id="pair" class="btn primary large" type="button">Pair</button>
+          <button id="pair" class="btn primary" type="button">Pair</button>
           <p id="pair-hint" class="msg" aria-live="polite"></p>
           <details id="pair-manual" class="help">
             <summary>Pair with a code instead</summary>
@@ -102,33 +100,42 @@
         </div>
       </li>
       <li class="step later">
-        <span class="num" data-n="03"></span>
+        <span class="num" data-n="3"></span>
         <div class="step-body"><div class="step-title">Add your SAP systems</div></div>
       </li>
       <li class="step later last">
-        <span class="num" data-n="04"></span>
+        <span class="num" data-n="4"></span>
         <div class="step-body"><div class="step-title">Ask your agent</div></div>
       </li>
     </ol>
   </div>
 
-  <!-- Settings: what the agent may do (set in the agent), the connection, and about. -->
+  <!-- Settings: connect an agent, what it may do, and about. -->
   <div id="settings-view" class="view settings-view" hidden>
     <div class="sub-bar">
       <button id="back" class="icon-btn" type="button" aria-label="Back" data-icon="back"></button>
       <h1 class="sub-title">Settings</h1>
     </div>
+
     <section class="block">
+      <h2>Connect your agent</h2>
+      <p class="text">Adds this tool to Claude Code, Codex, Cursor and the other agent apps on this computer. Run it in a terminal, then restart the agent app.</p>
+      <p class="copy-line"><code>npx -y sap-ui-automation setup --extension</code><button class="btn small copy" type="button" data-copy="npx -y sap-ui-automation setup --extension">Copy</button></p>
+      <p id="agent-line" class="text"></p>
+    </section>
+
+    <section id="can-block" class="block" hidden>
       <h2>What the agent can do</h2>
-      <dl id="can" class="module pairs"></dl>
+      <ul id="can" class="facts"></ul>
       <p id="can-hint" class="hint"></p>
     </section>
+
     <section class="block">
-      <h2>Connection</h2>
-      <dl id="about" class="module pairs"></dl>
+      <h2>This computer</h2>
+      <ul id="about" class="facts"></ul>
       <p id="managed" class="hint" hidden></p>
       <details id="advanced" class="help">
-        <summary>Change the port</summary>
+        <summary>Use a fixed port</summary>
         <form id="port-form" class="advanced-body">
           <label for="port" class="hint">Leave empty unless your agent uses a fixed one.</label>
           <div class="inline">
@@ -139,18 +146,15 @@
         </form>
       </details>
     </section>
+
     <section class="block">
-      <h2>About</h2>
-      <p class="text">This extension talks only to your agent on this computer and to your SAP systems. Your agent's provider sees what the agent reads.</p>
-      <p class="links"><a id="privacy" href="https://github.com/DidroAI/sap-ui-automation/blob/main/extension/PRIVACY.md" target="_blank" rel="noopener">Privacy</a><a href="https://github.com/DidroAI/sap-ui-automation" target="_blank" rel="noopener">Source on GitHub</a></p>
+      <p class="hint">This extension talks only to your agent on this computer and to your SAP systems. <a id="privacy" href="https://github.com/DidroAI/sap-ui-automation/blob/main/extension/PRIVACY.md" target="_blank" rel="noopener">Privacy</a> <a href="https://github.com/DidroAI/sap-ui-automation" target="_blank" rel="noopener">Source</a></p>
       <p id="version" class="hint"></p>
-    </section>
-    <section class="block">
-      <button id="unpair" class="btn danger" type="button">Unpair</button>
+      <div id="unpair-row"><button id="unpair" class="btn danger-text" type="button">Unpair</button></div>
     </section>
   </div>
 
-  <!-- Add or edit a system: placed under the row it edits, or under the list for a new one. -->
+  <!-- Add or edit a system: opens inside its card. -->
   <template id="edit-template">
     <form id="edit-view" class="edit-form" autocomplete="off" novalidate>
       <div class="field">
@@ -160,10 +164,9 @@
       </div>
       <div class="field">
         <label class="label" for="f-url">Address</label>
-        <input id="f-url" class="input" type="url" placeholder="https://sap.example.com/sap/bc/ui2/flp" required aria-required="true" aria-describedby="f-url-error f-url-hint f-url-http">
+        <input id="f-url" class="input" type="url" placeholder="https://sap.example.com/sap/bc/ui2/flp" required aria-required="true" aria-describedby="f-url-error f-url-http">
         <p id="f-url-error" class="hint error" hidden></p>
-        <p id="f-url-hint" class="hint">The Web GUI or Fiori launchpad address.</p>
-        <p id="f-url-http" class="hint warning" hidden>Not encrypted (http): the password crosses the network readable. Use https if the system offers it.</p>
+        <p id="f-url-http" class="hint" hidden>Not encrypted (http): use https if the system offers it.</p>
       </div>
       <div class="two">
         <div class="field">
@@ -175,7 +178,7 @@
           <input id="f-language" class="input mono" type="text" placeholder="EN" maxlength="2">
         </div>
       </div>
-      <label class="checkbox"><input id="f-sso" type="checkbox"><span>Single sign-on (no user or password)</span></label>
+      <label class="checkbox"><input id="f-sso" type="checkbox"><span>Single sign-on</span></label>
       <div id="cred-fields" class="two">
         <div class="field">
           <label class="label" for="f-user">User</label>
@@ -192,8 +195,8 @@
       <p id="pw-where" class="hint"></p>
       <p id="edit-error" class="msg error" role="alert" hidden></p>
       <div class="form-footer">
-        <button id="save" class="btn primary" type="submit">Save</button>
         <button id="cancel" class="btn ghost" type="button">Cancel</button>
+        <button id="save" class="btn primary" type="submit">Save</button>
       </div>
     </form>
   </template>

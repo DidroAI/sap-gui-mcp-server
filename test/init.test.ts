@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configFile, exampleTest, init } from "../src/cli/init.js";
-import { detectClients, setup } from "../src/cli/setup.js";
+import { codexTable, detectClients, setup } from "../src/cli/setup.js";
 import { cursorRule, installSkills, packageRoot, readIfThere, shippedSkills } from "../src/cli/skills.js";
 
 // Every test gets its own HOME and project folder, and sees no command on PATH:
@@ -190,6 +190,22 @@ describe("install --skills", () => {
     expect(readIfThere(file, "utf8")).toBe("hi");
     expect(readIfThere(file)?.equals(Buffer.from("hi"))).toBe(true);
     expect(() => readIfThere(cwd)).toThrow();
+  });
+});
+
+describe("setup --extension", () => {
+  test("a new entry gets SAP_BROWSER=extension; an existing one is told what to add", () => {
+    mkdirSync(join(home, ".cursor"), { recursive: true });
+    rmSync(join(home, ".cursor", "mcp.json"), { force: true });
+    setup({ dryRun: false, only: ["cursor"], cwd, onPath: none, extension: true }, {}, "linux", home);
+    expect(json(join(home, ".cursor", "mcp.json")).mcpServers["sap-ui-automation"].env).toEqual({ SAP_BROWSER: "extension" });
+    writeFileSync(join(home, ".cursor", "mcp.json"), JSON.stringify({ mcpServers: { "sap-ui-automation": { command: "x" } } }));
+    const again = setup({ dryRun: false, only: ["cursor"], cwd, onPath: none, extension: true }, {}, "linux", home);
+    expect(again.lines.find((l) => l.includes("already in"))).toContain('Add "SAP_BROWSER": "extension" to its "env".');
+    rmSync(join(home, ".cursor"), { recursive: true, force: true });
+  });
+  test("Codex's table carries the env", () => {
+    expect(codexTable(["npx", "-y", "sap-ui-automation"], { SAP_BROWSER: "extension" })).toContain('env = { SAP_BROWSER = "extension" }');
   });
 });
 

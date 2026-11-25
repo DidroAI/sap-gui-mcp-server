@@ -77,8 +77,10 @@ it.
    page. Click **Pair**.
 3. Open your SAP system in a tab and click **Add this SAP page** in the panel. Add
    user and password if the extension should log on for you.
-4. Add `"SAP_BROWSER": "extension"` to the `env` of sap-ui-automation in
-   your agent's settings, and restart the agent app. The agent then also
+4. Run `npx -y sap-ui-automation setup --extension` (it adds the server
+   with `SAP_BROWSER=extension` to your agent apps), or add
+   `"SAP_BROWSER": "extension"` to the `env` of sap-ui-automation in your
+   agent's settings yourself. Restart the agent app. The agent then also
    has `sap_systems` (your registered systems) and `sap_logon` (open one and
    log on).
 

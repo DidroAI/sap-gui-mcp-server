@@ -31,7 +31,7 @@ const HELP = `sap-ui-automation ${SERVER_VERSION}: an MCP server that sees and d
 
 Usage:
   sap-ui-automation            start the stdio server (what MCP clients run)
-  sap-ui-automation setup [claude-code|codex|claude-desktop|cursor|windsurf|vscode] [--dry-run]
+  sap-ui-automation setup [claude-code|codex|claude-desktop|cursor|windsurf|vscode] [--extension] [--dry-run]
                                 add the server to the MCP clients found on this machine
   sap-ui-automation init [--yes] [--force] [--dry-run]
                                 set this project up: sap.config.ts, sap-tests/example.sap.ts, agent skills,
@@ -106,7 +106,7 @@ async function main(argv: string[]): Promise<number> {
   }
   if (cmd === "setup") {
     const only = argv.slice(1).filter((a) => !a.startsWith("--"));
-    const r = setup({ dryRun: argv.includes("--dry-run"), only });
+    const r = setup({ dryRun: argv.includes("--dry-run"), extension: argv.includes("--extension"), only });
     console.log(r.lines.join("\n"));
     return 0;
   }
