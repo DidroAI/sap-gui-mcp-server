@@ -351,6 +351,10 @@ describe("a batch and the guard: each action has its own decision", () => {
     const look = await call("sap_act", { actions: [CUSTOMER], do: "look", app: "sapgui" });
     expect(look.error).toBe(false);
     expect(dos(sap)).toEqual(["okcode", "set"]);
+    // Nothing at all: the screen, as for "actions": [].
+    const empty = await call("sap_act", {});
+    expect(empty.error).toBe(false);
+    expect(empty.text.split("\n")[0]).toBe("No action sent: this is the screen.");
     // An action of its own beside "actions" is still ambiguous: nothing runs.
     expect((await call("sap_act", { do: "press", id: "btn[8]", actions: [ENTER] })).text).toBe('Send one action ("do" and its fields) or "actions", not both.');
     expect(dos(sap)).toEqual(["okcode", "set"]);

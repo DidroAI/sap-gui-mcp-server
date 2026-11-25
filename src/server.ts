@@ -1305,6 +1305,8 @@ ${writeRule(policy)}`,
     if (actions !== undefined) return withAnyData(await runBatch(ref, actions, full === true, call), actions);
     // {"do":"look"}: not an action; the screen.
     if (isLook(one ? flat : action)) return withAnyData(await current(ref, "look is not an action: this is the screen."));
+    // Nothing at all (sent beside another sap_act in the same turn, live 2026-11-25): the screen, as for "actions": [].
+    if (!one && action === undefined) return withAnyData(await current(ref, "No action sent: this is the screen."));
     return withAnyData(await run(ref, one ? flat : action, full === true));
   }
 
