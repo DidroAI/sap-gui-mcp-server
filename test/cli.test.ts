@@ -59,6 +59,16 @@ describe("doctor report", () => {
     expect(r.text).toContain("SAP GUI for Windows");
     expect(r.text).toContain("Not ready yet");
   });
+  test("SAP GUI read both ways: one that works is enough, either one", async () => {
+    const sapgui = (ok: boolean, method?: string) => ({ ...surface("sapgui", [{ ok, check: method ?? "scripting", detail: ok ? "on" : "off" }]), ...(method ? { method } : {}) });
+    const scriptingOnly = await doctorReport([sapgui(true), sapgui(false, "diag")], "0.0.0", "win32", 100);
+    expect(scriptingOnly.ok).toBe(true);
+    expect(scriptingOnly.text).toContain("SAP GUI for Windows: network reader (DIAG)");
+    expect(scriptingOnly.text).toContain("Either way of reading SAP GUI is enough");
+    expect((await doctorReport([sapgui(false), sapgui(true, "diag")], "0.0.0", "win32", 100)).ok).toBe(true);
+    expect((await doctorReport([sapgui(false), sapgui(false, "diag")], "0.0.0", "win32", 100)).ok).toBe(false);
+    expect((await doctorReport([sapgui(false)], "0.0.0", "win32", 100)).ok).toBe(false);
+  });
   test("all good says Ready", async () => {
     const r = await doctorReport([surface("webgui", [{ ok: true, check: "Chrome", detail: "attached" }])], "0.0.0", "linux", 100);
     expect(r.ok).toBe(true);

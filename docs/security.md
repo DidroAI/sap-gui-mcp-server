@@ -45,9 +45,11 @@ To report a vulnerability, see
 ```
 
 The connection from SAP GUI or the browser to the SAP system is the one the
-user already has. The server adds no new path to SAP, except that with
-`SAP_GUI_METHOD=diag` SAP GUI's traffic passes through a relay inside the
-server on its way.
+user already has. The server adds no new path to SAP, except that SAP GUI's traffic passes
+through a relay inside the server on its way when a connection entry routes
+through it (the network reader). On Windows that relay listens on
+`127.0.0.1:3298` unless `SAP_GUI_METHOD=scripting`; it accepts connections
+from this machine only.
 
 ## Data flows
 
