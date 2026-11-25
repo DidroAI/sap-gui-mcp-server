@@ -103,6 +103,18 @@ const SCENES = [
     view: "settings",
     state: { ...base, systems: [ecc()], agent: null },
   },
+  // Design checks, not store screenshots: drawn only with EXTRA=1.
+  { extra: true, file: "x-menu", title: "The menu of a system", text: "", view: "menu", state: { ...base, systems: [ecc({ open: true }), sys("s4", "S/4HANA Sandbox", "fiori")], agent: { tabId: 7, title: "Change Sales Order", system: "ECC Sales" }, activity: VA02 } },
+  { extra: true, file: "x-remove", title: "Removing asks first", text: "", view: "remove", state: { ...base, status: "ready", agentInfo: null, systems: [ecc(), sys("s4", "S/4HANA Sandbox", "fiori")] } },
+  {
+    extra: true,
+    file: "x-ready",
+    title: "No agent yet",
+    text: "",
+    view: "help",
+    state: { ...base, status: "ready", agentInfo: null, systems: [ecc()], currentTab: { tabId: 3, title: "SAP", shared: false, system: null, suggestion: { sapLike: true, kind: "fiori", name: "S/4HANA 100", url: "https://s4.sap.example.com/sap/bc/ui2/flp", client: "100", language: "EN" } } },
+  },
+  { extra: true, file: "x-paused", title: "Sharing stopped", text: "", view: "step", state: { ...base, paused: true, systems: [ecc({ open: true })], activity: [...VA02, step(5, "key", "Save", "11", { state: "refused" })] } },
 ];
 
 // The stand-in for the extension APIs the panel calls; the scene's state comes from the page address.
@@ -146,10 +158,11 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 function frame(title, text, scene) {
   // A browser window: the SAP page on the left (a plain stand-in, never SAP's look or logo), the side panel on the right.
   return `<!doctype html><meta charset="utf-8"><style>
-  body { margin: 0; width: 1280px; height: 800px; display: grid; grid-template-columns: 1fr 380px; background: #ffffff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: #1d2433; }
-  .page { display: flex; flex-direction: column; justify-content: center; padding: 0 88px; border-right: 1px solid #e3e6ec; background: #f5f6f8; }
-  h1 { font-size: 46px; line-height: 1.1; margin: 0 0 20px; letter-spacing: -0.02em; font-weight: 650; }
-  p { font-size: 21px; line-height: 1.45; margin: 0; color: #4b5468; max-width: 30ch; }
+  @font-face { font-family: "Geist"; src: url("/fonts/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; }
+  body { margin: 0; width: 1280px; height: 800px; display: grid; grid-template-columns: 1fr 380px; background: #f4f4f5; font-family: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: #111214; -webkit-font-smoothing: antialiased; }
+  .page { display: flex; flex-direction: column; justify-content: center; padding: 0 88px; border-right: 1px solid #e4e4e8; background: #ffffff; }
+  h1 { font-size: 46px; line-height: 1.08; margin: 0 0 20px; letter-spacing: -0.035em; font-weight: 600; }
+  p { font-size: 21px; line-height: 1.45; margin: 0; color: #6c7078; max-width: 30ch; letter-spacing: -0.01em; }
   iframe { width: 380px; height: 800px; border: 0; display: block; }
   </style><div class="page"><h1>${esc(title)}</h1><p>${esc(text)}</p></div><iframe src="/panel.html?s=${encodeURIComponent(scene)}"></iframe>`;
 }
@@ -158,17 +171,23 @@ await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const port = server.address().port;
 const browser = await chromium.launch(process.env.SAP_TEST_CHROME ? { executablePath: process.env.SAP_TEST_CHROME } : {});
 try {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, colorScheme: process.env.DARK ? "dark" : "light" });
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: Number(process.env.SCALE) || 1, colorScheme: process.env.DARK ? "dark" : "light" });
   await page.addInitScript(STUB);
-  for (const s of SCENES) {
+  for (const s of SCENES.filter((x) => !x.extra || process.env.EXTRA)) {
     const q = new URLSearchParams({ title: s.title, text: s.text, s: encodeURIComponent(JSON.stringify(s.state)) });
     await page.goto(`http://127.0.0.1:${port}/frame.html?${q}`);
+    await page.evaluate(() => document.fonts.ready);
     await page.waitForTimeout(800);
     if (s.view === "settings") await page.frameLocator("iframe").locator("#settings-open").click();
     if (s.view === "edit") {
       await page.frameLocator("iframe").locator(".item .more").first().click();
       await page.frameLocator("iframe").locator(".menu-item", { hasText: "Edit" }).click();
     }
+    const panel = page.frameLocator("iframe");
+    if (s.view === "menu" || s.view === "remove") await panel.locator(".item .more").first().click();
+    if (s.view === "remove") await panel.locator(".menu-item", { hasText: "Remove" }).click();
+    if (s.view === "help") await panel.locator("#help summary").click();
+    if (s.view === "step") await panel.locator(".act-line").nth(1).click();
     await page.waitForTimeout(300);
     const file = join(out, `${s.file}${process.env.DARK ? "-dark" : ""}.png`);
     await page.screenshot({ path: file });
@@ -178,9 +197,10 @@ try {
   const tile = await browser.newPage({ viewport: { width: 440, height: 280 } });
   await tile.goto(`http://127.0.0.1:${port}/frame.html?tile=1`);
   await tile.setContent(`<!doctype html><meta charset="utf-8"><style>
-    body{margin:0;width:440px;height:280px;display:grid;place-items:center;background:#f5f6f8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;color:#1d2433}
-    div{display:flex;align-items:center;gap:18px}img{display:block;width:72px;height:72px;border-radius:14px}
-    h1{font-size:30px;margin:0;font-weight:600;letter-spacing:-0.025em}p{margin:2px 0 0;color:#6b7489;font-size:18px}</style>
+    @font-face{font-family:"Geist";src:url("http://127.0.0.1:${port}/fonts/Geist-Variable.woff2") format("woff2");font-weight:100 900}
+    body{margin:0;width:440px;height:280px;display:grid;place-items:center;background:#f4f4f5;font-family:"Geist",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;color:#111214;-webkit-font-smoothing:antialiased}
+    div{display:flex;align-items:center;gap:18px}img{display:block;width:72px;height:72px}
+    h1{font-size:30px;line-height:1.1;margin:0;font-weight:600;letter-spacing:-0.035em}p{margin:4px 0 0;color:#6c7078;font-size:18px;letter-spacing:-0.01em}</style>
     <div><img src="http://127.0.0.1:${port}/icons/128.png" alt=""><span><h1>UI Automation</h1><p>for SAP</p></span></div>`);
   await tile.waitForTimeout(300);
   await tile.screenshot({ path: join(out, "promo-440x280.png") });

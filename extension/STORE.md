@@ -62,8 +62,9 @@ local automation (such as Playwright's MCP bridge) follow the same model.
 
 ## Assets
 
-- Icon: `icons/128.png` (96 px artwork in 16 px of clear space; flat tile,
-  no SAP artwork). Smaller sizes are drawn separately (`icons/mark-16.svg`).
+- Icon: `icons/128.png` (a rounded ink tile, a green text caret and a pointer;
+  flat, no SAP artwork). Smaller sizes are drawn separately (`icons/mark-32.svg`,
+  `icons/mark-16.svg`).
 - Screenshots (1280×800): the side panel beside a page (working, asking to
   save, logging on and a rejected password, first run, settings), made against made-up SAP
   pages for each release and placed on a plain background; never SAP's logo

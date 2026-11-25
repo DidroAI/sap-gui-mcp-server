@@ -1,7 +1,8 @@
 /**
- * The side panel is simple and quiet: colours only from the tokens (one blue accent), rounded
- * cards, the system's own font (nothing bundled, nothing fetched), sentence case on buttons and
- * headings, no "·" or "•" separators, and no SAP artwork.
+ * The side panel's identity, "ink and signal": colours only from the tokens (near-black ink, one
+ * green accent, a neutral canvas with white surfaces), rounded surfaces held by a ring and a soft
+ * shadow instead of grey outlines, Geist and Geist Mono bundled as local files (nothing fetched),
+ * sentence case on buttons and headings, no "·" or "•" separators, and no SAP artwork.
  */
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
@@ -15,6 +16,8 @@ const icons = readFileSync(resolve(dir, "icons.js"), "utf8");
 const manifest = JSON.parse(readFileSync(resolve(dir, "manifest.json"), "utf8"));
 /** The two token blocks: light (:root) and dark (the media query's :root). */
 const light = css.slice(css.indexOf(":root {"), css.indexOf("}", css.indexOf(":root {")) + 1);
+/** The body of the rule that starts a line with this selector. */
+const rule = (sel: string) => css.slice(css.indexOf(`\n${sel}`), css.indexOf("}", css.indexOf(`\n${sel}`)));
 const darkAt = css.indexOf("@media (prefers-color-scheme: dark)");
 const dark = css.slice(darkAt, css.indexOf("}\n}", darkAt) + 3);
 const rules = css.replace(light, "").replace(dark, "");
@@ -29,24 +32,44 @@ function sentenceCase(label: string): boolean {
 }
 
 describe("the side panel's look", () => {
-  test("colours come from the tokens only; one blue accent", () => {
+  test("colours come from the tokens only; ink, one green accent, a neutral canvas", () => {
     // In a declaration's value, not a selector such as #add.
     expect([...rules.matchAll(/\{([^{}]*)\}/g)].flatMap((m) => m[1]!.match(/#[0-9a-f]{3,8}\b/gi) ?? [])).toEqual([]);
     expect(js.match(/#[0-9a-f]{3,8}\b/gi) ?? []).toEqual([]);
     expect(icons.match(/#[0-9a-f]{3,8}\b/gi) ?? []).toEqual([]);
-    for (const t of ["--accent: #3b63f3;", "--bg: #ffffff;", "--border: #e3e6ec;"]) expect(light).toContain(t);
-    expect(dark).toContain("--accent: #7b96ff;");
+    for (const t of ["--ink: #111214;", "--bg: #f4f4f5;", "--surface: #ffffff;", "--primary: #111214;", "--accent: #0c9a6c;", "--accent-text: #087a56;", "--danger: #c9343f;"]) expect(light).toContain(t);
+    for (const t of ["--bg: #0e0f10;", "--surface: #18191b;", "--primary: #f3f3f4;", "--accent: #3fd596;"]) expect(dark).toContain(t);
+    // Not SAP's blue, and none of the looks that were turned down (crimson, amber, the default blue).
+    for (const no of ["#0070f2", "#a31329", "#3b63f3", "#3b82f6"]) expect(css.toLowerCase()).not.toContain(no);
+    // The primary action is ink, not the accent; the accent is the agent's presence.
+    expect(rule(".btn.primary {")).toContain("background: var(--primary)");
+    expect(rule(".dot.green, .dot.accent {")).toContain("background: var(--accent)");
   });
 
-  test("rounded: cards, buttons and fields take the radius tokens", () => {
-    for (const sel of [".card {", ".btn {", ".input, .input-group {", ".status {", ".acts {"]) expect(rules.slice(rules.indexOf(sel), rules.indexOf("}", rules.indexOf(sel)))).toMatch(/border-radius: var\(--r(-sm)?\)/);
+  test("rounded: surfaces take 12 px, controls 8 px, from the radius tokens", () => {
+    expect(light).toContain("--r: 12px;");
+    expect(light).toContain("--r-sm: 8px;");
+    for (const sel of [".card {", ".status {", ".acts {", ".menu {", ".add-card {"]) expect(rule(sel)).toMatch(/border-radius: var\(--r\)/);
+    for (const sel of [".btn {", ".input, .input-group {", ".icon-btn {", ".menu-item {"]) expect(rule(sel)).toMatch(/border-radius: var\(--r-sm\)/);
   });
 
-  test("the system's font; nothing bundled, nothing fetched", () => {
-    expect(light).toMatch(/--font: -apple-system, BlinkMacSystemFont, "Segoe UI"/);
-    expect(css).not.toContain("@font-face");
-    expect(existsSync(resolve(dir, "fonts"))).toBe(false);
-    for (const m of css.matchAll(/url\(([^)]+)\)/g)) expect(m[1]!).not.toMatch(/https?:/);
+  test("depth, not outlines: a surface is held by a ring and a shadow; only the add box has a border", () => {
+    for (const sel of [".card {", ".btn {", ".menu {"]) {
+      expect(rule(sel)).toMatch(/box-shadow: 0 0 0 1px var\(--ring(-strong)?\)/);
+      expect(rule(sel)).not.toMatch(/border: 1px/);
+    }
+    expect(rule(".add-card {")).toContain("border: 1px dashed var(--line-strong)");
+  });
+
+  test("Geist and Geist Mono, bundled; nothing fetched", () => {
+    expect(light).toMatch(/--font: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI"/);
+    expect(light).toMatch(/--mono: "Geist Mono", ui-monospace/);
+    const faces = [...css.matchAll(/@font-face \{[^}]*url\("([^"]+)"\)/g)].map((m) => m[1]!);
+    expect(faces).toEqual(["fonts/Geist-Variable.woff2", "fonts/GeistMono-Variable.woff2"]);
+    for (const f of faces) expect(existsSync(resolve(dir, f))).toBe(true);
+    // The fonts' licence travels with them (SIL Open Font License).
+    expect(readFileSync(resolve(dir, "fonts/OFL.txt"), "utf8")).toContain("SIL OPEN FONT LICENSE");
+    for (const m of css.matchAll(/url\(([^)]+)\)/g)) expect(m[1]!).not.toMatch(/https?:|^\/\//);
     expect(html).not.toMatch(/(?:src="https?:|<link[^>]+href="https?:)/);
   });
 

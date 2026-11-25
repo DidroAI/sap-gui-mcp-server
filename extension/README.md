@@ -268,6 +268,9 @@ gives Playwright a browser endpoint. The logon flow, its answers and the
 security rules are in [PROTOCOL.md](PROTOCOL.md); the review that shaped
 this version is in [REVIEW.md](REVIEW.md).
 
-The side panel keeps to a simple look: the system's own font, rounded cards,
-one blue for actions, and a dark theme that follows the system's. Its icons and
-mark are drawn for this extension; no SAP artwork.
+The side panel keeps to a simple look, "ink and signal": white surfaces on a
+neutral canvas, near-black ink for text and the main action, one green for the
+agent's presence, and a dark theme that follows the system's. The typeface is
+Geist with Geist Mono (bundled in `fonts/`, SIL Open Font License, see
+`fonts/OFL.txt`; nothing is fetched). Its icons and mark are drawn for this
+extension; no SAP artwork.

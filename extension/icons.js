@@ -1,41 +1,41 @@
-// The side panel's icons: one line set on a 24-unit grid, square caps and joins (the Didro platform's
-// square rule), drawn for this extension, plus its own mark. No SAP artwork and no icon font.
+// The side panel's icons: one line set on a 24-unit grid, one stroke weight (1.75), round caps and
+// joins, drawn for this extension, plus its own mark. No SAP artwork and no icon font.
 // Colours come from panel.css (currentColor, or the mark's classes).
 
 const svg = (body, view = "0 0 24 24") => `<svg viewBox="${view}" aria-hidden="true" focusable="false">${body}</svg>`;
-const o = (d, w = 1.8) => `<path fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="square" stroke-linejoin="miter" d="${d}"/>`;
-const dot = (cx, cy, r = 1.4) => `<circle fill="currentColor" cx="${cx}" cy="${cy}" r="${r}"/>`;
+const o = (d, w = 1.75) => `<path fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" d="${d}"/>`;
+const ring = (cx, cy, r) => `<circle fill="none" stroke="currentColor" stroke-width="1.75" cx="${cx}" cy="${cy}" r="${r}"/>`;
+const dot = (cx, cy, r = 1.5) => `<circle fill="currentColor" cx="${cx}" cy="${cy}" r="${r}"/>`;
 
 export const ICONS = {
-  add: svg(o("M12 5v14M5 12h14")),
-  more: svg(dot(5, 12) + dot(12, 12) + dot(19, 12)),
-  back: svg(o("M15 18l-6-6 6-6", 2)),
-  chevron: svg(o("M9 6l6 6-6 6", 2)),
-  settings: svg(o("M4 7h9M17 7h3M4 17h3M11 17h9") + o("M13 5h4v4h-4zM7 15h4v4H7z")),
-  edit: svg(o("M15 5l4 4L9 19H5v-4zM13 7l4 4")),
-  delete: svg(o("M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6")),
-  key: svg(o("M11 13a4 4 0 1 1-1.2-2.8M11 13l8-8M16 8l2 2M14 10l1.5 1.5")),
-  show: svg(o("M2 12c2-4 5.5-6.5 10-6.5S20 8 22 12c-2 4-5.5 6.5-10 6.5S4 16 2 12z") + o("M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z")),
-  hide: svg(o("M2 12c2-4 5.5-6.5 10-6.5S20 8 22 12c-2 4-5.5 6.5-10 6.5S4 16 2 12z") + o("M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM4 4l16 16")),
-  check: svg(o("M5 12l5 5 9-10", 2.4)),
-  info: svg(o("M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18zM12 11v6") + dot(12, 7.6, 1.2)),
-  warning: svg(o("M12 3l10 18H2zM12 10v5") + dot(12, 18, 1.2)),
-  error: svg(o("M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18zM9 9l6 6M15 9l-6 6")),
-  close: svg(o("M6 6l12 12M18 6L6 18")),
-  list: svg(o("M4 6h16M4 12h10M4 18h6")),
-  monitor: svg(o("M3 4h18v13H3zM8 21h8")),
-  shield: svg(o("M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z") + o("M9 12l2 2 4-4")),
-  lock: svg(o("M5 11h14v10H5zM8 11V8a4 4 0 0 1 8 0v3")),
-  open: svg(o("M14 4h6v6M20 4l-9 9M18 14v6H4V6h6")),
-  sso: svg(o("M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z")),
-  person: svg(o("M12 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8zM4 21c1-4 4-6 8-6s7 2 8 6")),
-  spinner: svg('<path fill="none" stroke="currentColor" stroke-width="3" d="M21 12a9 9 0 1 1-6.2-8.6"/>'),
-  // The product's mark: an ink tile, a white SAP-like field with a crimson caret, the agent's pointer. Ours, not SAP's.
+  add: svg(o("M12 5.5v13M5.5 12h13")),
+  more: svg(dot(5.5, 12) + dot(12, 12) + dot(18.5, 12)),
+  back: svg(o("M14.5 6l-6 6 6 6")),
+  chevron: svg(o("M9.5 6l6 6-6 6", 2)),
+  settings: svg(o("M4 7.500h8.500M18.500 7.500H20M4 16.500h1.500M11.500 16.500H20") + ring(15.500, 7.500, 3) + ring(8.500, 16.500, 3)),
+  edit: svg(o("M14.5 5.5l4 4L9 19H5v-4zM12.5 7.5l4 4")),
+  delete: svg(o("M4.5 7h15M9.5 7V4.5h5V7M6.5 7l.9 12.5h9.2L17.5 7M10 11v5M14 11v5")),
+  key: svg(ring(8, 15, 4) + o("M11 12l8.5-8.5M16 7l2.5 2.5M13.5 9.5l2 2")),
+  show: svg(o("M2.5 12C4.5 8 8 5.5 12 5.5S19.5 8 21.5 12c-2 4-5.500 6.500-9.500 6.500S4.5 16 2.5 12z") + ring(12, 12, 3)),
+  hide: svg(o("M2.5 12C4.5 8 8 5.5 12 5.5S19.5 8 21.5 12c-2 4-5.500 6.500-9.500 6.500S4.5 16 2.5 12z") + ring(12, 12, 3) + o("M4.5 4.5l15 15")),
+  check: svg(o("M5.5 12.5l4.5 4.5 8.5-10", 2.25)),
+  info: svg(ring(12, 12, 9) + o("M12 11v5.5") + dot(12, 7.75, 1.1)),
+  warning: svg(o("M12 4L21 19.500H3zM12 10v4.500") + dot(12, 17, 1.1)),
+  error: svg(ring(12, 12, 9) + o("M9 9l6 6M15 9l-6 6")),
+  close: svg(o("M6.5 6.5l11 11M17.5 6.5l-11 11")),
+  list: svg(o("M4.5 6.5h15M4.5 12h10M4.5 17.5h6")),
+  monitor: svg(o("M4 5h16v11.500H4zM8.5 20h7")),
+  shield: svg(o("M12 3.5l7 2.750V12c0 4.250-3 7-7 8.500C8 19 5 16.250 5 12V6.250z") + o("M9 12l2 2 4-4")),
+  lock: svg(o("M6 11h12v9.500H6zM8.5 11V8a3.500 3.500 0 0 1 7 0v3")),
+  open: svg(o("M14 4.5h5.500V10M19.500 4.500L11 13M17.500 14v5.500h-13v-13H10")),
+  sso: svg(o("M12 3.5l7 2.750V12c0 4.250-3 7-7 8.500C8 19 5 16.250 5 12V6.250z")),
+  person: svg(ring(12, 8, 3.75) + o("M4.5 20c1-3.500 3.750-5.500 7.500-5.500s6.500 2 7.500 5.500")),
+  spinner: svg('<path fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" d="M20.5 12a8.5 8.5 0 1 1-5.800-8.060"/>'),
+  // The product's mark: an ink tile, a green text caret and the agent's pointer (it types, it clicks). Ours, not SAP's.
   mark: svg(
-    '<rect class="mark-tile" width="128" height="128"/>' +
-      '<rect class="mark-field" x="18" y="30" width="92" height="42" fill="none" stroke-width="10"/>' +
-      '<rect class="mark-caret" x="32" y="42" width="10" height="18"/>' +
-      '<path class="mark-pointer" d="M64 56v54l14-13h24z" stroke-width="8" paint-order="stroke"/>',
+    '<rect class="mark-tile" x="1.5" y="1.5" width="125" height="125" rx="29"/>' +
+      '<rect class="mark-caret" x="28" y="27" width="14" height="48" rx="7"/>' +
+      '<path class="mark-pointer" d="M58 42v60l16-15.500h25z" stroke-width="6" stroke-linejoin="round"/>',
     "0 0 128 128",
   ),
 };
