@@ -225,8 +225,10 @@ Managed storage (Chrome policy `3rdparty` → `extensions` → `<id>`) takes:
 | `pairingCode` | the code the servers are started with (`SAP_EXTENSION_CODE`), so users don't pair by hand |
 | `port` | the one port to use (the servers' `SAP_EXTENSION_PORT`) |
 
-The schema is in `managed_schema.json`. Its id is
-`ojokfbbfoignpfeamomeappgfhapehma` (fixed by the `key` in its manifest).
+The schema is in `managed_schema.json`. The extension's id is
+`geglpbkaklfpmnbidfcpflegmdkjodkn` from the Chrome Web Store, and
+`ojokfbbfoignpfeamomeappgfhapehma` when loaded unpacked (fixed by the `key`
+in its manifest).
 
 - **Installing it for everyone** (`ExtensionInstallForcelist`) needs an
   update URL: the Chrome Web Store listing once it exists, or a packed

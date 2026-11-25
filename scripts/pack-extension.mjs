@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Builds the Chrome Web Store upload: agent-connector-<version>.zip at the repository root.
+// Builds the Chrome Web Store upload: ui-automation-for-sap-<version>.zip at the repository root.
 //
 //   node scripts/pack-extension.mjs [--key path/to/key.pem] [--out file.zip]
 //
@@ -103,7 +103,7 @@ for (const path of files(src)) {
 const keyFile = arg("--key");
 if (keyFile) entries.push(["key.pem", readFileSync(keyFile)]);
 
-const out = resolve(arg("--out") ?? join(root, `agent-connector-${manifest.version}.zip`));
+const out = resolve(arg("--out") ?? join(root, `ui-automation-for-sap-${manifest.version}.zip`));
 writeFileSync(out, zip(entries));
 console.log(`${out}: ${entries.length} files${keyFile ? ", with key.pem (first upload)" : ", without key.pem"}`);
 for (const [path] of entries) console.log(`  ${path}`);
