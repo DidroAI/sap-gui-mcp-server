@@ -98,6 +98,13 @@ Windows.
   The server follows it: the new session becomes the active one, and the
   previous one stays open. SAP allows at most six sessions per logon; if no
   new session appears within five seconds, the answer says so.
+- A session of the same logon (same system, client and user) takes the
+  number notation the other session already showed: the `NUMBERS` line of
+  an `/o` session is known at once.
+- A toolbar button marked `(menu)` opens a menu. `{"do":"toolbar","id":
+  "<toolbar>","button":"<code>"}` answers the menu's entries;
+  `"value":"<entry>"` chooses one. ME23N's document overview finds
+  purchase orders this way (Selection variant, Purchase orders).
 - `sap_screenshot` asks SAP GUI for an image of the window. A minimised
   window gives none.
 - An action waits up to 180 seconds for SAP, or its `timeout` (up to 600
@@ -110,9 +117,13 @@ Windows.
 - HTML panels inside SAP GUI (such as SE80's object selector) cannot be
   reached by scripting: the view shows them as `html-viewer`. Use
   `sap_screenshot` to see them.
-- Scrolling long lists is covered by tests against a fake SAP GUI, but has
-  not been run against a real SAP GUI yet.
-- Record and replay have been run on Web GUI, not yet on SAP GUI for
-  Windows ([Recording and replay](record-replay.md)).
+- Long lists were run live on SAP GUI 8.00 (ECC 6.0): an ALV grid of 162
+  rows and a classic list of 501 lines, scrolled and read by row ranges.
+  Record and replay were run live too ([Recording and replay](record-replay.md)).
+- A list's view shows the rows on screen, numbered as cell ids count them;
+  `sap_look` with `id` and `rows` numbers them in the whole list.
+- The number notation is learnt from screens: until one shows an amount
+  with decimals (`1.250,00`), screens with numbers such as `40,000` say
+  `NUMBERS unknown`.
 - Safe and commit words are known in a handful of logon languages; in
   others more actions are held ([Safety model](../concepts/safety.md)).

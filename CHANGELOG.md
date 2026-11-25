@@ -14,6 +14,15 @@ change the tools or the view format.
   for typing.
 - Save (key 11) in Web GUI presses the Save button: Chrome could keep
   Ctrl+S for itself, and the key did nothing.
+- SAP GUI for Windows: a selection screen (VA05, MMBE, ME23N) no longer
+  shows a 785-row list; only a classic list is a list.
+- A session opened with `/o` knows the number notation its sibling of the
+  same logon already showed, instead of `NUMBERS unknown`.
+- SAP GUI for Windows: buttons of a toolbar control (ME23N's document
+  overview) are pressed again; SAP GUI refused them. Menu buttons list
+  their entries and choose one with `"value"`.
+- Table rows whose only cells are unticked checkboxes read as empty rows.
+- A grid read with `cols` says which names matched no column.
 
 ### Changed (after 0.1.0)
 
