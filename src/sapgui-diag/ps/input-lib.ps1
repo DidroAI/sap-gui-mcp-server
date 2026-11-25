@@ -1,7 +1,7 @@
 # SAP GUI keyboard, mouse and window facts for the DIAG method, which reads
 # the screens from the traffic. The ops: windows, area, buttons, screenshot
 # valueset (a dropdown's entries from SAP GUI's cache) and act (okcode, key, vk, press, click, dblclick,
-# f4, set, type, combo).
+# f4, set, type, combo, wheel).
 #
 # It reads a SAP GUI window from Win32 and MSAA: its title, its screen area,
 # the status bar text (WM_GETTEXT) and the toolbar buttons with their keys.
@@ -159,6 +159,11 @@ public static class SapScreen {
       System.Threading.Thread.Sleep(4);
     }
     System.Threading.Thread.Sleep(40);
+  }
+  /** The mouse wheel at a point, n notches (negative: down). */
+  public static void Wheel(int x, int y, int n) {
+    SetCursorPos(x, y); System.Threading.Thread.Sleep(50);
+    for (var i = 0; i < Math.Abs(n); i++) { mouse_event(0x0800, 0, 0, unchecked((uint)(n < 0 ? -120 : 120)), UIntPtr.Zero); System.Threading.Thread.Sleep(80); }
   }
   public static void Click(int x, int y, bool twice) {
     SetCursorPos(x, y); System.Threading.Thread.Sleep(50);
@@ -494,6 +499,7 @@ function Op-Act($req) {
     [SapScreen]::Type([string]$a['value'])
   }
   elseif ($do -eq 'type') { [SapScreen]::Type([string]$a['value']) }
+  elseif ($do -eq 'wheel') { $p = Point $a; [SapScreen]::Wheel($p[0], $p[1], [int]$a['notches']) }
   elseif ($do -eq 'combo') {
     # A dropdown in one go, with no other window brought forward between its keys (that closes an open list):
     # the click opens the list, then the entry by its text (type) or by its place (arrows: Home, Down n), Enter.

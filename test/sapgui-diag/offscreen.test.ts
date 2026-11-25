@@ -10,7 +10,7 @@ import type { Action } from "../../src/core/types.js";
 import type { DiagScreen, DiagTable, DiagWindow } from "../../src/diag/index.js";
 import { cellMetrics, cellPoint } from "../../src/sapgui-diag/geometry.js";
 import { resolveTarget } from "../../src/sapgui-diag/index.js";
-import { type Geometry, lastClickRow, planCombo, planPlain } from "../../src/sapgui-diag/plan.js";
+import { type Geometry, lastClickRow, planCombo, planPlain, planScreenScroll } from "../../src/sapgui-diag/plan.js";
 
 const cell = (column: number, text: string, kind: "field" | "dropdown" | "checkbox" = "field") => ({ column, text, kind, input: true, hidden: false, ...(kind === "dropdown" ? { key: "", valueList: "0123456789ABCDEF0123456789ABCDEF" } : {}) });
 const TABLE = {
@@ -79,5 +79,24 @@ describe("a row under the scroll bars of SAP GUI's window", () => {
     expect(p3({ do: "set", id: "MEPO1211-EMATN[0]", value: "M-12" }).steps.map((x) => x.do)).toEqual(["set"]);
     expect(() => p3({ do: "set", id: "MEPO1211-EMATN[1]", value: "M-13" })).toThrow('under its scroll bars, where a click lands elsewhere: nothing was done. Scroll the table so that the row comes up ({"do":"scroll","id":"TC_1211","to":1})');
     expect(() => p3({ do: "click", id: "MEPO1211-EMATN[1]" })).toThrow("under its scroll bars");
+  });
+});
+
+describe("a screen taller than SAP GUI's window", () => {
+  // VA05's selection screen: 29 rows in a window of 20; after a wheel scroll SAP says the first row on show is 1.
+  const sel = (firstRow: number) => ({ ...w, tables: [], elements: [{ kind: "field", name: "SVKORG-LOW", text: "1000", row: 19, col: 34, width: 4, input: true, hidden: false, path: [], etype: 130 }, { kind: "field", name: "SDOC-LOW", text: "", row: 0, col: 34, width: 10, input: true, hidden: false, path: [], etype: 130 }], scroll: { rows: 29, cols: 118, firstRow, firstCol: 0, visibleRows: 20, visibleCols: 156 } }) as unknown as DiagWindow;
+  const p4 = (win: DiagWindow, a: Action) => {
+    const sc = { ...s, windows: [win] } as DiagScreen;
+    return planPlain(sc, a, resolveTarget(sc, a), geo);
+  };
+  test("a field below the window is refused with the screen's scroll; scrolled, it is in reach", () => {
+    expect(() => p4(sel(0), { do: "set", id: "SVKORG-LOW", value: "" })).toThrow('Scroll the screen down ({"do":"scroll","id":"screen","to":"next"}), send Enter, then act on it.');
+    expect(p4(sel(1), { do: "set", id: "SVKORG-LOW", value: "" }).steps.map((x) => x.do)).toEqual(["set"]);
+    expect(() => p4(sel(1), { do: "set", id: "SDOC-LOW", value: "1" })).toThrow("above what SAP GUI's window shows");
+  });
+  test("the screen scrolls with the mouse wheel; a screen that fits does not", () => {
+    expect(planScreenScroll(sel(0), "next", geo).steps).toMatchObject([{ do: "wheel", notches: -6 }]);
+    expect(planScreenScroll(sel(1), "prev", geo).steps).toMatchObject([{ do: "wheel", notches: 6 }]);
+    expect(() => planScreenScroll(w, "next", geo)).toThrow("does not scroll");
   });
 });

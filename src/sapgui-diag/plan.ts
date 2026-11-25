@@ -47,6 +47,8 @@ export type Step = (
   | { do: "click" | "dblclick" | "f4"; x: number; y: number }
   | { do: "set"; x: number; y: number; value: string }
   | { do: "type"; value: string }
+  /** The mouse wheel over a point, `notches` times (negative: down): SAP GUI scrolls a screen taller than its window. */
+  | { do: "wheel"; x: number; y: number; notches: number }
   /** A dropdown in one input: click (opens its list), type the entry's text, Enter. `index`: its place in the list. */
   | { do: "combo"; x: number; y: number; value: string; index?: number }
   /** A Windows button by its accessible name or description, inside `within` (screen pixels): BM_CLICK, no mouse. */
@@ -441,7 +443,7 @@ export function planCombo(s: DiagScreen, action: Action, g: Geometry, entries?: 
   if (!e.input) throw new ActionError(`${n.id} is read-only.`);
   const off = n.cell ? offScreenCell(n.cell.table, n.cell.table.columns.find((c) => c.name === e.name)?.index, n.id) : undefined;
   if (off) throw new ActionError(off);
-  if (e.row > lastClickRow(n.window)) throw new ActionError(`${n.id} is at the bottom edge of SAP GUI's window, under its scroll bars, where a click lands elsewhere: nothing was done.${n.cell ? ` Scroll the table so that the row comes up ({"do":"scroll","id":"${n.cell.table.name}","to":${n.cell.row}}), then choose.` : " Make SAP GUI's window larger (maximize it)."}`);
+  if (e.row - scrolledRows(n.window) > lastClickRow(n.window) || e.row < scrolledRows(n.window)) throw new ActionError(`${n.id} is at the bottom edge of SAP GUI's window, under its scroll bars, where a click lands elsewhere: nothing was done.${n.cell ? ` Scroll the table so that the row comes up ({"do":"scroll","id":"${n.cell.table.name}","to":${n.cell.row}}), then choose.` : " Make SAP GUI's window larger (maximize it)."}`);
   const asked = clean(String(wanted));
   const entry = known ? comboEntry(known, asked) : undefined;
   if (known && !entry) throw new ActionError(`${n.id} has no entry "${asked}" (or more than one starts with it): nothing was chosen. Its entries (key "text"): ${entryList(known)}.`);
@@ -710,6 +712,27 @@ export function offScreenCell(t: DiagTable | undefined, column: number | undefin
  * window, SAP GUI draws scroll bars over the area's bottom: VA01's second item line (row 19 of 20) lies under
  * them, and a click there landed in the line above (2026-11-25).
  */
+/** Rows of a main window SAP GUI scrolled the screen by (the server says so after SAP GUI sent it): 0 for popups. */
+export const scrolledRows = (w: DiagWindow): number => (w.index > 0 || w.modal ? 0 : Math.max(0, w.scroll?.firstRow ?? 0));
+
+/** Does the main window's screen scroll (taller than the window)? */
+export const screenScrolls = (w: DiagWindow): boolean => !w.modal && w.index === 0 && !!w.scroll && w.scroll.rows > w.scroll.visibleRows;
+
+/**
+ * The main screen scrolled with the mouse wheel: SAP GUI moves it on its own and tells SAP with the next
+ * step, so where its fields are is known again only from SAP's next screen.
+ */
+export function planScreenScroll(w: DiagWindow, to: unknown, g: Geometry): Plan {
+  if (!screenScrolls(w)) throw new ActionError("This screen fits SAP GUI's window: it does not scroll. A table, grid, tree or list scrolls by its own id.");
+  const down = to === undefined || to === "next" || to === "last" || (typeof to === "number" && to > scrolledRows(w));
+  const [x, y] = g.at(w, scrolledRows(w) + 2, Math.min(w.size.cols - 2, 100), 1);
+  return {
+    steps: [{ do: "wheel", x, y, notches: down ? -6 : 6, settle: 200 }],
+    note: `scrolled the screen ${down ? "down" : "up"} with the mouse wheel; where its fields are is known again after SAP's next screen: send Enter ({"do":"key","key":0}) before acting on it`,
+    answer: "no",
+  };
+}
+
 export function lastClickRow(w: DiagWindow): number {
   // A popup is sized to its content: its last row (the answer buttons) is on show.
   if (w.modal || w.index > 0) return Number.MAX_SAFE_INTEGER;
@@ -721,9 +744,11 @@ export function lastClickRow(w: DiagWindow): number {
 /** The refusal for a click at a row SAP GUI's window does not show whole. */
 function belowWindow(x: PlainTarget): string | undefined {
   if (x.kind !== "element" && x.kind !== "cell") return undefined;
-  if (x.row <= lastClickRow(x.window)) return undefined;
+  const shown = x.row - scrolledRows(x.window);
+  if (shown >= 0 && shown <= lastClickRow(x.window)) return undefined;
   const t = x.kind === "cell" ? x.window.tables.find((tb) => tb.name === x.table) : undefined;
-  return `${x.what} is at the bottom edge of SAP GUI's window, under its scroll bars, where a click lands elsewhere: nothing was done.${t && x.kind === "cell" ? ` Scroll the table so that the row comes up ({"do":"scroll","id":"${t.name}","to":${x.index}}), then act on it.` : " Make SAP GUI's window larger (maximize it)."}`;
+  const screen = screenScrolls(x.window) ? ` Scroll the screen ${shown < 0 ? "up" : "down"} ({"do":"scroll","id":"screen","to":"${shown < 0 ? "prev" : "next"}"}), send Enter, then act on it.` : " Make SAP GUI's window larger (maximize it).";
+  return `${x.what} is ${shown < 0 ? "above what SAP GUI's window shows of the screen" : "at the bottom edge of SAP GUI's window, under its scroll bars"}, where a click lands elsewhere: nothing was done.${t && x.kind === "cell" && shown >= 0 ? ` Scroll the table so that the row comes up ({"do":"scroll","id":"${t.name}","to":${x.index}}), then act on it.` : screen}`;
 }
 
 /** Cells the Tab key stops at in a table control's row: what takes input, buttons included (FB50, checked live). */

@@ -41,7 +41,7 @@ import { HostError, MAX_TIMEOUT_MS, powershellExe, PsHost, READ_TIMEOUT_MS } fro
 import type { Transport } from "../sapgui/facts.js";
 import { vkeyNumber } from "../sapgui/keys.js";
 import { type Cells, cellMetrics, cellPoint, cellsFromEnv, type HostWindow, pickWindow, type Rect } from "./geometry.js";
-import { type ComboEntry, type Geometry, type Named, namedControl, type Plan, plainMisuse, planCombo, planGrid, planGridScroll, planGridSet, planPage, planPlain, planTableRow, planToolbar, planTree, position, scrollables, scrollTarget, type Step, type TreeChange, toolbarKey, untypedKey } from "./plan.js";
+import { type ComboEntry, type Geometry, type Named, namedControl, type Plan, plainMisuse, planCombo, planGrid, planGridScroll, planGridSet, planPage, planPlain, planScreenScroll, planTableRow, planToolbar, planTree, position, scrollables, scrolledRows, screenScrolls, scrollTarget, type Step, type TreeChange, toolbarKey, untypedKey } from "./plan.js";
 import { type Hop, startRouter } from "./router.js";
 import { lookControl } from "./rows.js";
 import { MAYBE_REQUEST_MS, Traffic, type WaitOptions, waitNote, waitOptions } from "./traffic.js";
@@ -787,7 +787,8 @@ export class DiagDriver implements Driver {
     return {
       at: (w, row, col, width = 1) => {
         const c = cellsOf(w);
-        return cellPoint(hostOf(w).area as Rect, w.size, row, col, width, c);
+        // A screen taller than the window, scrolled: the rows SAP GUI scrolled by are above the area.
+        return cellPoint(hostOf(w).area as Rect, w.size, row - scrolledRows(w), col, width, c);
       },
       get cells() {
         return cellsOf(active(s));
@@ -938,6 +939,15 @@ export class DiagDriver implements Driver {
     const sideways = this.sideways && this.sideways.step === step0 && this.sideways.mode === this.mode ? this.sideways.table : undefined;
     if (sideways && touchesTable(s, action, sideways))
       throw new ActionError(`SAP GUI scrolled the table ${sideways} sideways to reach a cell, so where its cells are on the screen is not known until SAP's next screen: nothing was done. Send what was typed with Enter ({"do":"key","key":0}) first, then go on in the table.`);
+    const scrolledScreen = this.screenMoved && this.screenMoved.step === step0 && this.screenMoved.mode === this.mode && !active(s).modal;
+    if (scrolledScreen && action.do !== "key" && action.do !== "okcode" && !(action.do === "scroll" && /^(screen|usr|wnd\[0\](\/usr)?)$/i.test(String(action.id ?? ""))))
+      throw new ActionError('SAP GUI scrolled the screen with the mouse wheel, so where its fields are is not known until SAP\'s next screen: nothing was done. Send Enter ({"do":"key","key":0}) first.');
+    if (action.do === "scroll" && (/^(screen|usr|wnd\[0\](\/usr)?)$/i.test(String(action.id ?? "")) || ((action.id === undefined || action.id === "") && !scrollables(s).length && screenScrolls(active(s))))) {
+      const wins = await this.windows(s);
+      const plan = planScreenScroll(active(s), action.to, this.geometry(s, wins));
+      this.screenMoved = { step: step0, mode: this.mode };
+      return this.run(s, plan, wins, waitOptions(action, this.shared.env, MAX_TIMEOUT_MS), t0);
+    }
     if (action.do === "scroll") {
       let id = action.id;
       if (typeof id !== "string" || !id.trim()) {
@@ -1037,6 +1047,9 @@ export class DiagDriver implements Driver {
       lines.push(`SAP ended transaction ${s.session.tcode ?? ""} after the termination message "${clean(s.message.text)}": input that was not saved there is lost. The screen below is where SAP went; start the transaction again to retry.`);
     return lines.join("\n");
   }
+
+  /** The step at which SAP GUI's screen was scrolled with the wheel: its fields' places are known again with the next screen. */
+  private screenMoved: { step: number; mode: number } | undefined;
 
   /** The table SAP GUI scrolled sideways in this step, if any. */
   private sideways: { table: string; step: number; mode: number } | undefined;

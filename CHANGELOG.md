@@ -41,6 +41,10 @@ change the tools or the view format.
     messages of the screens before the last: FB50's "Document ... was
     posted" was replaced by the next screen's error, and the agent posted
     again.
+  - A screen taller than SAP GUI's window scrolls (`scroll` with id
+    `screen`, the mouse wheel); clicks follow the scroll SAP reports, and a
+    field under the window's edge is refused with that scroll instead of
+    being clicked where another field is.
   - When SAP GUI shows a popup the traffic did not describe, the refusal
     says so and how to close it.
 
