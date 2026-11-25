@@ -343,6 +343,19 @@ describe("a batch and the guard: each action has its own decision", () => {
     expect(sap.acts).toEqual([]);
   });
 
+  test('beside "actions", a top-level expect, "do":"look" or "app" is taken as meant (live, Haiku, 2026-11-25)', async () => {
+    const { sap, call } = await setup();
+    const r = await call("sap_act", { actions: [OPEN], expect: { screen: "*" } });
+    expect(r.error).toBe(false);
+    expect(r.text.split("\n")[0]).toBe("Ran 1 action.");
+    const look = await call("sap_act", { actions: [CUSTOMER], do: "look", app: "sapgui" });
+    expect(look.error).toBe(false);
+    expect(dos(sap)).toEqual(["okcode", "set"]);
+    // An action of its own beside "actions" is still ambiguous: nothing runs.
+    expect((await call("sap_act", { do: "press", id: "btn[8]", actions: [ENTER] })).text).toBe('Send one action ("do" and its fields) or "actions", not both.');
+    expect(dos(sap)).toEqual(["okcode", "set"]);
+  });
+
   test("a recording gets one step per action of the batch, each with its own risk and screens", async () => {
     const { dir, call, batch } = await setup({ SAP_WRITE: "on" });
     await call("sap_record", { op: "start", name: "Batch" });
