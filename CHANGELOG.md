@@ -4,9 +4,9 @@ All notable changes to this project are listed here. The project follows
 [Semantic Versioning](https://semver.org); before 1.0, a minor version may
 change the tools or the view format.
 
-## Unreleased
+## 0.2.0 (2026-11-25)
 
-### Fixed (after 0.1.0)
+### Fixed
 
 - Log on from the extension's side panel failed with "The logon page looks
   different from SAP's": the panel keeps the window's focus, so the logon page
@@ -24,7 +24,7 @@ change the tools or the view format.
 - Table rows whose only cells are unticked checkboxes read as empty rows.
 - A grid read with `cols` says which names matched no column.
 
-### Changed (after 0.1.0)
+### Changed
 
 - The helper (`extension helper`) accepts the Chrome Web Store's copy of
   the extension (`geglpbkaklfpmnbidfcpflegmdkjodkn`) as well as the
@@ -182,7 +182,7 @@ Preparing the first public release.
 - Issue templates for bugs, features and new surfaces or transactions, each
   asking that business data be removed first.
 
-## 0.1.0 (unreleased)
+## 0.1.0 (2026-11-24)
 
 The first public version.
 

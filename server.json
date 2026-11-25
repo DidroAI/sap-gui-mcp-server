@@ -3,7 +3,7 @@
   "name": "io.github.DidroAI/sap-ui-automation",
   "title": "SAP UI Automation",
   "description": "Let agents see and drive your open SAP screens: SAP GUI, Web GUI, Fiori. Writes off by default.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "websiteUrl": "https://docs.didro.ai/sap-ui-automation/",
   "repository": {
     "url": "https://github.com/DidroAI/sap-ui-automation",
@@ -14,7 +14,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "sap-ui-automation",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "runtimeHint": "npx",
       "transport": { "type": "stdio" },
       "environmentVariables": [
