@@ -230,6 +230,11 @@ describe("typed values in the view and after the step", () => {
     expect(typedMisses(typed, after)).toEqual([]);
     (w.elements.find((e) => e.name === "VBAK-AUART") as DiagElement).text = "TA";
     expect(typedMisses(typed.slice(0, 1), after)).toEqual(['VBAK-AUART shows "TA" after this step, not the typed "or": SAP changed it or did not take it.']);
+    // ME21N's supplier: SAP puts the name after the number typed ("1000" shows "1000 C.E.B. BERLIN"); not a miss.
+    (w.elements.find((e) => e.name === "VBAK-AUART") as DiagElement).text = "OR Standard Order";
+    expect(typedMisses(typed.slice(0, 1), after)).toEqual([]);
+    (w.elements.find((e) => e.name === "VBAK-AUART") as DiagElement).text = "ORX";
+    expect(typedMisses(typed.slice(0, 1), after)).toHaveLength(1);
     // Another screen: nothing to compare.
     w.dynpro = "4001";
     expect(typedMisses(typed, after)).toEqual([]);

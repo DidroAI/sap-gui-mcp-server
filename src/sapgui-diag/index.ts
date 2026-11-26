@@ -632,7 +632,8 @@ export function typedMisses(typed: Typed[], after: DiagScreen): string[] {
       continue;
     }
     const now = target?.text;
-    if (now === undefined || sameValue(now, t.value)) continue;
+    // SAP may put a text after the key typed (ME21N's supplier "1000" shows "1000 C.E.B. BERLIN"): taken.
+    if (now === undefined || sameValue(now, t.value) || sameValue(clean(now).split(" ")[0] ?? "", t.value)) continue;
     out.push(`${t.name}${t.table ? `[${t.table.index}]` : ""} shows "${clean(now)}" after this step, not the typed "${t.value}": SAP changed it or did not take it.`);
   }
   return out;
