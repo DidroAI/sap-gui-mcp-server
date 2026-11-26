@@ -56,7 +56,7 @@ from Chrome without closing it.
 ## setup
 
 ```sh
-sap-ui-automation setup [<agent>...] [--agent <ids>] [--yes] [--dry-run] [--no-skills] [--no-mcp] [--extension]
+sap-ui-automation setup [<agent>...] [--agent <ids>] [--yes] [--dry-run] [--verbose] [--no-skills] [--no-mcp] [--extension]
 ```
 
 Sets up the coding agents on this machine, the way `npx skills add` does
@@ -66,26 +66,64 @@ for skills, but with both parts:
 - the skills `sap-ui-automation` and `sap-ui-automation-cli`, in each
   agent's skills folder, so the agent uses one when a task matches it.
 
-It first prints the agents it found. In a terminal it then asks which to set
-up: every agent is listed, the ones found are ticked (↑/↓ move, space
-ticks, `a` ticks all, Enter confirms). With `--yes`, or when it does not run
-in a terminal, it sets up every agent found. Names given on the command line
-win over both.
+In a terminal it asks which agents to set up: the ones found come first,
+ticked, then the others under "Not found" (↑/↓ move, space ticks, `a`
+ticks all, Enter confirms). Once answered, the list gives way to one line,
+such as "19 agents selected". With `--yes`, or when it does not run in a
+terminal, it prints the agents found on one line and sets up every one.
+Names given on the command line win over both.
 
 | Option | Effect |
 | --- | --- |
 | `<agent>...` | these agents (ids from the table below), found or not |
 | `--agent <ids>`, `-a <ids>` | the same, comma-separated or repeated; `'*'` is every agent found |
 | `--yes`, `-y` | no question: every agent found |
-| `--dry-run` | say what would change, change nothing |
+| `--dry-run` | say what would change, change nothing (the same summary, with "would") |
+| `--verbose`, `-v` | one line per agent, with its config file and skills folder, instead of the grouped summary |
 | `--no-skills` | the MCP server only |
 | `--no-mcp` | the skills only |
-| `--extension` | new entries get `SAP_BROWSER=extension` (through the Chrome extension), and the extension's helper is installed too |
+| `--extension` | through the Chrome extension: new entries get `SAP_BROWSER=extension`, an existing entry of ours is switched to it (see below), and the extension's helper is installed too |
 
-It prints one line per agent: what it did with the server (added, already
-there, or why not) and with the skills (installed, updated, up to date,
-linked, or left alone). Then which agents to restart, then, with
-`--extension`, the steps in Chrome.
+It prints a short summary, the agents grouped by what they got:
+
+```
+✓ Server and skills  Claude Code, Codex, Cursor, Windsurf, Copilot CLI, Gemini CLI, … (14)
+✓ Skills only        Roo Code, Crush, Continue, Kilo Code, Trae
+  Server added for 9 agents, already there for 2, switched to the extension for Codex, Cursor and Windsurf
+  Skills installed in ~/.agents/skills, linked for 15 agents
+✓ Chrome helper      installed
+```
+
+An agent it could not set up is under "Not set up", one it had nothing to do
+for under "Skipped". Then, only when there is something to do by hand, a
+"Needs your attention" block, one item per issue with the agents under it:
+an entry left under the server's old name, with the command that removes
+it; an entry without `SAP_BROWSER=extension` that setup does not change; a
+write or a helper install that failed, with what to do instead. Last, the
+next steps, numbered. `--verbose` prints one line per agent instead of the
+groups, with its config file and skills folder, and the skills' old names
+removed in each folder.
+
+Colour (a green ✓, a yellow !, dim secondary text) is used only when the
+output is a terminal and `NO_COLOR` is not set; the text is the same
+without it.
+
+### `--extension` and an entry that is already there
+
+With `--extension`, an existing `sap-ui-automation` entry in a JSON file or
+in Codex's `config.toml` gets `SAP_BROWSER=extension` added to its env and
+is reported as switched to the extension. Nothing else in the entry or the
+file changes: its command, its other variables and fields, the other
+servers. An entry that sets `SAP_BROWSER` to another value, Goose's YAML
+file, and an entry in a form setup does not read are left as they are and
+named under "Needs your attention", with what to add.
+
+Claude Code's entry is read with `claude mcp get sap-ui-automation`.
+`claude mcp` cannot change an entry, and what it prints is not enough to
+re-add one faithfully, so setup does not touch it: when it lacks the
+variable, setup gives the command that re-adds it with its own variables
+kept, `claude mcp remove ... && claude mcp add ... -e SAP_BROWSER=extension ...`.
+Check its arguments before you run it: an argument with a space reads as two.
 
 ### The agents
 
@@ -127,7 +165,7 @@ list.
 One real copy goes to `~/.agents/skills/<name>`, which Codex, Cursor,
 Windsurf, Cline, Zed and Warp read. Every other agent's folder gets a link
 to it (a junction on Windows). Where no link can be made, the folder gets a
-copy instead, and the line says so. Agents that share a folder are written
+copy instead, and the summary says so. Agents that share a folder are written
 once. Running setup again updates the copy in place and leaves the links.
 
 Each copy holds a `.sap-ui-automation` marker. A folder of the same name
@@ -140,8 +178,8 @@ installs the same skills.
 
 ### What it never does
 
-- It never overwrites an existing `sap-ui-automation` entry; with
-  `--extension` it says what to add to an entry that is already there.
+- It never replaces an existing `sap-ui-automation` entry; with
+  `--extension` it only adds `SAP_BROWSER=extension` to its env (see above).
 - It keeps the rest of a config file as it was: other servers, settings,
   comments (in the JSON files that allow them) and layout.
 - It keeps a `.bak` copy of a config file before it first changes it.

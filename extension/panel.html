@@ -74,10 +74,10 @@
       <li id="step-helper" class="step">
         <span class="num" data-n="1"></span>
         <div class="step-body">
-          <div class="step-title">Install the helper</div>
+          <div class="step-title">Set up this computer</div>
           <div id="helper-body" class="step-text">
-            <p>In a terminal, run this, then restart Chrome:</p>
-            <p class="copy-line"><code>npx -y sap-ui-automation extension helper</code><button class="btn small copy" type="button" data-copy="npx -y sap-ui-automation extension helper">Copy</button></p>
+            <p>In a terminal, run this. It installs the helper and adds the tool to your agent apps. Then restart Chrome and your agent app.</p>
+            <p class="copy-line"><code>npx -y sap-ui-automation setup --extension</code><button class="btn small copy" type="button" data-copy="npx -y sap-ui-automation setup --extension">Copy</button></p>
           </div>
         </div>
       </li>
@@ -119,7 +119,7 @@
 
     <section class="block">
       <h2>Connect your agent</h2>
-      <p class="text">Adds this tool to Claude Code, Codex, Cursor and the other agent apps on this computer. Run it in a terminal, then restart the agent app.</p>
+      <p class="text">Adds this tool and its skills to Claude Code, Codex, Cursor and the other agent apps on this computer, and installs the helper. Run it in a terminal, then restart the agent app.</p>
       <p class="copy-line"><code>npx -y sap-ui-automation setup --extension</code><button class="btn small copy" type="button" data-copy="npx -y sap-ui-automation setup --extension">Copy</button></p>
       <p id="agent-line" class="text"></p>
     </section>

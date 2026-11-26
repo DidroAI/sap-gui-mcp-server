@@ -24,6 +24,28 @@ change the tools or the view format.
   asks before each write itself, so clients such as Codex do not also ask
   before every navigation.
 
+## 0.4.1 (2026-11-26)
+
+### Changed
+
+- The extension (0.4.1) shows `npx -y sap-ui-automation setup --extension`
+  as its one setup command, in the first-run steps and wherever it says
+  how to install the helper.
+- `setup` prints a short summary instead of a line per agent: the agents
+  grouped by what they got (server and skills, server only, skills only,
+  not set up, skipped), counts instead of paths, short names. What needs
+  doing by hand comes in one "Needs your attention" block, one item per
+  issue with the agents under it, and the next steps are numbered. The old
+  per-agent lines, with their paths, are behind the new `--verbose`.
+- The picker lists the agents found first and the others under "Not
+  found", and leaves one line ("19 agents selected") once answered.
+- Colour on a terminal (a green ✓, a yellow !, dim secondary text), none
+  when `NO_COLOR` is set or the output is not a terminal.
+- `setup --extension` switches an existing `sap-ui-automation` entry to the
+  extension: in a JSON file or Codex's `config.toml` it adds
+  `SAP_BROWSER=extension` to the entry's env and changes nothing else. For
+  Claude Code it gives the command that re-adds the entry with it.
+
 ## 0.4.0 (2026-11-26)
 
 ### Changed
