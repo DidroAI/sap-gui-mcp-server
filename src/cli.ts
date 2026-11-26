@@ -18,6 +18,7 @@ import { EXTENSION_HELP, extensionCommand } from "./cli/extension.js";
 import { init } from "./cli/init.js";
 import { AGENT_IDS } from "./cli/agents.js";
 import { setupCommand } from "./cli/setup.js";
+import { useColor } from "./cli/style.js";
 import { installSkills, SKILL_TARGETS, type SkillTarget } from "./cli/skills.js";
 import { policyFromEnv } from "./core/guard.js";
 import { Registry } from "./core/registry.js";
@@ -46,13 +47,14 @@ const HELP = `sap-ui-automation ${SERVER_VERSION}: an MCP server that sees and d
 
 Usage:
   sap-ui-automation            start the stdio server (what MCP clients run)
-  sap-ui-automation setup [<agent>...] [--agent <ids>] [--yes] [--dry-run] [--no-skills] [--no-mcp] [--extension]
+  sap-ui-automation setup [<agent>...] [--agent <ids>] [--yes] [--dry-run] [--verbose] [--no-skills] [--no-mcp] [--extension]
                                 set up the coding agents found on this machine: the MCP server in each one's config,
                                 the skills in its skills folder (one copy in ~/.agents/skills, linked). In a terminal
                                 it asks which agents (the ones found are ticked); --yes, or no terminal: every agent
                                 found. --agent claude-code,codex (or '*': every one found) names them. --no-skills /
-                                --no-mcp: one part only; --dry-run: say what it would do. --extension: through the
-                                Chrome extension, and installs its helper too. Agents:
+                                --no-mcp: one part only; --dry-run: say what it would do; --verbose: one line per
+                                agent, with its paths. --extension: through the Chrome extension (an entry of ours
+                                gets SAP_BROWSER=extension), and installs its helper too. Agents:
 ${wrap(AGENT_IDS.join(", "), 32, 118)}
   sap-ui-automation init [--yes] [--force] [--dry-run]
                                 set this project up: sap.config.ts, sap-tests/example.sap.ts, agent skills,
@@ -125,7 +127,7 @@ async function main(argv: string[]): Promise<number> {
     console.log(report.text);
     return report.ok ? 0 : 1;
   }
-  if (cmd === "setup") return setupCommand(argv.slice(1), { out: (l) => console.log(l), tty: !!process.stdin.isTTY && !!process.stdout.isTTY });
+  if (cmd === "setup") return setupCommand(argv.slice(1), { out: (l) => console.log(l), tty: !!process.stdin.isTTY && !!process.stdout.isTTY, color: useColor(process.stdout) });
   if (cmd === "browser") {
     try {
       const w = await openSapWindow(process.env);

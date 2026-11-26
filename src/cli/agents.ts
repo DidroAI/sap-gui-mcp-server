@@ -51,6 +51,8 @@ export type McpTarget =
 export interface Agent {
   id: string;
   name: string;
+  /** A shorter name for setup's summary, where `name` is long. */
+  short?: string;
   detect: (c: Ctx) => boolean;
   /** Where its MCP config is. Absent: its format is not verified, skills only. Returns undefined where there is none on this platform. */
   mcp?: (c: Ctx) => McpTarget | undefined;
@@ -145,6 +147,7 @@ export const AGENTS: Agent[] = [
   {
     id: "windsurf",
     name: "Windsurf (Devin Desktop)",
+    short: "Windsurf",
     detect: (c) => existsSync(dirname(windsurfConfig(c))) || at(c, ".codeium", "windsurf"),
     mcp: (c) => json(windsurfConfig(c)),
     mcpDoc: "https://docs.devin.ai/desktop/cascade/mcp",
@@ -155,6 +158,7 @@ export const AGENTS: Agent[] = [
   {
     id: "vscode",
     name: "VS Code (GitHub Copilot)",
+    short: "VS Code",
     // MCP servers are per workspace: only a project that already has the file, or when named.
     detect: (c) => existsSync(join(c.cwd, ".vscode", "mcp.json")),
     mcp: (c) => json(join(c.cwd, ".vscode", "mcp.json"), ["servers"], "stdio", true),
@@ -166,6 +170,7 @@ export const AGENTS: Agent[] = [
   {
     id: "copilot-cli",
     name: "GitHub Copilot CLI",
+    short: "Copilot CLI",
     detect: (c) => c.has("copilot") || existsSync(copilotHome(c)),
     // { "mcpServers": { name: { "type": "local", "command", "args", "env", "tools": ["*"] } } }; COPILOT_HOME moves the folder.
     mcp: (c) => json(join(copilotHome(c), "mcp-config.json"), ["mcpServers"], "copilot"),

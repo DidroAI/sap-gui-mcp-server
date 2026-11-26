@@ -125,6 +125,61 @@ export function addToJson(text: string, key: string[], entry: Record<string, unk
   return { kind: "add", text: out, old };
 }
 
+/** What adding variables to an existing entry's env gives. */
+export type EnvEdit =
+  /** The entry now has them; `text` is the file. */
+  | { kind: "set"; text: string }
+  /** It had them already. */
+  | { kind: "same" }
+  /** It sets one of them to another value: left for the user. */
+  | { kind: "conflict"; key: string; value: string }
+  /** The entry is in a form setup does not change. */
+  | { kind: "error"; reason: string };
+
+/**
+ * Adds `vars` to the env of this server's entry (named sap-ui-automation) under `key`, touching
+ * nothing else: the entry's other fields and variables, the other servers, comments and layout
+ * stay as they are. A variable the entry sets to another value is not changed.
+ */
+export function setJsonEnv(text: string, key: string[], vars: Record<string, string>, comments: boolean, opts: { envKey?: string; opencode?: boolean } = {}): EnvEdit {
+  const envKey = opts.envKey ?? "env";
+  const errors: ParseError[] = [];
+  const config: unknown = parse(text, errors, { allowTrailingComma: comments, disallowComments: !comments });
+  if (errors.length || !isPlainObject(config)) return { kind: "error", reason: "is not valid JSON" };
+  const dig = (path: string[]) => path.reduce<unknown>((v, k) => (isPlainObject(v) ? v[k] : undefined), config);
+  const paths = [[...key, NAME], ...(opts.opencode ? [["mcp", NAME]] : [])];
+  const path = paths.find((p) => dig(p) !== undefined);
+  const entry = path ? dig(path) : undefined;
+  if (!path || !isPlainObject(entry)) return { kind: "error", reason: `has a "${NAME}" entry that is not an object` };
+  const env = entry[envKey];
+  if (env !== undefined && !isPlainObject(env)) return { kind: "error", reason: `has a "${envKey}" in its "${NAME}" entry that is not an object` };
+  const have = (env ?? {}) as Record<string, unknown>;
+  const conflict = Object.entries(vars).find(([k, v]) => k in have && have[k] !== v);
+  if (conflict) return { kind: "conflict", key: conflict[0], value: String(have[conflict[0]]) };
+  const missing = Object.entries(vars).filter(([k]) => !(k in have));
+  if (!missing.length) return { kind: "same" };
+  // A file on one line has no layout to keep: written out again, two spaces per level.
+  if (!text.trim().includes("\n") && !/\/[/*]/.test(text.replace(/"(?:[^"\\]|\\.)*"/g, ""))) {
+    entry[envKey] = { ...have, ...Object.fromEntries(missing) };
+    return { kind: "set", text: `${JSON.stringify(config, null, 2)}\n` };
+  }
+  const { unit, eol } = layout(text);
+  const opt = { allowTrailingComma: comments, disallowComments: !comments };
+  // An object on one line gets the member on that line too; one over several lines, on a line of its own.
+  const put = (src: string, node: Node, k: string, v: unknown) => {
+    if (src.slice(node.offset, node.offset + node.length).includes("\n")) return insertMember(src, node, k, v, unit, eol);
+    const member = `${JSON.stringify(k)}: ${JSON.stringify(v, null, 1).replace(/\n\s*/g, " ")}`;
+    const last = node.children?.at(-1);
+    if (last) return `${src.slice(0, last.offset + last.length)}, ${member}${src.slice(last.offset + last.length)}`;
+    const close = node.offset + node.length - 1;
+    return `${src.slice(0, node.offset + 1)} ${member} ${src.slice(close)}`;
+  };
+  let out = text;
+  if (env === undefined) out = put(out, findNodeAtLocation(parseTree(out, [], opt) as Node, path) as Node, envKey, Object.fromEntries(missing));
+  else for (const [k, v] of missing) out = put(out, findNodeAtLocation(parseTree(out, [], opt) as Node, [...path, envKey]) as Node, k, v);
+  return { kind: "set", text: out };
+}
+
 // ---------------------------------------------------------------- Goose: config.yaml
 
 const yamlKey = (name: string) => new RegExp(`^(?:${name}|"${name}"|'${name}')\\s*:`);
