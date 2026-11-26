@@ -66,6 +66,14 @@ change the tools or the view format.
   - The session window, and a popup's area, are found by the dynpro's own
     title when a value help's caption replaced it (S/4 ME2N: every action
     failed with "No SAP GUI window titled ...").
+  - The field SAP put the cursor on is typed into without a click when
+    nothing was input since SAP's screen, also where the view lays it out
+    of view (XD01's country after "Fill out all required entry fields":
+    SAP GUI scrolls to the cursor, SAP's own count does not say so).
+- A batch goes on after a `scroll` that leaves the status bar's error as it
+  was, as after `set`, `check` and `focus` (shared batch rule).
+- A key written as the views print it, with its button's text first
+  ("Next page (Shift+F11)"), is that key, on every surface.
 
 ### Changed
 
