@@ -1,3 +1,8 @@
+---
+title: "Trace viewer for SAP tests and agent runs"
+description: "See what an agent or a test did in SAP, step by step, with timings, screens and screenshots."
+---
+
 # Trace viewer
 
 A trace is a recording with timings, screens and screenshots: what the

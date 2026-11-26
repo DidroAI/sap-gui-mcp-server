@@ -1,3 +1,8 @@
+---
+title: "Actions: how the agent changes an SAP screen"
+description: "The JSON actions sap_act takes: set, key, press, select and more, on SAP's own control ids, on every surface."
+---
+
 # Actions
 
 The agent changes the screen with `sap_act`: one action per call, or the

@@ -1,3 +1,8 @@
+---
+title: "Security and data handling: where SAP screen content goes"
+description: "For SAP security, Basis and data protection: what runs where, what leaves the machine, what is written to disk, and what the agent can do under each setting."
+---
+
 # Security and data handling
 
 This page is for the people who decide whether an agent may work in SAP:
@@ -66,6 +71,7 @@ from this machine only.
 | --- | --- | --- | --- | --- |
 | SAP GUI for Windows | server | the screen's controls, texts and values | SAP GUI scripting, through a Windows PowerShell process the server starts | no |
 | Chrome or Edge | server | the content of SAP tabs (Web GUI, Fiori) | Chrome DevTools protocol on the local endpoint the browser announces, or the one named in `SAP_CHROME_CDP` | no |
+| Chrome extension | server | the DevTools protocol of the tabs of registered systems only (`SAP_BROWSER=extension`) | a WebSocket to the server on `127.0.0.1` (ports 47823 to 47830), after pairing | no |
 | SAP GUI | server, then SAP | SAP GUI's DIAG traffic (network reader only) | a SAProuter on `127.0.0.1` that relays to the next hop of the route | only to the SAP system or router, as before |
 | server | MCP client | the screen as text, action results, screenshots | stdio | no |
 | MCP client | model provider | what the client puts in the model's context | the client's own connection | **yes**, to the provider the user configured |
@@ -149,8 +155,9 @@ an agent that can edit its MCP client's configuration.
 
 **Not tried on a live system yet:** confirm mode on Fiori and on SAP GUI
 for Windows (it was tried on Web GUI through interactive Claude Code: the
-question, a decline, and a screen that changed before the yes), confirm in
-clients other than Claude Code, and writes through the network reader.
+question, a decline, and a screen that changed before the yes), and confirm
+in clients other than Claude Code. Writes through the network reader have
+run on test systems only ([Network reader](guides/network-reader.md#limits)).
 
 More in the [safety model](concepts/safety.md) and the
 [configuration reference](reference/configuration.md).
@@ -183,7 +190,7 @@ Start with a test or sandbox system. For a production system:
   `SAP_RECORD` off unless a test is being recorded.
 - **Leave `SAP_CODE_TOOLS` off**: it lets the agent run code on the machine.
 - **Pin the package version** in the client configuration
-  (`sap-ui-automation@0.1.0`), so that the code that runs is the code you
+  (`sap-ui-automation@0.5.0`), so that the code that runs is the code you
   reviewed.
 
 Example, for a read-only investigation:

@@ -1,3 +1,8 @@
+---
+title: "Connect SAP to Claude Code, Codex, Cursor, Claude Desktop and VS Code"
+description: "Add the sap-ui-automation MCP server to your client with npx -y sap-ui-automation: Node.js 22 or later, on the machine where SAP GUI or Chrome runs."
+---
+
 # Install in your client
 
 The server is the npm package `sap-ui-automation`. Every client starts it
@@ -24,7 +29,8 @@ Desktop, Cursor, Windsurf, VS Code, GitHub Copilot CLI, Gemini CLI, OpenCode,
 Kiro, Zed, Goose, Amp and [more](../reference/cli.md#the-agents)), asks
 which to set up (the ones found are ticked), and gives each one the server
 and the skills `sap-ui-automation` and `sap-ui-automation-cli`. It never
-touches an existing `sap-ui-automation` entry.
+replaces an existing `sap-ui-automation` entry (with `--extension` it only
+adds `SAP_BROWSER=extension` to it).
 
 ```sh
 npx -y sap-ui-automation setup --dry-run   # show what it would change
@@ -269,9 +275,9 @@ editor's own format, under **`servers`**, not `mcpServers`. VS Code documents
 that format as part of its older local agent, which it plans to remove in
 February 2027, so prefer the Copilot user file for a new setup. Run
 **MCP: List Servers** to see the server, and use Copilot Chat in Agent mode.
-VS Code asks about each write in the chat (from 1.102), so the Copilot file
-above sets `confirm`; the install button and `code --add-mcp` leave it at
-`off`.
+VS Code asks about each write in the chat (from 1.102). The Copilot file
+above sets `confirm`; the install button and `code --add-mcp` set no
+variable, so the server starts with the same default, `confirm`.
 
 ## Windsurf
 

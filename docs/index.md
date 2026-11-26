@@ -1,5 +1,8 @@
 ---
 layout: home
+title: "SAP UI Automation: an MCP server for SAP GUI, Web GUI and Fiori"
+titleTemplate: false
+description: "Let Claude, Codex, Cursor and other AI agents see and drive the SAP screens you have open: SAP GUI for Windows, Web GUI and Fiori. Each write waits for your yes."
 hero:
   name: SAP UI Automation
   text: Let your agent see and drive SAP
@@ -16,7 +19,7 @@ hero:
       link: https://github.com/DidroAI/sap-ui-automation
 features:
   - title: The screens you already have open
-    details: Finds your SAP GUI, Web GUI and Fiori sessions and works in them as you, under your SAP authorisations. The server never logs on and never sees a password.
+    details: Finds your SAP GUI, Web GUI and Fiori sessions and works in them as you, under your SAP authorisations. It never sees a password. You log on, or the Chrome extension types the password itself.
   - title: A compact, complete view
     details: One line per control with SAP's own ids, labels, values and whether they can be edited. After an action on the same screen, only what changed.
   - title: You confirm each write

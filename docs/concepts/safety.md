@@ -1,6 +1,14 @@
+---
+title: "Safety model: what the agent may do in SAP"
+description: "The rules the server enforces whatever the agent decides: no logon, no password fields, writes held for your yes, allowed systems and transactions."
+---
+
 # Safety model
 
-The server enforces these rules whatever the agent decides. They are a
+What stops an agent from saving something wrong in SAP? By default, each
+action that may write waits for your yes, and settings can make the server
+read-only or limit it to some systems and transactions. The server enforces
+these rules whatever the agent decides. They are a
 safety net for an agent that makes mistakes, not a security boundary: see
 [Security and data handling](../security.md) for what they do not protect
 against.
@@ -8,7 +16,8 @@ against.
 The server works in your own sessions, as you, under your SAP
 authorisations. It never logs on and never stores a password. Password
 fields cannot be typed into, and nothing runs on a logon screen: log on
-yourself.
+yourself. (With the Chrome extension, the extension can log on to a system
+you registered, with a password it keeps; the server never sees it.)
 
 ## Settings
 

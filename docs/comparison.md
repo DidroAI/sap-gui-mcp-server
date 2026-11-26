@@ -1,13 +1,19 @@
+---
+title: "SAP UI Automation compared with Playwright MCP and other tools"
+description: "How this server relates to browser MCP servers, SAP GUI scripting and test tools, with a source for each fact."
+---
+
 # Comparison
 
-How this server relates to other tools an agent or a test team can use on
-SAP screens. Facts about other tools are as of November 2026, from their
+How does sap-ui-automation compare with other tools an agent or a test
+team can use on SAP screens? This page sets it next to browser MCP servers,
+other SAP GUI MCP servers, and SAP test-automation suites. Facts about other tools are as of November 2026, from their
 public docs and READMEs, linked in each row. They change; check the source
 before you rely on a row. Facts about this server come from its code and
 its [README](https://github.com/DidroAI/sap-ui-automation/blob/main/README.md).
 
-No measured comparison exists yet: the [benchmark](benchmarks.md) has not
-had a full run.
+Early measured results, with their caveats, are in [Benchmarks](benchmarks.md).
+The other SAP GUI MCP servers below were not part of those results.
 
 ## Playwright MCP and other browser MCP servers
 
@@ -64,14 +70,16 @@ What this server does that these READMEs do not describe, in one place:
   origin lists.
 - **Record and replay with exports** to Cloud ALM, VBS, Playwright and
   Gherkin.
-- **Never logs on**, on any surface.
+- **The server never logs on**, on any surface. With the Chrome extension,
+  the extension logs on to a system you registered, and the server and the
+  agent never see the password.
 
-What some of them do that this server does not: log on from stored
-credentials (Hochfrequenz, jduncan8142, mario-andreschak, sapient-mcp,
-piyushsteelcase-design), run agent-written scripts in one call
-(Hochfrequenz `sap_run_script`), transaction-specific tools (Hochfrequenz),
-an audit log and a read-only switch (kts982), Robot Framework output
-(sapient-mcp).
+What some of them do that this server does not: log on to SAP GUI for
+Windows from credentials in a file or environment variables (Hochfrequenz,
+jduncan8142, mario-andreschak, sapient-mcp, piyushsteelcase-design), run
+agent-written scripts in one call (Hochfrequenz `sap_run_script`),
+transaction-specific tools (Hochfrequenz), an audit log (kts982), Robot
+Framework output (sapient-mcp).
 
 The [marianfoo/sap-ai-mcp-servers](https://github.com/marianfoo/sap-ai-mcp-servers)
 list keeps a wider catalogue of SAP MCP servers.

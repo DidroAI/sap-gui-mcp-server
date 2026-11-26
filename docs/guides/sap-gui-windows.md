@@ -1,3 +1,8 @@
+---
+title: "Connect SAP GUI for Windows to an AI agent (SAP GUI scripting)"
+description: "The SAP GUI scripting settings the server needs on your PC and on the SAP system (sapgui/user_scripting), and how it reads and drives SAP GUI for Windows."
+---
+
 # SAP GUI for Windows
 
 On Windows, the server reads and drives SAP GUI for Windows through SAP GUI

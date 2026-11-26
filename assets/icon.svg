@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="512" height="512">
+  <!-- The product's mark, as in extension/icons.js, with the panel.css colours filled in. -->
+  <defs>
+    <linearGradient id="mk-tile" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#17233b" offset="0"/><stop stop-color="#0b1222" offset="1"/></linearGradient>
+    <radialGradient id="mk-glow" cx="50%" cy="55%" r="50%"><stop stop-color="#5b9af5" stop-opacity="0.6" offset="0"/><stop stop-color="#5b9af5" stop-opacity="0" offset="1"/></radialGradient>
+    <radialGradient id="mk-ptr" cx="38%" cy="30%" r="75%"><stop stop-color="#f4f8ff" offset="0"/><stop stop-color="#bcd8ff" offset=".35"/><stop stop-color="#5b9af5" offset=".7"/><stop stop-color="#2a5fc9" offset="1"/></radialGradient>
+  </defs>
+  <rect x="2" y="2" width="124" height="124" rx="30" fill="url(#mk-tile)"/>
+  <rect x="2.5" y="2.5" width="123" height="123" rx="29.5" fill="none" stroke="#f4f8ff" stroke-opacity="0.08"/>
+  <circle cx="66" cy="70" r="52" fill="url(#mk-glow)"/>
+  <path d="M38 36L94 58L68 68L58 94Z" fill="url(#mk-ptr)" stroke="url(#mk-ptr)" stroke-width="14" stroke-linejoin="round"/>
+</svg>

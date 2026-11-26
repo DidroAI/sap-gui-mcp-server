@@ -1,7 +1,12 @@
+---
+title: "Automated SAP tests with the TypeScript SDK"
+description: "Write SAP GUI, Web GUI and Fiori tests in TypeScript: attach to an open session, act, and assert with checks that wait. Same guard as the MCP server."
+---
+
 # Writing tests with the SDK
 
-The package is also a library. A script attaches to an SAP session you have
-open, acts on it with the same actions as `sap_act`, and checks the screen
+The npm package is also a TypeScript library (the SDK) and a test runner
+for `*.sap.ts` tests. A script attaches to an SAP session you have open, acts on it with the same actions as `sap_act`, and checks the screen
 with assertions that wait. It goes through the same guard as the MCP server:
 `SAP_WRITE`, `SAP_ALLOW_SYSTEMS` and the transaction lists apply.
 
