@@ -34,7 +34,7 @@ import { userInfo } from "node:os";
 import { join } from "node:path";
 import { ONE_LINE_NOTE, oneLine } from "../core/action.js";
 import { ActionError, type Action, type Assessment, type DoctorCheck, type Driver, type LookOptions, type SessionInfo, type Surface } from "../core/types.js";
-import { actWord, CLOSES_SESSIONS, commitCode, commitWord, isLogonScreen, LOGON_REFUSAL, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS, searchButton } from "../core/words.js";
+import { actWord, CLOSES_SESSIONS, commitCode, commitWord, displayScreen, isLogonScreen, LOGON_REFUSAL, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS, searchButton } from "../core/words.js";
 import { type DiagControl, DiagDecoder, type SentCell, type DiagElement, type DiagKey, type DiagScreen, type DiagTable, type DiagWindow, diagView, menuView, statusLine } from "../diag/index.js";
 import { notationNote } from "../core/notation.js";
 import { HostError, MAX_TIMEOUT_MS, powershellExe, PsHost, READ_TIMEOUT_MS } from "../sapgui/host.js";
@@ -114,9 +114,22 @@ function keyOf(w: DiagWindow, n: number): DiagKey | undefined {
   return [...w.toolbar, ...w.keys].find((k) => k.vkey === n);
 }
 
+/**
+ * A main screen that only displays: its title says so (core/words.ts displayScreen) and it offers no Save. The
+ * scripting surface's rule (sapgui/assess.ts isDisplayScreen): its buttons move to other views.
+ */
+function displayOnly(s: DiagScreen): boolean {
+  const main = s.windows[0];
+  if (!main || !displayScreen(s.session.language, main.title, s.session.tcode)) return false;
+  const keys = [...main.toolbar, ...main.keys];
+  // The keys must have been read: without them, a missing Save proves nothing.
+  return keys.length > 0 && !keys.some((k) => SAVE_VKEYS.has(k.vkey) && k.enabled);
+}
+
 export function assessDiag(s: DiagScreen, action: Action, target?: Target): Assessment {
   const w = active(s);
   const lang = s.session.language;
+  const shows = !w.modal && displayOnly(s);
   const assessKey = (n: number, how: string): Assessment => {
     if (SAVE_VKEYS.has(n)) return commit(`${how}: Save (Ctrl+S)`);
     const k = keyOf(w, n);
@@ -128,6 +141,7 @@ export function assessDiag(s: DiagScreen, action: Action, target?: Target): Asse
     if (q && n !== 12 && n !== 3 && n !== 15) return commit(`${named} on the popup "${q.slice(0, 90)}"`);
     if (n === 4 || n === 1) return { risk: "read", reason: n === 4 ? "value help" : "help" };
     if (SAFE_VKEYS.has(n) || (k && safeWord(lang, k.text, k.tooltip))) return { risk: "navigate", reason: named };
+    if (k && shows && !actWord(k.text, k.tooltip)) return { risk: "navigate", reason: `${named} on a screen that only displays` };
     return commit(`${named} is not known to be safe, so it is treated as a write`);
   };
   const assessButton = (e: DiagElement, how: string): Assessment => {
@@ -140,6 +154,7 @@ export function assessDiag(s: DiagScreen, action: Action, target?: Target): Asse
     // A search button by its SAP name (BP's locator "Start", BUS_LOCA_SRCH01-GO), unless its text says it acts: the rule of
     // the scripting and Web GUI surfaces (sapgui/assess.ts), on the id scripting would give it.
     if (e.name && searchButton(`wnd[${w.index}]/usr/btn${e.name}`) && !actWord(...[e.text, e.tooltip].map(searchLabel))) return { risk: "navigate", reason: `${named} starts a search` };
+    if (shows && !actWord(e.text, e.tooltip)) return { risk: "navigate", reason: `${named} on a screen that only displays` };
     return commit(`${named} is not known to be safe, so it is treated as a write`);
   };
   // The input decides, not the verb: focus, f4, set, check, click, press... all start with a mouse click at the

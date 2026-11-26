@@ -1002,8 +1002,11 @@ export function planPlain(s: DiagScreen, action: Action, target: PlainTarget | u
       const single = oneLine(String(action.value ?? ""));
       const half = Math.floor(g.cells.cw / 2);
       const w = Math.max(1, x.kind === "cell" ? x.width : x.element.width);
-      const left = g.at(x.window, x.row, x.col, 1)[0] - half;
-      const right = g.at(x.window, x.row, x.col + w - 1, 1)[0] + half;
+      // A cell and a half of slack each side: a table's columns drift a little from their characters (VA01's quantity
+      // was refused, round 1); a dropdown just left of the field (FB50's D/C) still lies outside.
+      const slack = Math.round(g.cells.cw * 1.5);
+      const left = g.at(x.window, x.row, x.col, 1)[0] - half - slack;
+      const right = g.at(x.window, x.row, x.col + w - 1, 1)[0] + half + slack;
       return { steps: [{ do: "set", x: px, y: py, value: single.text, left, right, settle: 150 }], note: `typed into ${x.what}; SAP gets it with the next Enter or function key${single.had ? ` (${ONE_LINE_NOTE})` : ""}`, answer: "no" };
     }
     case "focus":
