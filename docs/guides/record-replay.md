@@ -1,6 +1,8 @@
 # Recording and replay
 
-An agent's run in SAP can be kept as a test and run again with no model.
+How do you turn an agent's run in SAP into a repeatable test? Record it
+with `sap_record`, then run it again with no model with `sap_replay` or
+`sap-ui-automation replay`.
 Every `sap_act` is already a small, exact instruction: a JSON action on an
 SAP control id. Recording keeps those instructions, with what the screen
 showed after each one, in one file. `replay` runs the file again;
@@ -13,9 +15,10 @@ agent run ──record──▶ <name>.saptest.json ──replay──▶ pass /
                                            Playwright spec · Gherkin feature
 ```
 
-Status: a working prototype. Record and replay have been run on Web GUI;
-not yet on SAP GUI for Windows or Fiori. Details under
-[What was checked](#what-was-checked).
+Status: a working prototype. Record and replay have been run on Web GUI
+and on SAP GUI for Windows (scripting, and the [network
+reader](network-reader.md#record-and-replay)); not yet on Fiori. Details
+under [What was checked](#what-was-checked).
 
 ::: warning Recordings hold typed values
 A recording holds every value that was typed, as it was typed, and the
@@ -257,8 +260,9 @@ sap-ui-automation replay sap-tests/*.saptest.json --junit report.xml
 ```
 
 It needs a machine where an SAP session is open and logged on: a Chrome
-with a Web GUI tab (and remote debugging allowed, or `SAP_CHROME_CDP`), or
-a Windows desktop with SAP GUI. It does not create the data a test needs
+with a Web GUI tab the server can reach (the SAP window it starts, or a
+Chrome reached with `SAP_BROWSER=attach` or `SAP_CHROME_CDP`), or a
+Windows desktop with SAP GUI. It does not create the data a test needs
 or restore the system afterwards: run it on a test system. For a runner
 that logs on by itself, export to Playwright.
 
@@ -273,8 +277,9 @@ recorded answer to a question (Yes, Save, any button of a popup that asks)
 is never skipped: if SAP does not show the question, or shows another popup
 in its place, the step fails. A screen damaged in transit is never judged:
 the replay waits for a whole one, or fails the step with "screen damaged in
-transit". This has run against synthetic traffic and recorded captures
-only, not yet against SAP GUI itself. See [Network reader](network-reader.md).
+transit". Record and replay through the network reader were run against
+SAP GUI for Windows 8.00 on ECC 6.0, read-only
+([Network reader](network-reader.md#limits)).
 
 ## File format and design
 
@@ -652,7 +657,7 @@ a file: it is a service that implements the provider side and runs
 `replay`, and it is not part of this server. The exact endpoint
 contract was not read (it is on SAP Business Accelerator Hub); sources:
 [SAP KBA 3628967](https://userapps.support.sap.com/sap/support/knowledge/en/3628967),
-[SAP expert portal, Test Preparation](https://support.sap.com/en/alm/sap-cloud-alm/implementation/sap-cloud-alm-implementation-expert-portal/test-preparation.html),
+[SAP expert portal, Test Management](https://support.sap.com/en/alm/sap-cloud-alm/implementation/sap-cloud-alm-implementation-expert-portal/testmanagement.html),
 [SAP blog on the test automation tool](https://blogs.sap.com/2021/08/16/integrating-sap-cloud-alm-and-the-test-automation-tool-for-sap-s-4-hana-cloud/),
 [UiPath Test Manager and SAP Cloud ALM](https://docs.uipath.com/test-manager/automation-cloud/latest/user-guide/sap-cloud-alm).
 
@@ -837,9 +842,11 @@ and two tests in a row.
 
 Not run:
 
-- **SAP GUI for Windows.** Record and replay go through the same `Driver`
-  contract, and the view has the same format, but neither was run there. The
-  VBS export was not executed.
+- **The VBS export** was not executed. Record and replay on SAP GUI for
+  Windows were run on SAP GUI 8.00 against ECC 6.0, by scripting
+  ([SAP GUI for Windows](sap-gui-windows.md#limits)) and by the network
+  reader ([Network reader](network-reader.md#limits)), but are not
+  described step by step here.
 - **Fiori.** Actions are recorded and replayed through the Fiori driver;
   from the Fiori view only the app, the toasts (as the status) and the whole
   text are read, so field checks do not work there yet. Nothing was run.
