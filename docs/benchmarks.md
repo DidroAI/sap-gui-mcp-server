@@ -156,40 +156,64 @@ the fixes for scripting and DIAG):
 
 ## 4. Six long ECC scenarios, three models
 
-Run of 2026-11-26. Scenarios O2C-01, O2C-06, P2P-01, MD-04, REP-03 and
-REP-07 on ECC, procedure mode, about two runs per scenario (10 to 14
-valid runs per cell, except 3 for computer use with Opus on SAP GUI). Figures are copied from the harness's comparison
-report. Each cell: passed / runs, success, $ per run.
+Run of 2026-11-26, 443 runs. Scenarios O2C-01, O2C-06, P2P-01, MD-04,
+REP-03 and REP-07 on ECC, procedure mode. Five pass through 10 to 15
+screens; P2P-01 through 7 screens and 24 dialog steps. No finance
+scenario is that long, so finance is not covered. Two runs per scenario
+and option, a third where two disagreed; invalid runs (start state not
+set up, an SAP lock, the hang guard) are left out. Each cell: passed /
+runs, cost per success (billed cost of the cell divided by its passes),
+seconds per run.
 
 | Method | Surface | Haiku 5.5 | Sonnet 5.5 | Opus 5.5 |
 |---|---|---|---|---|
-| sap-ui-automation MCP | Web GUI | 12/12 100%, $0.0097 | 12/12 100%, $0.1073 | 12/12 100%, $0.2409 |
-| sap-ui-automation MCP | SAP GUI scripting | 12/12 100%, $0.0097 | 10/10 100%, $0.1031 | 10/10 100%, $0.2058 |
-| sap-ui-automation MCP | DIAG (experimental, before the 2026-11-26 fixes) | 4/12 33%, $0.0184 | 8/12 67%, $0.2158 | 8/12 67%, $0.5884 |
-| sap-ui-automation CLI | Web GUI | 11/13 85%, $0.0169 | 12/12 100%, $0.1174 | 12/12 100%, $0.2787 |
-| Playwright MCP | Web GUI | 11/11 100%, $0.0763 | 11/12 92%, $0.3799 | 12/12 100%, $0.6241 |
-| Chrome DevTools MCP | Web GUI | 9/11 82%, $0.3754 | 12/12 100%, $0.6314 | 12/12 100%, $1.16 |
-| Claude computer use | SAP GUI desktop | 11/14 79%, $0.0214 | 10/10 100%, $0.2182 | 3/3 100%, $0.3606 |
-| Claude computer use | Web GUI in a browser tab | 10/12 83%, $0.0199 | 11/13 85%, $0.1895 | 12/12 100%, $0.3921 |
-| Claude browser use | Web GUI | 10/11 91%, $0.2115 | 12/12 100%, $0.4581 | 12/12 100%, $0.9585 |
+| sap-ui-automation MCP | Web GUI | 12/12, $0.010, 43 s | 12/12, $0.107, 46 s | 12/12, $0.241, 49 s |
+| sap-ui-automation MCP | SAP GUI scripting | 12/12, $0.010, 44 s | 12/12, $0.120, 38 s | 12/12, $0.240, 50 s |
+| sap-ui-automation CLI | Web GUI | 12/14, $0.022, 83 s | 12/12, $0.117, 52 s | 12/12, $0.279, 69 s |
+| Playwright MCP | Web GUI | 11/11, $0.076, 231 s | 12/13, $0.415, 187 s | 12/12, $0.624, 178 s |
+| Chrome DevTools MCP | Web GUI | 10/12, $0.436, 207 s | 12/12, $0.631, 165 s | 12/12, $1.160, 161 s |
+| Claude computer use | Web GUI in a browser tab | 10/12, $0.024, 191 s | 11/13, $0.224, 138 s | 12/12, $0.392, 164 s |
+| Claude browser use | Web GUI | 12/13, $0.199, 313 s | 12/12, $0.458, 227 s | 12/12, $0.959, 258 s |
+| Claude computer use | SAP GUI desktop | 11/13, $0.027, 265 s | 12/12, $0.240, 211 s | 12/12, $0.520, 249 s |
 
-Seconds per run (Haiku / Sonnet / Opus):
+With Claude Fable 5.2 (`claude-fable-5-2`), sap-ui-automation MCP on Web
+GUI passed 12 of 12, at $0.409 and 56 seconds per run.
 
-| Method | Seconds per run |
-|---|---|
-| sap-ui-automation MCP, Web GUI | 43 / 46 / 49 |
-| sap-ui-automation MCP, SAP GUI scripting | 44 / 33 / 45 |
-| Playwright MCP | 231 / 181 / 178 |
-| Chrome DevTools MCP | 207 / 165 / 161 |
-| Claude computer use, SAP GUI | 249 / 192 / 168 |
-| Claude browser use | 332 / 227 / 258 |
+### Ratios
 
-One more model: sap-ui-automation MCP with Claude Fable 5.2
-(`claude-fable-5-2`) on Web GUI passed 12 of 12, at $0.4085 and 56
-seconds per run.
+How much more each option costs per successful task, then how much longer
+it takes per run, against sap-ui-automation MCP on the same surface and
+model:
 
-The DIAG rows of this table ran before the DIAG fixes of the same
-afternoon, so they are lower than DIAG in table 3.
+| Option | Haiku 5.5 | Sonnet 5.5 | Opus 5.5 | Average |
+|---|---|---|---|---|
+| Playwright MCP | 7.6× / 5.4× | 3.9× / 4.1× | 2.6× / 3.6× | 4.7× / 4.4× |
+| Chrome DevTools MCP | 43.6× / 4.8× | 5.9× / 3.6× | 4.8× / 3.3× | 18.1× / 3.9× |
+| Claude computer use, Web GUI | 2.4× / 4.4× | 2.1× / 3.0× | 1.6× / 3.3× | 2.0× / 3.6× |
+| Claude browser use | 19.9× / 7.3× | 4.3× / 4.9× | 4.0× / 5.3× | 9.4× / 5.8× |
+| Claude computer use, SAP GUI | 2.7× / 6.0× | 2.0× / 5.6× | 2.2× / 5.0× | 2.3× / 5.5× |
+| sap-ui-automation CLI | 2.2× / 1.9× | 1.1× / 1.1× | 1.2× / 1.4× | 1.5× / 1.5× |
+
+What the table shows:
+
+- sap-ui-automation MCP passed all 84 of its runs on Web GUI and SAP GUI
+  scripting, and was the cheapest and fastest option on every model.
+- The other options passed most runs too (83 to 100%): the difference is
+  cost and time, not success.
+- The cost gap is widest on the cheapest model: a stronger model wastes
+  fewer steps with the other tools. The time gap (3 to 7×) holds on every
+  model; it follows the number of tool calls, 12 to 18 per scenario for
+  this server against 45 to 200 for the others.
+- With this server, Haiku 5.5 passed the same 12 of 12 as Opus 5.5 at
+  about a twenty-fourth of the cost.
+- Nearly all cost is cache reads and writes; output is 10 to 22%.
+
+Left out of this section: the network reader (DIAG), which ran on a build
+from before the fixes of 2026-11-26 (4 to 8 of 12; table 3 has later
+figures), and other open-source SAP GUI MCP servers. One of them,
+kts982/mcp-sap-gui, asks for a confirmation dialog before each save, which
+the harness's agent loop cannot show, so its change scenarios could not
+pass; its figures are not published.
 
 ## Caveats
 
