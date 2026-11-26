@@ -746,6 +746,18 @@ function boxState(x: PlainTarget): { kind: "checkbox" | "radio"; checked: boolea
 }
 
 /**
+ * The open field beside a read-only one on its row, in the same container (within 3 cells of its edges): MIGO keeps
+ * a key read-only (GOITEM-LGORT) and takes it typed into the field that shows its text (GOITEM-LGOBE).
+ */
+function besideNote(w: DiagWindow, e: DiagElement): string {
+  const near = (o: DiagElement) => Math.min(Math.abs(o.col + Math.max(1, o.width) - e.col), Math.abs(e.col + Math.max(1, e.width) - o.col));
+  const open = w.elements.filter((o) => o !== e && o.kind === "field" && o.input && !o.hidden && !o.scrolledOut && o.row === e.row && o.name && o.path.join(">") === e.path.join(">") && near(o) <= 3).sort((a, b) => near(a) - near(b))[0];
+  // Or the one right above it, at its column (S/4's MIGO: the material typed into GODYNPRO-MAKTX, its number shown below).
+  const above = open ?? w.elements.find((o) => o.kind === "field" && o.input && !o.hidden && !o.scrolledOut && o.row === e.row - 1 && Math.abs(o.col - e.col) <= 1 && o.name && o.path.join(">") === e.path.join(">"));
+  return above ? ` The field ${above === open ? "beside" : "above"} it that takes input is ${above.name} (SAP may take the key typed there).` : "";
+}
+
+/**
  * A table cell in a column SAP GUI does not show: the table control is narrower than its columns, and the
  * columns right of its edge are reached with its horizontal scrollbar, which this method does not move.
  * A click computed for such a cell lands on another cell or field, so nothing is done there.
@@ -982,7 +994,7 @@ export function planPlain(s: DiagScreen, action: Action, target: PlainTarget | u
       if (off) throw new ActionError(off);
       const misuse = plainMisuse(action, x);
       if (misuse) throw new ActionError(misuse);
-      if (x.kind === "element" && !x.element.input) throw new ActionError(`${x.what} is read-only.`);
+      if (x.kind === "element" && !x.element.input) throw new ActionError(`${x.what} is read-only.${besideNote(x.window, x.element)}`);
       const low = belowWindow(x);
       if (low) throw new ActionError(low);
       const [px, py] = g.at(x.window, x.row, x.col, x.kind === "cell" ? x.width : x.element.width);
