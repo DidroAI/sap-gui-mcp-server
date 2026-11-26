@@ -12,8 +12,8 @@ public docs and READMEs, linked in each row. They change; check the source
 before you rely on a row. Facts about this server come from its code and
 its [README](https://github.com/DidroAI/sap-ui-automation/blob/main/README.md).
 
-No measured comparison exists yet: the [benchmark](benchmarks.md) has not
-had a full run.
+Early measured results, with their caveats, are in [Benchmarks](benchmarks.md).
+The other SAP GUI MCP servers below were not part of those results.
 
 ## Playwright MCP and other browser MCP servers
 

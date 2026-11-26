@@ -169,9 +169,10 @@ Playwright, VBScript, Gherkin or SAP Cloud ALM)
 that may save, post or delete:
 
 - `confirm` (the default): your client asks you before each write. Claude
-  Code, VS Code and Codex can ask. Where the client cannot ask (Claude
-  Desktop, Cursor, headless runs such as `claude -p` or `codex exec`) and
-  in the `sap-gui` command line, every write is refused
+  Code, VS Code and Codex can ask. Where the client cannot ask
+  (headless runs such as `claude -p` or `codex exec`, and clients without
+  the question, as listed in the link below) and in the `sap-gui` command
+  line, every write is refused
   ([which clients can ask](docs/concepts/confirm-mode.md#which-clients-can-ask)).
 - `off`: read-only. It was the default in 0.4 and earlier.
 - `on`: writes run; your client's tool approval is the only check.
