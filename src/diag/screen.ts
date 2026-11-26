@@ -266,6 +266,10 @@ export interface DiagTable extends DiagArea {
   /** Lines of the table as the server counts them, and how many the screen shows. */
   totalRows?: number;
   visibleRows?: number;
+  /** Columns that stay on show when the table is scrolled sideways (the first ones, in the order shown). */
+  fixedColumns?: number;
+  /** Scrolled sideways: the first column on show after the fixed ones, by its place in the order shown (0 when not scrolled). */
+  firstColumn?: number;
   path: string[];
 }
 

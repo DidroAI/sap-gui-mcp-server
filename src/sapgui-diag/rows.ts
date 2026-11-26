@@ -24,6 +24,8 @@ export interface RowSource {
   scrollTo(id: string, row: number): Promise<void>;
   /** Tree folders opened or closed by the keyboard, by shell id. */
   local?(shell: number): ReadonlyMap<string, boolean> | undefined;
+  /** A dropdown's entries, from SAP GUI's cache on this PC (key and text, in the list's order). */
+  entries?(id: string): Promise<{ key: string; value: string }[] | undefined>;
 }
 
 /** The most pages one read scrolls through. */
@@ -80,6 +82,8 @@ export async function lookControl(src: RowSource, options: LookOptions): Promise
   const s0 = src.screen();
   if (n.kind === "dropdown") {
     const e = n.element;
+    const list = await src.entries?.(n.id);
+    if (list?.length) return view(only(s0, n.window, { elements: [e] }), `(${e.name} shows "${e.key ?? ""}"; its entries (key "text"): ${list.map((x) => (x.key.trim() ? `${x.key.trim()} "${x.value.trim()}"` : `"${x.value.trim()}"`)).join(", ")}. Choose with {"do":"combo","id":"${n.id}","key":"<key or text>"}.)`);
     return view(only(s0, n.window, { elements: [e] }), `(${e.name} shows "${e.key ?? ""}"; its entries are not in the traffic: SAP GUI keeps them${e.valueList ? `, list "${e.valueList}"` : ""}. Choose with {"do":"combo","id":"${n.id}","key":"<text or key>"}.)`);
   }
   if (n.kind === "tree") {

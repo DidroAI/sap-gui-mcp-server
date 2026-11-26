@@ -1,8 +1,9 @@
 # Network reader (no scripting)
 
 ::: warning Experimental
-This method has run against SAP GUI for Windows on one ECC system, for
-read-only tasks only. Writes have not been tried live. See [Limits](#limits).
+This method has run against SAP GUI for Windows on one ECC system, read-only
+and with writes (business processes run end to end by an agent), at one
+screen size and theme. See [Limits](#limits).
 :::
 
 When SAP GUI scripting is off, on your PC or on the SAP system, the server
@@ -103,10 +104,16 @@ counts both.
 - A tree node by its key, as the view writes it after the node (`{1}`).
   SAP pads some keys with blanks (`"          1"`): the view leaves them out,
   and `tree` takes a key with or without them.
-- A toolbar button or function key by its text: `Back`.
+- A toolbar button or function key by its text (`Back`), also with the key
+  the view prints after it (`Display Document (F2)`), or as scripting names
+  it: `btn[N]` is function key N.
+- A tab by its function code or by its caption (`Administration`).
 - A table cell `FIELD[n]`, with the table's own row number as the view
   prints it. A row not on show is scrolled to first; if it does not come on
-  show, nothing is done.
+  show, nothing is done. The other surfaces' forms work too: the table's
+  id with `row` and `col` (a column's SAP name, title or place), or the
+  column's field name with `row`.
+- A grid cell for `set`: the grid's id with `row` and `col`.
 - A position: `@row,col`.
 - Grids and trees go by their container name.
 
@@ -122,15 +129,23 @@ function code can still go through the command field with `okcode`.
 
 ## Actions that work
 
-- `okcode`, `key`, `set` (a field, a table cell);
+- `okcode`, `key`, `set` (a field, a table cell, a cell of an editable
+  grid);
 - `press`, `click`, `dblclick` and `select` (buttons, tabs, fields, list
   positions, table rows, grid rows, tree nodes);
-- `check` (checkboxes and radio buttons);
+- `check` (checkboxes and radio buttons), to the state `value` asks for: a
+  box already there is not clicked;
 - `focus` (a field, a grid row, a tree node);
 - `f4` (a field);
-- `combo`, by the text the dropdown shows: its entries are not in the
-  traffic;
-- `scroll` up and down (table controls, lists, grids);
+- `combo`: SAP sends a dropdown's entries once and then only the list's
+  id, but SAP GUI keeps every list in its cache on the PC
+  (`%LOCALAPPDATA%\SAP\SAP GUI\Cache`), and the method reads it there.
+  Without a key, `combo` lists the entries; with one, it takes a key or a
+  text, refuses an entry that is not in the list, and chooses it in one
+  input (a click opens the list, the text, Enter). With no cached list it
+  types the text it was given;
+- `scroll` up and down (table controls, lists, grids, and with id `screen`
+  a screen taller than SAP GUI's window);
 - `tree`, `grid`;
 - `toolbar`: the screen's toolbar by text or a known ALV function code
   such as `&SORT_ASC`; a grid's own toolbar by a button's whole name;
@@ -157,7 +172,18 @@ Each refusal says what to do instead.
   `(ticked, …)`.
 - A table control is not paged when its first row on show has no plain
   field to put the cursor in.
-- Sideways scrolling (the view already has every column SAP sent).
+- A click into a table cell right of what SAP GUI shows of the table (its
+  columns beyond the window's width): it would land in another cell. `set`
+  reaches such a cell with Tab from the nearest cell on show that takes
+  text, as a person does, in the tables where the Tab stops were checked
+  (FB50's items); SAP GUI then scrolls the table sideways, and the table's
+  other cells are refused until SAP's next screen (send Enter). Elsewhere
+  (ME21N's items: the count put values two columns off) it is refused.
+  The fixed columns stay on show, and the view follows the scroll.
+- A click at a row under the window's scroll bars (the last row of a screen
+  taller or wider than the window): the refusal gives the scroll that brings
+  a table row up.
+- `scroll` sideways (the view already has every column SAP sent).
 - A grid toolbar button named by part of its name, and a button found for a
   word rated safe whose own name says it writes.
 - Anything SAP greys out, and any action on the logon screen.
@@ -241,15 +267,36 @@ logon go on.
 ## Limits
 
 - **Live status.** Run against SAP GUI for Windows 8.00 on one ECC 6.0
-  system (client 800) on 20 and 25 November 2026, read-only, Quartz theme
-  at 100%:
-  - tested: selection screens, VA03 and VA02 with their item table controls
-    (scrolled too), VA05's grid, ME23N's item table and header tabs, MMBE's
-    stock tree, MB52's list, the SAP menu tree, a second session with `/o`,
-    `set` on a field that already holds a value, an error that leaves the
-    screen in place, batches, the guard, record and replay;
-  - not tried: writes, S/4HANA, other themes and scalings (expect to set
-    `SAP_DIAG_CELL`), SNC, several SAP GUI connections at once.
+  system (client 800), Quartz theme at 100%, a maximized window on a
+  1280x800 desktop:
+  - 20 and 25 November 2026, read-only: selection screens, VA03 and VA02
+    with their item table controls (scrolled too), VA05's grid, ME23N's
+    item table and header tabs, MMBE's stock tree, MB52's list, the SAP menu
+    tree, a second session with `/o`, batches, the guard, record and
+    replay;
+  - 25 November 2026, an agent (Claude Haiku) running 26 business processes
+    with writes allowed, three times over while the method was fixed:
+    G/L postings (FB50), transfer postings (MB1B), customers (XD01, XD02),
+    sales orders to invoices (VA01, VL01N, VF01), requisitions to orders
+    (ME51N's editable grid, ME21N), dropdowns, tables scrolled sideways,
+    screens taller than the window, and the guard on change and safety
+    tasks. The bench checked in the database what was saved;
+  - not tried: S/4HANA beyond a first run, other themes, scalings and
+    screen sizes (expect to set `SAP_DIAG_CELL`), SNC, several SAP GUI
+    connections at once.
+- **Click points are measured on one layout.** The middle of a row is
+  taken 30 px below its top at Quartz 100% (between a window maximized and
+  one that is not); the Tab stops of a table row (input cells and buttons)
+  and the fixed columns of a table scrolled sideways were checked on FB50,
+  VA01 and ME21N only.
+- **Dropdown entries come from SAP GUI's cache.** When a list is not in the
+  cache (SAP GUI's cache off), `combo` types the text it is given and checks
+  the key SAP received after the next step.
+- **A screen taller than the window** scrolls with the mouse wheel; SAP GUI
+  says where to with the next step only, so send Enter after scrolling.
+- **Popups SAP GUI draws itself** (some termination messages) are not in
+  the traffic: an action refused with "a popup is open" says so; close it
+  with Enter.
 - **A double-click in VA05 opens the order in change mode (VA02).** That
   is VA05's own behaviour, not the reader's: to read an order, open it with
   `/nVA03`.

@@ -1,0 +1,81 @@
+TRANSACTION VA02  PROGRAM SAPMV45A  SCREEN 4001
+NUMBERS 1.234,56  (decimal comma: "1.000" is one thousand, "1,000" is one, "312,000" is 312)
+WINDOW wnd[0]  "Change Returns 60000226: Overview"
+mbar  menubar  Sales document {menu[0]}, Edit {menu[1]}, Goto {menu[2]}, Extras {menu[3]}, Environment {menu[4]}, System {menu[5]}, Help {menu[6]}
+btn[11]  button  Save   (Ctrl+S)
+btn[3]  button  Back  (Back   (F3))
+btn[15]  button  Exit  (Exit   (Shift+F3))
+btn[12]  button  Cancel  (Cancel   (F12))
+btn[80]  button  First page   (Ctrl+Page up)
+btn[81]  button  Previous page   (Page up)
+btn[82]  button  Next page   (Page down)
+btn[83]  button  Last page   (Ctrl+Page down)
+okcd  command-field
+btn[5]  button  Display document flow   (F5)
+btn[36]  button  Status overview   (Ctrl+F12)
+btn[35]  button  Propose items   (Ctrl+F11)
+btn[19]  button  Display sales summary   (Shift+F7)
+btn[6]  button  Display sold-to party   (F6)
+btn[37]  button  Header output preview   (Ctrl+Shift+F1)
+btn[34]  button  Reject document   (Ctrl+F10)
+btn[7]  button  Orders  (List of sales orders   (F7))
+btn[39]  button  Loading Units and Aggregation Categories   (Ctrl+Shift+F3)
+btn[44]  button  Document  (Availability Check for Entire Document   (Ctrl+Shift+F8))
+txtRV45A-TXT_VBELN  field   = "Returns"  (read-only)
+ctxtVBAK-VBELN  field  Returns = "60000226"  (read-only)
+txtVBAK-NETWR  field  Net value = "1.395,80"  (read-only)
+ctxtVBAK-WAERK  field  Net value = "EUR"  (read-only)
+txtVBKD-BSTKD  field  Purch. Order No. = "BTP2UIQ1"  (edit)
+ctxtVBKD-BSTDK  field  PO Date = ""  (edit)
+btnBT_HEAD  button  Display header details
+btnBT_OUTPUT  button  Display output request
+ctxtKUAGV-KUNNR  field  Sold-To Party = "1033"  (read-only)
+txtKUAGV-TXTPA  field  Sold-To Party = "Demo Customer / Street 1 / 00000 City"  (read-only)
+btnBT_IAAN  button  Create Sold-To Party
+ctxtKUWEV-KUNNR  field  Ship-To Party = "1033"  (edit)
+txtKUWEV-TXTPA  field  Ship-To Party = "Demo Customer / Street 1 / 00000 City"  (read-only)
+tabpT\01  tab  Sales
+ctxtRV45A-KPRGBZ  field  Req. deliv.date = "D"  (edit)
+ctxtRV45A-KETDAT  field  Req. deliv.date = "25.11.2026"  (edit)
+chkVBAK-AUTLF  checkbox  [ ] Complete dlv.
+txtRV45A-BTGEW  field  Total Weight = "14"  (read-only)
+txtRV45A-GEWEI  field  Total Weight = "KG"  (read-only)
+cmbVBAK-LIFSK  dropdown  Delivery block = ""  (16 options)
+txtRV45A-VOLUM  field  Volume = "0,000"  (read-only)
+txtRV45A-VOLEH  field  Volume = ""  (read-only)
+cmbVBAK-FAKSK  dropdown  Billing block = ""  (14 options)
+ctxtVBKD-PRSDT  field  Pricing Date = "15.05.2018"  (edit)
+ctxtVBKD-ZTERM  field  Payment terms = "ZB01"  (edit)
+txtTVZBT-VTEXT  field  Payment terms = "14 Days 3%, 30/2%, 45 net"  (read-only)
+ctxtVBKD-INCO1  field  Incoterms = "CPT"  (edit)
+txtVBKD-INCO2  field  Incoterms = "City"  (edit)
+cmbVBAK-AUGRU  dropdown  Order reason = "102" Damaged in transit  (33 options)
+ctxtVBAK-VKORG  field  Sales area = "1000"  (read-only)
+ctxtVBAK-VTWEG  field  / = "12"  (read-only)
+ctxtVBAK-SPART  field  / = "00"  (read-only)
+txtRV45A-TXT_VTRBER  field  / = "Demo sales area"  (read-only)
+tblSAPMV45ATCTRL_U_ERF_AUFTRAG  table  rows 3 (visible 2)  (cell id: <id>[col,row], e.g. txtVBAP-POSNR[0,0])
+  columns: as listed before
+  row 0: Item=10; Material=MAT-1; Order Quantity=1; Un=PC; Description [col 4]=Demo material; S [ ]; ItCa=REN; HL Itm=0; Deliv.date=D; First date=25.11.2026; Plnt=1200; CnTy=PR00; Amount=1.395,80; Crcy=EUR; Net price=1.395,80; per=1; UoM=PC; Net value=1.395,80; Doc. Currency=EUR; Next scale=0; GV%=0,00; PO Details=BTP2UIQ1; Delivery block stat.=Not blocked; Billing block status=Not blocked; CS [ ]; A [ ]; Product Hierarchy=001250010000000110; Division=07; Profit Center=9999; Mat.Pr.Grp=Standard Parts; Customer group=Trading companies; Price group=Occasional buyer; Price List=Wholesale; Sales district=DE0015; Storage Location=0001; Delivery Priority=2; Description [col 67]=Normal; Ship./Receiving Pnt=1201; Route=R00120; Net weight=14; Weight Unit=KG; Gross weight=14; Incoterms=CPT; Incoterms (Part 2)=City; Payt Terms=ZB01; BilRl=B; HeadBilPln [ ]; Overall status=Being processed; Description [col 84]=Complete; Exchange Rate=1,00000; Pricing Date=15.05.2018; Entered Material=MAT-1; Max.Partial Deliv.=9; Addtnl Value Dates=0; Billing Date=25.11.2026; Date Services Rendrd=15.05.2018; Component quantity=0; IUID Cust. [ ]; Material Description=Demo material
+  row 1: S [ ]; Deliv.date=D; First date=25.11.2026; CS [ ]; A [ ]; HeadBilPln [ ]; Component quantity=0,000; IUID Cust. [ ]
+btnBT_ITEM  button  Display item details
+btnBT_POAN  button  Create item
+btnBT_POLO  button  Delete item
+btnBT_POPO  button  Position
+btnBT_MKAL  button  Select All
+btnBT_MKLO  button  Deselect All
+btnBT_PORE  button  Check item availability
+btnBT_IVFP  button  Display availability
+btnBT_PEIN  button  Schedule lines for item
+btnBT_PKON  button  Item conditions
+btnBT_CHFD  button  Item Batch Deter.
+btnBT_POCO  button  Item details: Configuration
+btnBT_MATV  button  Display Material View
+btnBT_CRLT  button  APO Delivery Grp Correlation
+btnBT_GVFP  button  Group  (Check Group Availability)
+tabpT\02  tab  Item overview
+tabpT\03  tab  Item detail
+tabpT\04  tab  Ordering party
+tabpT\05  tab  Procurement
+tabpT\06  tab  Shipping
+tabpT\07  tab  Reason for rejection

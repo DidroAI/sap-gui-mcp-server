@@ -66,3 +66,18 @@ describe("the session's notation, on every answer that shows such a number (P1)"
     expect(notationOfCodes(null, null)).toBeUndefined();
   });
 });
+
+describe("quantities with three decimals, and tree nodes (MMBE, live 2026-11-25: NUMBERS unknown)", () => {
+  test("a comma after grouped thousands is a decimal comma, whatever the decimals", () => {
+    expect(decimalOf('x  field  Q = "9.983,000"')?.sign).toBe(",");
+    expect(decimalOf('x  field  Q = "9,983.000"')?.sign).toBe(".");
+    // Still ambiguous alone: 40,000 and 1.000.
+    expect(decimalOf('x  field  Q = "40,000"')).toBeUndefined();
+    expect(decimalOf('x  field  Q = "1.000"')).toBeUndefined();
+  });
+  test("the nodes of a column tree tell it", () => {
+    const view = "shell[1]  tree  9 nodes shown; columns: Plant | Unrestricted use\n  [-] Full | 9.983,000  {node 1}\n    0001 Materiallager | 9.815,000  {node 5}";
+    expect(decimalOf(view)?.sign).toBe(",");
+    expect(notationIn(view)?.sign).toBe(",");
+  });
+});

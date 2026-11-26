@@ -6,9 +6,9 @@
 import { describe, expect, test } from "bun:test";
 import type { Action } from "../../src/core/types.js";
 import type { DiagControl, DiagElement, DiagScreen, DiagTable, DiagWindow } from "../../src/diag/index.js";
-import { assessDiag, resolveTarget } from "../../src/sapgui-diag/index.js";
+import { assessDiag, resolveTarget, tableCell } from "../../src/sapgui-diag/index.js";
 import { cellMetrics, cellPoint, cellsFromEnv, type HostWindow, pickWindow } from "../../src/sapgui-diag/geometry.js";
-import { type Geometry, namedControl, planCombo, planGrid, planGridScroll, planPage, planPlain, planTableRow, planToolbar, planTree, position, scrollTarget, VK } from "../../src/sapgui-diag/plan.js";
+import { type Geometry, namedControl, planCombo, planGrid, planGridSet, planGridScroll, planPage, planPlain, planTableRow, planToolbar, planTree, position, scrollTarget, VK } from "../../src/sapgui-diag/plan.js";
 
 function el(e: Partial<DiagElement> & { name: string; row: number; col: number }): DiagElement {
   return { kind: "field", text: "", width: 10, input: true, hidden: false, path: [], etype: 130, ...e } as DiagElement;
@@ -134,17 +134,17 @@ describe("cells", () => {
   test("the cell size SAP GUI reports wins over the area's size, and gives the points measured at Quartz 100%", () => {
     const fromArea = cellMetrics([8, 128, 1264, 571], { rows: 20, cols: 156 });
     const fromTraffic = cellMetrics([8, 128, 1264, 571], { rows: 20, cols: 156 }, { cw: 8, ch: 27 });
-    expect([fromArea.cw, fromArea.ch, fromArea.x0, fromArea.y0]).toEqual([8, 27, 3, 25]);
+    expect([fromArea.cw, fromArea.ch, fromArea.x0, fromArea.y0]).toEqual([8, 27, 3, 30]);
     expect([fromTraffic.cw, fromTraffic.ch, fromTraffic.source]).toEqual([8, 27, "traffic"]);
     // The same point as before the change, for VA01's order type (row 2, col 22, width 4).
     expect(cellPoint([8, 128, 1264, 571], { rows: 20, cols: 156 }, 2, 22, 4, fromTraffic)).toEqual(cellPoint([8, 128, 1264, 571], { rows: 20, cols: 156 }, 2, 22, 4));
   });
   test("a larger font (125% scaling) moves the points with it", () => {
     const c = cellMetrics([10, 160, 1580, 714], { rows: 20, cols: 156 }, { cw: 10, ch: 34 });
-    expect(cellPoint([10, 160, 1580, 714], { rows: 20, cols: 156 }, 2, 22, 4, c)).toEqual([10 + 4 + 220 + 20, 160 + 68 + 31]);
+    expect(cellPoint([10, 160, 1580, 714], { rows: 20, cols: 156 }, 2, 22, 4, c)).toEqual([10 + 4 + 220 + 20, 160 + 68 + 38]);
   });
   test("a calibration by hand", () => {
-    expect(cellsFromEnv("9,30")).toMatchObject({ cw: 9, ch: 30, x0: 3, y0: 27, source: "env" });
+    expect(cellsFromEnv("9,30")).toMatchObject({ cw: 9, ch: 30, x0: 3, y0: 33, source: "env" });
     expect(cellsFromEnv("9,30,5,12")).toMatchObject({ x0: 5, y0: 12 });
     expect(cellsFromEnv("x")).toBeUndefined();
   });
@@ -233,6 +233,14 @@ describe("grids: Ctrl+Home, then the arrow keys", () => {
     expect(keysOf(p)).toEqual(["click", `vk^${VK.HOME}`, `vk${VK.DOWN}x2`, `vk${VK.RIGHT}x2`, "key2"]);
     expect(p.answer).toBe("yes");
   });
+  test("set in a cell of an editable grid: the cursor to it, then the value typed over it", () => {
+    const p = planGridSet(screen(), { do: "set", id: "GRID_CONT", row: 2, col: "NETWR", value: "10" }, geo);
+    expect(keysOf(p)).toEqual(["click", `vk^${VK.HOME}`, `vk${VK.DOWN}x2`, `vk${VK.RIGHT}x2`, "type"]);
+    expect(p.steps[p.steps.length - 1]).toMatchObject({ do: "type", value: "10" });
+    expect(p.note).toBe('typed "10" into row 2, column NETWR of GRID_CONT; SAP gets it with the next Enter');
+    expect(() => planGridSet(screen(), { do: "set", id: "GRID_CONT", row: 2, value: "10" }, geo)).toThrow('needs "col"');
+    expect(tableCell(screen(), { do: "set", id: "GRID_CONT[2]", col: "NETWR", value: "10" })).toEqual({ do: "set", id: "GRID_CONT", row: 2, col: "NETWR", value: "10" });
+  });
   test("a column by its title; the cursor only; a row number past the end", () => {
     expect(keysOf(plan({ do: "grid", id: "GRID_CONT", row: 0, col: "Customer", how: "cell" }))).toEqual(["click", `vk^${VK.HOME}`, `vk${VK.RIGHT}x1`]);
     expect(() => plan({ do: "grid", id: "GRID_CONT", row: 40, col: "VBELN" })).toThrow("has 40 rows");
@@ -315,9 +323,10 @@ describe("dropdowns", () => {
     expect(p.note).toContain('shows "OR"');
     expect(p.note).toContain("LIST1");
   });
-  test("choose: click (opens the list), type the text, Enter; checked on the next screen", () => {
+  test("choose: one input (click opens the list, the text, Enter); checked on the next screen", () => {
     const p = plan({ do: "combo", id: "ZHDR-TYPE", key: "Rush order" });
-    expect(keysOf(p)).toEqual(["click", "type", `vk${VK.ENTER}`]);
+    expect(keysOf(p)).toEqual(["combo"]);
+    expect(p.steps[0]).toMatchObject({ value: "Rush order" });
     expect(p.answer).toBe("no");
     const next = (key: string) => screen([win({ elements: [el({ kind: "dropdown", name: "ZHDR-TYPE", key, row: 1, col: 20 })] })]);
     expect(p.later?.(next("OR"))).toContain("still has");
@@ -330,6 +339,26 @@ describe("dropdowns", () => {
   });
   test("a dropdown in a table cell, by the table's row number", () => {
     expect(namedControl(screen(), "MATNR[12]")).toMatchObject({ kind: "dropdown", element: { key: "A", row: 24 } });
+  });
+  test("with the value list SAP GUI keeps: by key or text, checked before any input", () => {
+    const entries = [
+      { key: "OR", value: "Standard Order" },
+      { key: "RO", value: "Rush order" },
+      { key: "RE", value: "Returns" },
+    ];
+    const by = (key: string) => planCombo(screen(), { do: "combo", id: "ZHDR-TYPE", key }, geo, entries);
+    expect(by("RO").steps[0]).toMatchObject({ do: "combo", value: "Rush order", index: 1 });
+    expect(by("rush order").note).toBe('chose RO "Rush order" in ZHDR-TYPE; SAP gets it with the next Enter or function key');
+    expect(by("Ret").steps[0]).toMatchObject({ value: "Returns", index: 2 });
+    expect(by("Standard Order").steps).toEqual([]);
+    expect(() => by("Credit")).toThrow('ZHDR-TYPE has no entry "Credit" (or more than one starts with it): nothing was chosen. Its entries (key "text"): OR "Standard Order", RO "Rush order", RE "Returns".');
+    expect(() => by("R")).toThrow("no entry");
+    const list = planCombo(screen(), { do: "combo", id: "ZHDR-TYPE" }, geo, entries);
+    expect(list.steps).toEqual([]);
+    expect(list.note).toContain('shows OR "Standard Order". Its entries (key "text"): OR "Standard Order", RO "Rush order", RE "Returns".');
+    const next = (key: string) => screen([win({ elements: [el({ kind: "dropdown", name: "ZHDR-TYPE", key, row: 1, col: 20 })] })]);
+    expect(by("RO").later?.(next("RE"))).toBe('ZHDR-TYPE now has RE "Returns", not the entry meant by "RO"');
+    expect(by("RO").later?.(next("RO"))).toBe('ZHDR-TYPE now has RO "Rush order"');
   });
   test("already chosen; not a dropdown", () => {
     expect(plan({ do: "combo", id: "ZHDR-TYPE", key: "or" }).steps).toEqual([]);

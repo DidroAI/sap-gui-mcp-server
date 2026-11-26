@@ -101,7 +101,9 @@ export class Views {
         }
         // The popups that closed since: the top window of each view given after this screen.
         const closed = [...new Set(kept.slice(i + 1).map((v) => v.split("\n").filter((l) => l.startsWith("WINDOW ") || l.startsWith("POPUP ")).at(-1) ?? "").filter(Boolean))];
-        const d = diffViews(prev, view, "", closed);
+        // Columns said "as listed before" compare as the legend they stand for: else the diff printed the
+        // whole old legend as removed (VA02, ME21N, FB50, live 2026-11-25) and came out longer than the view.
+        const d = diffViews(prev, legendsOf(prev, view), "", closed);
         if (d.text.length <= view.length * WORTH_IT) answer = d.text;
         break;
       }
@@ -110,6 +112,43 @@ export class Views {
     this.remember(session, view);
     return answer;
   }
+}
+
+/**
+ * `view` with each "as listed before" of a table's or a grid's columns put
+ * back as `prev` lists them (the same control's), for comparing the two.
+ */
+export function legendsOf(prev: string, view: string): string {
+  if (!view.includes("as listed before")) return view;
+  const id = (line: string) => line.split("  ")[0] ?? "";
+  const head = /^\S+ {2}(?:table|grid) {2}/;
+  // Each control's legend line and its inline columns, in the view before.
+  const legends = new Map<string, string>();
+  const inline = new Map<string, string>();
+  let table = "";
+  for (const line of prev.replace(/^[~+=-] /gm, "").split("\n")) {
+    if (head.test(line)) {
+      table = id(line);
+      const cols = /; columns: (.+?)(?: {2}\(.*\))?$/.exec(line)?.[1];
+      if (cols && cols !== "as listed before") inline.set(table, cols);
+    }
+    const legend = /^ +columns: (.+)$/.exec(line)?.[1];
+    if (legend && legend !== "as listed before" && table) legends.set(table, legend);
+  }
+  table = "";
+  return view
+    .split("\n")
+    .map((line) => {
+      if (head.test(line)) {
+        table = id(line);
+        const cols = inline.get(table);
+        return cols ? line.replace(/; columns: as listed before/, `; columns: ${cols}`) : line;
+      }
+      const legend = /^( +)columns: as listed before$/.exec(line);
+      const was = legend && legends.get(table);
+      return was ? `${legend[1]}columns: ${was}` : line;
+    })
+    .join("\n");
 }
 
 /**
