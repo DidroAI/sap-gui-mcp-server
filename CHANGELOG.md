@@ -6,6 +6,11 @@ change the tools or the view format.
 
 ## Unreleased
 
+### Changed
+
+- The extension (0.4.2) links to its guide on docs.didro.ai from Chrome's
+  menu (right-click the icon, then its name), instead of the repository.
+
 ### Documentation
 
 - The Chrome extension is public in the Chrome Web Store; the docs no
