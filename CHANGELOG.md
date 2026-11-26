@@ -6,6 +6,44 @@ change the tools or the view format.
 
 ## Unreleased
 
+### Fixed
+
+- Network reader (SAP GUI without scripting), from the failing and the
+  expensive runs of the last round (Claude Haiku, ECC and S/4HANA):
+  - `set` on a dropdown chooses its entry, as on the other surfaces (FB50's
+    D/C was refused as "does not take text").
+  - After a cell right of a table's edge was reached with Tab, the table's
+    fixed columns (FB50's G/L account, D/C, amount) stay in reach; only the
+    columns that moved wait for SAP's next screen.
+  - BP's locator "Start" (`BUS_LOCA_SRCH01-GO`) is a search, by the rule the
+    scripting and Web GUI surfaces already apply to a button named as the
+    start of a search; with `SAP_WRITE=off` it was refused as a write.
+  - A dropdown key SAP sends without the list's leading zeros (BP's "1" for
+    01) is the same entry: it was chosen again, then reported as not taken.
+  - A subscreen that scrolls on its own (XD01's address tab): an action on
+    an element scrolled out of view is refused with the scroll that brings
+    it up (the click landed elsewhere), and `scroll` with id `screen` turns
+    the wheel over that subscreen.
+  - A classic list's page says the line it starts at (ME2L: 0, 25, 50): every
+    page looked like the first, so scrolls answered "did not move" and a look
+    with rows never got past the first page.
+  - A scroll to rows after the page on show works when the last page starts
+    on it (MM01's Select View(s): 17 of 28 on show answered "already there").
+  - A grid read by range says which rows it shows ("(rows 49 to 70 of 71)"),
+    not "49 more rows (22 sent so far)".
+  - A key SAP shows with its text ("1000 C.E.B. BERLIN" for "1000") is not
+    reported as a value SAP did not take.
+
+### Changed
+
+- Network reader: a shorter compact view. A grid names each column by one
+  title and its empty columns by id only; a table control names its open
+  columns right of the edge by title only; the keys every screen has, and on
+  SAP Easy Access all keys, are left out; a selection screen's texts show as
+  text; an icon with a quick info shows the text. 17% fewer characters over
+  the screens of two captured runs (46% on Easy Access). The full view and a
+  look by id keep everything.
+
 ### Documentation
 
 - The Chrome extension is in the Chrome Web Store (unlisted):
