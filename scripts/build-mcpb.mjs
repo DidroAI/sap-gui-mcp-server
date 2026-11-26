@@ -2,7 +2,7 @@
 //
 //   bun run build && bun run build:mcpb
 //
-// Stages dist/, package.json, LICENSE, README.md and mcpb/manifest.json (its version
+// Stages dist/, package.json, LICENSE, README.md, assets/icon.png and mcpb/manifest.json (its version
 // set from package.json) in a temporary folder, installs the production dependencies
 // there, then validates and packs it with the MCPB CLI (pinned below).
 import { execFileSync } from "node:child_process";
@@ -28,6 +28,8 @@ try {
   // The compiled server, without source maps.
   cpSync(join(root, "dist"), join(stage, "dist"), { recursive: true, filter: (src) => !src.endsWith(".map") });
   for (const f of ["LICENSE", "README.md"]) cpSync(join(root, f), join(stage, f));
+  // The icon Claude Desktop shows for the extension (manifest "icon").
+  cpSync(join(root, "assets", "icon.png"), join(stage, "icon.png"));
 
   // package.json without scripts or dev dependencies: npm installs only what the server needs.
   const { scripts: _scripts, devDependencies: _dev, ...runtime } = pkg;

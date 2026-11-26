@@ -1,3 +1,8 @@
+---
+title: "Can the agent save in SAP without me? Confirm mode"
+description: "With SAP_WRITE=confirm, the default, an action that may write waits for your yes in your MCP client; where the client cannot ask, it is refused."
+---
+
 # Confirm mode
 
 With `SAP_WRITE=confirm`, the default, an action that may write runs only

@@ -1,10 +1,16 @@
+---
+title: "MCP tools for SAP: sap_look, sap_act and more"
+description: "Every tool of the sap-ui-automation MCP server, what it does and when it is listed."
+---
+
 # MCP tools
 
-The server registers its tools under the server name `sap-ui-automation`. Five work
-on the open SAP sessions, two turn a session into a repeatable test, and
-two more save and run test code when you turn them on
-(`SAP_CODE_TOOLS=on`, [Configuration](configuration.md#recording-and-files)).
-So a server with the default settings lists seven tools.
+The server gives an agent seven tools by default, under the server name
+`sap-ui-automation`. Five work on the open SAP sessions and two turn a
+session into a repeatable test. Two more list and log on to the systems
+registered in the Chrome extension (`SAP_BROWSER=extension`), and two
+save and run test code when you turn them on (`SAP_CODE_TOOLS=on`,
+[Configuration](configuration.md#recording-and-files)).
 
 | Tool | Does | Listed |
 | --- | --- | --- |
@@ -37,6 +43,8 @@ ask the user before a call; the server's own guard does not read them.
 | `sap_look` | true | | true | false |
 | `sap_act` | false | see below | | false |
 | `sap_screenshot` | true | | true | false |
+| `sap_systems` | true | | true | false |
+| `sap_logon` | false | false | false | false |
 | `sap_record` | false | false | | false |
 | `sap_replay` | false | see below | | false |
 | `sap_code_save` | false | false | | false |

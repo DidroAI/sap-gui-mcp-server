@@ -1,8 +1,14 @@
+---
+title: "SAP from the command line for coding agents"
+description: "The sap-gui command gives coding agents without MCP the same SAP tools: look, act, sessions, with the screen kept in a file until it is needed."
+---
+
 # CLI for coding agents
 
-Coding agents such as Claude Code, Codex and Cursor can run shell commands.
-For them, the same tools are also commands: the agent runs `sap-gui look`,
-reads a short answer, and opens the screen file only when it needs it. This
+The agent CLI, `sap-gui`, gives coding agents that can run shell commands
+(Claude Code, Codex, Cursor) the same tools as shell commands: the agent
+runs `sap-gui look`, reads a short answer, and opens the screen file only
+when it needs it. This
 keeps screens out of the conversation until they matter, and works in
 agents that have no MCP support.
 
@@ -14,8 +20,8 @@ sap-gui install --skills --target all        # in your project: the skills for C
 sap-gui sessions                             # what it finds now
 ```
 
-`npx -y sap-ui-automation setup` installs the skills for your user instead
-(Claude Code and Codex). Then open SAP (for Web GUI and Fiori: log on in
+`npx -y sap-ui-automation setup` installs the skills for your user instead,
+in every coding agent it finds ([setup](../reference/cli.md#setup)). Then open SAP (for Web GUI and Fiori: log on in
 the Chrome window it opens, see [Chrome](chrome.md)) and ask your agent to
 work in it with `sap-gui`. Without a global install, every command also
 runs as `npx -y -p sap-ui-automation sap-gui <command>`.
@@ -29,7 +35,7 @@ The package installs two names for the same program: `sap-gui` and
 | --- | --- | --- |
 | `sap-gui sessions` | lists the SAP sessions open now | `sap_sessions` |
 | `sap-gui use <ref>` | makes a session the active one | `sap_use` |
-| `sap-gui look [--full] [--diff] [--id <id> [--rows 0-50] [--cols A,B]] [--print]` | writes the screen to a file and prints one line with its path (`--print` prints the screen) | `sap_look` |
+| `sap-gui look [--full] [--diff] [--id <id> [--rows 0-50] [--cols A,B]] [--print]` | writes the screen to a file and prints a few short lines (where the screen is, the status bar) and the file's path (`--print` prints the screen) | `sap_look` |
 | `sap-gui act '<json>' [--full]` | runs one action ([actions](../reference/actions.md)) | `sap_act` |
 | `sap-gui act '[<json>, ...]' [--full]` | runs one screen's actions in one call | `sap_act` with `actions` |
 | `sap-gui act set <id> <value>`, `press <id>`, `key <n>`, `okcode <cmd>`, `select <id>`, `check <id> [true\|false]`, `combo <id> [key]`, `f4 <id>`, `dblclick <id>`, `scroll <id> <to>`, `open <intent>` | shorthand for one action | `sap_act` |
@@ -39,7 +45,10 @@ The package installs two names for the same program: `sap-gui` and
 | `sap-gui record <op> ['<json>']` | `start <name>`, `assert '{"check":"status","contains":"saved"}'`, `stop`, `list`, ... | `sap_record` |
 | `sap-gui daemon status\|stop` | the background process that keeps the session attached between commands | |
 
-Each command prints one short line and the path of the screen file.
+`act`, `okcode` and `open` print the whole answer, as `sap_act` gives it
+(the notes, then the lines that changed or the new screen); `look` prints
+a short summary. Each also prints the path of a file that holds the whole
+answer.
 `look`, `act`, `okcode`, `open`, `screenshot` and `record` take `--session <ref>`. Exit codes:
 0 done, 1 error or refused, 2 usage.
 

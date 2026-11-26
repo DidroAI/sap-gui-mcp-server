@@ -1,3 +1,8 @@
+---
+title: "SAP GUI for Windows without scripting: the network reader (DIAG)"
+description: "Experimental: read SAP GUI for Windows from its network traffic (DIAG) when SAP GUI scripting is off, through a local SAProuter."
+---
+
 # Network reader (no scripting)
 
 ::: warning Experimental
@@ -6,10 +11,12 @@ S/4HANA system, read-only and with writes (business processes run end to
 end by an agent), at one screen size and theme. See [Limits](#limits).
 :::
 
-When SAP GUI scripting is off, on your PC or on the SAP system, the server
-can read SAP GUI for Windows from the traffic between SAP GUI and the SAP
-system (SAP's DIAG protocol) instead. It acts with the keyboard and, where
-SAP GUI has no key, the mouse.
+The network reader lets the server read and drive SAP GUI for Windows
+when SAP GUI scripting is off, on your PC or on the SAP system. It reads
+the traffic between SAP GUI and the SAP system (SAP's DIAG protocol), and
+acts with the keyboard and, where SAP GUI has no key, the mouse. On Windows
+it runs next to scripting by default (`SAP_GUI_METHOD` unset, `auto`); you
+only route a connection entry through it.
 
 ## How it works
 
@@ -69,7 +76,7 @@ reports goes to its log (stderr).
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `SAP_GUI_METHOD` | scripting | `diag` reads SAP GUI from its traffic instead of scripting |
+| `SAP_GUI_METHOD` | `auto` | `auto`: scripting and the network reader both run; `diag`: the network reader alone; `scripting`: no router |
 | `SAP_DIAG_PORT` | `3298` | port of the local SAProuter |
 | `SAP_DIAG_CELL` | from the traffic | `cw,ch[,x0,y0]`: the pixel size of SAP GUI's character cell (and the offset of the first one in the screen area), if clicks miss on a theme or scaling |
 | `SAP_DIAG_REQUEST_MS` | `3000` | how long to wait for SAP GUI to send a request after a key or a click, before saying the input may have missed |
@@ -279,9 +286,9 @@ logon go on.
 
 ## Limits
 
-- **Live status.** Run against SAP GUI for Windows 8.00 on one ECC 6.0
-  system (client 800), Quartz theme at 100%, a maximized window on a
-  1280x800 desktop:
+- **Live status.** Run against SAP GUI for Windows 8.00, Quartz theme at
+  100%, a maximized window on a 1280x800 desktop, on one ECC 6.0 system
+  (client 800) and, on 26 November 2026, one S/4HANA system:
   - 20 and 25 November 2026, read-only: selection screens, VA03 and VA02
     with their item table controls (scrolled too), VA05's grid, ME23N's
     item table and header tabs, MMBE's stock tree, MB52's list, the SAP menu

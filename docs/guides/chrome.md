@@ -1,8 +1,15 @@
+---
+title: "SAP Web GUI and Fiori in Chrome for AI agents"
+description: "How the server reads and drives SAP GUI for HTML and SAP Fiori in Chrome: the SAP window, your own Chrome, or the UI Automation for SAP extension."
+---
+
 # Chrome: Web GUI and Fiori
 
-SAP GUI for HTML (Web GUI) and SAP Fiori are read and driven in Google
-Chrome. This works on Windows, macOS and Linux, and needs nothing on the SAP
-system. You log on to SAP yourself; the server never does.
+The server reads and drives SAP GUI for HTML (Web GUI) and SAP Fiori in
+Google Chrome, in one of three browser modes. This works on Windows, macOS
+and Linux, and needs nothing on the SAP system. You log on to SAP yourself;
+the server never does (with the Chrome extension, the extension can log on
+for you).
 
 ## Choose a browser mode
 
@@ -109,12 +116,10 @@ into SAP's logon page itself. The agent and the server never see it.
 
 1. Add **UI Automation for SAP** to Chrome from the
    [Chrome Web Store](https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn).
-   The listing is unlisted: it opens from this link, not from a search in
-   the store.
 2. Run `npx -y sap-ui-automation setup --extension`. In one go it adds the
-   server with `SAP_BROWSER=extension` to your agent apps (Claude Code,
-   Codex, Cursor, Claude Desktop, Windsurf; `setup vscode --extension` for
-   VS Code and GitHub Copilot), installs the skills, and installs the
+   server with `SAP_BROWSER=extension` to the coding agents it finds
+   ([setup](../reference/cli.md#setup); `setup vscode --extension` for VS
+   Code and GitHub Copilot), installs the skills, and installs the
    extension's helper, which pairs the extension in one click and keeps
    saved passwords in your system's keychain.
 3. Restart Chrome once (Chrome finds the helper at start) and your agent
@@ -140,9 +145,11 @@ install` again and click the reload arrow on the extension's card.
    instead** in the panel and paste the code.)
 2. Open your SAP system in a tab and click **Add this SAP page** in the
    panel. Add user and password if the extension should log on for you.
-3. If you have not run `setup --extension` yet, do it now. An entry that
-   `setup` made before keeps its settings: add `"SAP_BROWSER": "extension"`
-   to its `env` by hand, and restart the agent app.
+3. If you have not run `setup --extension` yet, do it now. It adds
+   `SAP_BROWSER=extension` to an existing `sap-ui-automation` entry too,
+   and names the ones it cannot change (Claude Code's, Goose's) with what
+   to do ([details](../reference/cli.md#extension-and-an-entry-that-is-already-there)).
+   Then restart the agent app.
 4. Check: `SAP_BROWSER=extension npx -y sap-ui-automation doctor`. It waits
    up to 35 seconds for the extension to connect.
 

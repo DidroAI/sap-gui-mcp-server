@@ -4,6 +4,13 @@
   "title": "SAP UI Automation",
   "description": "Let agents see and drive your open SAP screens: SAP GUI, Web GUI, Fiori. Writes wait for your yes.",
   "version": "0.5.0",
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/DidroAI/sap-ui-automation/main/assets/icon.png",
+      "mimeType": "image/png",
+      "sizes": ["512x512"]
+    }
+  ],
   "websiteUrl": "https://docs.didro.ai/sap-ui-automation/",
   "repository": {
     "url": "https://github.com/DidroAI/sap-ui-automation",
