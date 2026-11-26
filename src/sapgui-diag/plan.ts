@@ -841,11 +841,12 @@ const TAB_STOPS = new Set(["field", "dropdown", "checkbox", "radio", "button"]);
  * known.
  */
 /**
- * Table controls whose Tab stops were checked live, by program: FB50's G/L items (SAPLFSKB). In ME21N's items
- * (SAPLMEGUI) the same count put the values two columns off (2026-11-25), for a reason not found: there,
- * and in any table not checked, a cell right of the edge is refused rather than typed into blind.
+ * Table controls whose Tab stops were checked live, by program: FB50's G/L items (SAPLFSKB) and ME21N's items
+ * (SAPLMEGUI, 2026-11-26: the requisition and its item reached from the first column, the Tabs 80 ms apart; sent
+ * in one burst, SAP GUI dropped them while it scrolled the table). Any table not checked: a cell right of the edge
+ * is refused rather than typed into blind.
  */
-const TAB_CHECKED = new Set(["SAPLFSKB"]);
+const TAB_CHECKED = new Set(["SAPLFSKB", "SAPLMEGUI"]);
 
 export function tabReach(t: DiagTable, index: number, column: number): { anchor: DiagTable["columns"][number]; tabs: number; row: number } | undefined {
   if (!TAB_CHECKED.has(t.program.trim().toUpperCase())) return undefined;
@@ -854,8 +855,10 @@ export function tabReach(t: DiagTable, index: number, column: number): { anchor:
   const order = [...t.columns].sort((a, b) => a.position - b.position);
   const at = order.findIndex((c) => c.index === column);
   if (at < 0) return undefined;
+  // The leftmost cell on show that takes text: a click point drifts to the right across a table (ME21N's columns are
+  // drawn a little wider than their characters: a click at "Per", column 110, missed it, 2026-11-26), Tabs do not.
   let from = -1;
-  for (let i = at - 1; i >= 0; i--) {
+  for (let i = 0; i < at; i++) {
     const c = order[i] as DiagTable["columns"][number];
     const cell = r.cells[c.index];
     if (c.visible && cell && !cell.hidden && cell.input && cell.kind === "field") {
@@ -874,22 +877,24 @@ export function tabReach(t: DiagTable, index: number, column: number): { anchor:
   return { anchor: order[from] as DiagTable["columns"][number], tabs, row: r.row };
 }
 
-/** Input cells between two columns of a table row (after `from`, up to `to` included): the Tab presses from one to the other. Undefined when a cell between is of a kind whose Tab stop is not known, or `to` is not right of `from`. */
+/** Tab presses from one cell of a table row to another: one per input cell after `from` up to `to`; negative (Shift+Tab) when `to` is left of `from`. Undefined when a cell between is of a kind whose Tab stop is not known. */
 export function tabsBetween(t: DiagTable, index: number, from: number, to: number): number | undefined {
   if (!TAB_CHECKED.has(t.program.trim().toUpperCase())) return undefined;
   const r = t.rows.find((x) => x.index === index);
   const order = [...t.columns].sort((a, b) => a.position - b.position);
   const a = order.findIndex((c) => c.index === from);
   const b = order.findIndex((c) => c.index === to);
-  if (!r || a < 0 || b <= a) return undefined;
+  if (!r || a < 0 || b < 0 || b === a) return undefined;
+  // Left of it: Shift+Tab, one per input cell from the target up to the one before the cursor (a negative count).
+  const [lo, hi, sign] = b > a ? [a + 1, b, 1] : [b, a - 1, -1];
   let tabs = 0;
-  for (let i = a + 1; i <= b; i++) {
+  for (let i = lo; i <= hi; i++) {
     const cell = r.cells[(order[i] as DiagTable["columns"][number]).index];
     if (!cell || cell.hidden || !cell.input) continue;
     if (!TAB_STOPS.has(cell.kind)) return undefined;
     tabs++;
   }
-  return tabs || undefined;
+  return tabs ? sign * tabs : undefined;
 }
 
 /** set in a cell right of the one the cursor was left in by the last set (reached with Tab): on with Tab, no click. */
@@ -899,13 +904,13 @@ export function planTabOn(t: DiagTable, index: number, from: number, to: number,
   const single = oneLine(value);
   return {
     steps: [
-      { do: "vk", vk: VK.TAB, count: tabs, gap: TAB_GAP_MS, settle: 150 },
+      { do: "vk", vk: VK.TAB, count: Math.abs(tabs), ...(tabs < 0 ? { shift: true } : {}), gap: TAB_GAP_MS, settle: 150 },
       { do: "vk", vk: VK.HOME, settle: 40 },
       { do: "vk", vk: VK.END, shift: true, settle: 40 },
       { do: "vk", vk: VK.DELETE, settle: 40 },
       { do: "type", value: single.text, settle: 150 },
     ],
-    note: `typed into ${what}, on with Tab from the cell typed before; SAP gets it with the next Enter or function key`,
+    note: `typed into ${what}, on with ${tabs < 0 ? "Shift+Tab" : "Tab"} from the cell typed before; SAP gets it with the next Enter or function key`,
     answer: "no",
     sideways: t.name,
   };
