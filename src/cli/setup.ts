@@ -299,7 +299,8 @@ export function claudeEntry(out: string): { command: string; args: string[]; env
 /** One word for a shell command line: as it is when plain, else quoted. */
 function shellWord(s: string, platform: NodeJS.Platform): string {
   if (/^[\w@%+=:,./-]+$/.test(s)) return s;
-  return platform === "win32" ? `"${s.replace(/"/g, '\\"')}"` : `'${s.replace(/'/g, "'\\''")}'`;
+  // Windows (PowerShell, cmd): double quotes, a quote inside doubled. Elsewhere: single quotes, a quote inside closed and reopened.
+  return platform === "win32" ? `"${s.replace(/"/g, '""')}"` : `'${s.replace(/'/g, "'\\''")}'`;
 }
 
 /**
