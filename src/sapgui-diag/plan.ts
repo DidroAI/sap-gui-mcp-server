@@ -45,7 +45,8 @@ export type Step = (
   /** A Windows key, `count` times. */
   | { do: "vk"; vk: number; ctrl?: boolean; shift?: boolean; alt?: boolean; count?: number; gap?: number }
   | { do: "click" | "dblclick" | "f4"; x: number; y: number }
-  | { do: "set"; x: number; y: number; value: string }
+  /** `left`: the field's left edge, where the caret must come (else a dropdown on the same row keeps it). */
+  | { do: "set"; x: number; y: number; value: string; left?: number; right?: number }
   | { do: "type"; value: string }
   /** The mouse wheel over a point, `notches` times (negative: down): SAP GUI scrolls a screen taller than its window. */
   | { do: "wheel"; x: number; y: number; notches: number }
@@ -965,7 +966,11 @@ export function planPlain(s: DiagScreen, action: Action, target: PlainTarget | u
       const [px, py] = g.at(x.window, x.row, x.col, x.kind === "cell" ? x.width : x.element.width);
       // Typed with the keyboard: a line break would be the Enter key, so it is typed as a space.
       const single = oneLine(String(action.value ?? ""));
-      return { steps: [{ do: "set", x: px, y: py, value: single.text, settle: 150 }], note: `typed into ${x.what}; SAP gets it with the next Enter or function key${single.had ? ` (${ONE_LINE_NOTE})` : ""}`, answer: "no" };
+      const half = Math.floor(g.cells.cw / 2);
+      const w = Math.max(1, x.kind === "cell" ? x.width : x.element.width);
+      const left = g.at(x.window, x.row, x.col, 1)[0] - half;
+      const right = g.at(x.window, x.row, x.col + w - 1, 1)[0] + half;
+      return { steps: [{ do: "set", x: px, y: py, value: single.text, left, right, settle: 150 }], note: `typed into ${x.what}; SAP gets it with the next Enter or function key${single.had ? ` (${ONE_LINE_NOTE})` : ""}`, answer: "no" };
     }
     case "focus":
     case "check":

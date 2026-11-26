@@ -64,6 +64,19 @@ describe("set on a dropdown chooses its entry", () => {
   });
 });
 
+describe("a set after a choice on the same row", () => {
+  // Live 2026-11-26: the caret was still in the D/C dropdown on the row, so the check "the caret is on the row" passed,
+  // and the amount was typed into the dropdown (blank). The input host now wants the caret between the field's edges.
+  test("carries the field's left and right edges", async () => {
+    const f = fakeDriver(s, ENTRIES);
+    await f.d.act({ do: "set", id: "ACGL_ITEM-WRBTR[0]", value: "10,00" });
+    const step = f.log.find((x) => x.op === "act")?.action as { x: number; left: number; right: number };
+    expect(step.left).toBeLessThan(step.x);
+    expect(step.right).toBeGreaterThan(step.x);
+    expect(step.right - step.left).toBeGreaterThan(100);
+  });
+});
+
 describe("after a cell reached with Tab, the fixed columns of the table stay in reach", () => {
   test("cost center by Tab, then G/L account, D/C and amount of the next row; a column that moved is refused", async () => {
     const f = fakeDriver(s, ENTRIES);
