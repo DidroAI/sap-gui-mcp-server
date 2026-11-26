@@ -96,7 +96,11 @@ Only the 104 scenario-and-system pairs where every method had a valid run:
 | Chrome DevTools MCP | 88% | $0.0816 | 75 |
 
 At this sample size the success rates are within noise of each other
-(about ±6 points); the cost and time differences are the result. On SAP
+(about ±6 points); the cost and time differences are the result. On six
+long ECC scenarios run with three Claude models, the MCP passed every run
+and the other options cost 2 to 18 times more per successful task and
+took 3.5 to 6 times longer
+([by model](docs/benchmarks.md#4-six-long-ecc-scenarios-three-models)). On SAP
 GUI for Windows, the same MCP passed 91% of 74 runs on ECC through
 scripting (2026-11-25). Method, all tables, other models and caveats:
 [Benchmarks](docs/benchmarks.md). The harness and raw results are not
