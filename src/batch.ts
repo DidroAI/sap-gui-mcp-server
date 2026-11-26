@@ -186,7 +186,7 @@ const where = (s: ParsedScreen) => [s.transaction, s.program && `program ${s.pro
  * bar after them is the one from before. An error that was there when the
  * batch began does not end it at the first field the agent corrects.
  */
-const LOCAL = new Set(["set", "check", "focus"]);
+const LOCAL = new Set(["set", "check", "focus", "scroll"]);
 
 function statusMet(s: ParsedScreen, want: string): boolean {
   if (!s.status) return false;
