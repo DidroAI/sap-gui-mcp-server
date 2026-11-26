@@ -22,3 +22,13 @@ describe("messages of the screens a step went through", () => {
     expect(passedMessages([], 0, undefined)).toEqual([]);
   });
 });
+
+describe("the success message of the screen an action ended on", () => {
+  test("is said in the action's line; an error or warning is not (the batch stops on those), nor an unmoved step", async () => {
+    const { successNote } = await import("../../src/sapgui-diag/index.js");
+    const at = (type: string, text: string) => ({ mode: 0, step: 1, session: {}, windows: [], message: { type, text, id: "F5", number: "312" } }) as never;
+    expect(successNote(true, at("S", "Document 100000012 was posted in company code 1000"))).toBe("SAP: S: Document 100000012 was posted in company code 1000  (F5 312)");
+    expect(successNote(true, at("E", "Enter valid date"))).toBeUndefined();
+    expect(successNote(false, at("S", "x"))).toBeUndefined();
+  });
+});

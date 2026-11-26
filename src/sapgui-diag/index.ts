@@ -610,6 +610,18 @@ export function passedMessages(kept: readonly { step: number; line: string }[], 
   return out;
 }
 
+/**
+ * A success or information message of the screen an action ended on, said in the action's own line: in a batch the
+ * answer shows only the last screen, and FB50's "Document 100000012 was posted", the answer to an Enter at a
+ * warning, was lost under the next action's "Enter valid date" (live 2026-11-26: the agent took the posting for
+ * failed and posted twice more).
+ */
+export function successNote(moved: boolean, after: DiagScreen | undefined): string | undefined {
+  const m = after?.message;
+  if (!moved || !m?.text || (m.type !== "S" && m.type !== "I")) return undefined;
+  return `SAP: ${statusLine(m).replace(/^sbar {2}status {2}/, "")}`;
+}
+
 /** "0010" and "10", "or" and "OR" are the same value as SAP shows it. */
 const sameValue = (a: string, b: string) => {
   const n = (v: string) => clean(v).toUpperCase().replace(/^0+(?=\d)/, "");
@@ -1097,6 +1109,8 @@ export class DiagDriver implements Driver {
     const lines = [note];
     if (after && moved && sent.length) lines.push(...typedMisses(sent, after, this.conn.decoder.sentCells?.(this.mode) ?? []));
     if (after && moved) lines.push(...passedMessages(this.conn.messages?.get(this.mode) ?? [], before, after.message ? statusLine(after.message) : undefined));
+    const said = successNote(moved, after);
+    if (said) lines[0] += `; ${said}`;
     // A termination message that was confirmed: SAP has ended the transaction, and the answer says so.
     if (after && moved && s.message?.type === "A" && after.message?.type !== "A")
       lines.push(`SAP ended transaction ${s.session.tcode ?? ""} after the termination message "${clean(s.message.text)}": input that was not saved there is lost. The screen below is where SAP went; start the transaction again to retry.`);
