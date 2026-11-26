@@ -120,7 +120,7 @@ change the tools or the view format.
 
 ### Fixed
 
-- Extension 0.4.2: on first run, the first system's password field stayed
+- Extension 0.4.3: on first run, the first system's password field stayed
   off when the helper was installed after the extension (the usual order:
   extension from the store, then `setup --extension`). An open form now
   follows the helper, and the field opens up within seconds.
