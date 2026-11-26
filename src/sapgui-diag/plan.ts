@@ -768,7 +768,10 @@ export const screenScrolls = (w: DiagWindow): boolean => !w.modal && w.index ===
  * step, so where its fields are is known again only from SAP's next screen.
  */
 export function planScreenScroll(w: DiagWindow, to: unknown, g: Geometry): Plan {
-  if (!screenScrolls(w)) {
+  // Elements under the window's bottom edge (VA05's sales organization, live 2026-11-26): the screen scrolls, whatever SAP's
+  // scroll item said, since the refusal of a click there asks for this scroll.
+  const below = w.index === 0 && !w.modal && w.elements.some((e) => !e.hidden && !e.scrolledOut && e.row - scrolledRows(w) > lastClickRow(w));
+  if (!screenScrolls(w) && !below) {
     // A subscreen that scrolls on its own (XD01's address tab): the wheel over the part of it on show.
     const out = w.elements.find((e) => e.scrolledOut && !e.hidden);
     const anchor = out ? shownNear(w, out)[0] : undefined;

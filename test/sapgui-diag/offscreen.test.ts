@@ -98,6 +98,9 @@ describe("a screen taller than SAP GUI's window", () => {
     expect(planScreenScroll(sel(0), "next", geo).steps).toMatchObject([{ do: "wheel", notches: -6 }]);
     expect(planScreenScroll(sel(1), "prev", geo).steps).toMatchObject([{ do: "wheel", notches: 6 }]);
     expect(() => planScreenScroll(w, "next", geo)).toThrow("does not scroll");
+    // SAP said nothing of a scroll, but a field lies under the window's edge (VA05, 2026-11-26): the wheel goes.
+    const noItem = { ...sel(0), size: { rows: 19, cols: 156 }, scroll: undefined } as unknown as DiagWindow;
+    expect(planScreenScroll(noItem, "next", geo).steps).toMatchObject([{ do: "wheel", notches: -6 }]);
   });
 });
 
