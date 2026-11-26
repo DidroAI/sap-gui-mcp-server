@@ -478,7 +478,9 @@ function Op-Act($req) {
   elseif ($do -eq 'vk') {
     # A Windows key with modifiers, count times: Home, the arrows, Page Down, Enter, Shift+Space...
     $n = [Math]::Max(1, [int]$a['count'])
-    for ($i = 0; $i -lt $n; $i++) { [SapScreen]::Key([byte][int]$a['vk'], [bool]$a['ctrl'], [bool]$a['shift'], [bool]$a['alt']) }
+    # "gap": milliseconds between the repeats (a table control that scrolls sideways at a Tab redraws first).
+    $gap = [int]$(if ($null -ne $a['gap']) { $a['gap'] } else { 0 })
+    for ($i = 0; $i -lt $n; $i++) { if ($i -gt 0 -and $gap -gt 0) { Start-Sleep -Milliseconds $gap }; [SapScreen]::Key([byte][int]$a['vk'], [bool]$a['ctrl'], [bool]$a['shift'], [bool]$a['alt']) }
   }
   elseif ($do -eq 'press') {
     # A toolbar button by its name: a posted BM_CLICK, no mouse. "within": only a button whose middle is in that rect (a grid's toolbar).
