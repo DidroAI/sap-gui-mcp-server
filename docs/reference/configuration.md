@@ -31,7 +31,7 @@ Lists are separated by commas or spaces and are not case-sensitive.
 
 | Variable | Default | Values | Effect |
 | --- | --- | --- | --- |
-| `SAP_SURFACES` | `sapgui,webgui,fiori` on Windows, `webgui,fiori` elsewhere | any of `sapgui`, `webgui`, `fiori` | which kinds of session to look for. Lower case |
+| `SAP_SURFACES` | `sapgui,webgui,fiori` on Windows, `webgui,fiori` elsewhere | any of `sapgui`, `webgui`, `fiori` | which kinds of session to look for, in any case |
 | `SAP_GUI_METHOD` | `auto` | `auto`, `scripting`, `diag` | how SAP GUI for Windows is read. `auto`: both SAP GUI scripting and the network reader (experimental) run, and the agent works in whichever session it needs. `scripting` or `diag`: only that one, for setups where nobody watches the agent. Any other value is an error at start. See [Network reader](../guides/network-reader.md) |
 | `SAP_CHROME_CDP` | none | `http://127.0.0.1:9333` | a Chrome DevTools endpoint (`http`, `https`, `ws` or `wss`). When set, it wins over `SAP_BROWSER` and nothing else is tried. See [Chrome](../guides/chrome.md#a-chrome-started-with-a-debugging-port) |
 | `SAP_BROWSER` | `launch` | `launch`, `attach`, `extension` | `launch`: the server starts Google Chrome with a profile of its own (the SAP window) and looks only at its tabs. `attach`: your running Chrome or Edge, with remote debugging allowed in `chrome://inspect`. `extension`: your everyday Chrome through the UI Automation for SAP extension. `SAP_CHROME_CDP` wins over it. See [Choose a browser mode](../guides/chrome.md#choose-a-browser-mode) |
@@ -43,7 +43,10 @@ Lists are separated by commas or spaces and are not case-sensitive.
 | `SAP_EXTENSION_WAIT` | `35` | seconds | with `SAP_BROWSER=extension`, how long to wait for the extension to connect |
 | `SAP_EXTENSION_START_CHROME` | `on` on macOS and Windows, `off` elsewhere | `on`, `off` | with `SAP_BROWSER=extension`, start your Chrome when it is not running, so the extension can connect |
 
-## Network reader (`SAP_GUI_METHOD=diag`)
+## Network reader
+
+These apply when the network reader runs: with `SAP_GUI_METHOD` unset
+(`auto`) or `diag`, on Windows.
 
 | Variable | Default | Values | Effect |
 | --- | --- | --- | --- |

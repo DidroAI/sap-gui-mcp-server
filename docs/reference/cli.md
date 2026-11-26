@@ -209,12 +209,13 @@ again.`
 | --- | --- |
 | Chrome, `launch` (default) | Chrome found; whether the SAP window runs; then its tabs |
 | Chrome, `extension` | the extension connected (it waits up to 35 s), paired; then the tabs it shares |
-| SAP GUI for Windows (scripting) | PowerShell may run the host; SAP GUI is running; scripting is on in SAP GUI; scripting is allowed on the SAP system; the two "notify" options are off |
-| SAP GUI for Windows (`SAP_GUI_METHOD=diag`) | the local router listens; connections go through it; decoding (bytes lost, what was not read, SNC); the router's messages |
+| SAP GUI for Windows, scripting (unless `SAP_GUI_METHOD=diag`) | PowerShell may run the host; SAP GUI is running; scripting is on in SAP GUI; scripting is allowed on the SAP system; the two "notify" options are off |
+| SAP GUI for Windows, network reader (unless `SAP_GUI_METHOD=scripting`) | the local router listens; connections go through it; decoding (bytes lost, what was not read, SNC); the router's messages |
 | Chrome, `attach` or `SAP_CHROME_CDP` | Chrome reachable, its version, `SAP_ALLOW_ORIGINS`, open tabs; the Web GUI and Fiori tabs found |
 
-On a machine other than Windows, SAP GUI for Windows is listed as not
-checked. In `attach` mode, if Chrome asks whether to allow remote
+With `SAP_GUI_METHOD` unset (`auto`), both ways of reading SAP GUI are
+checked, and either one that works is enough. On a machine other than
+Windows, SAP GUI for Windows is listed as not checked. In `attach` mode, if Chrome asks whether to allow remote
 debugging, click Allow.
 
 Every failed check, its cause and its fix: [FAQ and troubleshooting](../faq.md).
