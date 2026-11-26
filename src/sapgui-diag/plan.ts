@@ -583,11 +583,22 @@ export function position(n: Named): { first: number; visible: number; total: num
 /** The first row a scroll aims at, for a table control or a list. */
 export function scrollTarget(to: number | string, p: { first: number; visible: number; total: number | undefined }): number {
   const last = Math.max(0, (p.total ?? p.first + p.visible) - p.visible);
-  if (typeof to === "number") return to >= p.first && to < p.first + p.visible ? p.first : Math.max(0, Math.min(to, last));
-  if (to === "next") return Math.min(p.first + p.visible, last);
+  const shown = (r: number) => r >= p.first && r < p.first + p.visible;
+  // Rows after the page on show: the last page may start on it (28 rows, 17 on show from 0: it starts at 11), so the
+  // row wanted is aimed at instead, which is not on show (a target on show means "nothing to scroll").
+  const more = p.total !== undefined && p.first + p.visible < p.total;
+  if (typeof to === "number") {
+    if (shown(to)) return p.first;
+    const t = Math.max(0, Math.min(to, last));
+    return shown(t) && more ? Math.min(to, (p.total ?? to + 1) - 1) : t;
+  }
+  if (to === "next") {
+    const t = Math.min(p.first + p.visible, last);
+    return shown(t) && more ? p.first + p.visible : t;
+  }
   if (to === "prev") return Math.max(0, p.first - p.visible);
   if (to === "first") return 0;
-  return last;
+  return shown(last) && more ? (p.total ?? 1) - 1 : last;
 }
 
 /**

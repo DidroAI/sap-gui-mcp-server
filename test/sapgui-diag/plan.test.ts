@@ -291,6 +291,14 @@ describe("table controls and lists: SAP's page keys", () => {
     expect(scrollTarget("last", p)).toBe(27);
     expect(scrollTarget(11, p)).toBe(10); // on show: no scroll
     expect(scrollTarget(25, p)).toBe(25);
+    // MM01's "Select View(s)": 28 views, 17 on show from 0. The last page starts at 11, which is on show, but rows
+    // 17 to 27 are not (live 2026-11-26: "TC_VIEW is already there: rows 0 to 16 of 28", and the run scrolled 8 times).
+    const views = { first: 0, visible: 17, total: 28 };
+    expect(scrollTarget("next", views)).toBe(17);
+    expect(scrollTarget("last", views)).toBe(27);
+    expect(scrollTarget(20, views)).toBe(20);
+    expect(scrollTarget(5, views)).toBe(0);
+    expect(scrollTarget("next", { first: 11, visible: 17, total: 28 })).toBe(11);
   });
   test("a page down: a click into the table's first row, then Page Down; up, first and last pages", () => {
     const n = namedControl(screen(), "TC_ITEMS");
