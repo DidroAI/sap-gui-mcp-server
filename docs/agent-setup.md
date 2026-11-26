@@ -18,7 +18,7 @@ in one or two lines per step. People: the prompt to paste is in
 - Do not edit MCP client config files by hand: `setup` does it and keeps a
   `.bak` of each file it changes.
 - Do not change `SAP_WRITE` unless the user asks. The default, `confirm`,
-  asks the user before each action that may write to SAP.
+  requests MCP client approval for flagged writes. Codex Full Access can accept automatically.
 - When a step needs the user to click something (SAP GUI options, Chrome,
   SAP Logon), say what to click and wait until they say it is done.
 
@@ -81,6 +81,7 @@ and `sap_look`, and describe the screen in three lines.
 
 ## 5. Tell the user how writes work
 
-By default the server asks the user before each action that may save,
-post or delete in SAP, and refuses it where the client cannot ask.
-`SAP_WRITE=off` makes it read-only. See [Confirm mode](concepts/confirm-mode.md).
+Report the effective write mode. Under `confirm`, flagged writes require an
+affirmative client response. Codex Full Access may accept automatically.
+A client without elicitation refuses flagged writes, as does `SAP_WRITE=off`.
+See [Confirm mode](concepts/confirm-mode.md).

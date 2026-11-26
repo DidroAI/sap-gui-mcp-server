@@ -108,12 +108,15 @@ export class Registry {
     if (!r) return undefined;
     const n = /^\d+$/.test(r) ? Number(r) : undefined;
     if (n !== undefined && this.last[n - 1]) return this.last[n - 1];
-    const exact = this.last.find((s) => s.id.toLowerCase() === r) ?? this.last.find((s) => s.where.toLowerCase() === r);
+    const exact = this.last.find((s) => s.id.toLowerCase() === r);
     if (exact) return exact;
+    if (n !== undefined || this.surfaces_.has(r) || /^(?:chrome|sapgui|webgui|fiori):/.test(r)) return undefined;
     if (SURFACE_NAMES.includes(r)) {
       const of = this.last.filter((s) => s.surface === r);
       return of.find((s) => s.id === this.active) ?? of[0];
     }
+    const location = this.last.find((s) => s.where.toLowerCase() === r);
+    if (location) return location;
     const hits = this.last.filter((s) => [s.system, s.transaction, s.title, s.where].some((x) => x?.toLowerCase().includes(r)));
     if (hits.length <= 1) return hits[0];
     // Several fit: the active one if it is among them, else the agent names one; never the first by chance.
@@ -122,30 +125,16 @@ export class Registry {
     throw new AmbiguousRef(ref, hits.map((s) => `${this.last.indexOf(s) + 1}. ${s.id} (${[s.system && (s.client ? `${s.system}/${s.client}` : s.system), s.transaction, s.title].filter(Boolean).join(", ")})`));
   }
 
-  /**
-   * A session id that names no open session any more (its tab closed or was opened again under another id,
-   * "chrome:<old id>"), when exactly one session of its surface is open now: that one. Undefined otherwise,
-   * also for a reference that is not a session id. Discovers first.
-   */
-  async replacement(ref: string): Promise<SessionInfo | undefined> {
-    const r = ref.trim().toLowerCase();
-    if (!r) return undefined;
-    await this.discover().catch(() => undefined);
-    try {
-      if (this.resolve(ref)) return undefined;
-    } catch {
-      return undefined;
-    }
-    const reader = this.surfaces_.get(r);
-    const surface = reader ? undefined : SURFACE_NAMES.includes(r.split(":", 1)[0] ?? "") ? (r.split(":", 1)[0] as SurfaceName) : undefined;
-    const chrome = r.startsWith("chrome:");
-    if (!reader && !surface && !chrome) return undefined;
-    const same = this.last.filter((s) => (reader ? readerOf(s) === reader : surface ? s.surface === surface : s.id.toLowerCase().startsWith("chrome:")));
-    return same.length === 1 ? same[0] : undefined;
+  private find(ref: string | undefined): SessionInfo | undefined {
+    return ref !== undefined ? this.resolve(ref) : this.last.find((s) => s.id === this.active);
   }
 
-  private find(ref: string | undefined): SessionInfo | undefined {
-    return ref ? this.resolve(ref) : this.last.find((s) => s.id === this.active);
+  /** Resolve once before queuing so an alias or list number cannot move while the call waits. */
+  async target(ref?: string): Promise<SessionInfo> {
+    if (!this.find(ref)) await this.discover();
+    const info = this.find(ref);
+    if (!info) throw this.notFound(ref);
+    return info;
   }
 
   private async drop(info: SessionInfo): Promise<void> {
@@ -157,7 +146,7 @@ export class Registry {
 
   private notFound(ref: string | undefined): Error {
     const why = this.lastErrors.length ? ` Discovery failed: ${this.lastErrors.join(" | ")}` : "";
-    if (ref) return new Error(`No open SAP session matches "${ref}". Call sap_sessions to list them.${why}`);
+    if (ref !== undefined) return new Error(`No open SAP session matches "${ref}". Call sap_sessions to list them.${why}`);
     if (this.active && this.last.length) return new Error(`The active session ${this.active} could not be read now; no other session is used in its place. Try again, or name a session (sap_sessions lists them).${why}`);
     if (why) return new Error(`No open SAP session found.${why}`);
     if (this.lastHint) return new Error(`No open SAP session found. ${this.lastHint}`);
@@ -197,18 +186,16 @@ export class Registry {
    * that touches a session comes through here.
    */
   async session(ref?: string): Promise<Attached> {
-    if (!this.last.length || !this.find(ref)) await this.discover();
-    let info = this.find(ref);
-    if (!info) throw this.notFound(ref);
+    const info = await this.target(ref);
     let hit = await this.attach(info);
     if ("stale" in hit) {
       // What we knew is stale: look again, and follow the session to the surface that owns it now.
       const { id } = info;
       const first = hit.stale;
       await this.discover();
-      info = this.last.find((s) => s.id === id) ?? (ref ? this.find(ref) : undefined);
-      if (!info) throw first ?? this.notFound(ref ?? id);
-      hit = await this.attach(info);
+      const current = this.last.find((s) => s.id === id);
+      if (!current) throw this.notFound(ref ?? id);
+      hit = await this.attach(current);
       if ("stale" in hit) throw hit.stale ?? first ?? this.notFound(ref ?? id);
     }
     if (!systemAllowed(this.policy, hit.info)) throw new Error(outside(hit.info));

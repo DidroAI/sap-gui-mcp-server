@@ -417,10 +417,10 @@ describe("session list", () => {
     const { surface, call } = await setup();
     surface.add({ id: "chrome:1", system: "ABA", transaction: "VA03" });
     expect((await call("sap_use", { session: "webgui" })).text).toContain("SCREEN VA03");
-    // A name that matches nothing, with one session open: that one, said in the first line.
     const one = await call("sap_look", { session: "fiori" });
-    expect(one.error).toBe(false);
-    expect(one.text.split("\n")[0]).toBe('(No session matches "fiori"; using the only open one: webgui ABA, VA03.)');
+    expect(one.error).toBe(true);
+    expect(one.text).toContain("sap_sessions");
+    expect(one.text).not.toContain("SCREEN");
   });
   test("with several sessions open, a name that matches none is still an error", async () => {
     const { surface, call } = await setup();
@@ -432,14 +432,18 @@ describe("session list", () => {
       expect(r.text).toContain('No open SAP session matches "sapgui"');
     }
   });
-  test("sap_act and sap_screenshot fall back to the only session too", async () => {
+  test("explicit unmatched targets cannot act, read, or select the only open session", async () => {
     const { surface, call } = await setup();
     surface.add({ id: "chrome:1", system: "ABA", transaction: "VA03" });
-    const act = await call("sap_act", { do: "set", id: "ctxtA", value: "1", session: "sapgui" });
-    expect(act.error).toBe(false);
-    expect(act.text.split("\n")[0]).toStartWith('(No session matches "sapgui"; using the only open one');
-    expect(surface.acts()).toHaveLength(1);
-    expect((await call("sap_screenshot", { session: "S4H" })).text).toStartWith('(No session matches "S4H"');
+    for (const session of ["sapgui", "S4H", ""]) {
+      for (const tool of ["sap_look", "sap_act", "sap_screenshot", "sap_use"]) {
+        const args = tool === "sap_act" ? { do: "set", id: "ctxtA", value: "1", session } : { session };
+        const r = await call(tool, args);
+        expect(r.error).toBe(true);
+        expect(r.text).toContain("sap_sessions");
+      }
+    }
+    expect(surface.log).toHaveLength(0);
   });
 });
 
@@ -458,7 +462,7 @@ describe("a session id that is gone", () => {
     };
     return { fiori, webgui, call };
   }
-  test("an old tab id goes to the only open session of its surface, with a line that says so", async () => {
+  test("an old tab id cannot read or act on the only remaining session of its surface", async () => {
     const { fiori, webgui, call } = await two();
     fiori.add({ id: "chrome:OLD", system: "S4H", transaction: "Shell-home" });
     webgui.add({ id: "chrome:W1", system: "ABA", transaction: "VA03" });
@@ -467,12 +471,11 @@ describe("a session id that is gone", () => {
     fiori.sessions = [];
     fiori.add({ id: "chrome:NEW", system: "S4H", transaction: "Shell-home" });
     const look = await call("sap_look", { session: "chrome:OLD" });
-    expect(look.error).toBe(false);
-    expect(look.text.split("\n")[0]).toStartWith('(Session "chrome:OLD" is not open any more; using the only open fiori session');
-    expect(look.text).toContain("SCREEN Shell-home");
+    expect(look.error).toBe(true);
+    expect(look.text).toContain("sap_sessions");
     const act = await call("sap_act", { do: "set", id: "x", value: "1", session: "chrome:OLD" });
-    expect(act.error).toBe(false);
-    expect(fiori.acts()).toHaveLength(1);
+    expect(act.error).toBe(true);
+    expect(fiori.acts()).toHaveLength(0);
     expect(webgui.acts()).toHaveLength(0);
   });
   test("with two sessions of that surface open, it stays an error", async () => {

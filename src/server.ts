@@ -31,7 +31,7 @@ import { codeOf } from "./sdk/code.js";
 import { type ActOutput, actOutput, screenOf, screenOfInfo, sessionsData, sessionsOutput, structuredFromEnv, withData } from "./structured.js";
 
 export const SERVER_NAME = "sap-ui-automation";
-export const SERVER_VERSION = "0.5.0";
+export const SERVER_VERSION = "0.5.1";
 /** Claude Code defers MCP tools until searched for, except those marked so. */
 const ALWAYS_LOAD = { "anthropic/alwaysLoad": true };
 
@@ -467,82 +467,9 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     return withNumbers(answer, notations.get(session));
   }
 
-  /**
-   * A session reference that matches no session, with exactly one session
-   * open: that one, and a line that says so. Agents guess a name for their
-   * first call ("sapgui" for a Web GUI tab); with one session there is no
-   * other it could mean. Otherwise the reference as it is.
-   */
-  async function lenient(ref: string | undefined): Promise<{ ref: string | undefined; note?: string }> {
-    if (!ref || registry.resolve(ref)) return { ref };
-    const { sessions } = await registry.discover().catch(() => ({ sessions: [] as SessionInfo[] }));
-    const only = sessions[0];
-    if (registry.resolve(ref) || sessions.length !== 1 || !only) return { ref };
-    return { ref: only.id, note: `(No session matches "${ref}"; using the only open one: ${only.surface} ${place(only)}.)` };
-  }
-
-  /** How many times the user was asked to confirm an action (see leniently). */
-  let asks = 0;
-  /** Says that a session is gone: its id names no open session, or its tab closed. */
-  const GONE_SESSION = /No open SAP session matches|is no longer open/;
-
-  /**
-   * A session id that stopped naming an open session ("chrome:<old id>": the tab was closed or opened again),
-   * after the call failed on it: the only open session of the same surface, and a line that says so. Nothing
-   * ran on the gone session, so the call runs again on that one. Undefined when there is no such single session.
-   */
-  async function replacedBy(raw: string | undefined, message: string): Promise<{ ref: string; note: string } | undefined> {
-    // Only an answer where nothing ran: a batch that ran actions before the session went says "Ran n of m".
-    if (!raw || !GONE_SESSION.test(message.slice(0, 400)) || /^Ran \d+ of \d+/m.test(message)) return undefined;
-    const only = await registry.replacement(raw).catch(() => undefined);
-    return only ? { ref: only.id, note: `(Session "${raw}" is not open any more; using the only open ${only.surface} session: ${place(only)}.)` } : undefined;
-  }
-
-  /** The tool's answer for `ref`, with the line `lenient` says first. */
-  async function leniently(raw: string | undefined, f: (ref: string | undefined) => Promise<CallToolResult>): Promise<CallToolResult> {
-    let { ref, note } = await lenient(raw);
-    let r: CallToolResult;
-    // A user who was asked to confirm an action on that session confirmed it there, nowhere else: no other session then.
-    const asked = asks;
-    const replaced = (name: string | undefined, message: string) => (asks === asked ? replacedBy(name, message) : Promise.resolve(undefined));
-    try {
-      r = await f(ref);
-    } catch (e) {
-      const alt = ref === raw ? await replaced(raw, (e as Error).message) : undefined;
-      if (!alt) throw e;
-      ({ ref, note } = alt);
-      r = await f(ref);
-    }
-    if (r.isError && ref === raw) {
-      const first = r.content[0];
-      const alt = await replaced(raw, first?.type === "text" ? first.text : "");
-      if (alt) {
-        ({ ref, note } = alt);
-        r = await f(ref);
-      }
-    }
-    const first = r.content[0];
-    if (!note) return r;
-    if (first?.type !== "text") return { ...r, content: [{ type: "text", text: note }, ...r.content] };
-    return { ...r, content: [{ ...first, text: `${note}\n${first.text}` }, ...r.content.slice(1)] };
-  }
-
   /** The queue a call on `ref` waits in: the session's id, found without opening it. */
   async function laneOf(ref: string | undefined): Promise<string> {
-    const pick = () => {
-      try {
-        return ref ? registry.resolve(ref)?.id : registry.active;
-      } catch {
-        // An ambiguous reference: the call says so when its turn comes.
-        return undefined;
-      }
-    };
-    let key = pick();
-    if (!key) {
-      await registry.discover().catch(() => {});
-      key = pick();
-    }
-    return key ?? "*";
+    return (await registry.target(ref)).id;
   }
 
   /** The result, with a first line that says how long it waited for the call before it, when it did. */
@@ -559,7 +486,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
    */
   async function serial(ref: string | undefined, label: string, f: (at: string | undefined) => Promise<CallToolResult>): Promise<CallToolResult> {
     const lane = await laneOf(ref);
-    return queue.run(lane, label, async (turn) => withTurn(await f(lane === "*" ? ref : lane), turn));
+    return queue.run(lane, label, async (turn) => withTurn(await f(lane), turn));
   }
 
   server.registerTool(
@@ -695,15 +622,13 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     },
     ({ session: raw }) =>
       answer(() =>
-        leniently(raw, (ref) =>
-          serial(ref, "sap_use", async (at) => {
-            const { driver, info } = await attach(at);
-            registry.active = info.id;
-            actShown.delete(info.id);
-            const v = await driver.look({ compact: true });
-            return text(await said(driver, info.id, v, views.present(info.id, v, true)));
-          }),
-        ),
+        serial(raw, "sap_use", async (at) => {
+          const { driver, info } = await attach(at);
+          registry.active = info.id;
+          actShown.delete(info.id);
+          const v = await driver.look({ compact: true });
+          return text(await said(driver, info.id, v, views.present(info.id, v, true)));
+        }),
       ),
   );
 
@@ -725,7 +650,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
       _meta: ALWAYS_LOAD,
     },
     ({ session: raw, full, diff, id, rows, cols }) =>
-      answer(() => leniently(raw, (ref) => serial(ref, "sap_look", (at) => look(at, full, diff, id, rows, cols)))).then(confirmNotice),
+      answer(() => serial(raw, "sap_look", (at) => look(at, full, diff, id, rows, cols))).then(confirmNotice),
   );
 
   async function look(ref: string | undefined, full: boolean | undefined, diff: boolean | undefined, id: string | undefined, rows: string | undefined, cols: string | undefined): Promise<CallToolResult> {
@@ -949,9 +874,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     type Held = { info: SessionInfo; assessment: Assessment; confirm: string };
     const box: { held?: Held } = {};
     // The call keeps to the session it queued for: a sap_use or a new logon while it waits does not move it.
-    const lane = await laneOf(ref);
-    const at = lane === "*" ? ref : lane;
-    const done = await queue.run(lane, actionText(action), async (turn): Promise<CallToolResult | undefined> => {
+    const at = await laneOf(ref);
+    const done = await queue.run(at, actionText(action), async (turn): Promise<CallToolResult | undefined> => {
       const q0 = Date.now();
       let j: Awaited<ReturnType<typeof judge>>;
       try {
@@ -988,7 +912,6 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
 
   /** An action the guard holds for the user's yes: the client asks the user (MCP elicitation); it runs on a yes, if the screen is still what the user was shown. */
   async function confirmHeld(held: { info: SessionInfo; assessment: Assessment; confirm: string }, action: NormalizedAction, whole: boolean): Promise<CallToolResult> {
-    asks++;
     const { info, assessment, confirm } = held;
     const shown = shownOf(info, action, assessment, actCount.get(info.id) ?? 0);
     const what = `${confirm}, on ${place(info)}`;
@@ -1088,9 +1011,8 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     const rest = (from: number) => (from > total ? "" : from === total ? ` Action ${total} did not run.` : ` Actions ${from} to ${total} did not run.`);
     type Held = { info: SessionInfo; assessment: Assessment; confirm: string; action: NormalizedAction };
     const box: { held?: Held; head?: string; ran?: number; stopped?: { why: string; text: string } } = {};
-    const lane = await laneOf(ref);
-    const at = lane === "*" ? ref : lane;
-    const done = await queue.run(lane, `${total} actions`, async (turn): Promise<CallToolResult | undefined> => {
+    const at = await laneOf(ref);
+    const done = await queue.run(at, `${total} actions`, async (turn): Promise<CallToolResult | undefined> => {
       const lines: string[] = [];
       const codes: string[] = [];
       let ran = 0;
@@ -1283,7 +1205,7 @@ ${writeRule(policy)}`,
     (input, extra) =>
       answer(async () => {
         const { actions, action, session: raw, full } = input as { actions?: unknown; action?: unknown; session?: string; full?: boolean };
-        return leniently(raw, (ref) => act(ref, input, actions, action, full, extra));
+        return act(raw, input, actions, action, full, extra);
       }).then(confirmNotice),
   );
 
@@ -1325,13 +1247,11 @@ ${writeRule(policy)}`,
     },
     ({ session: raw }) =>
       answer(() =>
-        leniently(raw, (ref) =>
-          // In the session's turn, as every other tool: never mid-action, never beside another call on the driver.
-          serial(ref, "screenshot", async (at) => {
-            const png = await (await registry.driver(at)).screenshot();
-            return { content: [{ type: "image", data: png.toString("base64"), mimeType: "image/png" }] };
-          }),
-        ),
+        // In the session's turn, as every other tool: never mid-action, never beside another call on the driver.
+        serial(raw, "screenshot", async (at) => {
+          const png = await (await registry.driver(at)).screenshot();
+          return { content: [{ type: "image", data: png.toString("base64"), mimeType: "image/png" }] };
+        }),
       ),
   );
 

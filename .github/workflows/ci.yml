@@ -37,8 +37,15 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
-      # No SAP system is needed: SAP GUI is a fake, Web GUI and Fiori are synthetic pages.
-      # Browser tests skip without SAP_TEST_CHROME; the PowerShell parse test runs on Windows only.
+      - name: Install Chromium for the browser tests
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 24
+        shell: bash
+        run: |
+          bun x --no-install playwright-core install --with-deps --no-shell chromium
+          browser=$(node -p 'require("playwright-core").chromium.executablePath()')
+          test -x "$browser"
+          echo "SAP_TEST_CHROME=$browser" >> "$GITHUB_ENV"
+      # Linux/Node 24 exercises Web GUI, Fiori and the extension against synthetic pages.
       - run: bun run test
       - run: bun run build
       - name: The built command runs on plain Node

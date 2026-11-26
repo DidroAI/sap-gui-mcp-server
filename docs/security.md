@@ -36,10 +36,10 @@ To report a vulnerability, see
   and types them into SAP's logon page itself; the server and the agent
   never see them
   ([extension/PRIVACY.md](https://github.com/DidroAI/sap-ui-automation/blob/main/extension/PRIVACY.md)).
-- **Each write waits for the user's yes by default.** Anything that may
-  save runs only after the user accepts it in the MCP client
+- **The default requests MCP client approval.** A flagged write
+  runs only after the client accepts it
   (`SAP_WRITE=confirm`), and is refused where the client cannot ask.
-  `SAP_WRITE=off` refuses every write.
+  Codex Full Access can accept automatically. `SAP_WRITE=off` refuses flagged writes.
 - **Files are written only to local folders**, named by environment
   variables (with defaults in the working directory), and only when a
   recording, saved test code, a download or a debug capture is asked for.
@@ -105,7 +105,7 @@ scrolling), **navigate** (typing, Enter, tabs, Back, Execute F8) or
 
 | `SAP_WRITE` | Read and navigate | Commit (Save, Post, Delete, Release, Yes on a save popup, unknown buttons) |
 | --- | --- | --- |
-| `confirm` (default) | allowed | run only after the user says yes to that exact action in the MCP client; refused when the client cannot ask |
+| `confirm` (default) | allowed | run only after the MCP client accepts that exact action; refused when the client cannot ask |
 | `off` (read-only) | allowed | refused |
 | `on` | allowed | allowed |
 

@@ -53,7 +53,7 @@ export function recordHelp(): string {
   {"op":"stop"}  ends the recording and writes <name>${FILE_SUFFIX} in the recordings directory
   {"op":"list"}  the recordings in that directory
   {"op":"export","name":"VA03 display order","to":"calm"}  to: ${TARGET_NAMES.map((t) => `${t} (${TARGETS[t].what})`).join("; ")}
-Every op but start, help and list takes "session". A check or capture that does not hold on the screen now is refused. Typed values are written to the file as typed: do not record passwords or other secrets.`;
+Pass "session" for start, assert, capture, or code from session history. A check or capture that does not hold on the screen now is refused. Typed values are written to the file as typed: do not record passwords or other secrets.`;
 }
 
 /**
@@ -66,8 +66,8 @@ export function goOnText(n: number): string {
 }
 
 /** Runs a call in the session's turn (server.ts): one call at a time per session. */
-export type Serial = (ref: string | undefined, label: string, f: () => Promise<CallToolResult>) => Promise<CallToolResult>;
-const direct: Serial = (_ref, _label, f) => f();
+export type Serial = (ref: string | undefined, label: string, f: (at: string | undefined) => Promise<CallToolResult>) => Promise<CallToolResult>;
+const direct: Serial = (ref, _label, f) => f(ref);
 
 /** The actions the server ran on a session, oldest first (server.ts). */
 export type History = (sessionId: string) => readonly NormalizedAction[];
@@ -112,8 +112,8 @@ export function registerRecordTools(server: McpServer, registry: Registry, polic
             case "start": {
               if (!a.name) return fail('start needs "name", e.g. {"op":"start","name":"VA03 display order"}.');
               const name = a.name;
-              return serial(a.session, "sap_record start", async () => {
-                const { driver, info } = await registry.session(a.session);
+              return serial(a.session, "sap_record start", async (at) => {
+                const { driver, info } = await registry.session(at);
                 return text(await recorder.start(driver, info, name, a.description, a.replace === true));
               });
             }
@@ -135,7 +135,7 @@ export function registerRecordTools(server: McpServer, registry: Registry, polic
               }
               if (t) return text(exportSapTs(t));
               // No recording: what this server ran on the session, as a draft.
-              const id = a.session ? registry.resolve(a.session)?.id : registry.active;
+              const id = a.session !== undefined ? (await registry.target(a.session)).id : registry.active;
               const done = id ? history(id) : [];
               if (!done.length) return text("No recording is on, and no action ran on this session yet.");
               return text(draftTest({ name: "draft", lines: done.map((x) => codeOf(x)) }));
@@ -143,12 +143,12 @@ export function registerRecordTools(server: McpServer, registry: Registry, polic
             case "assert": {
               if (!a.check) return fail('assert needs "check": status, field, title, transaction or text.');
               const check = a.check;
-              return serial(a.session, "sap_record assert", async () => text(await recorder.assert(await registry.driver(a.session), { check, id: a.id, equals: a.equals, contains: a.contains, matches: a.matches })));
+              return serial(a.session, "sap_record assert", async (at) => text(await recorder.assert(await registry.driver(at), { check, id: a.id, equals: a.equals, contains: a.contains, matches: a.matches })));
             }
             case "capture": {
               if (!a.name || !a.from) return fail('capture needs "name" and "from": status, field or title.');
               const [name, from] = [a.name, a.from];
-              return serial(a.session, "sap_record capture", async () => text(await recorder.capture(await registry.driver(a.session), { name, from, id: a.id, pattern: a.pattern })));
+              return serial(a.session, "sap_record capture", async (at) => text(await recorder.capture(await registry.driver(at), { name, from, id: a.id, pattern: a.pattern })));
             }
             case "variable": {
               if (!a.name || a.value === undefined) return fail('variable needs "name" and "value".');
@@ -212,8 +212,8 @@ export function registerRecordTools(server: McpServer, registry: Registry, polic
         if (!name) return fail('Give "name", the recording to replay (sap_record {"op":"list"} lists them).');
         const test = await recorder.load(name);
         // The whole replay is one turn of the session: no other call acts in between.
-        return serial(a.session, `sap_replay ${test.name}`, async () => {
-          const { driver } = await registry.session(a.session);
+        return serial(a.session, `sap_replay ${test.name}`, async (at) => {
+          const { driver } = await registry.session(at);
           const r = await replay(driver, policy, test, { ...(a.variables ? { variables: a.variables } : {}), ...(a.screens ? { screens: a.screens } : {}), ...(a.choices ? { choices: a.choices } : {}), ...(a.from !== undefined ? { from: a.from } : {}), ...(fixed?.success ? { repair: fixed.data } : {}), leaveOnFailure: false });
           const needs = inputsOf(test);
           const failed = r.steps.find((s) => s.outcome === "fail");

@@ -4,7 +4,17 @@ All notable changes to this project are listed here. The project follows
 [Semantic Versioning](https://semver.org); before 1.0, a minor version may
 change the tools or the view format.
 
-## Unreleased
+## 0.5.1
+
+### Fixed
+
+- A tool call that names an unavailable SAP session now asks the agent to
+  select an open session before continuing.
+- Setup preserves customized, unmarked skills when installing or migrating
+  the bundled SAP skills.
+- First-run instructions explain client approval behavior and how to
+  preserve unsaved work when opening a transaction.
+- The Linux Node 24 CI check runs the browser tests against Chromium.
 
 ### Changed
 

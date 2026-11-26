@@ -65,7 +65,7 @@ system, not the open web.
 
 - **`session`** (optional on most tools): which session to work in. A number
   from `sap_sessions`, a session id, a system id, a transaction, or a
-  surface name (`sapgui`, `webgui`, `fiori`). Default: the active session.
+  surface name (`sapgui`, `webgui`, `fiori`). Omit it to use the active session. For targeted work use the exact id on each call. If that id is unavailable, list sessions again and verify the intended target before retrying.
 - **One call at a time per session.** A second call on the same session
   waits until the first has ended. When it waited, the first line of its
   answer says how long.
@@ -221,8 +221,8 @@ Other answers:
 - **Refused:** `Refused: <reason>` (`isError`). The guard, the command-field
   rule or the transaction lists said no. With writing off, the reason says
   "Tell the user what you would have saved; do not look for another way",
-  then how to leave the transaction without saving (`okcode /n`, or Back
-  and SAP's discard answer) so that SAP releases the document's lock.
+  and explains the document lock. Leaving with `/n` discards unsaved
+  edits. Preserve existing work unless the user authorizes discarding it.
 - **Not run, the screen moved:** `Not run: it may write, and SAP is not on
   the screen you last saw: it is now ...`, then the screen. A write runs
   only on the screen the server last showed the agent; sent again, it runs
@@ -374,7 +374,7 @@ must check. Off until `start`. Guide: [Recording and replay](../guides/record-re
 | `text` | string | `note` | what the last step is for |
 | `to` | `calm`, `vbs`, `playwright`, `playwright-sap`, `sap-ts`, `gherkin` | `export` | the format |
 | `tidy` | boolean | `code` | the recording tidied: detours, corrections and error round trips dropped, checks from what SAP showed |
-| `session` | string | every op but `start`, `help` and `list` | the session; default the active one |
+| `session` | string | `start`, `assert`, `capture`; `code` from session history | the session; default the active one |
 
 What each operation answers:
 

@@ -31,7 +31,7 @@ From a screenshot or a page's HTML, an agent has to guess which SAP field
 is which. SAP UI Automation reads the screen the way SAP models it and
 gives the agent one line per control, with SAP's own ids, labels, values
 and whether each can be edited. After an action it sends only what
-changed. Fewer tokens, fewer steps, fewer wrong clicks.
+changed on the same screen.
 
 ```
 TRANSACTION VA01  PROGRAM SAPMV45A  SCREEN 101  SYSTEM ABA (800)
@@ -40,6 +40,11 @@ btn[8]  button  Create with Reference (F8)
 ctxtVBAK-AUART  field  Order Type = "OR"  (edit)
 ctxtVBAK-VKORG  field  Sales Organization = ""  (edit)
 ```
+
+Use MCP for interactive work in coding agents. Across 104 matched SAP pilot runs per
+method, MCP averaged 22 seconds, $0.0053 and 208k tokens per run. The CLI
+averaged 39 seconds, $0.0081 and 356k tokens. Counts include cache reads and writes. Use the CLI for shell scripts or an agent without MCP,
+and the SDK for repeatable tests. [Benchmark and limitations](docs/benchmarks.md)
 
 ## Quick start
 
@@ -58,7 +63,9 @@ ctxtVBAK-VKORG  field  Sales Organization = ""  (edit)
 3. Click the extension's icon, then **Pair**, and add your SAP systems.
 
 Then ask your agent: *"Look at my SAP screen and tell me which fields are
-required."*
+required."* For a repeatable workflow, ask the agent to record a display
+transaction in a dedicated test session, assert a value on the result, stop
+recording, then replay it. [Example prompt](examples/prompts/record-a-test.md)
 
 <details>
 <summary><b>Let your agent set it up</b>: a prompt to paste into Claude Code, Codex or Cursor</summary>
@@ -71,7 +78,7 @@ Rules: never type, ask for or store an SAP password, and never log on to SAP for
 3. Run npx -y sap-ui-automation setup --extension --dry-run, show me the result, then run it without --dry-run. Tell me to restart Chrome once, then to click the extension's icon, click Pair and add my SAP systems, and wait.
 4. From here on, run commands with the environment variable SAP_BROWSER=extension (in the syntax of my shell). Run npx -y sap-ui-automation doctor. For each ✗, tell me what to do (the → line says it), wait, and run it again.
 5. Ask me to open an SAP screen, then run npx -y sap-ui-automation sessions and npx -y sap-ui-automation look --print, and describe the screen in three lines.
-6. Report in at most ten lines: the version, the agents setup changed, each doctor area (✓ or ✗) and what is left for me, whether I must restart an agent, and that each write in SAP will wait for my yes.
+6. Report in at most ten lines: the version, the agents setup changed, each doctor area (✓ or ✗) and what is left for me, whether I must restart an agent, and the effective write setting. Explain whether this client can display or automatically accept confirmation requests (including Codex Full Access).
 ```
 
 The longer version, also for SAP GUI for Windows:
@@ -139,11 +146,11 @@ harness and raw results are not public yet.
 <img src="assets/side-panel.png" alt="The extension's side panel: the agent's steps in SAP, and a save waiting for the user's yes" width="400" align="right">
 
 - **Reads SAP's own screen model.** Ids, labels, values and what is
-  editable, then only what changed after each action. That is why it is
-  cheap.
-- **Writes wait for your yes.** By default (`SAP_WRITE=confirm`) your
-  client asks before anything that may save; `off` makes it read-only
-  ([safety model](docs/concepts/safety.md)).
+  editable, then only what changed after each action.
+- **Configurable write controls.** Under `SAP_WRITE=confirm`, flagged actions
+  require an affirmative MCP client response. Codex Full Access can accept
+  automatically. Use `off` to refuse flagged writes.
+  [Confirm mode](docs/concepts/confirm-mode.md)
 - **No credentials for the agent.** Passwords stay in the OS keychain and
   the extension logs on; the agent never sees one.
 - **Parallel sessions** across systems and users.

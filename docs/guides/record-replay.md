@@ -35,8 +35,8 @@ commit or share them.
 
 ## Record a run
 
-Ask the agent to record, or call the tool yourself. Start with a command
-that opens the transaction, so the test has a clean start:
+Ask the agent to record, or call the tool yourself. Use a dedicated test session for recording and replay. Verify the system, client
+and session id first. The transaction command below discards any unsaved input:
 
 ```
 sap_record {"op":"start","name":"VA03 display order"}

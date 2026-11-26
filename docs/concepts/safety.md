@@ -6,7 +6,7 @@ description: "The rules the server enforces whatever the agent decides: no logon
 # Safety model
 
 What stops an agent from saving something wrong in SAP? By default, each
-action that may write waits for your yes, and settings can make the server
+flagged write requires an affirmative client response, and settings can make the server
 read-only or limit it to some systems and transactions. The server enforces
 these rules whatever the agent decides. They are a
 safety net for an agent that makes mistakes, not a security boundary: see
@@ -23,7 +23,7 @@ you registered, with a password it keeps; the server never sees it.)
 
 | Setting | Effect |
 | --- | --- |
-| `SAP_WRITE=confirm` (default) | your MCP client asks you before each action that may write to SAP (Save, Post, Delete, Release, Approve, "Yes" on a save popup); refused when it cannot ask (see [Confirm mode](confirm-mode.md)) |
+| `SAP_WRITE=confirm` (default) | your MCP client receives a request for each flagged write (Save, Post, Delete, Release, Approve, "Yes" on a save popup); refused without elicitation; Codex Full Access can accept automatically (see [Confirm mode](confirm-mode.md)) |
 | `SAP_WRITE=off` | read-only: every such action is refused |
 | `SAP_WRITE=on` | such actions run |
 | `SAP_ALLOW_SYSTEMS=ABA/800,S4H` | only these systems, optionally with a client, are visible and usable. Checked on every tool, each time: a session that moves to another system is refused from then on |
@@ -182,12 +182,10 @@ screen was shown there is nothing to compare, and the write runs.
 
 A refused or declined write leaves the transaction as the agent left it,
 often with a document open for change, and SAP keeps that document locked
-for everyone else. So the answer tells the agent to leave without saving,
-if it typed anything or opened a document to change it:
-`{"do":"okcode","value":"/n"}`, or Back (F3) and the answer to SAP's "data
-will be lost" question that leaves without saving. It is not to leave the
-transaction open for you to save by hand, unless you ask for that. The
-bundled agent skills say the same.
+for everyone else. Tell the user about the edits and the lock. Leaving with
+`/n` or choosing SAP's discard answer can lose earlier work on the same
+screen. Discard only disposable input you entered on a clean screen or
+edits the user authorized you to discard.
 
 ## What it does not catch
 

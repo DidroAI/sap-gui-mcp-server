@@ -1,13 +1,13 @@
 ---
 title: "Can the agent save in SAP without me? Confirm mode"
-description: "With SAP_WRITE=confirm, the default, an action that may write waits for your yes in your MCP client; where the client cannot ask, it is refused."
+description: "With SAP_WRITE=confirm, the default, flagged writes require an affirmative MCP client response. Codex Full Access can accept automatically."
 ---
 
 # Confirm mode
 
 With `SAP_WRITE=confirm`, the default, an action that may write runs only
-after you say yes to it in your MCP client. Every other action runs as
-usual. The client must support MCP elicitation; with one that does not,
+after the MCP client accepts the request. Interactive clients may show a
+question. Codex Full Access can accept automatically. The client must support MCP elicitation; with one that does not,
 such actions are refused. For a server that never writes, set
 `SAP_WRITE=off` (read-only).
 

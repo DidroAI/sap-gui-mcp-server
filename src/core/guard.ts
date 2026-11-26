@@ -185,11 +185,11 @@ export function tcodeRefusal(policy: Policy, tcode: string | undefined): string 
  * user to press Save; the next user (or the next run) was then blocked from that document.
  */
 export const LEAVE_UNSAVED =
-  'If you entered or changed anything in this transaction, or opened a document to change it, leave it now without saving so SAP releases the lock on that document: {"do":"okcode","value":"/n"}, or Back (F3) and the answer of SAP\'s "data will be lost" question that leaves without saving. Do not leave it open for the user to save by hand unless they ask you to.';
+  'Preserve pre-existing edits. If you are unsure what leaving would discard, stay on the screen and ask the user. If you opened the transaction and only your own disposable input would be lost, leave without saving to release the lock. Use {"do":"okcode","value":"/n"} or Back (F3) and confirm the loss of that input.';
 
 /** LEAVE_UNSAVED for a Fiori app: no command field there; a draft is discarded by its own button. */
 export const LEAVE_UNSAVED_FIORI =
-  'If you changed fields on this page, or it is a draft (the view says DRAFT), leave it without saving so the document is not left locked: on a draft press "Discard Draft"; else the app\'s Back button or {"do":"open","app":"#Shell-home"}, and answer the launchpad\'s "data will be lost" question with the choice that discards. Do not leave it open for the user to save by hand unless they ask you to.';
+  'Preserve pre-existing drafts and edits. If you are unsure what leaving would discard, stay on the page and ask the user. Use "Discard Draft" only for a draft you created whose contents are entirely your own disposable input. For a non-draft page, use Back or {"do":"open","app":"#Shell-home"} only if any input lost is your own and disposable.';
 
 export type Verdict =
   | { run: true }
@@ -235,7 +235,7 @@ export function decide(policy: Policy, action: Action, assessment: Assessment, a
   if (again)
     return {
       run: false,
-      refused: `this action may write to SAP (${assessment.reason}) and writes are off. As before: tell the user, leave without saving (${fiori ? '"Discard Draft" on a draft, else {"do":"open","app":"#Shell-home"}' : '{"do":"okcode","value":"/n"}'}), do not look for another way.`,
+      refused: `this action may write to SAP (${assessment.reason}) and writes are off. Tell the user. Preserve pre-existing edits${fiori ? " and drafts" : ""}. Discard only your own disposable input (${fiori ? '"Discard Draft" for your own draft, else #Shell-home' : "/n"}). If unsure, stay and ask. Do not retry.`,
     };
   return {
     run: false,

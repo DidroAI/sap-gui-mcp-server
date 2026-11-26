@@ -13,9 +13,10 @@
  * A file that differs is replaced, unless `overwrite` is false (init without
  * --force): then it is kept, as the user may have edited it.
  */
+import { createHash } from "node:crypto";
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const SKILL_TARGETS = ["claude", "codex", "cursor"] as const;
@@ -134,9 +135,9 @@ export function installSkills(opts: InstallOptions): InstallResult {
       continue;
     }
     for (const old of Object.keys(OLD_SKILL_NAMES)) {
-      // A Cursor rule has no folder to mark: one under an old name that uses this server is ours.
+      // Only exact released content identifies an unmarked old installation.
       const path = target === "cursor" ? join(dir, `${old}.mdc`) : join(dir, old);
-      const ours = target === "cursor" ? /\bsap-ui-automation\b/.test(readIfThere(path, "utf8") ?? "") : existsSync(path) && ownSkill(path);
+      const ours = target === "cursor" ? releasedFile(path, `${old}.mdc`) : ownSkill(path);
       if (!ours) continue;
       if (!overwrite) {
         lines.push(`– ${LABEL[target]} skill ${old}: the old name of ${OLD_SKILL_NAMES[old]}, kept (--force removes it) (${show(path)})`);
@@ -181,19 +182,31 @@ export const OLD_SKILL_NAMES: Record<string, string> = { "sap-gui-drive": "sap-u
 /** Left in each skill folder setup writes, so that only those are replaced later. */
 export const SKILL_MARKER = ".sap-ui-automation";
 
-/**
- * Whether a skill folder is one this package installed: it holds the marker, or (copied before the
- * marker existed, by `install --skills --global`) a SKILL.md of that name that uses this server.
- * A folder someone made themselves is not.
- */
-export function ownSkill(target: string): boolean {
-  if (existsSync(join(target, SKILL_MARKER))) return true;
-  const text = readIfThere(join(target, "SKILL.md"), "utf8");
-  const name = new RegExp(`^name: ${target.split(/[\\/]/).pop()}$`, "m");
-  // The name line itself carries "sap-ui-automation" now: the rest of the file must use the server.
-  return !!text && name.test(text) && /\bsap-ui-automation\b/.test(text.replace(name, ""));
+// SHA-256 of the SKILL.md files shipped in v0.1.0 through v0.5.0 and the
+// two Cursor rules generated under the v0.1.0 names. Each skill in these
+// releases contained only SKILL.md.
+const releasedFiles: Record<string, readonly string[]> = {
+  "sap-gui-cli": ["00075332e4c16a753c45170fa4bf6a3b4d6e0eae665517ec824af1d4d34e6e5b"],
+  "sap-gui-cli.mdc": ["742c2048e886e7715a598832df19928018da3ab9dcbf86d925e6c22bb6b9bce3"],
+  "sap-gui-drive": ["5d893e47048c5f7142baf93999c2d65542562672544a2da16edc8f15402595ad"],
+  "sap-gui-drive.mdc": ["6c8cef9f86694529fddf1e9ec50bbe863cf52869f29fb98e29277db7a516d2fc"],
+  "sap-ui-automation": ["1540fd97a95591af24d8172b340dc786b4c58d063d43f5723939ba8464865e50", "d1c782310d9c27d6613b3b647f700f460a3ab2fb8e8d36285e561d5781acd54c"],
+  "sap-ui-automation-cli": ["946fba483b3a535ebb0dac860df77032ffe4b34626ad8ea77c11167fb03ce44f", "b330a1f7430faaef60d5d3470d46e89f765c6544ba17a20ac86f39694b3afd0f"],
+};
+
+function releasedFile(path: string, key: string): boolean {
+  const hashes = releasedFiles[key];
+  if (!hashes || !lstat(path)?.isFile()) return false;
+  return hashes.includes(createHash("sha256").update(readFileSync(path)).digest("hex"));
 }
 
+export function ownSkill(target: string, skill?: Skill): boolean {
+  if (!lstat(target)?.isDirectory()) return false;
+  if (lstat(join(target, SKILL_MARKER))?.isFile()) return true;
+  if (skill && sameSkill(skill, target)) return true;
+  const entries = readdirSync(target);
+  return entries.length === 1 && entries[0] === "SKILL.md" && releasedFile(join(target, "SKILL.md"), basename(target));
+}
 
 /** What setup did with one skill in one folder. */
 export type SkillState = "installed" | "updated" | "unchanged" | "linked" | "copied" | "left";
@@ -240,9 +253,19 @@ const remove = (p: string) => (lstat(p)?.isSymbolicLink() ? unlinkSync(p) : rmSy
 /** Whether the folder holds exactly the shipped files (the marker aside). */
 function sameSkill(skill: Skill, target: string): boolean {
   try {
-    const have = walk(target).filter((f) => f !== SKILL_MARKER);
-    if (have.length !== skill.files.length || have.some((f, i) => f !== skill.files[i])) return false;
-    return skill.files.every((f) => readFileSync(join(target, f)).equals(readFileSync(join(skill.dir, f))));
+    const matches = (source: string, dest: string): boolean => {
+      const entries = readdirSync(source);
+      const installed = readdirSync(dest).filter((name) => dest !== target || name !== SKILL_MARKER);
+      if (entries.length !== installed.length) return false;
+      return entries.every((name) => {
+        const a = join(source, name);
+        const b = join(dest, name);
+        const entry = lstat(b);
+        if (statSync(a).isDirectory()) return !!entry?.isDirectory() && matches(a, b);
+        return !!entry?.isFile() && readFileSync(a).equals(readFileSync(b));
+      });
+    };
+    return matches(skill.dir, target);
   } catch {
     return false;
   }
@@ -258,7 +281,7 @@ function copySkill(skill: Skill, target: string): void {
 /** Puts a real copy at `target`, unless a folder there is not ours. */
 function placeCopy(skill: Skill, target: string, dryRun: boolean): SkillState {
   const l = lstat(target);
-  if (l && !ownSkill(target)) return "left";
+  if (l && !ownSkill(target, skill)) return "left";
   if (l && !l.isSymbolicLink() && sameSkill(skill, target)) return "unchanged";
   if (!dryRun) copySkill(skill, target);
   return l ? "updated" : "installed";
@@ -330,7 +353,7 @@ export function setupSharedSkills(dirs: string[], opts: SharedSkillsOptions): Fo
         r.states[skill.name] = shared === "unchanged" ? "unchanged" : "updated";
         continue;
       }
-      if (l && !ownSkill(p)) {
+      if (l && !ownSkill(p, skill)) {
         r.states[skill.name] = "left";
         continue;
       }

@@ -11,11 +11,28 @@ server (`sap-ui-automation:sap_look`; the tool names are the same under any
 server name). Each tool's description lists its actions and fields. This
 skill gives the order of work and how SAP behaves.
 
+## Setup and repeatable tests
+
+If the tools are missing, check the MCP client configuration and restart the
+client after setup. If no SAP session appears, run `npx -y sap-ui-automation doctor`
+on the SAP machine and use its suggested fix for the intended surface.
+The user handles credentials. See the [setup guide](https://docs.didro.ai/sap-ui-automation/getting-started/setup-prompt).
+
+When the user asks for a regression test, use a clean test session. List
+saved flows with `sap_record {"op":"list"}`. To record one, start with
+`sap_record` (`op: start`, name and session id), perform the requested steps,
+assert the expected field or status on the result, then stop. Replay the
+named test on the verified test session and report the first failing step.
+Recordings retain typed values. [Recording guide](https://docs.didro.ai/sap-ui-automation/guides/record-replay)
+
 ## One screen, one call
 
-1. **Find the screen.** `sap_look`, or straight to
-   `{"do":"okcode","value":"/nVA03"}` with `sap_act` when the task names
-   the transaction. With several sessions open, `sap_sessions` first.
+1. **Identify the target.** List sessions with `sap_sessions`, then inspect the intended
+   screen using `sap_look` with its exact `session` id. Check system, client, user, transaction and any
+   popup. If the target disappears, list sessions again and verify the new id.
+   Keep existing work intact. To start another transaction use a fresh session
+   (`/oVA03` for VA03 on SAP GUI or Web GUI). Use `/n` only in a known clean
+   session or with permission to discard its contents.
 2. **Send the whole screen in one `sap_act`**: the fields you see, then the
    key that submits them.
 
@@ -113,7 +130,7 @@ Saving, posting, releasing and deleting change the system for real. The
 user's write setting decides what happens, and `sap_act` says which one
 applies:
 
-- **confirm** (default): the client asks the user before the action runs.
+- **confirm** (default): the server requests approval from the client. Codex Full Access can accept automatically.
   If they decline, ask how to go on. A client that cannot ask gets the
   action refused: tell the user what you would have saved and stop.
 - **off** (read-only): the action is refused. Tell the user what you would
@@ -127,7 +144,6 @@ Never work around the setting, for example with a save code in the command
 field or another route to the same change. The setting is the user's
 decision, not an obstacle.
 
-When a write did not run and you had typed into the transaction or opened a
-document to change it, leave without saving: `{"do":"okcode","value":"/n"}`,
-or Back and No to SAP's question. This releases SAP's lock on the document.
-Leave it open only when the user asks.
+When a write did not run, report the unsaved edits and any document lock.
+Discard only your own disposable input or edits the user authorized you to discard.
+If ownership is unclear, leave the screen open and ask how to proceed.

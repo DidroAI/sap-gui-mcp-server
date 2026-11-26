@@ -391,7 +391,7 @@ export function tidyAnswer(test: SapTest): string {
 const DESCRIPTION_RISK =
   "Enabled by SAP_CODE_TOOLS=on: the code runs on the user's machine, and text read from SAP screens can try to steer what an agent writes. The checks (imports, forbidden words, commit parity) are defense in depth, not a sandbox.";
 
-export function registerCodeTools(server: McpServer, registry: Registry, policy: Policy, recorder: Recorder, serial: Serial = (_r, _l, f) => f(), env: Record<string, string | undefined> = process.env): boolean {
+export function registerCodeTools(server: McpServer, registry: Registry, policy: Policy, recorder: Recorder, serial: Serial = (ref, _l, f) => f(ref), env: Record<string, string | undefined> = process.env): boolean {
   if (!codeToolsOn(env)) return false;
   const answer = async (f: () => Promise<CallToolResult>): Promise<CallToolResult> => {
     try {
@@ -445,8 +445,8 @@ export function registerCodeTools(server: McpServer, registry: Registry, policy:
         // The file may have changed since it was saved: the checks again.
         const check = await checkCode(src, await recordingOf(a.name));
         if (!check.ok) return fail(`Not run: ${check.problems.map((p) => `\n- ${p}`).join("")}`);
-        return serial(a.session, `sap_code_test ${a.name}`, async () => {
-          const { driver, info } = await registry.session(a.session);
+        return serial(a.session, `sap_code_test ${a.name}`, async (at) => {
+          const { driver, info } = await registry.session(at);
           const { code, ext } = await runnable(src, a.variables);
           const runs = join(recorder.options.dir, ".sap-code-runs");
           await mkdir(runs, { recursive: true });

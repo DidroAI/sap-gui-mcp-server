@@ -281,7 +281,7 @@ model, under the same guard as `sap_act`. It never logs on.
 | --- | --- |
 | `<file>...` | one or more recordings. Several run in order on one session; each hands its variables, captured ones included, to the next. The run stops at the first test that fails |
 | `--var name=value` | a value for a test variable; repeat for several. A name no test has is an error |
-| `--session <ref>` | the session: number, id, system, transaction or surface, as in `sap_use`. Default: the first one found |
+| `--session <ref>` | the session: number, id, system, transaction or surface, as in `sap_use`. Omitted: the first one found. An unavailable explicit target fails; list sessions and verify the intended id before retrying |
 | `--loose` | landing on another screen than recorded is a note, not a failure |
 | `--continue` | on a screen with a choice the recording does not have (availability control), press its neutral Continue and say so |
 | `--stay` | after a failure, stay on the failing screen. Default: leave the transaction with `/n` (unsaved input is dropped) |

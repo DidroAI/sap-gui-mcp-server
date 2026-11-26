@@ -8,7 +8,7 @@ directory).
 
 > Record a test named "VA03 display order" while you do this:
 >
-> 1. start the recording with `sap_record` (`op: start`);
+> 1. identify a dedicated, clean test session, verify its system and client, and start the recording with `sap_record` (`op: start`);
 > 2. open VA03 with `/nVA03`, enter order 4711 and press Enter;
 > 3. on the overview, add checks: the window title contains the order
 >    number, and the sold-to party field equals 100001;

@@ -342,8 +342,7 @@ you configured. Details: [Security and data handling](security.md).
 
 ### Can the agent save or post documents?
 
-Only after you say yes. By default (`SAP_WRITE=confirm`) your MCP client
-asks you before each action that may write; a client that cannot ask gets
+Under the default `SAP_WRITE=confirm`, the server requests approval from your MCP client for flagged writes. Codex Full Access can accept automatically. A client without elicitation gets
 it refused. With `SAP_WRITE=off` every such action is refused (read-only);
 `SAP_WRITE=on` lets it run. The rule fails closed, so some harmless
 buttons are asked about or refused too (for example "Continue" on a popup

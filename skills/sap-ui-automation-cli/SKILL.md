@@ -27,9 +27,12 @@ find an id, read values or see a list.
 
 ## One screen, one command
 
-1. **Find the screen.** `sap-gui look`, then read the screen file once for
-   the ids. `sap-gui okcode /nVA03` when the task names the transaction.
-   With several sessions open, `sap-gui sessions`, then `sap-gui use <n>`.
+1. **Identify the target.** List sessions with `sap-gui sessions`, then inspect the intended
+   screen using `sap-gui look --session <id> --print`. Check system, client, user, transaction and any
+   popup. If the target disappears, list sessions again and verify the new id.
+   Keep existing work intact. To start another transaction use a fresh session
+   (`/oVA03` for VA03 on SAP GUI or Web GUI). Use `/n` only in a known clean
+   session or with permission to discard its contents.
 2. **Send the whole screen in one `act`**: the fields, then the key that
    submits them, as one JSON list in single quotes.
 
@@ -143,8 +146,8 @@ user's `SAP_WRITE` setting decides what happens:
 
 - **confirm** (default) and **off** (read-only): the action is refused.
   The CLI cannot ask the user, so confirm refuses here too. Tell the user what you would
-  have saved, leave the transaction without saving (`sap-gui okcode /n`) so
-  that SAP releases the document's lock, and stop.
+  have saved and whether the document may be locked. Discard only your own
+  disposable input or edits the user authorized you to discard.
 - **on**: the action runs, and the user's approval of your command is the
   check. Before a save the user has not asked for, describe it in plain
   words. Afterwards say what you saved, with the document number.
