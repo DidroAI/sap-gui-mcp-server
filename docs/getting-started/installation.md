@@ -19,23 +19,29 @@ extension".
 Pick your client below. Each one names the server `sap-ui-automation`.
 
 ::: tip The quick way
-`setup` finds Claude Code, Codex, Claude Desktop, Cursor, Windsurf and
-VS Code on this machine and adds the server to each, without touching an
-existing `sap-ui-automation` entry. It also installs the skills
-`sap-ui-automation` and `sap-ui-automation-cli` for Claude Code, Codex and Cursor
-(`--no-skills` to skip them):
+`setup` finds the coding agents on this machine (Claude Code, Codex, Claude
+Desktop, Cursor, Windsurf, VS Code, GitHub Copilot CLI, Gemini CLI, OpenCode,
+Kiro, Zed, Goose, Amp and [more](../reference/cli.md#the-agents)), asks
+which to set up (the ones found are ticked), and gives each one the server
+and the skills `sap-ui-automation` and `sap-ui-automation-cli`. It never
+touches an existing `sap-ui-automation` entry.
 
 ```sh
 npx -y sap-ui-automation setup --dry-run   # show what it would change
 npx -y sap-ui-automation setup             # change it
+npx -y sap-ui-automation setup --yes       # no question: every agent found
+npx -y sap-ui-automation setup --agent claude-code,codex   # these agents only
 ```
 
-It adds no settings, so writes stay off. With the Chrome extension, run
-`setup --extension`: new entries get `SAP_BROWSER=extension`, and the
-extension's helper is installed too. Then run
-`npx -y sap-ui-automation doctor` to check what the server can reach (SAP
-GUI scripting, Chrome). Or have your agent do all of it: [Set up with your
-agent](setup-prompt.md).
+`--no-skills` skips the skills, `--no-mcp` the server. It adds no settings,
+so writes stay off. With the Chrome extension, run `setup --extension`: new
+entries get `SAP_BROWSER=extension`, and the extension's helper is installed
+too. Then run `npx -y sap-ui-automation doctor` to check what the server can
+reach (SAP GUI scripting, Chrome). Or have your agent do all of it: [Set up
+with your agent](setup-prompt.md).
+
+For an agent `setup` does not know, `npx skills add DidroAI/sap-ui-automation`
+installs the skills; add the server in its MCP settings as below.
 :::
 
 ::: warning Windows

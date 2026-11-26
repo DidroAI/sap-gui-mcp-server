@@ -54,10 +54,10 @@ npx -y sap-ui-automation setup             # add the server and the skills
 npx -y sap-ui-automation doctor            # check what it can reach
 ```
 
-`setup` adds the server to Claude Code, Codex, Claude Desktop, Cursor,
-Windsurf and VS Code where it finds them, and installs the skills
-`sap-ui-automation` and `sap-ui-automation-cli` for Claude Code, Codex and
-Cursor. Restart the agent afterwards. One client by hand:
+`setup` finds your coding agents (Claude Code, Codex, Cursor, Copilot,
+Gemini CLI, OpenCode, Zed, Goose and [more](docs/reference/cli.md#the-agents)),
+lets you pick, and gives each one the server and the skills
+`sap-ui-automation` and `sap-ui-automation-cli`. Restart the agent afterwards. One client by hand:
 
 | Client | |
 | --- | --- |
