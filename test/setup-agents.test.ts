@@ -411,6 +411,18 @@ describe("the skills: one copy, links elsewhere", () => {
     expect(existsSync(join(canonical(), "sap-ui-automation", "SKILL.md"))).toBe(true);
   });
 
+  test("a directory named like the ownership marker keeps its contents during setup", () => {
+    const dir = join(home, ".roo", "skills");
+    const skill = join(dir, "sap-ui-automation");
+    const marker = join(skill, ".sap-ui-automation");
+    mkdirSync(marker, { recursive: true });
+    writeFileSync(join(marker, "notes"), "my notes");
+    writeFileSync(join(skill, "SKILL.md"), shipped("sap-ui-automation"));
+    const rs = setupSharedSkills([dir], { canonical: canonical(), dryRun: false, platform: "linux" });
+    expect(rs[1]?.states["sap-ui-automation"]).toBe("left");
+    expect(read(join(marker, "notes"))).toBe("my notes");
+  });
+
   test("a skills folder that is itself a link to ~/.agents/skills is written once, as the shared one", () => {
     mkdirSync(canonical(), { recursive: true });
     mk(".config");

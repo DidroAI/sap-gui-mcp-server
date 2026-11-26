@@ -36,13 +36,13 @@ commit or share them.
 ## Record a run
 
 Ask the agent to record, or call the tool yourself. Use a dedicated test session for recording and replay. Verify the system, client
-and session id first. The transaction command below discards any unsaved input:
+and session id first. Replace `<test-session-id>` with that exact id in the calls below. The transaction command discards any unsaved input.
 
 ```
-sap_record {"op":"start","name":"VA03 display order"}
-sap_act    {"do":"okcode","value":"/nVA03"}
-sap_act    {"do":"set","id":"ctxtVBAK-VBELN","value":"19097"}
-sap_act    {"do":"key","key":0}
+sap_record {"op":"start","session":"<test-session-id>","name":"VA03 display order"}
+sap_act    {"session":"<test-session-id>","do":"okcode","value":"/nVA03"}
+sap_act    {"session":"<test-session-id>","do":"set","id":"ctxtVBAK-VBELN","value":"19097"}
+sap_act    {"session":"<test-session-id>","do":"key","key":0}
 sap_record {"op":"stop"}
 ```
 
@@ -70,9 +70,9 @@ A test needs checks: what must be true after a step. Mark them on the
 screen they are about, right after the step:
 
 ```
-sap_record {"op":"assert","check":"field","id":"txtVBAK-NETWR","equals":"2.500,00"}
-sap_record {"op":"assert","check":"status","contains":"has been saved"}
-sap_record {"op":"assert","check":"title","contains":"Overview"}
+sap_record {"op":"assert","session":"<test-session-id>","check":"field","id":"txtVBAK-NETWR","equals":"2.500,00"}
+sap_record {"op":"assert","session":"<test-session-id>","check":"status","contains":"has been saved"}
+sap_record {"op":"assert","session":"<test-session-id>","check":"title","contains":"Overview"}
 ```
 
 `check` is `status`, `field`, `title`, `transaction` or `text` (anywhere on
@@ -94,7 +94,7 @@ A value SAP makes at a step (a new document number) is a capture: read from
 the screen at every replay and used by the steps after it.
 
 ```
-sap_record {"op":"capture","name":"order","from":"status","pattern":"Order (\\d+)"}
+sap_record {"op":"capture","session":"<test-session-id>","name":"order","from":"status","pattern":"Order (\\d+)"}
 ```
 
 `{"op":"note","text":"Open the order"}` says what the last step is for; the
@@ -111,7 +111,7 @@ sap-ui-automation replay sap-tests/va03-display-order.saptest.json --var order=4
 From the agent:
 
 ```
-sap_replay {"name":"VA03 display order","variables":{"order":"4711"}}
+sap_replay {"session":"<test-session-id>","name":"VA03 display order","variables":{"order":"4711"}}
 ```
 
 - Replay runs on a session you have open. It never logs on.
@@ -447,7 +447,7 @@ a check.
 sap-ui-automation replay sap-tests/va03-display-order.saptest.json --var order=4711 --junit report.xml
 ```
 
-or, from an agent, `sap_replay {"name":"VA03 display order","variables":{"order":"4711"}}`.
+or, from an agent, `sap_replay {"session":"<test-session-id>","name":"VA03 display order","variables":{"order":"4711"}}`.
 
 Replay uses no model. It runs on a session the user has open (it never logs
 on), through the same driver as `sap_act` and **the same guard**: the write

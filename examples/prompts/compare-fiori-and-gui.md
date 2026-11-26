@@ -10,7 +10,8 @@ and to SAP GUI or Web GUI for the same system.
 ## Prompt
 
 > I have two SAP sessions open: the Fiori launchpad and SAP GUI, on the
-> same system. List them with `sap_sessions`.
+> same system. List them with `sap_sessions`, inspect both screens, and verify
+> their system and client. Use each exact session id for its calls. Preserve any unsaved work.
 >
 > For purchase order 4500000001:
 >
@@ -25,6 +26,6 @@ and to SAP GUI or Web GUI for the same system.
 
 ## What to expect
 
-The agent switches between the two sessions with `sap_use`. The view of
+The agent addresses each session by id. The view of
 both is the same text format, so the comparison is field by field. Say if
 a value differs only in format (decimal comma, date order).

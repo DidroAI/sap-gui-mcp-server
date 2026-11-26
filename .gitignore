@@ -17,6 +17,8 @@ captures/
 !assets/side-panel.png
 # Recordings made while developing hold what was typed: they stay out of this repository.
 sap-tests/
+sap-results/
+sap-downloads/
 docs/.vitepress/cache/
 docs/.vitepress/dist/
 *.mcpb

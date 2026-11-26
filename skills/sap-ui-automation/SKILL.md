@@ -1,6 +1,6 @@
 ---
 name: sap-ui-automation
-description: Works in SAP through the sap-ui-automation MCP tools (sap_look, sap_act, sap_sessions, sap_logon). Opens transactions, reads and fills screens, reads ALV lists, looks up, creates or changes documents, and runs several SAP sessions in parallel, in SAP GUI for Windows, Web GUI (SAP GUI for HTML) and Fiori, on ECC or S/4HANA. Use this skill whenever the user wants something looked up, checked, created or changed in SAP, even if they name no tool or say only a transaction code (VA03, ME23N, MM03, FB03, MIGO) or a business object (sales order, purchase order, material, customer, vendor, invoice, delivery, goods receipt, Fiori app). Also use it to log on to an SAP system. Read it before the first sap_* call.
+description: Works in SAP through the sap-ui-automation MCP tools (sap_look, sap_act, sap_sessions, sap_logon). Opens transactions, reads and fills screens, reads ALV lists, looks up, creates or changes documents, and runs several SAP sessions in parallel, in SAP GUI for Windows, Web GUI (SAP GUI for HTML) and Fiori, on ECC or S/4HANA. Use this skill whenever the user wants something looked up, checked, created or changed in SAP, even if they name no tool or say only a transaction code (VA03, ME23N, MM03, FB03, MIGO) or a business object (sales order, purchase order, material, customer, vendor, invoice, delivery, goods receipt, Fiori app). Also use it to log on, set up or troubleshoot the SAP MCP tools, or record and replay SAP regression tests. Read it before the first sap_* call.
 ---
 
 # Driving SAP screens with the sap_* tools
@@ -13,10 +13,11 @@ skill gives the order of work and how SAP behaves.
 
 ## Setup and repeatable tests
 
-If the tools are missing, check the MCP client configuration and restart the
+For first-time installation, follow the [setup guide](https://docs.didro.ai/sap-ui-automation/getting-started/setup-prompt).
+If an installed server’s tools are missing, check the MCP client configuration and restart the
 client after setup. If no SAP session appears, run `npx -y sap-ui-automation doctor`
 on the SAP machine and use its suggested fix for the intended surface.
-The user handles credentials. See the [setup guide](https://docs.didro.ai/sap-ui-automation/getting-started/setup-prompt).
+The user handles credentials.
 
 When the user asks for a regression test, use a clean test session. List
 saved flows with `sap_record {"op":"list"}`. To record one, start with
@@ -33,11 +34,11 @@ Recordings retain typed values. [Recording guide](https://docs.didro.ai/sap-ui-a
    Keep existing work intact. To start another transaction use a fresh session
    (`/oVA03` for VA03 on SAP GUI or Web GUI). Use `/n` only in a known clean
    session or with permission to discard its contents.
-2. **Send the whole screen in one `sap_act`**: the fields you see, then the
+2. **Send the whole screen in one `sap_act`** with the verified session ID: the fields you see, then the
    key that submits them.
 
    ```json
-   {"actions":[
+   {"session":"<verified-id>","actions":[
      {"do":"set","id":"ctxtVBAK-AUART","value":"OR"},
      {"do":"set","id":"ctxtVBAK-VKORG","value":"1000"},
      {"do":"key","key":0}]}

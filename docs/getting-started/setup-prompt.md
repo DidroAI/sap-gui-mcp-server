@@ -38,7 +38,7 @@ Rules for the whole task:
    - SAP GUI for Windows: ask me to open SAP GUI options, Accessibility & Scripting > Scripting, tick "Enable scripting", untick the two "Notify when a script..." boxes, and restart SAP Logon. If doctor says scripting is not allowed on the SAP system, tell me that my SAP Basis team has to set sapgui/user_scripting = TRUE, and go on.
    - If I use only one of the two, skip the other's ✗ lines.
 4. Ask me to open one SAP screen. Then run: npx -y sap-ui-automation sessions
-   and, if it lists a session, run: npx -y sap-ui-automation look --print
+   Verify the intended session with me if several match. With its actual ID, run: npx -y sap-ui-automation look --session "<verified-id>" --print
    Describe the screen you see in three lines.
 5. Report, in at most ten lines:
    - the version (npx -y sap-ui-automation --version) and the agents setup changed;

@@ -30,8 +30,8 @@ Where: <system>/<client>, <transaction> ("<window title>") [<window or tab>]
 Action: <the action>
 ```
 
-The action runs only if you accept. The agent cannot answer for you. If you
-decline or dismiss the question, the action is not run and the agent is
+When the client shows this question, the action runs only if you accept. If you
+decline or dismiss it, the action is not run and the agent is
 told so. You have five minutes to answer.
 
 ## Which clients can ask

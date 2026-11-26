@@ -202,7 +202,8 @@ function releasedFile(path: string, key: string): boolean {
 
 export function ownSkill(target: string, skill?: Skill): boolean {
   if (!lstat(target)?.isDirectory()) return false;
-  if (lstat(join(target, SKILL_MARKER))?.isFile()) return true;
+  const marker = lstat(join(target, SKILL_MARKER));
+  if (marker) return marker.isFile();
   if (skill && sameSkill(skill, target)) return true;
   const entries = readdirSync(target);
   return entries.length === 1 && entries[0] === "SKILL.md" && releasedFile(join(target, "SKILL.md"), basename(target));

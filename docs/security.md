@@ -86,14 +86,15 @@ The server itself calls no model. Replaying a recorded test needs none.
 | Recorded tests and their exports | `SAP_RECORD_DIR` (default `./sap-tests`) | after `sap_record start`, or with `SAP_RECORD=on` | the actions, the values typed, screen titles and status bar texts, checked field values |
 | Test code the agent saves, and its run traces | `SAP_RECORD_DIR` | only with `SAP_CODE_TOOLS=on`, on `sap_code_save` and `sap_code_test` | the `*.sap.ts` file; a copy while it runs, deleted after; traces under `sap-results` |
 | Files Web GUI exports "to a local file", browser downloads | `SAP_DOWNLOAD_DIR` (default `downloads` in `SAP_RECORD_DIR` when set, else `./sap-downloads`) | when an action in Web GUI produces such a file | whatever SAP exported |
+| SDK test runner traces | configured output directory (default `./sap-results`) | when a test uses SAP | compact screens and action values, plus step PNGs when screenshots are enabled |
 | Raw DIAG traffic | `SAP_DIAG_CAPTURE` | only when set | the whole SAP GUI session, **logon included**; file mode 0600 |
 | Reports and exports from the command line | the paths given (`--junit`, `--out`) | when the user runs the command | test results, the test steps |
 
-`./` is the server's working directory, which the MCP client chooses. Nothing
-else is written, apart from the MCP client configuration files that
-`setup` edits when the user runs it. Screenshots are returned to the client,
-not saved. Leave `SAP_DIAG_CAPTURE` unset outside
-debugging.
+`./` is relative to the working directory. The MCP client chooses it when it
+starts the server. The `sap_screenshot` tool returns its image to the client.
+The SDK test runner can also save screenshots in a local trace. Review
+traces and exports before sharing them. Leave `SAP_DIAG_CAPTURE` unset
+outside debugging.
 
 ## What the agent can do
 
@@ -190,7 +191,7 @@ Start with a test or sandbox system. For a production system:
   `SAP_RECORD` off unless a test is being recorded.
 - **Leave `SAP_CODE_TOOLS` off**: it lets the agent run code on the machine.
 - **Pin the package version** in the client configuration
-  (`sap-ui-automation@0.5.0`), so that the code that runs is the code you
+  (`sap-ui-automation@0.5.1`), so that the code that runs is the code you
   reviewed.
 
 Example, for a read-only investigation:

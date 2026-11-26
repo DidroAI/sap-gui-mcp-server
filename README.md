@@ -41,8 +41,8 @@ ctxtVBAK-AUART  field  Order Type = "OR"  (edit)
 ctxtVBAK-VKORG  field  Sales Organization = ""  (edit)
 ```
 
-Use MCP for interactive work in coding agents. Across 104 matched SAP pilot runs per
-method, MCP averaged 22 seconds, $0.0053 and 208k tokens per run. The CLI
+Use MCP for interactive work in coding agents. Across 104 matched Web GUI runs per
+method in our Claude Code pilot, MCP averaged 22 seconds, $0.0053 and 208k tokens per run. The CLI
 averaged 39 seconds, $0.0081 and 356k tokens. Counts include cache reads and writes. Use the CLI for shell scripts or an agent without MCP,
 and the SDK for repeatable tests. [Benchmark and limitations](docs/benchmarks.md)
 
@@ -77,7 +77,7 @@ Rules: never type, ask for or store an SAP password, and never log on to SAP for
 2. Ask me to add the UI Automation for SAP extension to Chrome: https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn and wait.
 3. Run npx -y sap-ui-automation setup --extension --dry-run, show me the result, then run it without --dry-run. Tell me to restart Chrome once, then to click the extension's icon, click Pair and add my SAP systems, and wait.
 4. From here on, run commands with the environment variable SAP_BROWSER=extension (in the syntax of my shell). Run npx -y sap-ui-automation doctor. For each ✗, tell me what to do (the → line says it), wait, and run it again.
-5. Ask me to open an SAP screen, then run npx -y sap-ui-automation sessions and npx -y sap-ui-automation look --print, and describe the screen in three lines.
+5. Ask me to open an SAP screen, then run npx -y sap-ui-automation sessions. Verify the intended session with me if several match. Run npx -y sap-ui-automation look --session "<verified-id>" --print with its actual ID, and describe the screen in three lines.
 6. Report in at most ten lines: the version, the agents setup changed, each doctor area (✓ or ✗) and what is left for me, whether I must restart an agent, and the effective write setting. Explain whether this client can display or automatically accept confirmation requests (including Codex Full Access).
 ```
 

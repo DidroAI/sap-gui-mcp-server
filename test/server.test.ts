@@ -249,10 +249,12 @@ describe("a new logon in the same session id starts afresh (review, 2026-11-24)"
     const { surface, call } = await setup();
     const s = surface.add({ id: "sapgui:/app/con[0]/ses[0]", system: "ABA", client: "800", user: "U1", transaction: "VA02" }, { assess });
     await call("sap_act", { action: { do: "key", key: 11 } });
-    expect((await call("sap_act", { action: { do: "key", key: 11 } })).text).toContain("As before");
+    const repeat = await call("sap_act", { action: { do: "key", key: 11 } });
+    expect(repeat.error).toBe(true);
+    expect(repeat.text).not.toContain("Only the user can allow writes");
     s.info = { ...s.info, system: "PRD", client: "100" };
     const r = await call("sap_act", { action: { do: "key", key: 11 } });
-    expect(r.text).not.toContain("As before");
+    expect(r.error).toBe(true);
     expect(r.text).toContain("SAP_WRITE=confirm or on");
   });
 });
