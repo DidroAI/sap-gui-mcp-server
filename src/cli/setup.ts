@@ -21,6 +21,7 @@ import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
+import { type InstallResult, installNativeHost, STORE_URL } from "../browser/extension/native.js";
 import { setupSkills, userSkillDirs } from "./skills.js";
 
 export const NAME = "sap-ui-automation";
@@ -160,6 +161,8 @@ export interface SetupOptions {
   skills?: boolean | undefined;
   /** Where the skills come from (tests). Default: this package. */
   skillsRoot?: string | undefined;
+  /** With extension: installs the extension's helper (tests replace it). */
+  installHelper?: (() => InstallResult) | undefined;
 }
 
 export const CLIENTS = ["claude-code", "codex", "claude-desktop", "cursor", "windsurf", "vscode"] as const;
@@ -353,11 +356,35 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
     }
   }
 
+  // --extension: the helper too, so that one command sets everything up (the extension pairs in one click and
+  // keeps saved SAP passwords in the keychain). Running it again replaces the helper with this version's.
+  let helperOk = false;
+  if (opts.extension) {
+    if (opts.dryRun) lines.push("• Chrome extension helper: would install it, for the extension to pair in one click.");
+    else {
+      try {
+        const host = (opts.installHelper ?? (() => installNativeHost({ home, env })))();
+        helperOk = host.registered.length > 0;
+        lines.push(
+          helperOk
+            ? `✓ Chrome extension helper: installed (${host.registered.length} browser profile folder(s)).`
+            : `✗ Chrome extension helper: copied to ${host.hostDir}, but no browser profile folder took it (is Chrome installed?). Pair by hand: npx -y sap-ui-automation extension pair.`,
+        );
+      } catch (e) {
+        lines.push(`✗ Chrome extension helper: ${(e as Error).message}. Pair by hand: npx -y sap-ui-automation extension pair.`);
+      }
+    }
+  }
+
   if (!found) lines.push("", `No MCP client found. Add this command to your client's MCP settings by hand: ${command.join(" ")}`);
   lines.push(
     "",
     changed || skillsChanged ? "Next: restart the clients marked above, and ask your agent to look at your SAP screen." : "Next: ask your agent to look at your SAP screen.",
-    "For Web GUI and Fiori, a Chrome window opens: open your SAP address there and log on, once.",
+    ...(opts.extension
+      ? [
+          `In Chrome: add UI Automation for SAP if you have not (${STORE_URL}),${helperOk ? " restart Chrome once," : ""} then click its icon and Pair in the side panel, and add your SAP systems there.`,
+        ]
+      : ["For Web GUI and Fiori, a Chrome window opens: open your SAP address there and log on, once."]),
     "If it cannot see SAP, run npx -y sap-ui-automation doctor.",
   );
   return { lines, changed };

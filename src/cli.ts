@@ -33,7 +33,8 @@ Usage:
   sap-ui-automation            start the stdio server (what MCP clients run)
   sap-ui-automation setup [claude-code|codex|claude-desktop|cursor|windsurf|vscode] [--extension] [--no-skills] [--dry-run]
                                 add the server to the MCP clients found on this machine, and its skills to
-                                Claude Code, Codex and Cursor (--no-skills: not the skills)
+                                Claude Code, Codex and Cursor (--no-skills: not the skills); --extension: through the
+                                Chrome extension, and installs the extension's helper too
   sap-ui-automation init [--yes] [--force] [--dry-run]
                                 set this project up: sap.config.ts, sap-tests/example.sap.ts, agent skills,
                                 MCP clients, .gitignore (asks a few questions; --yes takes the defaults)

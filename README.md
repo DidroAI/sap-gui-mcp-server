@@ -82,8 +82,8 @@ the server's environment ([guide](docs/guides/chrome.md)):
 - `extension`: your everyday Chrome, through the **UI Automation for SAP**
   extension. Add it from the
   [Chrome Web Store](https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn),
-  then run `npx -y sap-ui-automation extension helper` and
-  `npx -y sap-ui-automation setup --extension`
+  then run `npx -y sap-ui-automation setup --extension`, which sets up
+  your agent apps, the skills and the extension's helper in one go
   ([steps](docs/guides/chrome.md#install-the-extension)).
 - `attach`: your running Chrome or Edge, with remote debugging allowed in
   `chrome://inspect/#remote-debugging`.

@@ -4,7 +4,13 @@ All notable changes to this project are listed here. The project follows
 [Semantic Versioning](https://semver.org); before 1.0, a minor version may
 change the tools or the view format.
 
-## Unreleased
+## 0.3.1 (2026-11-26)
+
+### Changed
+
+- `setup --extension` installs the extension's helper too: one command sets
+  up the agent apps, the skills and the helper. Its closing lines say what
+  to do in Chrome, with the store's link.
 
 ### Documentation
 
