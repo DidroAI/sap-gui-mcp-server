@@ -33,6 +33,26 @@ change the tools or the view format.
     not "49 more rows (22 sent so far)".
   - A key SAP shows with its text ("1000 C.E.B. BERLIN" for "1000") is not
     reported as a value SAP did not take.
+  - A `set` after a dropdown choice on the same row typed into the dropdown
+    (the click only closed it, and the caret check passed on the dropdown's
+    caret): FB50's amounts never reached SAP. The caret must now be inside
+    the field, and a second click waits out the double-click time (two quick
+    clicks on a table cell chose it, and SAP dumped).
+  - A dropdown's entry is chosen by its place in SAP GUI's cached list, with
+    no Enter (typing the text missed when entries share first letters, and
+    the Enter could reach SAP); an empty key chooses the blank entry, as on
+    the other surfaces.
+  - ME21N's requisition and its item are reached with Tab: from the first
+    column (a click drifts right across the table), the Tabs 80 ms apart
+    (SAP GUI dropped a burst); a cell left of the one typed last goes back
+    with Shift+Tab.
+  - SAP GUI's request is read for the table cells it sends: a value that did
+    not reach its cell is said so, with the cell it went into instead.
+  - A dropdown choice whose Enter went to SAP is said so.
+  - What an update keeps of a container that scrolled on its own moves with
+    it (XD01's labels stayed at their old rows).
+  - `scroll` with id `screen` works when a field lies under the window's
+    edge, whatever SAP's scroll item said (VA05).
 
 ### Changed
 
