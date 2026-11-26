@@ -861,7 +861,7 @@ export class DiagDriver implements Driver {
     }
     const confirm = plan.confirm?.(after ? this.screen() : undefined, answered);
     if (confirm) note += `; ${confirm}`;
-    if (plan.later) this.later.push(plan.later);
+    if (plan.later && !answered) this.later.push(plan.later);
     timing.decode = Math.round(traffic.decodeMs - decode0);
     timing.total = Date.now() - t0;
     this.last = timing;
@@ -1101,7 +1101,7 @@ export class DiagDriver implements Driver {
 
   /** A dropdown's entry chosen without a function code stays in SAP GUI until the next Enter: kept like a typed value, by its key. */
   private keepChosen(s: DiagScreen, action: Action, plan: Plan): void {
-    if (plan.answer !== "no" || !plan.steps.length) return;
+    if (plan.answer === "yes" || !plan.steps.length) return;
     const key = /^chose ([^ "]+) "/.exec(plan.note)?.[1] ?? /^chose "([^"]*)"/.exec(plan.note)?.[1];
     let t: Target | undefined;
     try {

@@ -335,7 +335,11 @@ describe("dropdowns", () => {
     const p = plan({ do: "combo", id: "ZHDR-TYPE", key: "Rush order" });
     expect(keysOf(p)).toEqual(["combo"]);
     expect(p.steps[0]).toMatchObject({ value: "Rush order" });
-    expect(p.answer).toBe("no");
+    // A short look for a request: when the list did not open, the Enter of the choice goes to SAP (FB50, 2026-11-25:
+    // SAP GUI sent D/C blank with the account, SAP answered with its warning, and the amount typed next was lost).
+    expect(p.answer).toBe("maybe");
+    expect(p.confirm?.(undefined, false)).toBeUndefined();
+    expect(p.confirm?.(screen([win({ elements: [el({ kind: "dropdown", name: "ZHDR-TYPE", key: "OR", row: 1, col: 20 })] })]), true)).toContain("its list did not open, and the Enter that chooses went to SAP");
     const next = (key: string) => screen([win({ elements: [el({ kind: "dropdown", name: "ZHDR-TYPE", key, row: 1, col: 20 })] })]);
     expect(p.later?.(next("OR"))).toContain("still has");
     expect(p.later?.(next("RO"))).toContain('now has the key "RO"');

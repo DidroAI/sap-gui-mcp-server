@@ -476,8 +476,16 @@ export function planCombo(s: DiagScreen, action: Action, g: Geometry, entries?: 
   return {
     steps: [{ do: "combo", x, y, value: text, ...(index >= 0 ? { index } : {}), ...(sends ? { fcode: true } : {}), settle: 300 }],
     note: `chose ${entry ? entryText(entry) : `"${text}"`} in ${n.id}${sends ? "" : "; SAP gets it with the next Enter or function key"}`,
-    answer: sends ? "yes" : "no",
-    ...(sends ? { confirm: (after: DiagScreen | undefined) => (after ? verdict(after) : undefined) } : { later: verdict }),
+    // Without a function code SAP gets the choice with the next step; a request now means the list did not open and the
+    // Enter meant for it went to SAP with the screen (what was typed before went too).
+    answer: sends ? "yes" : "maybe",
+    ...(sends
+      ? { confirm: (after: DiagScreen | undefined) => (after ? verdict(after) : undefined) }
+      : {
+          confirm: (after: DiagScreen | undefined, answered: boolean) =>
+            answered && after ? `${verdict(after) ?? `${n.id} was not read back`}; but SAP GUI sent the screen to SAP: its list did not open, and the Enter that chooses went to SAP with what was typed. Look at the screen (and its status bar) before going on` : undefined,
+          later: verdict,
+        }),
   };
 }
 
