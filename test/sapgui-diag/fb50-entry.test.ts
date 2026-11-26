@@ -83,13 +83,18 @@ describe("a dropdown's entry by its place in the list; the blank entry", () => {
 describe("a set after a choice on the same row", () => {
   // Live 2026-11-26: the caret was still in the D/C dropdown on the row, so the check "the caret is on the row" passed,
   // and the amount was typed into the dropdown (blank). The input host now wants the caret between the field's edges.
-  test("carries the field's left and right edges", async () => {
+  test("on a row with a dropdown, carries the field's edges in pixels", async () => {
     const f = fakeDriver(s, ENTRIES);
     await f.d.act({ do: "set", id: "ACGL_ITEM-WRBTR[0]", value: "10,00" });
     const step = f.log.find((x) => x.op === "act")?.action as { x: number; left: number; right: number };
     expect(step.left).toBeLessThan(step.x);
     expect(step.right).toBeGreaterThan(step.x);
-    expect(step.right - step.left).toBeGreaterThan(100);
+  });
+  test("on a row without one, only the row is checked (VA01's quantity: SAP GUI's caret x is no proof)", async () => {
+    const plain = { ...s, windows: [{ ...s.windows[0], tables: [{ ...TABLE, rows: TABLE.rows.map((r) => ({ ...r, cells: r.cells.map((c, i) => (i === 1 ? { ...c, kind: "field" } : c)) })) }] }] } as typeof s;
+    const f = fakeDriver(plain, ENTRIES);
+    await f.d.act({ do: "set", id: "ACGL_ITEM-WRBTR[0]", value: "10,00" });
+    expect(f.log.find((x) => x.op === "act")?.action).not.toHaveProperty("left");
   });
 });
 

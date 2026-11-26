@@ -45,7 +45,7 @@ export type Step = (
   /** A Windows key, `count` times. */
   | { do: "vk"; vk: number; ctrl?: boolean; shift?: boolean; alt?: boolean; count?: number; gap?: number }
   | { do: "click" | "dblclick" | "f4"; x: number; y: number }
-  /** `left`: the field's left edge, where the caret must come (else a dropdown on the same row keeps it). */
+  /** `left`, `right`: on a row with a dropdown, the field's edges in pixels, where the caret must come (else the dropdown chosen before keeps it). */
   | { do: "set"; x: number; y: number; value: string; left?: number; right?: number }
   | { do: "type"; value: string }
   /** The mouse wheel over a point, `notches` times (negative: down): SAP GUI scrolls a screen taller than its window. */
@@ -1000,14 +1000,20 @@ export function planPlain(s: DiagScreen, action: Action, target: PlainTarget | u
       const [px, py] = g.at(x.window, x.row, x.col, x.kind === "cell" ? x.width : x.element.width);
       // Typed with the keyboard: a line break would be the Enter key, so it is typed as a space.
       const single = oneLine(String(action.value ?? ""));
+      // The dropdowns of the row (FB50's D/C beside the amount): a caret there is not the field's. Their spans in pixels.
+      // (The caret's x in a field is no proof: SAP GUI reports it far right of a number in a table cell, VA01, live.)
       const half = Math.floor(g.cells.cw / 2);
+      const span = (row: number, col: number, width: number): [number, number] => [g.at(x.window, row, col, 1)[0] - half, g.at(x.window, row, col + Math.max(1, width) - 1, 1)[0] + half];
+      const avoid: [number, number][] = [
+        ...x.window.elements.filter((e) => e.kind === "dropdown" && !e.hidden && e.row === x.row).map((e) => span(e.row, e.col, e.width)),
+        ...x.window.tables.flatMap((t) => t.rows.filter((r) => r.row === x.row).flatMap((r) => t.columns.filter((c) => c.visible && r.cells[c.index]?.kind === "dropdown").map((c) => span(r.row, c.col, c.width)))),
+      ];
+      // Only on a row with a dropdown is the caret's x asked for: between the field's edges (it worked for FB50's amount,
+      // right-aligned), with a cell and a half of slack; elsewhere SAP GUI's caret x is no proof (VA01's quantity).
       const w = Math.max(1, x.kind === "cell" ? x.width : x.element.width);
-      // A cell and a half of slack each side: a table's columns drift a little from their characters (VA01's quantity
-      // was refused, round 1); a dropdown just left of the field (FB50's D/C) still lies outside.
       const slack = Math.round(g.cells.cw * 1.5);
-      const left = g.at(x.window, x.row, x.col, 1)[0] - half - slack;
-      const right = g.at(x.window, x.row, x.col + w - 1, 1)[0] + half + slack;
-      return { steps: [{ do: "set", x: px, y: py, value: single.text, left, right, settle: 150 }], note: `typed into ${x.what}; SAP gets it with the next Enter or function key${single.had ? ` (${ONE_LINE_NOTE})` : ""}`, answer: "no" };
+      const edges = avoid.length ? { left: span(x.row, x.col, w)[0] - slack, right: span(x.row, x.col, w)[1] + slack } : {};
+      return { steps: [{ do: "set", x: px, y: py, value: single.text, ...edges, settle: 150 }], note: `typed into ${x.what}; SAP gets it with the next Enter or function key${single.had ? ` (${ONE_LINE_NOTE})` : ""}`, answer: "no" };
     }
     case "focus":
     case "check":
