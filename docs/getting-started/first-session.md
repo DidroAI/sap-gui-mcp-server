@@ -1,3 +1,8 @@
+---
+title: "Your first SAP session with an AI agent"
+description: "Log on to SAP yourself, ask the agent to look at the screen, and approve each write: the first steps after installing sap-ui-automation."
+---
+
 # Your first session
 
 This page assumes the server is added to your MCP client

@@ -1,3 +1,8 @@
+---
+title: "SAP Web GUI and Fiori in Chrome for AI agents"
+description: "How the server reads and drives SAP GUI for HTML and SAP Fiori in Chrome: the SAP window, your own Chrome, or the UI Automation for SAP extension."
+---
+
 # Chrome: Web GUI and Fiori
 
 SAP GUI for HTML (Web GUI) and SAP Fiori are read and driven in Google

@@ -1,3 +1,8 @@
+---
+title: "Benchmarks: AI agents on SAP GUI, Web GUI and Fiori"
+description: "How the benchmark compares this server with other ways an agent can drive SAP screens: the tasks, the systems, and how success is checked."
+---
+
 # Benchmarks
 
 We are building a public benchmark that compares this server with other

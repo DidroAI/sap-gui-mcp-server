@@ -1,3 +1,8 @@
+---
+title: "Surfaces: SAP GUI for Windows, Web GUI and Fiori"
+description: "The three kinds of SAP screen the server reads and drives, how it reaches each one, and where each runs."
+---
+
 # Surfaces
 
 A surface is one kind of SAP screen the server can read and drive. There are

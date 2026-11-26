@@ -1,3 +1,8 @@
+---
+title: "Connect SAP to Claude Code, Codex, Cursor, Claude Desktop and VS Code"
+description: "Add the sap-ui-automation MCP server to your client with npx -y sap-ui-automation: Node.js 22 or later, on the machine where SAP GUI or Chrome runs."
+---
+
 # Install in your client
 
 The server is the npm package `sap-ui-automation`. Every client starts it

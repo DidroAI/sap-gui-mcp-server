@@ -1,3 +1,8 @@
+---
+title: "Choose your setup for SAP GUI, Web GUI or Fiori"
+description: "Four questions to pick what to install: which SAP screens, which Chrome, whether SAP GUI scripting is allowed, and which agent you use."
+---
+
 # Choose your setup
 
 Four questions take you to the right page. Each path ends with

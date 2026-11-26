@@ -1,3 +1,8 @@
+---
+title: "Set up the SAP MCP server with your AI agent"
+description: "A prompt to paste into Claude Code, Codex or another agent with a terminal: it installs sap-ui-automation, runs doctor and walks you through each setting."
+---
+
 # Set up with your agent
 
 Paste this into Claude Code, Codex, or any agent that can run commands on

@@ -1,3 +1,8 @@
+---
+title: "SAP from the command line for coding agents"
+description: "The sap-gui command gives coding agents without MCP the same SAP tools: look, act, sessions, with the screen kept in a file until it is needed."
+---
+
 # CLI for coding agents
 
 Coding agents such as Claude Code, Codex and Cursor can run shell commands.

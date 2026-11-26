@@ -1,5 +1,8 @@
 ---
 layout: home
+title: "SAP UI Automation: an MCP server for SAP GUI, Web GUI and Fiori"
+titleTemplate: false
+description: "Let Claude, Codex, Cursor and other AI agents see and drive the SAP screens you have open: SAP GUI for Windows, Web GUI and Fiori. Each write waits for your yes."
 hero:
   name: SAP UI Automation
   text: Let your agent see and drive SAP

@@ -1,3 +1,8 @@
+---
+title: "SAP UI Automation compared with Playwright MCP and other tools"
+description: "How this server relates to browser MCP servers, SAP GUI scripting and test tools, with a source for each fact."
+---
+
 # Comparison
 
 How this server relates to other tools an agent or a test team can use on

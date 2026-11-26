@@ -1,3 +1,8 @@
+---
+title: "Configuration: SAP_WRITE, SAP_BROWSER and other settings"
+description: "Every environment variable of the sap-ui-automation server: writes, allowed systems and transactions, browser mode, recordings."
+---
+
 # Configuration
 
 Every setting is an environment variable of the server process. Set it in

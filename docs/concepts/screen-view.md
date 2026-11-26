@@ -1,3 +1,8 @@
+---
+title: "The screen view: an SAP screen as text for an agent"
+description: "How the server prints an SAP screen: a header, then one line per control with SAP's own id, type, label, value and state."
+---
+
 # The screen view
 
 The server reads the screen the way SAP models it and prints it as text: a

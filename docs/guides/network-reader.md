@@ -1,3 +1,8 @@
+---
+title: "SAP GUI for Windows without scripting: the network reader (DIAG)"
+description: "Experimental: read SAP GUI for Windows from its network traffic (DIAG) when SAP GUI scripting is off, through a local SAProuter."
+---
+
 # Network reader (no scripting)
 
 ::: warning Experimental

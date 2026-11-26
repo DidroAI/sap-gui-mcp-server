@@ -1,3 +1,8 @@
+---
+title: "SAP UI Automation: an MCP server for SAP GUI, Web GUI and Fiori"
+description: "An open-source MCP server that lets Claude, Codex, Cursor and other agents see and drive the SAP screens you have open, as you, under your SAP authorisations."
+---
+
 # Introduction
 
 sap-ui-automation is an [MCP](https://modelcontextprotocol.io) server that

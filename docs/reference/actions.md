@@ -1,3 +1,8 @@
+---
+title: "Actions reference"
+description: "Every action sap_act takes, its fields, and which surface supports it."
+---
+
 # Actions reference
 
 Every action `sap_act` takes, its fields, and which surface supports it.

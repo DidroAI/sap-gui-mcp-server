@@ -1,3 +1,8 @@
+---
+title: "CLI commands: setup, doctor, sessions and more"
+description: "The commands of the sap-ui-automation CLI, what each does and its exit codes."
+---
+
 # CLI commands
 
 The package installs one command, `sap-ui-automation`. Without arguments it

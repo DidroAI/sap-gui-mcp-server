@@ -1,3 +1,8 @@
+---
+title: "Security and data handling: where SAP screen content goes"
+description: "For SAP security, Basis and data protection: what runs where, what leaves the machine, what is written to disk, and what the agent can do under each setting."
+---
+
 # Security and data handling
 
 This page is for the people who decide whether an agent may work in SAP:

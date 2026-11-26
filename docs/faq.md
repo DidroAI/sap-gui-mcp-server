@@ -1,3 +1,8 @@
+---
+title: "SAP UI Automation FAQ and troubleshooting"
+description: "One entry per check doctor can fail, then common questions: Mac and Linux, SAP GUI for Java, SNC, Edge, logon, where data goes, writes."
+---
+
 # FAQ and troubleshooting
 
 Start with `doctor`. It checks what the server can reach on this machine

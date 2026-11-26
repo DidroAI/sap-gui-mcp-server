@@ -1,3 +1,8 @@
+---
+title: "Safety model: what the agent may do in SAP"
+description: "The rules the server enforces whatever the agent decides: no logon, no password fields, writes held for your yes, allowed systems and transactions."
+---
+
 # Safety model
 
 The server enforces these rules whatever the agent decides. They are a

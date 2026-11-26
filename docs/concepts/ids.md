@@ -1,3 +1,8 @@
+---
+title: "Ids and handles: how the agent names SAP controls"
+description: "How the agent names SAP controls: SAP GUI scripting ids and their short handles, the same ids on Web GUI, SAPUI5 ids on Fiori, and field names in the network reader."
+---
+
 # Ids and handles
 
 Every line of the view starts with the id of its control. The agent acts on

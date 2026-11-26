@@ -1,3 +1,8 @@
+---
+title: "MCP tools for SAP: sap_look, sap_act and more"
+description: "Every tool of the sap-ui-automation MCP server, what it does and when it is listed."
+---
+
 # MCP tools
 
 The server registers its tools under the server name `sap-ui-automation`. Five work

@@ -1,3 +1,8 @@
+---
+title: "Record an agent's SAP run and replay it as a test"
+description: "Keep an agent's SAP run as a test file, replay it with no model, and export it as a Cloud ALM test case or an SAP GUI script."
+---
+
 # Recording and replay
 
 An agent's run in SAP can be kept as a test and run again with no model.
