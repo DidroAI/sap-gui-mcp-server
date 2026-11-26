@@ -25,10 +25,14 @@ Fiori and SAP S/4HANA are trademarks of SAP SE.
 
 ## Install (Mac, Windows, Linux)
 
-The extension is in review in the Chrome Web Store and not published
-there yet; until then, load it unpacked as below. You need Node.js 22 or
-later (`node --version` in a terminal; if it is missing, install it from
+Add it from the [Chrome Web Store](https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn)
+(unlisted: it opens from this link, not from a search), then install its
+helper with `npx -y sap-ui-automation extension helper`. You need Node.js 22
+or later (`node --version` in a terminal; if it is missing, install it from
 nodejs.org).
+
+To load it unpacked instead (a company policy that blocks the store, or to
+work on the extension):
 
 1. In a terminal, run:
 
@@ -232,7 +236,7 @@ The schema is in `managed_schema.json`. The extension's id is
 in its manifest).
 
 - **Installing it for everyone** (`ExtensionInstallForcelist`) needs an
-  update URL: the Chrome Web Store listing once it exists, or a packed
+  update URL: the Chrome Web Store's (`geglpbkaklfpmnbidfcpflegmdkjodkn`), or a packed
   `.crx` with an `update.xml` you host. An unpacked extension cannot be
   force-installed; until then each user loads it as above.
 - **The helper** is installed per user. Where `NativeMessagingAllowlist` is
@@ -260,8 +264,9 @@ let each user pair with their own. Patterns that match every host
 - **Two systems on one address** (the same system with two users): the
   extension tells them apart by the user and client the page shows (the
   launchpad shows both; Web GUI only the client in its address).
-- **Not in the Web Store yet.** Developer mode shows a warning at each Chrome
-  start, and some companies block unpacked extensions by policy.
+- **Unpacked copies:** Developer mode shows a warning at each Chrome start,
+  and some companies block unpacked extensions by policy. The store's copy
+  has neither problem.
 
 ## How it works
 
