@@ -17,6 +17,10 @@ extension.
 
 Documentation: [docs.didro.ai/sap-ui-automation](https://docs.didro.ai/sap-ui-automation/).
 
+[![Launch video: install with one command, then an agent works in SAP, two sessions in parallel](https://img.youtube.com/vi/YwM0q31qy2k/maxresdefault.jpg)](https://www.youtube.com/watch?v=YwM0q31qy2k)
+
+*The launch video (8 min): the Chrome extension, one setup command, and Codex working in two SAP sessions at once.*
+
 > MIT licence. An independent open-source project, not affiliated with or
 > endorsed by SAP. SAP, SAP GUI and SAP Fiori are trademarks of SAP SE.
 
