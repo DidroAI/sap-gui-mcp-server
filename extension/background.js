@@ -1309,6 +1309,8 @@ async function pairWithHelper() {
   const code = validCode(r.code);
   if (!code) return { ok: false, error: "the helper gave an invalid code" };
   if (code !== cfg.code) await chrome.storage.local.set({ pairingCode: code });
+  // The helper answered: a "missing" kept from before setup ran must not hold the password field off.
+  await helperInfo(true);
   return { ok: true };
 }
 
