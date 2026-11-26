@@ -4,6 +4,13 @@ All notable changes to this project are listed here. The project follows
 [Semantic Versioning](https://semver.org); before 1.0, a minor version may
 change the tools or the view format.
 
+## Unreleased
+
+### Documentation
+
+- The Chrome extension is public in the Chrome Web Store; the docs no
+  longer call it unlisted.
+
 ## 0.5.0 (2026-11-26)
 
 ### Fixed
