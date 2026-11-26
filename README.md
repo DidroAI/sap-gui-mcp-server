@@ -189,8 +189,6 @@ young.
 
 - **Experimental:** the network reader for SAP GUI without scripting.
   Record and replay have been checked live on Web GUI only.
-- **The Chrome extension** is in the Chrome Web Store as an unlisted item:
-  it installs from its link and does not show up in the store's search.
 - **Not supported:** SAP GUI for Java, Firefox, Safari, SNC-encrypted
   connections with the network reader.
 
