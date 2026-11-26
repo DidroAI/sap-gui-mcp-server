@@ -4,6 +4,15 @@ All notable changes to this project are listed here. The project follows
 [Semantic Versioning](https://semver.org); before 1.0, a minor version may
 change the tools or the view format.
 
+## Unreleased
+
+### Documentation
+
+- The Chrome extension is in the Chrome Web Store (unlisted):
+  https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn.
+  The guides and the server's messages install it from there, with
+  `extension helper`; loading it unpacked stays for developers.
+
 ## 0.3.0 (2026-11-26)
 
 ### Fixed

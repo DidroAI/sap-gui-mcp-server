@@ -107,26 +107,25 @@ into SAP's logon page itself. The agent and the server never see it.
 
 ### Install the extension
 
-The extension is in review in the Chrome Web Store. Until it is published
-there, load it unpacked:
-
-1. Run `npx -y sap-ui-automation extension install`. It copies the
-   extension to `~/sap-ui-automation-extension` (or the folder you name
-   after `install`) and installs its helper, which pairs the extension in
-   one click and keeps saved passwords in your system's keychain.
-2. In Chrome, open `chrome://extensions`, turn on **Developer mode**, click
-   **Load unpacked** and pick that folder. On a Mac, press Cmd+Shift+G in
-   the dialog and type the folder.
+1. Add **UI Automation for SAP** to Chrome from the
+   [Chrome Web Store](https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn).
+   The listing is unlisted: it opens from this link, not from a search in
+   the store.
+2. Run `npx -y sap-ui-automation extension helper`. It installs the
+   extension's helper, which pairs the extension in one click and keeps
+   saved passwords in your system's keychain.
 3. Pin the icon (puzzle piece, then the pin). If Chrome was open during
-   step 1, restart it once: Chrome finds the helper at start.
+   step 2, restart it once: Chrome finds the helper at start.
 
-<!-- When the store listing is public: put its link here, and say that
-`npx -y sap-ui-automation extension helper` installs the helper for the
-store's copy. Every other page links to this section. -->
+Chrome updates the store's copy by itself.
 
-To update an unpacked copy, run `npx -y sap-ui-automation@latest extension
-install` again, then click the reload arrow on the extension's card in
-`chrome://extensions`.
+**Without the store** (a company policy that blocks it, or to try changes
+to the extension): run `npx -y sap-ui-automation extension install`, which
+copies the extension to `~/sap-ui-automation-extension` (or the folder you
+name after `install`) and installs the helper. Then in `chrome://extensions`
+turn on **Developer mode**, click **Load unpacked** and pick that folder.
+To update that copy, run `npx -y sap-ui-automation@latest extension
+install` again and click the reload arrow on the extension's card.
 
 ### Pair and register your systems
 

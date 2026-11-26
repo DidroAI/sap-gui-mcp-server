@@ -18,7 +18,7 @@ type Env = Record<string, string | undefined>;
 /** An MV3 service worker sleeps after 30 s idle; when asleep it reconnects on its next wake-up. */
 const DEFAULT_WAIT_S = 35;
 
-const INSTALL = `Install the UI Automation for SAP extension: run \`npx -y sap-ui-automation extension install\`, then in Chrome open chrome://extensions, switch on Developer mode, click "Load unpacked" and choose the folder it names.`;
+const INSTALL = `Install the UI Automation for SAP extension from the Chrome Web Store ($https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn), then run \`npx -y sap-ui-automation extension helper\` and restart Chrome once.`;
 const PAIR = `Pair it: click the UI Automation for SAP icon in Chrome's toolbar and Pair in the side panel (or run \`npx -y sap-ui-automation extension pair\` and paste the code it prints).`;
 
 let relay: ExtensionRelay | undefined;
@@ -255,7 +255,7 @@ export function extensionPairCommand(env: Env = process.env): string[] {
     "",
     file ? `It is kept in ${file} (readable only by you).` : "It comes from SAP_EXTENSION_CODE.",
     "In Chrome, click the UI Automation for SAP extension's icon, open Pair with a code instead and paste the code. Pair once per Chrome profile.",
-    "Not installed yet? Run `npx -y sap-ui-automation extension install`, open chrome://extensions, switch on Developer mode, click \"Load unpacked\" and choose the folder it names.",
+    "Not installed yet? Add UI Automation for SAP from the Chrome Web Store (https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn), then run `npx -y sap-ui-automation extension helper`.",
   ];
 }
 
