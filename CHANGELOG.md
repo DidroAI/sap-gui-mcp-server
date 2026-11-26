@@ -53,6 +53,19 @@ change the tools or the view format.
     it (XD01's labels stayed at their old rows).
   - `scroll` with id `screen` works when a field lies under the window's
     edge, whatever SAP's scroll item said (VA05).
+  - Each action's line says the success message of the screen it ended on:
+    in a batch FB50's "Document ... was posted" (the answer to Enter at its
+    tax warning) was lost under the next action's "Enter valid date".
+  - A `set` into a read-only field names the open field beside or above it
+    (MIGO takes the storage location typed into GOITEM-LGOBE, and on S/4 the
+    material into GODYNPRO-MAKTX).
+  - Buttons on a screen that only displays (its title says so, its keys
+    were read, none is an offered Save) move to other views, as on the
+    scripting surface: BP's "Company Code" in "Display Organization" was
+    refused with writes off.
+  - The session window, and a popup's area, are found by the dynpro's own
+    title when a value help's caption replaced it (S/4 ME2N: every action
+    failed with "No SAP GUI window titled ...").
 
 ### Changed
 

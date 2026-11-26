@@ -199,6 +199,11 @@ Each refusal says what to do instead.
   from another SAP GUI window with the same title (one that may not go
   through the router), or when that window is minimised.
 
+On a screen that only displays (its title says so, and none of its keys is
+an offered Save), a button whose text does not act moves to another view,
+as on the scripting surface; so does a button named as the start of a
+search (BP's locator "Start").
+
 The guard rates an action by the input it sends: any click on a push
 button or a box with a function code is judged as pressing it, and a click
 on a button in a table-control row or on an element the reader cannot
