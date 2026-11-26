@@ -13,9 +13,9 @@
  * A file that differs is replaced, unless `overwrite` is false (init without
  * --force): then it is kept, as the user may have edited it.
  */
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, relative, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const SKILL_TARGETS = ["claude", "codex", "cursor"] as const;
@@ -173,23 +173,6 @@ export function installSkills(opts: InstallOptions): InstallResult {
 // ---------------------------------------------------------------- setup: the skills, for the user, with the MCP server
 
 /**
- * Where each agent app reads a user's skills. Cursor also reads Claude Code's and the shared
- * `~/.agents/skills` folder, so it gets a folder of its own only when neither is written.
- * Claude Desktop, Windsurf and VS Code read no skills from disk.
- */
-export function userSkillDirs(clients: string[], home: string, env: Record<string, string | undefined>): { dir: string; clients: string[] }[] {
-  const dirs: { dir: string; clients: string[] }[] = [];
-  if (clients.includes("claude-code")) dirs.push({ dir: join(env.CLAUDE_CONFIG_DIR || join(home, ".claude"), "skills"), clients: ["claude-code"] });
-  if (clients.includes("codex")) dirs.push({ dir: join(home, ".agents", "skills"), clients: ["codex"] });
-  if (clients.includes("cursor")) {
-    const shared = dirs[0];
-    if (shared) shared.clients.push("cursor");
-    else dirs.push({ dir: join(home, ".cursor", "skills"), clients: ["cursor"] });
-  }
-  return dirs;
-}
-
-/**
  * The skills' names before 0.2 (renamed 2026-11-25 to carry the product's name). A copy left under an
  * old name would give the agent the same skill twice, so setup and install remove the ones this package wrote.
  */
@@ -211,32 +194,162 @@ export function ownSkill(target: string): boolean {
   return !!text && name.test(text) && /\bsap-ui-automation\b/.test(text.replace(name, ""));
 }
 
-/**
- * Copies the shipped skills into a folder, replacing this package's copies from an earlier version;
- * a folder of the same name that is not ours stays. Returns what was installed and what was left.
- */
-export function setupSkills(dir: string, dryRun: boolean, root: string = packageRoot()): { installed: string[]; left: string[]; removed: string[] } {
-  const installed: string[] = [];
-  const left: string[] = [];
-  const removed: string[] = [];
-  for (const old of Object.keys(OLD_SKILL_NAMES)) {
-    const target = join(dir, old);
-    if (!existsSync(target) || !ownSkill(target)) continue;
-    removed.push(old);
-    if (!dryRun) rmSync(target, { recursive: true, force: true });
+
+/** What setup did with one skill in one folder. */
+export type SkillState = "installed" | "updated" | "unchanged" | "linked" | "copied" | "left";
+
+export interface FolderResult {
+  dir: string;
+  /** The canonical folder itself, or one whose entries link to it. */
+  canonical: boolean;
+  states: Record<string, SkillState>;
+  /** Old-named copies of this package's skills taken out. */
+  removed: string[];
+}
+
+export interface SharedSkillsOptions {
+  /** The one real copy: ~/.agents/skills. */
+  canonical: string;
+  dryRun: boolean;
+  platform: NodeJS.Platform;
+  /** Where the skills come from (tests). Default: this package. */
+  root?: string | undefined;
+  /** Makes the link (tests make it fail, as on a Windows that refuses links). */
+  link?: ((target: string, path: string) => void) | undefined;
+}
+
+const lstat = (p: string) => {
+  try {
+    return lstatSync(p);
+  } catch {
+    return undefined;
   }
-  for (const skill of shippedSkills(root)) {
-    const target = join(dir, skill.name);
-    if (existsSync(target) && !ownSkill(target)) {
-      left.push(skill.name);
+};
+const real = (p: string): string => {
+  try {
+    return realpathSync(p);
+  } catch {
+    // A folder not made yet: its parent may still be a link.
+    const parent = dirname(p);
+    return parent === p ? p : join(real(parent), p.slice(parent.length + 1));
+  }
+};
+/** Removes a link without touching what it points to, or a folder with its content. */
+const remove = (p: string) => (lstat(p)?.isSymbolicLink() ? unlinkSync(p) : rmSync(p, { recursive: true, force: true }));
+
+/** Whether the folder holds exactly the shipped files (the marker aside). */
+function sameSkill(skill: Skill, target: string): boolean {
+  try {
+    const have = walk(target).filter((f) => f !== SKILL_MARKER);
+    if (have.length !== skill.files.length || have.some((f, i) => f !== skill.files[i])) return false;
+    return skill.files.every((f) => readFileSync(join(target, f)).equals(readFileSync(join(skill.dir, f))));
+  } catch {
+    return false;
+  }
+}
+
+function copySkill(skill: Skill, target: string): void {
+  remove(target);
+  mkdirSync(dirname(target), { recursive: true });
+  cpSync(skill.dir, target, { recursive: true });
+  writeFileSync(join(target, SKILL_MARKER), "Installed by sap-ui-automation setup; replaced on the next setup.\n");
+}
+
+/** Puts a real copy at `target`, unless a folder there is not ours. */
+function placeCopy(skill: Skill, target: string, dryRun: boolean): SkillState {
+  const l = lstat(target);
+  if (l && !ownSkill(target)) return "left";
+  if (l && !l.isSymbolicLink() && sameSkill(skill, target)) return "unchanged";
+  if (!dryRun) copySkill(skill, target);
+  return l ? "updated" : "installed";
+}
+
+/** Whether the link at `p` leads to `target` (read without following, so it works before `target` exists). */
+function pointsTo(p: string, target: string): boolean {
+  try {
+    return resolve(dirname(p), readlinkSync(p)) === resolve(target) || realpathSync(p) === realpathSync(target);
+  } catch {
+    return false;
+  }
+}
+
+function defaultLink(platform: NodeJS.Platform) {
+  return (target: string, path: string) => {
+    // A junction on Windows needs no privilege; elsewhere a relative link survives a moved home.
+    if (platform === "win32") symlinkSync(target, path, "junction");
+    else symlinkSync(relative(real(dirname(path)), target), path, "dir");
+  };
+}
+
+/**
+ * Installs the shipped skills the way `npx skills` does: one real copy in `canonical`
+ * (~/.agents/skills), and in every other folder a link to it; where a link cannot be made,
+ * a copy. A folder of the same name that is not this package's stays as it is, and old-named
+ * copies are removed only when they are ours. Folders that are the same place (a link
+ * between them, or the same path) are written once.
+ */
+export function setupSharedSkills(dirs: string[], opts: SharedSkillsOptions): FolderResult[] {
+  const skills = shippedSkills(opts.root);
+  const link = opts.link ?? defaultLink(opts.platform);
+  const results: FolderResult[] = [];
+  const dropOld = (dir: string) => {
+    const removed: string[] = [];
+    for (const old of Object.keys(OLD_SKILL_NAMES)) {
+      const p = join(dir, old);
+      if (!lstat(p) || !ownSkill(p)) continue;
+      removed.push(old);
+      if (!opts.dryRun) remove(p);
+    }
+    return removed;
+  };
+  const home = real(opts.canonical);
+  const top: FolderResult = { dir: opts.canonical, canonical: true, states: {}, removed: dropOld(opts.canonical) };
+  for (const skill of skills) top.states[skill.name] = placeCopy(skill, join(opts.canonical, skill.name), opts.dryRun);
+  results.push(top);
+  const seen = new Map([[home, top]]);
+  for (const dir of dirs) {
+    const where = real(dir);
+    const same = seen.get(where);
+    if (same) {
+      // The same place under another name (a link between them): reported as that one, written once.
+      if (dir !== same.dir) results.push({ ...same, dir });
       continue;
     }
-    installed.push(skill.name);
-    if (dryRun) continue;
-    rmSync(target, { recursive: true, force: true });
-    mkdirSync(dir, { recursive: true });
-    cpSync(skill.dir, target, { recursive: true });
-    writeFileSync(join(target, SKILL_MARKER), "Installed by sap-ui-automation setup; replaced on the next setup.\n");
+    const r: FolderResult = { dir, canonical: false, states: {}, removed: dropOld(dir) };
+    for (const skill of skills) {
+      const p = join(dir, skill.name);
+      const target = join(opts.canonical, skill.name);
+      const shared = top.states[skill.name];
+      // The canonical name is someone else's: this folder gets a copy of its own.
+      if (shared === "left") {
+        r.states[skill.name] = placeCopy(skill, p, opts.dryRun);
+        continue;
+      }
+      const l = lstat(p);
+      if (l?.isSymbolicLink() && pointsTo(p, target)) {
+        r.states[skill.name] = shared === "unchanged" ? "unchanged" : "updated";
+        continue;
+      }
+      if (l && !ownSkill(p)) {
+        r.states[skill.name] = "left";
+        continue;
+      }
+      if (opts.dryRun) {
+        r.states[skill.name] = "linked";
+        continue;
+      }
+      remove(p);
+      mkdirSync(dir, { recursive: true });
+      try {
+        link(target, p);
+        r.states[skill.name] = "linked";
+      } catch {
+        copySkill(skill, p);
+        r.states[skill.name] = "copied";
+      }
+    }
+    results.push(r);
+    seen.set(where, r);
   }
-  return { installed, left, removed };
+  return results;
 }

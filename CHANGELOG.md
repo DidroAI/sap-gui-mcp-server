@@ -4,6 +4,28 @@ All notable changes to this project are listed here. The project follows
 [Semantic Versioning](https://semver.org); before 1.0, a minor version may
 change the tools or the view format.
 
+## Unreleased
+
+### Changed
+
+- `setup` works like `npx skills add`, with the MCP server too: it lists the
+  coding agents it finds, asks in a terminal which to set up (the ones found
+  are ticked), and gives each one the server and the skills. It knows 25
+  agents: besides Claude Code, Codex, Claude Desktop, Cursor, Windsurf and
+  VS Code, now GitHub Copilot CLI, Gemini CLI, Antigravity, OpenCode, Cline,
+  Kiro, Zed, Goose, Amp, Junie, Warp, Qwen Code and Factory Droid (server
+  and skills), and Roo Code, Crush, Augment, Continue, Kilo Code and Trae
+  (skills only). See the table in [CLI commands](docs/reference/cli.md#the-agents).
+- New options: `--agent <ids>` / `-a` (`'*'`: every agent found), `--yes` /
+  `-y` (no question), `--no-mcp` (the skills only). Names given as before
+  (`setup codex cursor`) still work.
+- The skills get one copy in `~/.agents/skills` and a link to it in each
+  other agent's folder (a copy where no link can be made). A rerun updates
+  the copy in place.
+- Config files keep their comments and layout where setup adds the server.
+- For agents setup does not know, `npx skills add DidroAI/sap-ui-automation`
+  installs the skills.
+
 ## 0.3.1 (2026-11-26)
 
 ### Changed
