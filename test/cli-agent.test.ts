@@ -204,7 +204,7 @@ describe("confirm", () => {
     surface.add({ id: "chrome:1", system: "XYZ", transaction: "ZT01" }, { view: SCREEN, assess });
     const look = await run(["look"]);
     expect(look.code).toBe(0);
-    expect(look.lines[0]).toStartWith("NOTE: writing is set to confirm, and this client cannot ask the user");
+    expect(look.lines[0]).toStartWith("NOTE: writing is set to confirm, and the sap-gui CLI cannot ask the user");
     const r = await run(["act", "key", "11"]);
     expect(r.code).toBe(1);
     expect(r.err).toContain("cannot ask the user");
