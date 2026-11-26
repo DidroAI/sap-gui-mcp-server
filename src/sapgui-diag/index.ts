@@ -34,7 +34,7 @@ import { userInfo } from "node:os";
 import { join } from "node:path";
 import { ONE_LINE_NOTE, oneLine } from "../core/action.js";
 import { ActionError, type Action, type Assessment, type DoctorCheck, type Driver, type LookOptions, type SessionInfo, type Surface } from "../core/types.js";
-import { CLOSES_SESSIONS, commitCode, commitWord, isLogonScreen, LOGON_REFUSAL, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
+import { actWord, CLOSES_SESSIONS, commitCode, commitWord, isLogonScreen, LOGON_REFUSAL, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS, searchButton } from "../core/words.js";
 import { type DiagControl, DiagDecoder, type DiagElement, type DiagKey, type DiagScreen, type DiagTable, type DiagWindow, diagView, menuView, statusLine } from "../diag/index.js";
 import { notationNote } from "../core/notation.js";
 import { HostError, MAX_TIMEOUT_MS, powershellExe, PsHost, READ_TIMEOUT_MS } from "../sapgui/host.js";
@@ -78,6 +78,8 @@ interface WindowFacts {
 
 const clean = (s: string | undefined) => (s ?? "").replace(/\s+/g, " ").trim();
 const commit = (reason: string): Assessment => ({ risk: "commit", reason });
+/** A search button's text without a key in parentheses, and "Start" alone as no word: BP's "Start" is the start of its search. */
+const searchLabel = (s: string | undefined) => clean(s).replace(/\([^()]*\)\s*$/, "").trim().replace(/^start$/i, "");
 
 /** The window actions go to: the topmost modal one, else the main window. */
 function active(s: DiagScreen): DiagWindow {
@@ -135,6 +137,9 @@ export function assessDiag(s: DiagScreen, action: Action, target?: Target): Asse
     const means = safeWord(lang, e.text, e.tooltip);
     if (q && !["no", "cancel", "back", "exit", "help", "display"].includes(means ?? "")) return commit(`${named} on the popup "${q.slice(0, 90)}"`);
     if (safeCode(e.fcode) || means) return { risk: "navigate", reason: named };
+    // A search button by its SAP name (BP's locator "Start", BUS_LOCA_SRCH01-GO), unless its text says it acts: the rule of
+    // the scripting and Web GUI surfaces (sapgui/assess.ts), on the id scripting would give it.
+    if (e.name && searchButton(`wnd[${w.index}]/usr/btn${e.name}`) && !actWord(...[e.text, e.tooltip].map(searchLabel))) return { risk: "navigate", reason: `${named} starts a search` };
     return commit(`${named} is not known to be safe, so it is treated as a write`);
   };
   // The input decides, not the verb: focus, f4, set, check, click, press... all start with a mouse click at the
