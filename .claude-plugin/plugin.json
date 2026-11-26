@@ -1,7 +1,7 @@
 {
   "name": "sap-ui-automation",
   "description": "See and drive SAP screens you have open (SAP GUI for Windows, Web GUI, Fiori) from your agent: an MCP server with a compact, complete screen view, guardrails on writes, and skills for working in SAP transactions with the tools or the CLI",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "author": { "name": "Didro" },
   "homepage": "https://github.com/DidroAI/sap-ui-automation#readme",
   "repository": "https://github.com/DidroAI/sap-ui-automation",

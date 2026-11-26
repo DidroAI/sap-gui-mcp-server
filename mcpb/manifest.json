@@ -3,7 +3,7 @@
   "manifest_version": "0.3",
   "name": "sap-ui-automation",
   "display_name": "SAP UI Automation",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "See and drive the SAP screens you have open: SAP GUI for Windows, Web GUI and Fiori, as a compact text view.",
   "long_description": "Lets Claude see and drive the SAP screens you already have open, under your own SAP authorisations: **SAP GUI for Windows** (through SAP GUI scripting), **SAP GUI for HTML (Web GUI)** and **SAP Fiori** in Chrome.\n\nIt finds your open sessions by itself, reads each screen as one line per control with SAP's own ids, and acts on those ids. It never logs on and never stores a password.\n\n**Writes are refused by default** (`SAP_WRITE` = off). Set it to `confirm` to approve each action that may write to SAP, or `on` to allow them. You can also limit the systems, transactions and browser origins it may touch.\n\nWeb GUI and Fiori need Chrome (or Edge) with remote debugging allowed: open chrome://inspect/#remote-debugging once. See the documentation for details.",
   "author": {
