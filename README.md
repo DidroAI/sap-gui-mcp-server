@@ -1,10 +1,24 @@
+<img src="assets/icon.png" alt="" width="72" align="right">
+
 # SAP UI Automation
+
+[![npm](https://img.shields.io/npm/v/sap-ui-automation?label=npm)](https://www.npmjs.com/package/sap-ui-automation)
+[![CI](https://github.com/DidroAI/sap-ui-automation/actions/workflows/ci.yml/badge.svg)](https://github.com/DidroAI/sap-ui-automation/actions/workflows/ci.yml)
+[![MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
 Let an AI agent **see and drive the SAP screens you have open**: SAP GUI
 for Windows, SAP GUI for HTML (Web GUI) and SAP Fiori. It is an
 [MCP](https://modelcontextprotocol.io) server for Claude Code, Codex,
 Cursor, Claude Desktop, VS Code and other MCP clients, a command line for
-agents without MCP, and an SDK for scripts and tests.
+agents without MCP, and an SDK for scripts and tests. For Web GUI and
+Fiori in your everyday Chrome, add the
+[UI Automation for SAP](https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn)
+extension.
+
+Documentation: [docs.didro.ai/sap-ui-automation](https://docs.didro.ai/sap-ui-automation/).
+
+> MIT licence. An independent open-source project, not affiliated with or
+> endorsed by SAP. SAP, SAP GUI and SAP Fiori are trademarks of SAP SE.
 
 Why: from a screenshot or a page's HTML, an agent has to guess which SAP
 field is which. This server reads the screen the way SAP models it and
@@ -71,6 +85,18 @@ lets you pick, and gives each one the server and the skills
 
 Every client, Windows notes and write settings:
 [Install in your client](docs/getting-started/installation.md).
+
+### Or let your agent do it
+
+Paste this into Claude Code, Codex, Cursor's agent or any agent with a
+terminal:
+
+```text
+Set up the SAP UI Automation MCP server for me: run `npx -y sap-ui-automation setup`, then `npx -y sap-ui-automation doctor`, and follow what they print (instructions for agents: https://github.com/DidroAI/sap-ui-automation/blob/main/docs/agent-setup.md). Never type an SAP password; I log on myself.
+```
+
+[What the agent follows](docs/agent-setup.md) ·
+[a longer prompt, step by step](https://github.com/DidroAI/sap-ui-automation/blob/main/docs/getting-started/setup-prompt.md).
 
 ### 2. Open SAP
 
@@ -165,6 +191,11 @@ are young.
 Each guide ends with the limits of its surface.
 
 ## Documentation
+
+The documentation site is
+[docs.didro.ai/sap-ui-automation](https://docs.didro.ai/sap-ui-automation/);
+the pages below are the guides behind it. Agents setting the server up
+can follow [Setup steps for agents](docs/agent-setup.md).
 
 - [Getting started](docs/getting-started/index.md) ·
   [Choose your setup](docs/getting-started/choose.md) ·
