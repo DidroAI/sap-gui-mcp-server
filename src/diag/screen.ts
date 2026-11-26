@@ -295,6 +295,8 @@ export interface DiagList {
   totalRows?: number;
   /** Line the page starts at, 0-based. */
   firstRow?: number;
+  /** Lines of the list on show (without the fixed headings). */
+  visibleRows?: number;
 }
 
 export interface DiagContainer extends DiagArea {

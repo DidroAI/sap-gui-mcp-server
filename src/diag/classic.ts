@@ -143,6 +143,14 @@ export function layoutColumns(table: DiagTable): void {
   });
 }
 
+/** A table cell SAP GUI sent with a request: the table, its own row number, the column index and the text. */
+export interface SentCell {
+  table: string;
+  index: number;
+  column: number;
+  text: string;
+}
+
 /** Table control while its items arrive. */
 interface TableBuild {
   table: DiagTable;
@@ -175,6 +183,8 @@ export class ClassicState {
   private closed: WindowState[] = [];
   /** Parts of the window kept from its last sending, while SAP sends only what changed: replaced by what comes at their place. */
   private carried = new Set<unknown>();
+  /** The row of its container's origin each element was laid out with: a container that scrolls on its own moves it. */
+  private origins = new WeakMap<DiagElement, number>();
   private listPos: { row: number; col: number } | undefined;
   private listFormat: Buffer | undefined;
   private listWidth = 0;
@@ -239,9 +249,10 @@ export class ClassicState {
    * user typed into with their new text. They become the text of the fields at those places, so that a field
    * SAP later sends again without its text keeps what the user typed (elementList).
    */
-  clientValues(items: DiagItem[]): void {
+  clientValues(items: DiagItem[]): SentCell[] {
     const w = this.windows[this.windows.length - 1];
-    if (!w) return;
+    const sent: SentCell[] = [];
+    if (!w) return sent;
     const path = this.path;
     this.path = [];
     try {
@@ -252,12 +263,40 @@ export class ClassicState {
           const kind = LEVELS.get(it.sid);
           if (kind && it.value.length >= 9) this.path.push({ kind, name: "", row: it.value.readUInt16BE(1), col: it.value.readUInt16BE(3), width: it.value.readUInt16BE(5), height: it.value.readUInt16BE(7) });
         } else if (it.id === ID.screen && it.sid === 0x02) this.clientElements(w, it.value);
+        else if (it.id === ID.screen && it.sid === 0x09) sent.push(...this.clientCells(w, it.value));
       }
     } catch (e) {
       this.note(`values from SAP GUI not read: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       this.path = path;
     }
+    return sent;
+  }
+
+  /**
+   * The cells of a table control SAP GUI sends with a request (item 09/09): per cell its line on show and its
+   * column (1-based), 0x65, the text, NUL. The table is the one at the request's area, else the window's only one.
+   */
+  private clientCells(w: WindowState, v: Buffer): SentCell[] {
+    const o = this.origin();
+    const table = w.tables.find((t) => t.row === o.row && t.col === o.col) ?? (w.tables.length === 1 ? w.tables[0] : undefined);
+    const out: SentCell[] = [];
+    if (!table) return out;
+    const first = table.rows[0]?.index ?? 0;
+    for (let i = 0; i + 5 <= v.length; ) {
+      const line = v.readUInt16BE(i);
+      const column = v.readUInt16BE(i + 2) - 1;
+      let j = i + 5;
+      while (j < v.length && v[j] !== 0) j++;
+      const text = clean(this.text(v.subarray(i + 5, j))).trim();
+      i = j + 1;
+      if (line < 1 || column < 0) continue;
+      const index = first + line - 1;
+      out.push({ table: table.name, index, column, text });
+      const cell = table.rows.find((r) => r.index === index)?.cells[column];
+      if (cell && cell.kind !== "checkbox" && cell.kind !== "radio") cell.text = text;
+    }
+    return out;
   }
 
   private clientElements(w: WindowState, v: Buffer): void {
@@ -465,6 +504,11 @@ export class ClassicState {
           const w = this.win();
           w.list ??= { rows: [] };
           w.list.totalRows = i32(0);
+          // The third and fifth: the lines on show and the first one on show (ME2L's 54 lines came as 25 from 0, 25, 50).
+          if (v.length >= 20) {
+            w.list.visibleRows = i32(2);
+            w.list.firstRow = i32(4);
+          }
         } else if (this.scrollOf === "table" && this.build && v.length >= 20) {
           this.build.table.totalRows = i32(0);
           this.build.table.visibleRows = i32(2);
@@ -706,6 +750,19 @@ export class ClassicState {
     const w = this.win();
     const o = this.origin();
     const path = this.names();
+    // An update after a container scrolled on its own (XD01's address tab): what is kept of it moves with it.
+    if (this.carried.size) {
+      const key = path.join(">");
+      for (const x of w.elements) {
+        const was = this.origins.get(x);
+        if (!this.carried.has(x) || was === undefined || was === o.row || x.path.join(">") !== key) continue;
+        x.row += o.row - was;
+        this.origins.set(x, o.row);
+        const out = x.row < o.top || x.row >= o.bottom || x.col < o.left || x.col >= o.right;
+        if (out) x.scrolledOut = true;
+        else delete x.scrolledOut;
+      }
+    }
     let strip = tabs ? w.tabstrips[w.tabstrips.length - 1] : undefined;
     if (tabs && (!strip || this.carried.has(strip))) {
       strip = this.newTabstrip();
@@ -758,6 +815,7 @@ export class ClassicState {
       lastTab = undefined;
       const el: DiagElement = { kind: "other", name: "", text: "", row: o.row + row, col: o.col + col, width: 0, input: (attr & BIT.readOnly) === 0, hidden: (attr & BIT.hidden) !== 0, path, etype };
       if ((attr & BIT.valueHelp) !== 0) el.valueHelp = true;
+      this.origins.set(el, o.row);
       if (el.row < o.top || el.row >= o.bottom || el.col < o.left || el.col >= o.right) el.scrolledOut = true;
       this.element(el, a, body);
       if (this.carried.size) {

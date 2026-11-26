@@ -42,12 +42,14 @@ const geo: Geometry = { at: (win, row, col, width = 1) => cellPoint(AREA, win.si
 const plan = (a: Action) => planPlain(s, a, resolveTarget(s, a), geo);
 
 describe("a table cell right of what SAP GUI shows", () => {
-  test("set reaches it with Tab from the nearest cell on show that takes text, one Tab per input cell", () => {
+  test("set reaches it with Tab from the leftmost cell on show that takes text, one Tab per input cell, 80 ms apart", () => {
+    // The leftmost: a click point drifts to the right across a table (ME21N, live 2026-11-26), Tabs do not.
     const p = plan({ do: "set", id: "MEPO1211-XFLAG[0]", value: "X" });
-    expect(p.steps.map((x) => (x.do === "vk" ? `vk${x.vk}${x.shift ? "+" : ""}${"count" in x && x.count ? `x${x.count}` : ""}` : x.do))).toEqual(["click", "vk9x3", "vk36", "vk35+", "vk46", "type"]);
+    expect(p.steps.map((x) => (x.do === "vk" ? `vk${x.vk}${x.shift ? "+" : ""}${"count" in x && x.count ? `x${x.count}` : ""}` : x.do))).toEqual(["click", "vk9x5", "vk36", "vk35+", "vk46", "type"]);
+    expect(p.steps[1]).toMatchObject({ gap: 80 });
     expect(p.sideways).toBe("TC_1211");
-    expect(p.note).toContain("reached with Tab from MEPO1211-BANFN");
-    const [x] = cellPoint(AREA, { rows: 20, cols: 156 }, 11, 36, 10, CELLS);
+    expect(p.note).toContain("reached with Tab from MEPO1211-EMATN");
+    const [x] = cellPoint(AREA, { rows: 20, cols: 156 }, 11, 3, 18, CELLS);
     expect(p.steps[0]).toMatchObject({ do: "click", x });
   });
   test("set is refused when no cell on show to its left takes text", () => {
@@ -98,6 +100,9 @@ describe("a screen taller than SAP GUI's window", () => {
     expect(planScreenScroll(sel(0), "next", geo).steps).toMatchObject([{ do: "wheel", notches: -6 }]);
     expect(planScreenScroll(sel(1), "prev", geo).steps).toMatchObject([{ do: "wheel", notches: 6 }]);
     expect(() => planScreenScroll(w, "next", geo)).toThrow("does not scroll");
+    // SAP said nothing of a scroll, but a field lies under the window's edge (VA05, 2026-11-26): the wheel goes.
+    const noItem = { ...sel(0), size: { rows: 19, cols: 156 }, scroll: undefined } as unknown as DiagWindow;
+    expect(planScreenScroll(noItem, "next", geo).steps).toMatchObject([{ do: "wheel", notches: -6 }]);
   });
 });
 
@@ -108,16 +113,24 @@ describe("a second cell further right in the row the cursor is in", () => {
     expect(p?.steps.map((x) => x.do)).toEqual(["vk", "vk", "vk", "vk", "type"]);
     expect(p?.steps[0]).toMatchObject({ vk: 9, count: 1 });
     expect(planTabOn(TABLE, 0, 2, 5, "x", "X")?.steps[0]).toMatchObject({ count: 3 });
-    expect(planTabOn(TABLE, 0, 3, 2, "x", "1")).toBeUndefined();
+    // Left of the cursor: Shift+Tab (FB50: the text after the cost center, live 2026-11-26).
+    expect(planTabOn(TABLE, 0, 3, 2, "x", "1")?.steps[0]).toMatchObject({ vk: 9, shift: true, count: 1 });
+    expect(planTabOn(TABLE, 0, 2, 2, "x", "1")).toBeUndefined();
   });
 });
 
 describe("Tab reach only where it was checked", () => {
-  test("ME21N's items (SAPLMEGUI): a cell right of the edge is refused, not reached with Tab", () => {
+  test("ME21N's items (SAPLMEGUI), checked live 2026-11-26: the requisition and its item reached with Tab", () => {
     const me21n = { ...TABLE, program: "SAPLMEGUI" } as DiagTable;
     const s5 = { ...s, windows: [{ ...w, tables: [me21n] }] } as DiagScreen;
     const a = { do: "set", id: "MEPO1211-BNFPO[0]", value: "10" };
-    expect(() => planPlain(s5, a, resolveTarget(s5, a), geo)).toThrow("cannot scroll a table sideways");
-    expect(planTabOn(me21n, 0, 2, 3, "x", "10")).toBeUndefined();
+    expect(planPlain(s5, a, resolveTarget(s5, a), geo).sideways).toBe("TC_1211");
+    expect(planTabOn(me21n, 0, 2, 3, "x", "10")).toBeDefined();
+  });
+  test("another program's table: a cell right of the edge is refused", () => {
+    const other = { ...TABLE, program: "ZPROG" } as DiagTable;
+    const s6 = { ...s, windows: [{ ...w, tables: [other] }] } as DiagScreen;
+    const a = { do: "set", id: "MEPO1211-BNFPO[0]", value: "10" };
+    expect(() => planPlain(s6, a, resolveTarget(s6, a), geo)).toThrow("cannot scroll a table sideways");
   });
 });

@@ -93,6 +93,9 @@ const SAP_FUNCTION_KEYS: Record<string, number> = { execute: 8, cancel: 12, save
 export function normalizeKey(raw: unknown): number | string | undefined {
   if (typeof raw === "number") return Number.isInteger(raw) && raw >= 0 && raw <= 99 ? raw : undefined;
   if (typeof raw !== "string") return undefined;
+  // "Next page (Shift+F11)", as the views print a key after its button's text: the key in the parentheses.
+  const printed = /^[^()]*\(([^()]+)\)\s*$/.exec(raw.trim());
+  if (printed?.[1] && /[a-z]/i.test(raw.slice(0, raw.indexOf("(")))) return normalizeKey(printed[1]);
   const s = raw.replace(/\s+/g, "");
   if (/^\d{1,2}$/.test(s)) return Number(s);
   const parts = s.toLowerCase().split("+");

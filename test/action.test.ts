@@ -12,6 +12,11 @@ describe("normalizeAction", () => {
   test("key names come out in one spelling", () => {
     expect(normalizeKey("enter")).toBe("Enter");
     expect(normalizeKey("RETURN")).toBe("Enter");
+    // A key copied the way the views print it, the button's text first (round 2: "Next page (Shift+F11)").
+    expect(normalizeKey("Next page (Shift+F11)")).toBe("Shift+F11");
+    expect(normalizeKey("Next Page (PageDown)")).toBe("PageDown");
+    expect(normalizeKey("Display (Ctrl+F2)")).toBe("Control+F2");
+    expect(normalizeKey("Weird (thing)")).toBeUndefined();
     expect(normalizeKey("ctrl+S")).toBe("Control+s");
     expect(normalizeKey("shift + tab")).toBe("Shift+Tab");
     expect(normalizeKey("Shift+Control+f1")).toBe("Control+Shift+F1");

@@ -205,6 +205,23 @@ public static class SapScreen {
     if (!ClientToScreen(gi.caret, ref p)) return true;
     return Math.Abs(p.y - y) <= half;
   }
+  [DllImport("user32.dll")] static extern uint GetDoubleClickTime();
+  public static string CaretPos(IntPtr top) {
+    uint pid; var gi = new GUITHREADINFO(); gi.cb = Marshal.SizeOf(typeof(GUITHREADINFO));
+    if (!GetGUIThreadInfo(GetWindowThreadProcessId(top, out pid), ref gi) || gi.caret == IntPtr.Zero) return "none";
+    var p = new PT { x = gi.rcCaret.L, y = (gi.rcCaret.T + gi.rcCaret.B) / 2 };
+    ClientToScreen(gi.caret, ref p);
+    return p.x + "," + p.y;
+  }
+  public static int DoubleClickMs() { return (int)GetDoubleClickTime(); }
+  /** Is the text caret on this row and between x0 and x1 (screen pixels)? A dropdown on the same row has a caret too. */
+  public static bool CaretIn(IntPtr top, int x0, int x1, int y, int half) {
+    uint pid; var gi = new GUITHREADINFO(); gi.cb = Marshal.SizeOf(typeof(GUITHREADINFO));
+    if (!GetGUIThreadInfo(GetWindowThreadProcessId(top, out pid), ref gi) || gi.caret == IntPtr.Zero) return false;
+    var p = new PT { x = gi.rcCaret.L, y = (gi.rcCaret.T + gi.rcCaret.B) / 2 };
+    if (!ClientToScreen(gi.caret, ref p)) return true;
+    return Math.Abs(p.y - y) <= half && p.x >= x0 && p.x <= x1;
+  }
   /** Is a text caret showing in this window's thread? SAP GUI shows one only in a field that takes input. */
   public static bool HasCaret(IntPtr top) {
     uint pid; var gi = new GUITHREADINFO(); gi.cb = Marshal.SizeOf(typeof(GUITHREADINFO));
@@ -478,7 +495,9 @@ function Op-Act($req) {
   elseif ($do -eq 'vk') {
     # A Windows key with modifiers, count times: Home, the arrows, Page Down, Enter, Shift+Space...
     $n = [Math]::Max(1, [int]$a['count'])
-    for ($i = 0; $i -lt $n; $i++) { [SapScreen]::Key([byte][int]$a['vk'], [bool]$a['ctrl'], [bool]$a['shift'], [bool]$a['alt']) }
+    # "gap": milliseconds between the repeats (a table control that scrolls sideways at a Tab redraws first).
+    $gap = [int]$(if ($null -ne $a['gap']) { $a['gap'] } else { 0 })
+    for ($i = 0; $i -lt $n; $i++) { if ($i -gt 0 -and $gap -gt 0) { Start-Sleep -Milliseconds $gap }; [SapScreen]::Key([byte][int]$a['vk'], [bool]$a['ctrl'], [bool]$a['shift'], [bool]$a['alt']) }
   }
   elseif ($do -eq 'press') {
     # A toolbar button by its name: a posted BM_CLICK, no mouse. "within": only a button whose middle is in that rect (a grid's toolbar).
@@ -502,10 +521,14 @@ function Op-Act($req) {
     $p = Point $a
     [SapScreen]::Click($p[0], $p[1], $false)
     Start-Sleep -Milliseconds 200
-    # A dropdown chosen just before can swallow the first click (its list closes on it): click once more when the caret did not come.
-    if ([SapScreen]::HasCaret($top) -and -not [SapScreen]::CaretAt($top, $p[1], 16)) { [SapScreen]::Click($p[0], $p[1], $false); Start-Sleep -Milliseconds 200 }
+    # A dropdown chosen just before can swallow the first click (its list closes on it): click once more when the caret did
+    # not come. With "left" and "right" (a row with a dropdown: the field's edges in pixels) the caret must be between them, not in a dropdown on the same row.
+    $there = { if ($null -ne $a['left'] -and $null -ne $a['right']) { [SapScreen]::CaretIn($top, [int]$a['left'], [int]$a['right'], $p[1], 16) } else { [SapScreen]::CaretAt($top, $p[1], 16) } }
+    # The second click waits out the double-click time: two clicks close together are a double-click, which on a table cell
+    # chooses it (F2: FB50's item went to its coding block, and SAP dumped, 2026-11-26).
+    if ([SapScreen]::HasCaret($top) -and -not (& $there)) { Start-Sleep -Milliseconds ([SapScreen]::DoubleClickMs() + 150); [SapScreen]::Click($p[0], $p[1], $false); Start-Sleep -Milliseconds 250 }
     if (-not [SapScreen]::HasCaret($top)) { throw 'NOT_INPUT: no text cursor appeared at this point: it is not a field that takes input' }
-    if (-not [SapScreen]::CaretAt($top, $p[1], 16)) { throw 'NOT_INPUT: the text cursor did not come to this point: nothing was typed' }
+    if (-not (& $there)) { throw ('NOT_INPUT: the text cursor did not come to this point: nothing was typed (caret at ' + [SapScreen]::CaretPos($top) + ')') }
     [SapScreen]::Key(0x24, $false, $false, $false)  # Home
     [SapScreen]::Key(0x23, $false, $true, $false)   # Shift+End
     [SapScreen]::Key(0x2E, $false, $false, $false)  # Delete
@@ -519,14 +542,30 @@ function Op-Act($req) {
     $p = Point $a
     [SapScreen]::Click($p[0], $p[1], $false)
     Start-Sleep -Milliseconds 350
-    if ($a['how'] -eq 'arrows') {
+    if ($a['how'] -eq 'clear') {
+      # The blank entry: the dropdown's text selected and deleted.
       [SapScreen]::Key(0x24, $false, $false, $false)
-      for ($i = 0; $i -lt [int]$a['index']; $i++) { [SapScreen]::Key(0x28, $false, $false, $false) }
-    } else { [SapScreen]::Type([string]$a['value']) }
-    # The list takes the typed text a moment after the keys: Enter too soon takes the entry before.
-    Start-Sleep -Milliseconds 300
-    [SapScreen]::Key(0x0D, $false, $false, $false)
-    Start-Sleep -Milliseconds 300
+      [SapScreen]::Key(0x23, $false, $true, $false)
+      [SapScreen]::Key(0x2E, $false, $false, $false)
+      Start-Sleep -Milliseconds 200
+      [SapScreen]::Key(0x09, $false, $false, $false)
+      Start-Sleep -Milliseconds 150
+    } elseif ($a['how'] -eq 'arrows') {
+      # The click gives the dropdown the focus and leaves its list closed (VA01, 2026-11-26): Home and Down change the
+      # entry on show at once, and no Enter is needed (one would go to SAP).
+      [SapScreen]::Key(0x24, $false, $false, $false)
+      for ($i = 0; $i -lt [int]$a['index']; $i++) { Start-Sleep -Milliseconds 40; [SapScreen]::Key(0x28, $false, $false, $false) }
+      Start-Sleep -Milliseconds 200
+      # The focus leaves it with Tab: an Enter on a dropdown that has the focus stays in SAP GUI.
+      [SapScreen]::Key(0x09, $false, $false, $false)
+      Start-Sleep -Milliseconds 150
+    } else {
+      [SapScreen]::Type([string]$a['value'])
+      # The list takes the typed text a moment after the keys: Enter too soon takes the entry before.
+      Start-Sleep -Milliseconds 300
+      [SapScreen]::Key(0x0D, $false, $false, $false)
+      Start-Sleep -Milliseconds 300
+    }
   }
   else { throw "UNKNOWN_ACTION: $do" }
   Start-Sleep -Milliseconds ([int]$(if ($null -ne $a['settle']) { $a['settle'] } else { 600 }))

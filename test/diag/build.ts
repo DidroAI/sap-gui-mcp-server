@@ -215,7 +215,8 @@ export function tableControl(o: { program: string; name: string; title: string; 
 // ---- lists ----
 
 /** The start of a classic list: the list-start item and the scrolling item with the number of lines. */
-export const listHead = (totalRows: number): Buffer[] => [sizedItem(0x09, Buffer.alloc(22)), idItem(0x0c, 0x02, cat(u32(totalRows), u32(40), u32(40), u32(40), u32(0), u32(0)))];
+/** A classic list starts: its lines in all, the lines on show and the first one on show (as ME2L sent them: 54, 81, 25, 81, 25, 0). */
+export const listHead = (totalRows: number, first = 0, shown = 40): Buffer[] => [sizedItem(0x09, Buffer.alloc(22)), idItem(0x0c, 0x02, cat(u32(totalRows), u32(40), u32(shown), u32(40), u32(first), u32(0)))];
 /** One list cell: position, format, length, text. `frame` makes it a cell of line-drawing codes. */
 export const listCell = (row: number, col: number, text: string, frame = false): Buffer[] => [sizedItem(0x0b, [row, col]), sizedItem(0x0a, frame ? [8, 0, 8] : [0x0a, 2, 0]), sizedItem(0x13, u16(text.length)), idItem(0x0c, 0x0b, text)];
 

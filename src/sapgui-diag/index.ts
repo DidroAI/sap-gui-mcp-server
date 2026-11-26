@@ -34,14 +34,14 @@ import { userInfo } from "node:os";
 import { join } from "node:path";
 import { ONE_LINE_NOTE, oneLine } from "../core/action.js";
 import { ActionError, type Action, type Assessment, type DoctorCheck, type Driver, type LookOptions, type SessionInfo, type Surface } from "../core/types.js";
-import { CLOSES_SESSIONS, commitCode, commitWord, isLogonScreen, LOGON_REFUSAL, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
-import { type DiagControl, DiagDecoder, type DiagElement, type DiagKey, type DiagScreen, type DiagWindow, diagView, menuView, statusLine } from "../diag/index.js";
+import { actWord, CLOSES_SESSIONS, commitCode, commitWord, displayScreen, isLogonScreen, LOGON_REFUSAL, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS, searchButton } from "../core/words.js";
+import { type DiagControl, DiagDecoder, type SentCell, type DiagElement, type DiagKey, type DiagScreen, type DiagTable, type DiagWindow, diagView, menuView, statusLine } from "../diag/index.js";
 import { notationNote } from "../core/notation.js";
 import { HostError, MAX_TIMEOUT_MS, powershellExe, PsHost, READ_TIMEOUT_MS } from "../sapgui/host.js";
 import type { Transport } from "../sapgui/facts.js";
 import { vkeyNumber } from "../sapgui/keys.js";
 import { type Cells, cellMetrics, cellPoint, cellsFromEnv, type HostWindow, pickWindow, type Rect } from "./geometry.js";
-import { type ComboEntry, type Geometry, type Named, namedControl, type Plan, plainMisuse, planCombo, planGrid, planGridScroll, planGridSet, planPage, planPlain, planScreenScroll, planTabOn, planTableRow, planToolbar, planTree, position, scrollables, scrolledRows, screenScrolls, scrollTarget, type Step, type TreeChange, toolbarKey, untypedKey } from "./plan.js";
+import { type ComboEntry, type ComboHow, type Geometry, type Named, namedControl, type Plan, plainMisuse, planCombo, planGrid, planGridScroll, planGridSet, planPage, planPlain, planScreenScroll, planTabOn, planTableRow, planToolbar, planTree, position, scrollables, scrolledRows, screenScrolls, scrollTarget, type Step, type TreeChange, toolbarKey, untypedKey } from "./plan.js";
 import { type Hop, startRouter } from "./router.js";
 import { lookControl } from "./rows.js";
 import { MAYBE_REQUEST_MS, Traffic, type WaitOptions, waitNote, waitOptions } from "./traffic.js";
@@ -78,6 +78,8 @@ interface WindowFacts {
 
 const clean = (s: string | undefined) => (s ?? "").replace(/\s+/g, " ").trim();
 const commit = (reason: string): Assessment => ({ risk: "commit", reason });
+/** A search button's text without a key in parentheses, and "Start" alone as no word: BP's "Start" is the start of its search. */
+const searchLabel = (s: string | undefined) => clean(s).replace(/\([^()]*\)\s*$/, "").trim().replace(/^start$/i, "");
 
 /** The window actions go to: the topmost modal one, else the main window. */
 function active(s: DiagScreen): DiagWindow {
@@ -112,9 +114,22 @@ function keyOf(w: DiagWindow, n: number): DiagKey | undefined {
   return [...w.toolbar, ...w.keys].find((k) => k.vkey === n);
 }
 
+/**
+ * A main screen that only displays: its title says so (core/words.ts displayScreen) and it offers no Save. The
+ * scripting surface's rule (sapgui/assess.ts isDisplayScreen): its buttons move to other views.
+ */
+function displayOnly(s: DiagScreen): boolean {
+  const main = s.windows[0];
+  if (!main || !displayScreen(s.session.language, main.title, s.session.tcode)) return false;
+  const keys = [...main.toolbar, ...main.keys];
+  // The keys must have been read: without them, a missing Save proves nothing.
+  return keys.length > 0 && !keys.some((k) => SAVE_VKEYS.has(k.vkey) && k.enabled);
+}
+
 export function assessDiag(s: DiagScreen, action: Action, target?: Target): Assessment {
   const w = active(s);
   const lang = s.session.language;
+  const shows = !w.modal && displayOnly(s);
   const assessKey = (n: number, how: string): Assessment => {
     if (SAVE_VKEYS.has(n)) return commit(`${how}: Save (Ctrl+S)`);
     const k = keyOf(w, n);
@@ -126,6 +141,7 @@ export function assessDiag(s: DiagScreen, action: Action, target?: Target): Asse
     if (q && n !== 12 && n !== 3 && n !== 15) return commit(`${named} on the popup "${q.slice(0, 90)}"`);
     if (n === 4 || n === 1) return { risk: "read", reason: n === 4 ? "value help" : "help" };
     if (SAFE_VKEYS.has(n) || (k && safeWord(lang, k.text, k.tooltip))) return { risk: "navigate", reason: named };
+    if (k && shows && !actWord(k.text, k.tooltip)) return { risk: "navigate", reason: `${named} on a screen that only displays` };
     return commit(`${named} is not known to be safe, so it is treated as a write`);
   };
   const assessButton = (e: DiagElement, how: string): Assessment => {
@@ -135,6 +151,10 @@ export function assessDiag(s: DiagScreen, action: Action, target?: Target): Asse
     const means = safeWord(lang, e.text, e.tooltip);
     if (q && !["no", "cancel", "back", "exit", "help", "display"].includes(means ?? "")) return commit(`${named} on the popup "${q.slice(0, 90)}"`);
     if (safeCode(e.fcode) || means) return { risk: "navigate", reason: named };
+    // A search button by its SAP name (BP's locator "Start", BUS_LOCA_SRCH01-GO), unless its text says it acts: the rule of
+    // the scripting and Web GUI surfaces (sapgui/assess.ts), on the id scripting would give it.
+    if (e.name && searchButton(`wnd[${w.index}]/usr/btn${e.name}`) && !actWord(...[e.text, e.tooltip].map(searchLabel))) return { risk: "navigate", reason: `${named} starts a search` };
+    if (shows && !actWord(e.text, e.tooltip)) return { risk: "navigate", reason: `${named} on a screen that only displays` };
     return commit(`${named} is not known to be safe, so it is treated as a write`);
   };
   // The input decides, not the verb: focus, f4, set, check, click, press... all start with a mouse click at the
@@ -447,14 +467,25 @@ export function tableCell(s: DiagScreen, action: Action): Action {
   return { ...rest, id: `${c.name}[${row}]` };
 }
 
-/** Does the action click or type into this table control (a cell, a row, a scroll)? */
+/**
+ * A column that stays on show when SAP GUI scrolls the table sideways: one of its first `fixedColumns` in the
+ * order shown (FB50 keeps G/L account, D/C and amount). Its cells stay where they were.
+ */
+function fixedColumn(t: DiagTable | undefined, column: number | undefined): boolean {
+  if (!t?.fixedColumns || column === undefined) return false;
+  const order = [...t.columns].sort((a, b) => a.position - b.position);
+  const at = order.findIndex((c) => c.index === column);
+  return at >= 0 && at < t.fixedColumns;
+}
+
+/** Does the action click or type into this table control (a cell, a row, a scroll) where its sideways scroll moves things? */
 function touchesTable(s: DiagScreen, action: Action, table: string): boolean {
   const n = namedControl(s, action.id);
   if (n?.kind === "table" && n.table.name === table) return true;
-  if (n?.kind === "dropdown" && n.cell?.table.name === table) return true;
+  if (n?.kind === "dropdown" && n.cell?.table.name === table) return !fixedColumn(n.cell.table, n.cell.table.columns.find((c) => c.name === n.element.name)?.index);
   try {
     const t = resolveTarget(s, action);
-    return t?.kind === "cell" && t.table === table;
+    return t?.kind === "cell" && t.table === table && !fixedColumn(active(s).tables.find((x) => x.name === table), t.column);
   } catch {
     return false;
   }
@@ -594,6 +625,38 @@ export function passedMessages(kept: readonly { step: number; line: string }[], 
   return out;
 }
 
+/**
+ * A success or information message of the screen an action ended on, said in the action's own line: in a batch the
+ * answer shows only the last screen, and FB50's "Document 100000012 was posted", the answer to an Enter at a
+ * warning, was lost under the next action's "Enter valid date" (live 2026-11-26: the agent took the posting for
+ * failed and posted twice more).
+ */
+export function successNote(moved: boolean, after: DiagScreen | undefined): string | undefined {
+  const m = after?.message;
+  if (!moved || !m?.text || (m.type !== "S" && m.type !== "I")) return undefined;
+  return `SAP: ${statusLine(m).replace(/^sbar {2}status {2}/, "")}`;
+}
+
+/** Is this element where SAP put the cursor? */
+function atFocus(w: DiagWindow, e: DiagElement): boolean {
+  return !!w.focus && w.focus.row === e.row && w.focus.col === e.col && (!w.focus.name || w.focus.name === e.name);
+}
+
+/** Typing into the field the cursor is in: its text selected and replaced, no click. */
+function cursorPlan(what: string, value: string): Plan {
+  const single = oneLine(value);
+  return {
+    steps: [
+      { do: "vk", vk: 0x24, settle: 40 },
+      { do: "vk", vk: 0x23, shift: true, settle: 40 },
+      { do: "vk", vk: 0x2e, settle: 40 },
+      { do: "type", value: single.text, settle: 150 },
+    ],
+    note: `typed into ${what}, where SAP put the cursor`,
+    answer: "no",
+  };
+}
+
 /** "0010" and "10", "or" and "OR" are the same value as SAP shows it. */
 const sameValue = (a: string, b: string) => {
   const n = (v: string) => clean(v).toUpperCase().replace(/^0+(?=\d)/, "");
@@ -605,9 +668,22 @@ const sameValue = (a: string, b: string) => {
  * when it is still the screen they were typed on (a field SAP changed or
  * did not take). One line each.
  */
-export function typedMisses(typed: Typed[], after: DiagScreen): string[] {
+export function typedMisses(typed: Typed[], after: DiagScreen, sentCells: readonly SentCell[] = []): string[] {
   const out: string[] = [];
   for (const t of typed) {
+    // A table cell SAP GUI's request did not carry as typed: the input never reached the cell (FB50's D/C after a
+    // dropdown whose list did not open went out blank). Said as such, not as something SAP refused.
+    if (t.table && t.checked === undefined && sentCells.some((c) => c.table === t.table?.name)) {
+      const went = sentCells.find((c) => c.table === t.table?.name && c.index === t.table?.index && c.column === t.table?.column);
+      if (!went || !sameValue(went.text, t.value)) {
+        // Where it went instead: another cell of the row that SAP GUI sent with the value (or its start, cut to the cell).
+        const other = sentCells.find((c) => c.table === t.table?.name && c.index === t.table?.index && c.column !== t.table?.column && c.text.length >= 2 && clean(t.value).toUpperCase().startsWith(c.text.toUpperCase()));
+        const columns = after.windows[t.window]?.tables.find((x) => x.name === t.table?.name)?.columns;
+        const into = other ? columns?.find((c) => c.index === other.column) : undefined;
+        out.push(`${t.name}[${t.table.index}]: SAP GUI did not send the "${t.value}" typed there (it sent ${went ? `"${went.text}"` : "nothing"} for that cell), so the input did not reach it${into ? `: it went into ${into.name}${clean(into.title) ? ` ("${clean(into.title)}")` : ""} of the same row instead, where it has to be cleared` : ""}. Type it again.`);
+        continue;
+      }
+    }
     const w = after.windows[t.window];
     if (!w || w.program !== t.program || w.dynpro !== t.dynpro) continue;
     const target = t.table ? w.tables.find((x) => x.name === t.table?.name)?.rows.find((r) => r.index === t.table?.index)?.cells[t.table.column] : w.elements.find((x) => x.name === t.name && x.row === t.row && x.col === t.col);
@@ -616,7 +692,8 @@ export function typedMisses(typed: Typed[], after: DiagScreen): string[] {
       continue;
     }
     const now = target?.text;
-    if (now === undefined || sameValue(now, t.value)) continue;
+    // SAP may put a text after the key typed (ME21N's supplier "1000" shows "1000 C.E.B. BERLIN"): taken.
+    if (now === undefined || sameValue(now, t.value) || sameValue(clean(now).split(" ")[0] ?? "", t.value)) continue;
     out.push(`${t.name}${t.table ? `[${t.table.index}]` : ""} shows "${clean(now)}" after this step, not the typed "${t.value}": SAP changed it or did not take it.`);
   }
   return out;
@@ -717,7 +794,7 @@ export class DiagDriver implements Driver {
       : "";
     if (options.id?.trim().toLowerCase() === "mbar") return menuView(this.screen()) + recovered;
     if (options.id) return (await lookControl({ screen: () => this.screen(), scrollTo: (id, row) => this.scrollTo(id, row).then(() => undefined), entries: (id) => this.entriesOf(this.screen(), id) }, options)) + recovered;
-    const view = diagView(withTyped(this.screen(), this.typed()), options.compact ? {} : { maxRows: 100_000 });
+    const view = diagView(withTyped(this.screen(), this.typed()), options.compact ? { compact: true } : { maxRows: 100_000 });
     if (recovered) return view + recovered;
     return this.conn.traffic.pending(this.mode) ? `${view}\nNOTE SAP is still working on a step: this screen is from before it and will change. Look again in a moment, and act when the step has ended.` : view;
   }
@@ -763,7 +840,14 @@ export class DiagDriver implements Driver {
     const title = s.windows[0]?.title ?? "";
     const routed = this.shared.routedTitles?.().filter((t) => t.replace(/\s+/g, " ").trim() === title.replace(/\s+/g, " ").trim()).length ?? 1;
     const facts = { key: this.key, title, routed, ...(s.message?.text ? { status: s.message.text } : {}), ...(s.session.system ? { system: s.session.system } : {}), ...(s.session.client ? { client: s.session.client } : {}) };
-    const mine = pickWindow(all.windows, facts, this.shared.bound, this.shared.live);
+    let mine = pickWindow(all.windows, facts, this.shared.bound, this.shared.live);
+    // A value help drawn by a control over the main dynpro gives the window its caption ("Parameters Defining Scope of
+    // Purchasing Lists (1)", S/4 ME2N, round 1), while SAP GUI's window keeps the dynpro's title: look for that one too.
+    const own = s.windows[0]?.dynproTitle;
+    if (typeof mine === "string" && own && clean(own) !== clean(title)) {
+      const again = pickWindow(all.windows, { ...facts, title: own, routed: this.shared.routedTitles?.().filter((t) => clean(t) === clean(own)).length || 1 }, this.shared.bound, this.shared.live);
+      if (typeof again !== "string") mine = again;
+    }
     if (typeof mine === "string") throw new ActionError(mine);
     const res = await this.host.request<{ windows: WindowFacts[] }>("area", { session: mine.hwnd }, READ_TIMEOUT_MS);
     return res.windows;
@@ -776,7 +860,13 @@ export class DiagDriver implements Driver {
     const env = cellsFromEnv(this.shared.env.SAP_DIAG_CELL);
     // A popup is the host window of its title: a dialog SAP GUI left with no owner (a dropped connection's error,
     // live 2026-11-20) is listed among the session's windows too, so the n-th one is not always the n-th popup.
-    const titled = (w: DiagWindow) => (w.index > 0 ? wins.filter((x, i) => i > 0 && clean(x.title) === clean(w.title)) : []);
+    // By the title on show, else by the dynpro's own (a value help's caption replaces the first).
+    const titled = (w: DiagWindow) => {
+      if (w.index === 0) return [];
+      const by = (t: string | undefined) => (t ? wins.filter((x, i) => i > 0 && clean(x.title) === clean(t)) : []);
+      const hit = by(w.title);
+      return hit.length ? hit : by(w.dynproTitle);
+    };
     const hostOf = (w: DiagWindow): WindowFacts => (main ? wins[0] : (titled(w).length === 1 ? titled(w)[0] : wins[w.index])) ?? top;
     const cellsOf = (w: DiagWindow): Cells => {
       const area = hostOf(w).area;
@@ -824,6 +914,7 @@ export class DiagDriver implements Driver {
       });
     }
     const inputEnd = Date.now();
+    if (plan.steps.length) this.lastInput = { step: this.conn.steps.get(this.mode) ?? 0, mode: this.mode };
     if (plan.tree) this.remember(plan.tree);
     let note = plan.note;
     let answered = false;
@@ -844,7 +935,7 @@ export class DiagDriver implements Driver {
     }
     const confirm = plan.confirm?.(after ? this.screen() : undefined, answered);
     if (confirm) note += `; ${confirm}`;
-    if (plan.later) this.later.push(plan.later);
+    if (plan.later && !answered) this.later.push(plan.later);
     timing.decode = Math.round(traffic.decodeMs - decode0);
     timing.total = Date.now() - t0;
     this.last = timing;
@@ -933,7 +1024,8 @@ export class DiagDriver implements Driver {
     const o = waitOptions(action, this.shared.env, MAX_TIMEOUT_MS);
     const has = (v: unknown) => v !== undefined && v !== null && v !== "";
     // Without a choice, a dropdown only says what it can: no window is needed.
-    if (action.do === "combo" && !has(action.key) && !has(action.value)) return planCombo(s, action, NO_GEOMETRY, await this.entriesOf(s, action.id)).note;
+    const absent = (v: unknown) => v === undefined || v === null;
+    if (action.do === "combo" && absent(action.key) && absent(action.value)) return planCombo(s, action, NO_GEOMETRY, await this.entriesOf(s, action.id)).note;
     // A table SAP GUI scrolled sideways (a cell reached with Tab): where its cells are is known again with SAP's next screen.
     const step0 = this.conn.steps.get(this.mode) ?? 0;
     const sideways = this.sideways && this.sideways.step === step0 && this.sideways.mode === this.mode ? this.sideways.table : undefined;
@@ -952,7 +1044,7 @@ export class DiagDriver implements Driver {
       const plan = t?.kind === "cell" && table ? planTabOn(table, t.index, chain.column, t.column, t.what, String(action.value ?? "")) : undefined;
       if (plan && t?.kind === "cell") {
         const wins = await this.windows(s);
-        plan.note = this.keepTyped(t, String(action.value ?? ""), s).replace("(typed;", "(typed, on with Tab;");
+        plan.note = this.keepTyped(t, String(action.value ?? ""), s).replace("(typed,", "(typed on with Tab,");
         this.tabCell = { ...chain, column: t.column, acts: this.acts };
         return this.run(s, plan, wins, waitOptions(action, this.shared.env, MAX_TIMEOUT_MS), t0);
       }
@@ -962,7 +1054,7 @@ export class DiagDriver implements Driver {
     const scrolledScreen = this.screenMoved && this.screenMoved.step === step0 && this.screenMoved.mode === this.mode && !active(s).modal;
     if (scrolledScreen && action.do !== "key" && action.do !== "okcode" && !(action.do === "scroll" && /^(screen|usr|wnd\[0\](\/usr)?)$/i.test(String(action.id ?? ""))))
       throw new ActionError('SAP GUI scrolled the screen with the mouse wheel, so where its fields are is not known until SAP\'s next screen: nothing was done. Send Enter ({"do":"key","key":0}) first.');
-    if (action.do === "scroll" && (/^(screen|usr|wnd\[0\](\/usr)?)$/i.test(String(action.id ?? "")) || ((action.id === undefined || action.id === "") && !scrollables(s).length && screenScrolls(active(s))))) {
+    if (action.do === "scroll" && (/^(screen|usr|wnd\[0\](\/usr)?)$/i.test(String(action.id ?? "")) || ((action.id === undefined || action.id === "") && !scrollables(s).length && (screenScrolls(active(s)) || active(s).elements.some((e) => e.scrolledOut && !e.hidden))))) {
       const wins = await this.windows(s);
       const plan = planScreenScroll(active(s), action.to, this.geometry(s, wins));
       this.screenMoved = { step: step0, mode: this.mode };
@@ -996,7 +1088,7 @@ export class DiagDriver implements Driver {
     let plan: Plan;
     switch (action.do) {
       case "combo":
-        plan = planCombo(s, action, g, await this.entriesOf(s, action.id));
+        plan = planCombo(withTyped(s, this.typed()), action, g, await this.entriesOf(s, action.id), this.comboHow());
         this.keepChosen(s, action, plan);
         break;
       case "tree":
@@ -1038,14 +1130,17 @@ export class DiagDriver implements Driver {
           break;
         }
         if (named?.kind === "dropdown" && action.do === "set") {
-          plan = planCombo(s, { ...action, do: "combo", key: action.value }, g, await this.entriesOf(s, action.id));
+          plan = planCombo(withTyped(s, this.typed()), { ...action, do: "combo", key: action.value }, g, await this.entriesOf(s, action.id), this.comboHow());
           this.keepChosen(s, action, plan);
           break;
         }
         // check: the box's state as on show, a tick of this step included, decides whether it is clicked.
         const target = resolveTarget(action.do === "check" ? withTyped(s, this.typed()) : s, action);
         if (!target && /^(set|focus|check|click|dblclick|press|select|f4)$/.test(action.do)) throw new ActionError(noTargetText(s, String(action.id ?? action.name ?? "")));
-        plan = planPlain(s, action, target, g, local(named));
+        // The field SAP put the cursor on, scrolled out of view by SAP's count (SAP GUI scrolls to the cursor, MD-01's country
+        // after "Fill out all required entry fields"): typed where the cursor is, with no click, while nothing was input since.
+        const atCursor = action.do === "set" && target?.kind === "element" && target.element.scrolledOut && target.element.input && !this.inputSince(step0) && atFocus(active(s), target.element);
+        plan = atCursor ? cursorPlan(target.what, String(action.value ?? "")) : planPlain(s, action, target, g, local(named));
         if (action.do === "set" && (target?.kind === "element" || target?.kind === "cell")) plan = { ...plan, note: this.keepTyped(target, String(action.value ?? ""), s) };
         // A box ticked without a function code stays in SAP GUI until the next Enter: kept like a typed value.
         if (action.do === "check" && plan.answer === "no" && plan.steps.length && (target?.kind === "element" || target?.kind === "cell")) this.keepTicked(target, s);
@@ -1064,12 +1159,20 @@ export class DiagDriver implements Driver {
     const moved = (this.conn.steps.get(this.mode) ?? 0) !== before;
     // The status bar is the view's (sbar line): the server puts an error, a warning or a termination first.
     const lines = [note];
-    if (after && moved && sent.length) lines.push(...typedMisses(sent, after));
+    if (after && moved && sent.length) lines.push(...typedMisses(sent, after, this.conn.decoder.sentCells?.(this.mode) ?? []));
     if (after && moved) lines.push(...passedMessages(this.conn.messages?.get(this.mode) ?? [], before, after.message ? statusLine(after.message) : undefined));
+    const said = successNote(moved, after);
+    if (said) lines[0] += `; ${said}`;
     // A termination message that was confirmed: SAP has ended the transaction, and the answer says so.
     if (after && moved && s.message?.type === "A" && after.message?.type !== "A")
       lines.push(`SAP ended transaction ${s.session.tcode ?? ""} after the termination message "${clean(s.message.text)}": input that was not saved there is lost. The screen below is where SAP went; start the transaction again to retry.`);
     return lines.join("\n");
+  }
+
+  /** The step of the mode at the last input sent to SAP GUI: the cursor SAP set may have moved since. */
+  private lastInput: { step: number; mode: number } | undefined;
+  private inputSince(step: number): boolean {
+    return !!this.lastInput && this.lastInput.mode === this.mode && this.lastInput.step === step;
   }
 
   /** The step at which SAP GUI's screen was scrolled with the wheel: its fields' places are known again with the next screen. */
@@ -1084,8 +1187,8 @@ export class DiagDriver implements Driver {
 
   /** A dropdown's entry chosen without a function code stays in SAP GUI until the next Enter: kept like a typed value, by its key. */
   private keepChosen(s: DiagScreen, action: Action, plan: Plan): void {
-    if (plan.answer !== "no" || !plan.steps.length) return;
-    const key = /^chose ([^ "]+) "/.exec(plan.note)?.[1] ?? /^chose "([^"]*)"/.exec(plan.note)?.[1];
+    if (plan.answer === "yes" || !plan.steps.length) return;
+    const key = plan.note.startsWith("chose the blank entry") ? "" : (/^chose ([^ "]+) "/.exec(plan.note)?.[1] ?? /^chose "([^"]*)"/.exec(plan.note)?.[1]);
     let t: Target | undefined;
     try {
       t = resolveTarget(s, { do: "focus", id: String(action.id ?? "") });
@@ -1093,6 +1196,18 @@ export class DiagDriver implements Driver {
       return;
     }
     if (key !== undefined && (t?.kind === "element" || t?.kind === "cell")) this.keepTyped(t, key, s);
+  }
+
+  /**
+   * How a dropdown's entry is picked: by its place in the cached list (Home, Down n: checked live on VA01 and FB50,
+   * 2026-11-26, where typing the text missed when entries shared a first letter, BP's "Name" and "Number"), else
+   * by its text. SAP_DIAG_COMBO=type types the text always; "arrows+1" counts one line above the cached entries.
+   */
+  private comboHow(): ComboHow {
+    const v = (this.shared.env.SAP_DIAG_COMBO ?? "").trim();
+    if (v === "type") return { how: "type", offset: 0 };
+    const m = /^arrows\+(\d)$/.exec(v);
+    return { how: "arrows", offset: Number(m?.[1] ?? 0) };
   }
 
   /** Value lists read from SAP GUI's cache, by id: a list's id names its content, so it never changes. */
@@ -1135,7 +1250,7 @@ export class DiagDriver implements Driver {
     typed.push({ step, window: t.window.index, program: t.window.program, dynpro: t.window.dynpro, name, row: t.row, col: t.col, ...(t.kind === "cell" ? { table: { name: t.table, index: t.index, column: t.column } } : {}), value: single.text });
     this.conn.typed.set(this.mode, typed);
     const notation = notationNote(single.text, diagView(s));
-    return `set ${t.kind === "cell" ? `${name}[${t.index}]` : name || t.what} = "${single.text}" (typed; SAP gets it with the next Enter or function key)${single.had ? ` (${ONE_LINE_NOTE})` : ""}${notation ? ` (${notation})` : ""}`;
+    return `set ${t.kind === "cell" ? `${name}[${t.index}]` : name || t.what} = "${single.text}" (typed, sent with the next Enter)${single.had ? ` (${ONE_LINE_NOTE})` : ""}${notation ? ` (${notation})` : ""}`;
   }
 
   async screenshot(): Promise<Buffer> {

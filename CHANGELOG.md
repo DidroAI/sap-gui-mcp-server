@@ -6,6 +6,78 @@ change the tools or the view format.
 
 ## Unreleased
 
+### Fixed
+
+- Network reader (SAP GUI without scripting), from the failing and the
+  expensive runs of the last round (Claude Haiku, ECC and S/4HANA):
+  - `set` on a dropdown chooses its entry, as on the other surfaces (FB50's
+    D/C was refused as "does not take text").
+  - After a cell right of a table's edge was reached with Tab, the table's
+    fixed columns (FB50's G/L account, D/C, amount) stay in reach; only the
+    columns that moved wait for SAP's next screen.
+  - BP's locator "Start" (`BUS_LOCA_SRCH01-GO`) is a search, by the rule the
+    scripting and Web GUI surfaces already apply to a button named as the
+    start of a search; with `SAP_WRITE=off` it was refused as a write.
+  - A dropdown key SAP sends without the list's leading zeros (BP's "1" for
+    01) is the same entry: it was chosen again, then reported as not taken.
+  - A subscreen that scrolls on its own (XD01's address tab): an action on
+    an element scrolled out of view is refused with the scroll that brings
+    it up (the click landed elsewhere), and `scroll` with id `screen` turns
+    the wheel over that subscreen.
+  - A classic list's page says the line it starts at (ME2L: 0, 25, 50): every
+    page looked like the first, so scrolls answered "did not move" and a look
+    with rows never got past the first page.
+  - A scroll to rows after the page on show works when the last page starts
+    on it (MM01's Select View(s): 17 of 28 on show answered "already there").
+  - A grid read by range says which rows it shows ("(rows 49 to 70 of 71)"),
+    not "49 more rows (22 sent so far)".
+  - A key SAP shows with its text ("1000 C.E.B. BERLIN" for "1000") is not
+    reported as a value SAP did not take.
+  - A `set` after a dropdown choice on the same row typed into the dropdown
+    (the click only closed it, and the caret check passed on the dropdown's
+    caret): FB50's amounts never reached SAP. The caret must now be inside
+    the field, and a second click waits out the double-click time (two quick
+    clicks on a table cell chose it, and SAP dumped).
+  - A dropdown's entry is chosen by its place in SAP GUI's cached list, with
+    no Enter (typing the text missed when entries share first letters, and
+    the Enter could reach SAP); an empty key chooses the blank entry, as on
+    the other surfaces.
+  - ME21N's requisition and its item are reached with Tab: from the first
+    column (a click drifts right across the table), the Tabs 80 ms apart
+    (SAP GUI dropped a burst); a cell left of the one typed last goes back
+    with Shift+Tab.
+  - SAP GUI's request is read for the table cells it sends: a value that did
+    not reach its cell is said so, with the cell it went into instead.
+  - A dropdown choice whose Enter went to SAP is said so.
+  - What an update keeps of a container that scrolled on its own moves with
+    it (XD01's labels stayed at their old rows).
+  - `scroll` with id `screen` works when a field lies under the window's
+    edge, whatever SAP's scroll item said (VA05).
+  - Each action's line says the success message of the screen it ended on:
+    in a batch FB50's "Document ... was posted" (the answer to Enter at its
+    tax warning) was lost under the next action's "Enter valid date".
+  - A `set` into a read-only field names the open field beside or above it
+    (MIGO takes the storage location typed into GOITEM-LGOBE, and on S/4 the
+    material into GODYNPRO-MAKTX).
+  - Buttons on a screen that only displays (its title says so, its keys
+    were read, none is an offered Save) move to other views, as on the
+    scripting surface: BP's "Company Code" in "Display Organization" was
+    refused with writes off.
+  - The session window, and a popup's area, are found by the dynpro's own
+    title when a value help's caption replaced it (S/4 ME2N: every action
+    failed with "No SAP GUI window titled ...").
+  - The field SAP put the cursor on is typed into without a click when
+    nothing was input since SAP's screen, also where the view lays it out
+    of view (XD01's country after "Fill out all required entry fields":
+    SAP GUI scrolls to the cursor, SAP's own count does not say so).
+  - A field scrolled out of view in a subscreen that scrolls on its own is
+    reached with Tab from the field on show before it, when only input
+    fields lie between (XD01's country).
+- A batch goes on after a `scroll` that leaves the status bar's error as it
+  was, as after `set`, `check` and `focus` (shared batch rule).
+- A key written as the views print it, with its button's text first
+  ("Next page (Shift+F11)"), is that key, on every surface.
+
 ### Changed
 
 - **`SAP_WRITE=confirm` is the default**, instead of `off`. Each action
@@ -23,6 +95,14 @@ change the tools or the view format.
   with `SAP_WRITE=on` or `SAP_ALLOW_LOGOFF=on`. Under `confirm` the server
   asks before each write itself, so clients such as Codex do not also ask
   before every navigation.
+
+- Network reader: a shorter compact view. A grid names each column by one
+  title and its empty columns by id only; a table control names its open
+  columns right of the edge by title only; the keys every screen has, and on
+  SAP Easy Access all keys, are left out; a selection screen's texts show as
+  text; an icon with a quick info shows the text. 17% fewer characters over
+  the screens of two captured runs (46% on Easy Access). The full view and a
+  look by id keep everything.
 
 ## 0.4.1 (2026-11-26)
 
