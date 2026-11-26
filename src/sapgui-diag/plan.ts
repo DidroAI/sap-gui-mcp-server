@@ -753,8 +753,12 @@ function besideNote(w: DiagWindow, e: DiagElement): string {
   const near = (o: DiagElement) => Math.min(Math.abs(o.col + Math.max(1, o.width) - e.col), Math.abs(e.col + Math.max(1, e.width) - o.col));
   const open = w.elements.filter((o) => o !== e && o.kind === "field" && o.input && !o.hidden && !o.scrolledOut && o.row === e.row && o.name && o.path.join(">") === e.path.join(">") && near(o) <= 3).sort((a, b) => near(a) - near(b))[0];
   // Or the one right above it, at its column (S/4's MIGO: the material typed into GODYNPRO-MAKTX, its number shown below).
-  const above = open ?? w.elements.find((o) => o.kind === "field" && o.input && !o.hidden && !o.scrolledOut && o.row === e.row - 1 && Math.abs(o.col - e.col) <= 1 && o.name && o.path.join(">") === e.path.join(">"));
-  return above ? ` The field ${above === open ? "beside" : "above"} it that takes input is ${above.name} (SAP may take the key typed there).` : "";
+  // Or on its row, one of the same structure whose name starts alike (MIGO's GOITEM-LGOBE for GOITEM-LGORT, which the
+  // reader may place apart: MIGO's detail is two subscreens side by side).
+  const [st, fld] = e.name.split("-");
+  const kin = !open && st && fld ? w.elements.find((o) => o !== e && o.kind === "field" && o.input && !o.hidden && o.row === e.row && o.name.startsWith(`${st}-${fld.slice(0, 2)}`)) : undefined;
+  const above = open ?? kin ?? w.elements.find((o) => o.kind === "field" && o.input && !o.hidden && !o.scrolledOut && o.row === e.row - 1 && Math.abs(o.col - e.col) <= 1 && o.name && o.path.join(">") === e.path.join(">"));
+  return above ? ` The field ${above === open || above === kin ? "beside" : "above"} it that takes input is ${above.name} (SAP may take the key typed there).` : "";
 }
 
 /**
@@ -970,7 +974,14 @@ export function planPlain(s: DiagScreen, action: Action, target: PlainTarget | u
       const table = x.kind === "cell" ? x.window.tables.find((tb) => tb.name === x.table) : undefined;
       const off = x.kind === "cell" ? offScreenCell(table, x.column, x.what) : undefined;
       if (off && x.kind === "cell" && table && x.index !== undefined && x.column !== undefined) {
-        if (!x.input) throw new ActionError(`${x.what} is read-only.`);
+        if (!x.input) {
+          // A column of the row that takes input, of the same structure and starting alike (MIGO's SLoc GOITEM-LGOBE).
+          const name = table.columns.find((c) => c.index === x.column)?.name ?? "";
+          const [st, fld] = name.split("-");
+          const r = table.rows.find((rr) => rr.index === x.index);
+          const kin = st && fld && r ? table.columns.find((c) => c.name !== name && c.name.startsWith(`${st}-${fld.slice(0, 2)}`) && r.cells[c.index]?.input) : undefined;
+          throw new ActionError(`${x.what} is read-only.${kin ? ` The column of this row that takes input is ${kin.name}${clean(kin.title) ? ` ("${clean(kin.title)}")` : ""} (SAP may take the key typed there).` : ""}`);
+        }
         const reach = tabReach(table, x.index, x.column);
         if (!reach) throw new ActionError(off);
         const low = belowWindow(x);

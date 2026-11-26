@@ -25,6 +25,11 @@ describe("set into a read-only field", () => {
     const a = { do: "set", id: "GODYNPRO-MATNR", value: "RM20" };
     expect(() => planPlain(s, a, resolveTarget(s, a), geo)).toThrow("The field above it that takes input is GODYNPRO-MAKTX");
   });
+  test("or on its row, one of the same structure whose name starts alike (MIGO's detail, laid out apart)", () => {
+    const far = { ...s, windows: [{ ...w, elements: [el({ name: "GOITEM-LGOBE", row: 20, col: 26, width: 16 }), el({ name: "GOITEM-LGORT", row: 20, col: 57, width: 4, input: false })] }] } as DiagScreen;
+    const a = { do: "set", id: "GOITEM-LGORT", value: "0001" };
+    expect(() => planPlain(far, a, resolveTarget(far, a), geo)).toThrow("The field beside it that takes input is GOITEM-LGOBE");
+  });
   test("says nothing more when no open field is beside it", () => {
     const a = { do: "set", id: "GOITEM-WERKS", value: "1000" };
     expect(() => planPlain(s, a, resolveTarget(s, a), geo)).toThrow(/^field GOITEM-WERKS is read-only\.$/);
