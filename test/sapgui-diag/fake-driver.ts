@@ -15,7 +15,7 @@ export interface Fake {
   show(s: DiagScreen): void;
 }
 
-export function fakeDriver(s: DiagScreen, entries: { key: string; value: string }[] = []): Fake {
+export function fakeDriver(s: DiagScreen, entries: { key: string; value: string }[] = [], hostTitle?: string): Fake {
   let current = s;
   const traffic = new Traffic();
   const conn = { n: 0, target: { host: "h", service: "3200" }, decoder: { screen: () => current, screens: () => new Map([[0, current]]) }, open: true, traffic, steps: new Map(), typed: new Map() };
@@ -23,7 +23,7 @@ export function fakeDriver(s: DiagScreen, entries: { key: string; value: string 
   const host = {
     async request<T>(op: string, params: Record<string, unknown> = {}): Promise<T> {
       log.push({ op, ...params });
-      const title = current.windows[0]?.title ?? "";
+      const title = hostTitle ?? current.windows[0]?.title ?? "";
       if (op === "windows") return { windows: [{ hwnd: 1, kind: "session", title, foreground: true }] } as T;
       if (op === "area") return { windows: [{ hwnd: 1, kind: "session", title, area: AREA, controls: [] }] } as T;
       if (op === "valueset") return { entries } as T;

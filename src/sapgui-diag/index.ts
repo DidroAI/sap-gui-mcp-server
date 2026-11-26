@@ -820,7 +820,14 @@ export class DiagDriver implements Driver {
     const title = s.windows[0]?.title ?? "";
     const routed = this.shared.routedTitles?.().filter((t) => t.replace(/\s+/g, " ").trim() === title.replace(/\s+/g, " ").trim()).length ?? 1;
     const facts = { key: this.key, title, routed, ...(s.message?.text ? { status: s.message.text } : {}), ...(s.session.system ? { system: s.session.system } : {}), ...(s.session.client ? { client: s.session.client } : {}) };
-    const mine = pickWindow(all.windows, facts, this.shared.bound, this.shared.live);
+    let mine = pickWindow(all.windows, facts, this.shared.bound, this.shared.live);
+    // A value help drawn by a control over the main dynpro gives the window its caption ("Parameters Defining Scope of
+    // Purchasing Lists (1)", S/4 ME2N, round 1), while SAP GUI's window keeps the dynpro's title: look for that one too.
+    const own = s.windows[0]?.dynproTitle;
+    if (typeof mine === "string" && own && clean(own) !== clean(title)) {
+      const again = pickWindow(all.windows, { ...facts, title: own, routed: this.shared.routedTitles?.().filter((t) => clean(t) === clean(own)).length || 1 }, this.shared.bound, this.shared.live);
+      if (typeof again !== "string") mine = again;
+    }
     if (typeof mine === "string") throw new ActionError(mine);
     const res = await this.host.request<{ windows: WindowFacts[] }>("area", { session: mine.hwnd }, READ_TIMEOUT_MS);
     return res.windows;
