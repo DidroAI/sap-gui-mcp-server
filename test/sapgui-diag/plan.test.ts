@@ -291,6 +291,14 @@ describe("table controls and lists: SAP's page keys", () => {
     expect(scrollTarget("last", p)).toBe(27);
     expect(scrollTarget(11, p)).toBe(10); // on show: no scroll
     expect(scrollTarget(25, p)).toBe(25);
+    // MM01's "Select View(s)": 28 views, 17 on show from 0. The last page starts at 11, which is on show, but rows
+    // 17 to 27 are not (live 2026-11-26: "TC_VIEW is already there: rows 0 to 16 of 28", and the run scrolled 8 times).
+    const views = { first: 0, visible: 17, total: 28 };
+    expect(scrollTarget("next", views)).toBe(17);
+    expect(scrollTarget("last", views)).toBe(27);
+    expect(scrollTarget(20, views)).toBe(20);
+    expect(scrollTarget(5, views)).toBe(0);
+    expect(scrollTarget("next", { first: 11, visible: 17, total: 28 })).toBe(11);
   });
   test("a page down: a click into the table's first row, then Page Down; up, first and last pages", () => {
     const n = namedControl(screen(), "TC_ITEMS");
@@ -327,7 +335,11 @@ describe("dropdowns", () => {
     const p = plan({ do: "combo", id: "ZHDR-TYPE", key: "Rush order" });
     expect(keysOf(p)).toEqual(["combo"]);
     expect(p.steps[0]).toMatchObject({ value: "Rush order" });
-    expect(p.answer).toBe("no");
+    // A short look for a request: when the list did not open, the Enter of the choice goes to SAP (FB50, 2026-11-25:
+    // SAP GUI sent D/C blank with the account, SAP answered with its warning, and the amount typed next was lost).
+    expect(p.answer).toBe("maybe");
+    expect(p.confirm?.(undefined, false)).toBeUndefined();
+    expect(p.confirm?.(screen([win({ elements: [el({ kind: "dropdown", name: "ZHDR-TYPE", key: "OR", row: 1, col: 20 })] })]), true)).toContain("its list did not open, and the Enter that chooses went to SAP");
     const next = (key: string) => screen([win({ elements: [el({ kind: "dropdown", name: "ZHDR-TYPE", key, row: 1, col: 20 })] })]);
     expect(p.later?.(next("OR"))).toContain("still has");
     expect(p.later?.(next("RO"))).toContain('now has the key "RO"');
@@ -348,7 +360,7 @@ describe("dropdowns", () => {
     ];
     const by = (key: string) => planCombo(screen(), { do: "combo", id: "ZHDR-TYPE", key }, geo, entries);
     expect(by("RO").steps[0]).toMatchObject({ do: "combo", value: "Rush order", index: 1 });
-    expect(by("rush order").note).toBe('chose RO "Rush order" in ZHDR-TYPE; SAP gets it with the next Enter or function key');
+    expect(by("rush order").note).toBe('chose RO "Rush order" in ZHDR-TYPE; sent with the next Enter');
     expect(by("Ret").steps[0]).toMatchObject({ value: "Returns", index: 2 });
     expect(by("Standard Order").steps).toEqual([]);
     expect(() => by("Credit")).toThrow('ZHDR-TYPE has no entry "Credit" (or more than one starts with it): nothing was chosen. Its entries (key "text"): OR "Standard Order", RO "Rush order", RE "Returns".');
@@ -359,6 +371,22 @@ describe("dropdowns", () => {
     const next = (key: string) => screen([win({ elements: [el({ kind: "dropdown", name: "ZHDR-TYPE", key, row: 1, col: 20 })] })]);
     expect(by("RO").later?.(next("RE"))).toBe('ZHDR-TYPE now has RE "Returns", not the entry meant by "RO"');
     expect(by("RO").later?.(next("RO"))).toBe('ZHDR-TYPE now has RO "Rush order"');
+  });
+  test("a key SAP sends without the list's leading zeros is the same entry (BP's Find: \"1\" and 01)", () => {
+    // Live S/4 2026-11-25: "chose 01 Business Partner ... still has 1: the choice did not take", about the entry on show.
+    const entries = [
+      { key: "01", value: "Business Partner" },
+      { key: "02", value: "Persons" },
+    ];
+    const s = screen([win({ elements: [el({ kind: "dropdown", name: "BUS_LOCA_SRCH01-SEARCH_TYPE", key: "1", fcode: "SRCH_TYPE", row: 1, col: 20 })] })]);
+    const by = (key: string) => planCombo(s, { do: "combo", id: "BUS_LOCA_SRCH01-SEARCH_TYPE", key }, geo, entries);
+    expect(by("01")).toMatchObject({ steps: [], note: 'BUS_LOCA_SRCH01-SEARCH_TYPE already has 01 "Business Partner"' });
+    expect(by("Business Partner").steps).toEqual([]);
+    expect(by("2").steps[0]).toMatchObject({ do: "combo", value: "Persons" });
+    const p = by("Persons");
+    const after = (key: string) => screen([win({ elements: [el({ kind: "dropdown", name: "BUS_LOCA_SRCH01-SEARCH_TYPE", key, fcode: "SRCH_TYPE", row: 1, col: 20 })] })]);
+    expect(p.confirm?.(after("2"), true)).toBe('BUS_LOCA_SRCH01-SEARCH_TYPE now has 02 "Persons"');
+    expect(p.confirm?.(after("1"), true)).toContain("still has");
   });
   test("already chosen; not a dropdown", () => {
     expect(plan({ do: "combo", id: "ZHDR-TYPE", key: "or" }).steps).toEqual([]);

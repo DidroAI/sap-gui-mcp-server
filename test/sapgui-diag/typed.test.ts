@@ -75,7 +75,7 @@ describe("a typed value before and after the step that sends it", () => {
     const d = await surface.open(sessions[0] as never);
 
     const note = await d.act({ do: "set", id: "vbak-auart", value: "or" });
-    expect(note).toStartWith('set VBAK-AUART = "or" (typed; SAP gets it with the next Enter or function key)');
+    expect(note).toStartWith('set VBAK-AUART = "or" (typed, sent with the next Enter)');
     await d.act({ do: "set", id: "KUAGV-KUNNR", value: "1000" });
     const before = await d.look({ compact: true });
     expect(before).toContain("r2  Order Type  VBAK-AUART@20=[or] (typed, sent with the next Enter)");

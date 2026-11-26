@@ -230,6 +230,20 @@ describe("typed values in the view and after the step", () => {
     expect(typedMisses(typed, after)).toEqual([]);
     (w.elements.find((e) => e.name === "VBAK-AUART") as DiagElement).text = "TA";
     expect(typedMisses(typed.slice(0, 1), after)).toEqual(['VBAK-AUART shows "TA" after this step, not the typed "or": SAP changed it or did not take it.']);
+    // ME21N's supplier: SAP puts the name after the number typed ("1000" shows "1000 C.E.B. BERLIN"); not a miss.
+    (w.elements.find((e) => e.name === "VBAK-AUART") as DiagElement).text = "OR Standard Order";
+    expect(typedMisses(typed.slice(0, 1), after)).toEqual([]);
+    (w.elements.find((e) => e.name === "VBAK-AUART") as DiagElement).text = "ORX";
+    expect(typedMisses(typed.slice(0, 1), after)).toHaveLength(1);
+    // A table cell SAP GUI's request did not carry as typed (FB50's D/C sent blank): the input did not reach it.
+    (w.tables[0]?.rows[2]?.cells[1] as { text: string }).text = "";
+    const cell = typed.slice(1);
+    expect(typedMisses(cell, after, [{ table: "TC_ITEMS", index: 2, column: 1, text: "" }])).toEqual(['RV45A-MABNR[2]: SAP GUI did not send the "M-03" typed there (it sent "" for that cell), so the input did not reach it. Type it again.']);
+    expect(typedMisses(cell, after, [{ table: "TC_ITEMS", index: 3, column: 1, text: "X" }])[0]).toContain("it sent nothing for that cell");
+    // ME21N (captured 2026-11-25): the requisition number typed for Purch.Req. went out in another column.
+    expect(typedMisses(cell, after, [{ table: "TC_ITEMS", index: 2, column: 0, text: "M-03" }])[0]).toMatch(/it went into \S+ .*of the same row instead, where it has to be cleared/);
+    // Sent as typed: SAP is the one that did not take it.
+    expect(typedMisses(cell, after, [{ table: "TC_ITEMS", index: 2, column: 1, text: "M-03" }])[0]).toContain("SAP changed it or did not take it");
     // Another screen: nothing to compare.
     w.dynpro = "4001";
     expect(typedMisses(typed, after)).toEqual([]);

@@ -388,6 +388,10 @@ describe("the rules that end a batch", () => {
     expect(stopAfter(set, screen([error]), screen([error]))).toBeUndefined();
     expect(stopAfter(enter, screen([error]), screen([error]))?.why).toBe("status");
     expect(stopAfter(set, screen([]), screen([error]))?.why).toBe("status");
+    // A scroll that leaves the error as it was (the network reader's wheel, XD01 round 2): the next action runs.
+    const scroll = normalizeAction({ do: "scroll", id: "screen", to: "next" });
+    expect(stopAfter(scroll, screen([error]), screen([error]))).toBeUndefined();
+    expect(stopAfter(scroll, screen([]), screen([error]))?.why).toBe("status");
   });
   test("a success or an information message does not end it", () => {
     expect(stopAfter(enter, screen([]), screen(["sbar  status  S: Saved"]))).toBeUndefined();
