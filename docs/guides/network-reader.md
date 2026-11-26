@@ -1,9 +1,9 @@
 # Network reader (no scripting)
 
 ::: warning Experimental
-This method has run against SAP GUI for Windows on one ECC system, read-only
-and with writes (business processes run end to end by an agent), at one
-screen size and theme. See [Limits](#limits).
+This method has run against SAP GUI for Windows on one ECC and one
+S/4HANA system, read-only and with writes (business processes run end to
+end by an agent), at one screen size and theme. See [Limits](#limits).
 :::
 
 When SAP GUI scripting is off, on your PC or on the SAP system, the server
@@ -294,7 +294,8 @@ logon go on.
     (ME51N's editable grid, ME21N), dropdowns, tables scrolled sideways,
     screens taller than the window, and the guard on change and safety
     tasks. The bench checked in the database what was saved;
-  - 26 November 2026, by hand and in a second round of the same processes:
+  - 26 November 2026, by hand and in three more rounds of the same 26 ECC
+    and 12 S/4HANA processes (23 of 26 and 11 of 12 passed in the last):
     FB50's whole entry in one batch (dropdowns, a cost center by Tab),
     ME21N's requisition reference by Tab, VA01's delivery block (an entry
     and the blank one), XD01's address tab scrolled, BP's Find on S/4HANA
@@ -311,8 +312,14 @@ logon go on.
   far cells are reached with Tab from the first column.
 - **A subscreen that scrolls on its own** (XD01's address tab): after the
   wheel and Enter, SAP GUI may scroll it again to the field with the cursor,
-  so the rows the view gives can be off; a `set` there is refused rather
-  than typed elsewhere when the cursor does not come into the field.
+  so the rows the view gives can be off. A `set` into a field scrolled out
+  of view is reached with Tab from the field on show before it when only
+  input fields lie between (XD01's country), or typed where SAP put the
+  cursor; otherwise it is refused (XD01's language, a dropdown further
+  down, is not reached yet).
+- **Tab pages SAP GUI switches itself** (MIGO's item detail: Transfer
+  Posting, Material, Quantity, Where) come all at once, and the view lays
+  their fields over each other on the same rows.
 - **Dropdown entries come from SAP GUI's cache.** When a list is not in the
   cache (SAP GUI's cache off), `combo` types the text it is given and checks
   the key SAP received after the next step.

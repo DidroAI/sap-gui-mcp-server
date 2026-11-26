@@ -70,6 +70,9 @@ change the tools or the view format.
     nothing was input since SAP's screen, also where the view lays it out
     of view (XD01's country after "Fill out all required entry fields":
     SAP GUI scrolls to the cursor, SAP's own count does not say so).
+  - A field scrolled out of view in a subscreen that scrolls on its own is
+    reached with Tab from the field on show before it, when only input
+    fields lie between (XD01's country).
 - A batch goes on after a `scroll` that leaves the status bar's error as it
   was, as after `set`, `check` and `focus` (shared batch rule).
 - A key written as the views print it, with its button's text first
