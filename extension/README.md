@@ -109,7 +109,7 @@ sap-ui-automation. For Claude Desktop (Settings → Developer → Edit Config):
 Quit and reopen Claude Desktop. The agent then has two more tools:
 `sap_systems` lists your systems, and `sap_logon` opens one and logs on.
 `SAP_WRITE=off` keeps it to reading: saving and posting in SAP are refused
-until you allow them (see the main README).
+(the default, `confirm`, would ask you first; see the main README).
 
 To check the setup, run:
 

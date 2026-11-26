@@ -3,7 +3,7 @@ layout: home
 hero:
   name: SAP UI Automation
   text: Let your agent see and drive SAP
-  tagline: SAP GUI for Windows, Web GUI and Fiori, in a compact text view, with writes off until you allow them. Runs on your machine.
+  tagline: SAP GUI for Windows, Web GUI and Fiori, in a compact text view, with each write held for your yes. Runs on your machine.
   actions:
     - theme: brand
       text: Choose your setup
@@ -19,8 +19,8 @@ features:
     details: Finds your SAP GUI, Web GUI and Fiori sessions and works in them as you, under your SAP authorisations. The server never logs on and never sees a password.
   - title: A compact, complete view
     details: One line per control with SAP's own ids, labels, values and whether they can be edited. After an action on the same screen, only what changed.
-  - title: Writes off by default
-    details: Actions that may save to SAP are refused unless you allow them, or held for your confirmation.
+  - title: You confirm each write
+    details: An action that may save to SAP waits for your yes in your client, and is refused where the client cannot ask. SAP_WRITE=off makes it read-only.
   - title: Runs locally, no telemetry
     details: Nothing leaves your machine except what your MCP client sends to the model provider you chose.
   - title: Record a run, replay it as a test

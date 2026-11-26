@@ -4,7 +4,8 @@
 //   node examples/sdk/check-order.ts 4711
 //
 // Needs the SDK (connect, expect), new in this version, and Node 22.6+
-// (type stripping). Writes stay refused: SAP_WRITE is off unless you set it.
+// (type stripping). Writes stay refused: under SAP_WRITE=confirm, the default, a
+// script without an onConfirm callback has nobody to ask.
 import { connect, expect } from "sap-ui-automation";
 
 const order = process.argv[2] ?? "4711";

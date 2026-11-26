@@ -327,10 +327,12 @@ you configured. Details: [Security and data handling](security.md).
 
 ### Can the agent save or post documents?
 
-Not by default. With `SAP_WRITE=off` every action that may write is
-refused. `SAP_WRITE=confirm` has your MCP client ask you before each one; `SAP_WRITE=on` lets it
-run. The rule fails closed, so some harmless buttons are refused too (for
-example "Continue" on a popup the server does not know as safe). See
+Only after you say yes. By default (`SAP_WRITE=confirm`) your MCP client
+asks you before each action that may write; a client that cannot ask gets
+it refused. With `SAP_WRITE=off` every such action is refused (read-only);
+`SAP_WRITE=on` lets it run. The rule fails closed, so some harmless
+buttons are asked about or refused too (for example "Continue" on a popup
+the server does not know as safe). See
 [Safety model](concepts/safety.md).
 
 ### Web GUI is slow in a background tab

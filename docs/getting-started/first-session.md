@@ -58,25 +58,31 @@ to end, and its answer says how long it waited.
 `sap_screenshot` gives a PNG of the window or tab, for charts and panels
 the text view cannot read.
 
-## 4. Writes are off
+## 4. Each write waits for your yes
 
 By default every action that may write to SAP (Save, Post, Delete, Release,
-Approve, "Yes" on a save popup...) is refused, and the agent is told why.
-Everything else (typing, Enter, tabs, Back, value help, reports with F8)
-runs. A refused action changes nothing.
+Approve, "Yes" on a save popup...) runs only after you say yes to it in
+your client ([Confirm mode](../concepts/confirm-mode.md)). Everything else
+(typing, Enter, tabs, Back, value help, reports with F8) runs. If you
+decline, nothing is saved.
 
-To let the agent save, set `SAP_WRITE` in the server's environment:
+A client that cannot ask you ([which clients can](../concepts/confirm-mode.md#which-clients-can-ask))
+gets every such action refused, and the agent is told why. A refused
+action changes nothing.
 
-- `SAP_WRITE=confirm`: your client asks you before each such action
-  ([Confirm mode](../concepts/confirm-mode.md)). Start here, if your
-  client can ask ([which clients can](../concepts/confirm-mode.md#which-clients-can-ask));
-  otherwise writes are refused.
-- `SAP_WRITE=on`: such actions run.
+To change this, set `SAP_WRITE` in the server's environment:
+
+- `SAP_WRITE=off`: read-only. Every such action is refused, without a
+  question. Use it to be sure nothing is saved, and in Codex's Full Access
+  mode, which accepts the question without showing it to you.
+- `SAP_WRITE=on`: such actions run. With a client that cannot ask, on a
+  test system, together with the client's own approval of each `sap_act`
+  call.
 
 For example, in Claude Code:
 
 ```sh
-claude mcp add sap-ui-automation --scope user -e SAP_WRITE=confirm -- npx -y sap-ui-automation
+claude mcp add sap-ui-automation --scope user -e SAP_WRITE=off -- npx -y sap-ui-automation
 ```
 
 Other clients take it in their `env` block ([Install in your

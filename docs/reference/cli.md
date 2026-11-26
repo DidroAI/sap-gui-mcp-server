@@ -148,8 +148,8 @@ installs the same skills.
 - A file it cannot read safely is left alone, with the entry to add by hand.
 - It names an entry left under the server's old names (`sap-gui-mcp-server`,
   `sap-gui`) and says how to remove it.
-- It adds no settings: the server starts with `SAP_WRITE=off`. Add
-  variables in the agent's configuration.
+- It adds no settings: the server starts with `SAP_WRITE=confirm`, the
+  default. Add variables in the agent's configuration.
 
 The command it writes depends on how it was started: `npx -y
 sap-ui-automation` when run through `npx`, `sap-ui-automation` when

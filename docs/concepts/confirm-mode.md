@@ -1,9 +1,16 @@
 # Confirm mode
 
-With `SAP_WRITE=confirm`, an action that may write runs only after you say
-yes to it in your MCP client. Every other action runs as usual. The client
-must support MCP elicitation; with one that does not, such actions are
-refused.
+With `SAP_WRITE=confirm`, the default, an action that may write runs only
+after you say yes to it in your MCP client. Every other action runs as
+usual. The client must support MCP elicitation; with one that does not,
+such actions are refused. For a server that never writes, set
+`SAP_WRITE=off` (read-only).
+
+Because the server asks before each write itself, `sap_act`, `sap_replay`
+and `sap_code_test` are not marked destructive under `confirm`: clients
+that ask before each call of a destructive tool (Codex) do not ask before
+every navigation. They are marked destructive with `SAP_WRITE=on` or
+`SAP_ALLOW_LOGOFF=on`.
 
 ## The client supports MCP elicitation
 
@@ -31,10 +38,10 @@ source. Clients change quickly: try a harmless write on a test system first.
 | --- | --- | --- |
 | Claude Code | yes, from 2.1.76 | Tried live on Web GUI (21 November 2026): the question, a decline, and a screen that changed before the yes. In interactive sessions. In `claude -p` (headless) only an `Elicitation` hook or the Agent SDK's `onElicitation` can answer; otherwise the question is cancelled and the write does not run. |
 | VS Code (GitHub Copilot, Agent mode) | yes, from 1.102 | The question appears in the chat. |
-| Codex (CLI, IDE extension, app) | yes, from 0.119 | `codex exec` cancels every question, so writes do not run there. **In Full Access mode (approvals set to never), Codex accepts these questions without showing them**: there `confirm` protects nothing; use `off`. |
-| Cursor | supported since 1.5, unreliable | Users report the question never showing on Windows, its buttons hidden until the tool row is expanded, and a timeout of about a minute. Test it before relying on it; else keep `off`. |
-| Claude Desktop | not documented | No statement either way for the chat. Keep `off`; with `confirm`, a write is refused if Claude Desktop does not ask. |
-| Windsurf / Devin Desktop | not checked | Keep `off` until you have tried it. |
+| Codex (CLI, IDE extension, app) | yes, from 0.119 | `codex exec` cancels every question, so writes do not run there. **In Full Access mode (approvals set to never), Codex accepts these questions without showing them**: there `confirm` protects nothing; set `SAP_WRITE=off`. |
+| Cursor | supported since 1.5, unreliable | Users report the question never showing on Windows, its buttons hidden until the tool row is expanded, and a timeout of about a minute. Test it before relying on it; a question that is not shown is a write that does not run. |
+| Claude Desktop | not documented | No statement either way for the chat. With `confirm`, a write is refused if Claude Desktop does not ask; set `off` to make it read-only and drop the note. |
+| Windsurf / Devin Desktop | not checked | Try a harmless write on a test system first, or set `off`. |
 | The agent CLI (`sap-gui act`) | no | It cannot ask: writes need `SAP_WRITE=on`. |
 
 Sources: the [Claude Code changelog](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md)
@@ -59,10 +66,11 @@ Refused: this action may write to SAP (<what it does>) and writing is set to con
 The agent is told to say what it would have saved and not to look for
 another way. The first `sap_look` or `sap_act` answer of the session starts
 with a `NOTE:` line that says writes will be refused, so the agent can tell
-you before it works towards a save. The server also writes the same note
-once to its log (stderr) when the client connects.
+you before it works towards a save. The server also writes a note once to
+its log (stderr) when the client connects, with how to get writes. To make
+the server read-only on purpose and drop both notes, set `SAP_WRITE=off`.
 
-With such a client, use `SAP_WRITE=on` together with the client's own
+To get writes with such a client, use `SAP_WRITE=on` on a test system, together with the client's own
 approval of each `sap_act` call (most clients ask before a tool that is
 marked destructive). That approval is then the check; the server does not
 add one of its own. In Claude Code, leave `mcp__sap-ui-automation__sap_act` (installed as the plugin: `mcp__plugin_sap-ui-automation_sap-ui-automation__sap_act`) out of

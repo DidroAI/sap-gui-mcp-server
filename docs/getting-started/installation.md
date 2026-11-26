@@ -34,7 +34,7 @@ npx -y sap-ui-automation setup --agent claude-code,codex   # these agents only
 ```
 
 `--no-skills` skips the skills, `--no-mcp` the server. It adds no settings,
-so writes stay off. With the Chrome extension, run `setup --extension`: new
+so `SAP_WRITE` is `confirm`, the default (below). With the Chrome extension, run `setup --extension`: new
 entries get `SAP_BROWSER=extension`, and the extension's helper is installed
 too. Then run `npx -y sap-ui-automation doctor` to check what the server can
 reach (SAP GUI scripting, Chrome). Or have your agent do all of it: [Set up
@@ -56,16 +56,18 @@ command and `/c npx -y sap-ui-automation` as its arguments:
 `setup` does this for you on Windows.
 :::
 
-Writes to SAP are refused until you allow them. Settings are environment
+Each write to SAP waits for your yes. Settings are environment
 variables of the server; all of them are in
 [Configuration](../reference/configuration.md). The one to decide first is
 `SAP_WRITE`:
 
-- `off` (the default): anything that may save is refused. Start here.
-- `confirm`: your client asks you before each action that may save. This
-  needs a client that supports MCP elicitation. The snippets below set
-  `confirm` for Claude Code, VS Code and Codex, which do, and keep `off`
-  for the others ([which clients can ask](../concepts/confirm-mode.md#which-clients-can-ask)).
+- `confirm` (the default): your client asks you before each action that
+  may save. This needs a client that supports MCP elicitation: Claude
+  Code, VS Code and Codex do. A client that cannot ask gets every such
+  action refused ([which clients can ask](../concepts/confirm-mode.md#which-clients-can-ask)).
+- `off`: read-only, anything that may save is refused. The snippets below
+  set it for the clients that cannot ask, so the server says nothing about
+  questions it cannot put. Use it too in Codex's Full Access mode.
 - `on`: such actions run; your client's own tool approval is then the only
   check.
 
@@ -74,11 +76,11 @@ variables of the server; all of them are in
 ::: code-group
 
 ```sh [CLI]
-# read-only (SAP_WRITE=off):
+# asks you before each write (SAP_WRITE=confirm, the default):
 claude mcp add sap-ui-automation --scope user -- npx -y sap-ui-automation
 
-# asks you before each write:
-claude mcp add --scope user --env SAP_WRITE=confirm --transport stdio sap-ui-automation -- npx -y sap-ui-automation
+# read-only:
+claude mcp add --scope user --env SAP_WRITE=off --transport stdio sap-ui-automation -- npx -y sap-ui-automation
 ```
 
 ```text [Plugin]
@@ -98,7 +100,7 @@ the agent how to work in SAP transactions with the tools, and `sap-ui-automation
 the same work from the shell with the CLI. From your shell, the same is
 `claude plugin marketplace add DidroAI/sap-ui-automation` then
 `claude plugin install sap-ui-automation@sap-ui-automation`. The plugin starts the
-server with `SAP_WRITE` from your environment (default `off`). Its files:
+server with `SAP_WRITE` from your environment (default `confirm`). Its files:
 [`.claude-plugin/plugin.json`](https://github.com/DidroAI/sap-ui-automation/blob/main/.claude-plugin/plugin.json),
 [`.mcp.json`](https://github.com/DidroAI/sap-ui-automation/blob/main/.mcp.json),
 [`skills/sap-ui-automation`](https://github.com/DidroAI/sap-ui-automation/blob/main/skills/sap-ui-automation/SKILL.md),
@@ -110,7 +112,7 @@ server with `SAP_WRITE` from your environment (default `off`). Its files:
 [latest release](https://github.com/DidroAI/sap-ui-automation/releases/latest)
 and open it (double-click, or drag it onto Claude Desktop, or **Settings >
 Extensions > Advanced settings > Install Extension…**). Claude Desktop shows
-the settings: writes (`off`, `confirm` or `on`), allowed systems and
+the settings: writes (`confirm`, the default, `off` or `on`), allowed systems and
 transactions, browser origins, and where recordings go. The bundle carries
 the server and its dependencies; it runs with the Node.js that Claude Desktop
 ships.
@@ -150,21 +152,21 @@ Desktop.
 The file is `~/Library/Application Support/Claude/claude_desktop_config.json`
 on macOS and `%APPDATA%\Claude\claude_desktop_config.json` on Windows.
 
-The snippets keep `SAP_WRITE` at `off`: Claude Desktop does not document
-whether it asks about a server's questions (MCP elicitation), so with
-`confirm` a write may simply be refused. Try it on a test system before
-you rely on it.
+The snippets set `SAP_WRITE` to `off` (read-only): Claude Desktop does not
+document whether it asks about a server's questions (MCP elicitation), so
+under the default `confirm` a write may simply be refused, with a note in
+the server's log. Try `confirm` on a test system before you rely on it.
 
 ## Codex
 
 ::: code-group
 
 ```sh [CLI]
-# read-only (SAP_WRITE=off):
+# asks you before each write (SAP_WRITE=confirm, the default):
 codex mcp add sap-ui-automation -- npx -y sap-ui-automation
 
-# asks you before each write:
-codex mcp add sap-ui-automation --env SAP_WRITE=confirm -- npx -y sap-ui-automation
+# read-only (use it in Full Access mode):
+codex mcp add sap-ui-automation --env SAP_WRITE=off -- npx -y sap-ui-automation
 ```
 
 ```toml [~/.codex/config.toml]
@@ -173,7 +175,7 @@ command = "npx"
 args = ["-y", "sap-ui-automation"]
 
 [mcp_servers.sap-ui-automation.env]
-SAP_WRITE = "confirm"   # off | confirm | on
+SAP_WRITE = "confirm"   # confirm (default) | off (read-only) | on
 ```
 
 :::
@@ -182,8 +184,8 @@ The Codex CLI, the IDE extension and the desktop app share this
 configuration. `codex mcp list` shows it. Codex asks from version 0.119.
 Two exceptions: `codex exec` cancels every question, so a write under
 `confirm` does not run; and in **Full Access** mode Codex accepts the
-question without showing it, so `confirm` protects nothing there: use
-`off`.
+question without showing it, so `confirm` protects nothing there: set
+`SAP_WRITE=off`.
 
 ## Cursor
 
@@ -210,10 +212,12 @@ in a project:
 
 It appears under **Settings > MCP**.
 
-The snippet keeps `SAP_WRITE` at `off`. Cursor lists MCP elicitation as
-supported, but users report the question not showing (on Windows), its
-buttons hidden until the tool row is expanded, and a short timeout. If you
-set `confirm`, try a harmless write on a test system first.
+The snippet sets `SAP_WRITE` to `off` (read-only). Cursor lists MCP
+elicitation as supported, but users report the question not showing (on
+Windows), its buttons hidden until the tool row is expanded, and a short
+timeout. The button installs the server with the default, `confirm`: a
+question that is not shown is a write that does not run. Before you rely
+on `confirm`, try a harmless write on a test system.
 
 ## VS Code (GitHub Copilot)
 
@@ -292,7 +296,7 @@ MCP panel:
 ```
 
 Whether Windsurf asks about a server's questions (MCP elicitation) was not
-checked: keep `off` until you have tried `confirm` on a test system.
+checked: the snippet sets `off` (read-only) until you have tried `confirm`, the default, on a test system.
 
 ## Other clients
 
