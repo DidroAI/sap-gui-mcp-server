@@ -535,14 +535,30 @@ function Op-Act($req) {
     $p = Point $a
     [SapScreen]::Click($p[0], $p[1], $false)
     Start-Sleep -Milliseconds 350
-    if ($a['how'] -eq 'arrows') {
+    if ($a['how'] -eq 'clear') {
+      # The blank entry: the dropdown's text selected and deleted.
       [SapScreen]::Key(0x24, $false, $false, $false)
-      for ($i = 0; $i -lt [int]$a['index']; $i++) { [SapScreen]::Key(0x28, $false, $false, $false) }
-    } else { [SapScreen]::Type([string]$a['value']) }
-    # The list takes the typed text a moment after the keys: Enter too soon takes the entry before.
-    Start-Sleep -Milliseconds 300
-    [SapScreen]::Key(0x0D, $false, $false, $false)
-    Start-Sleep -Milliseconds 300
+      [SapScreen]::Key(0x23, $false, $true, $false)
+      [SapScreen]::Key(0x2E, $false, $false, $false)
+      Start-Sleep -Milliseconds 200
+      [SapScreen]::Key(0x09, $false, $false, $false)
+      Start-Sleep -Milliseconds 150
+    } elseif ($a['how'] -eq 'arrows') {
+      # The click gives the dropdown the focus and leaves its list closed (VA01, 2026-11-26): Home and Down change the
+      # entry on show at once, and no Enter is needed (one would go to SAP).
+      [SapScreen]::Key(0x24, $false, $false, $false)
+      for ($i = 0; $i -lt [int]$a['index']; $i++) { Start-Sleep -Milliseconds 40; [SapScreen]::Key(0x28, $false, $false, $false) }
+      Start-Sleep -Milliseconds 200
+      # The focus leaves it with Tab: an Enter on a dropdown that has the focus stays in SAP GUI.
+      [SapScreen]::Key(0x09, $false, $false, $false)
+      Start-Sleep -Milliseconds 150
+    } else {
+      [SapScreen]::Type([string]$a['value'])
+      # The list takes the typed text a moment after the keys: Enter too soon takes the entry before.
+      Start-Sleep -Milliseconds 300
+      [SapScreen]::Key(0x0D, $false, $false, $false)
+      Start-Sleep -Milliseconds 300
+    }
   }
   else { throw "UNKNOWN_ACTION: $do" }
   Start-Sleep -Milliseconds ([int]$(if ($null -ne $a['settle']) { $a['settle'] } else { 600 }))

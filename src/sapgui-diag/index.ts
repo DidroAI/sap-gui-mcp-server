@@ -963,7 +963,8 @@ export class DiagDriver implements Driver {
     const o = waitOptions(action, this.shared.env, MAX_TIMEOUT_MS);
     const has = (v: unknown) => v !== undefined && v !== null && v !== "";
     // Without a choice, a dropdown only says what it can: no window is needed.
-    if (action.do === "combo" && !has(action.key) && !has(action.value)) return planCombo(s, action, NO_GEOMETRY, await this.entriesOf(s, action.id)).note;
+    const absent = (v: unknown) => v === undefined || v === null;
+    if (action.do === "combo" && absent(action.key) && absent(action.value)) return planCombo(s, action, NO_GEOMETRY, await this.entriesOf(s, action.id)).note;
     // A table SAP GUI scrolled sideways (a cell reached with Tab): where its cells are is known again with SAP's next screen.
     const step0 = this.conn.steps.get(this.mode) ?? 0;
     const sideways = this.sideways && this.sideways.step === step0 && this.sideways.mode === this.mode ? this.sideways.table : undefined;
@@ -1026,7 +1027,7 @@ export class DiagDriver implements Driver {
     let plan: Plan;
     switch (action.do) {
       case "combo":
-        plan = planCombo(s, action, g, await this.entriesOf(s, action.id), this.comboHow());
+        plan = planCombo(withTyped(s, this.typed()), action, g, await this.entriesOf(s, action.id), this.comboHow());
         this.keepChosen(s, action, plan);
         break;
       case "tree":
@@ -1068,7 +1069,7 @@ export class DiagDriver implements Driver {
           break;
         }
         if (named?.kind === "dropdown" && action.do === "set") {
-          plan = planCombo(s, { ...action, do: "combo", key: action.value }, g, await this.entriesOf(s, action.id), this.comboHow());
+          plan = planCombo(withTyped(s, this.typed()), { ...action, do: "combo", key: action.value }, g, await this.entriesOf(s, action.id), this.comboHow());
           this.keepChosen(s, action, plan);
           break;
         }
@@ -1115,7 +1116,7 @@ export class DiagDriver implements Driver {
   /** A dropdown's entry chosen without a function code stays in SAP GUI until the next Enter: kept like a typed value, by its key. */
   private keepChosen(s: DiagScreen, action: Action, plan: Plan): void {
     if (plan.answer === "yes" || !plan.steps.length) return;
-    const key = /^chose ([^ "]+) "/.exec(plan.note)?.[1] ?? /^chose "([^"]*)"/.exec(plan.note)?.[1];
+    const key = plan.note.startsWith("chose the blank entry") ? "" : (/^chose ([^ "]+) "/.exec(plan.note)?.[1] ?? /^chose "([^"]*)"/.exec(plan.note)?.[1]);
     let t: Target | undefined;
     try {
       t = resolveTarget(s, { do: "focus", id: String(action.id ?? "") });
@@ -1125,10 +1126,16 @@ export class DiagDriver implements Driver {
     if (key !== undefined && (t?.kind === "element" || t?.kind === "cell")) this.keepTyped(t, key, s);
   }
 
-  /** SAP_DIAG_COMBO: "arrows" picks a dropdown's entry by its place in the list ("arrows+1": one line above the cached entries), else by its text. */
+  /**
+   * How a dropdown's entry is picked: by its place in the cached list (Home, Down n: checked live on VA01 and FB50,
+   * 2026-11-26, where typing the text missed when entries shared a first letter, BP's "Name" and "Number"), else
+   * by its text. SAP_DIAG_COMBO=type types the text always; "arrows+1" counts one line above the cached entries.
+   */
   private comboHow(): ComboHow {
-    const m = /^arrows(?:\+(\d))?$/.exec((this.shared.env.SAP_DIAG_COMBO ?? "").trim());
-    return m ? { how: "arrows", offset: Number(m[1] ?? 0) } : { how: "type", offset: 0 };
+    const v = (this.shared.env.SAP_DIAG_COMBO ?? "").trim();
+    if (v === "type") return { how: "type", offset: 0 };
+    const m = /^arrows\+(\d)$/.exec(v);
+    return { how: "arrows", offset: Number(m?.[1] ?? 0) };
   }
 
   /** Value lists read from SAP GUI's cache, by id: a list's id names its content, so it never changes. */

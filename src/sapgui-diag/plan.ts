@@ -51,7 +51,7 @@ export type Step = (
   /** The mouse wheel over a point, `notches` times (negative: down): SAP GUI scrolls a screen taller than its window. */
   | { do: "wheel"; x: number; y: number; notches: number }
   /** A dropdown in one input: click (opens its list), type the entry's text, Enter. `index`: its place in the list. */
-  | { do: "combo"; x: number; y: number; value: string; index?: number; fcode?: boolean; how?: "arrows" }
+  | { do: "combo"; x: number; y: number; value: string; index?: number; fcode?: boolean; how?: "arrows" | "clear" }
   /** A Windows button by its accessible name or description, inside `within` (screen pixels): BM_CLICK, no mouse. */
   | { do: "press"; name: string; within?: Rect }
 ) & { settle?: number };
@@ -446,7 +446,8 @@ export function planCombo(s: DiagScreen, action: Action, g: Geometry, entries?: 
   const wanted = action.key ?? action.value;
   const known = entries?.length ? entries : undefined;
   const shown = known?.find((x) => clean(x.key) === now) ?? known?.find((x) => sameKey(x.key, now));
-  if (wanted === undefined || wanted === null || clean(String(wanted)) === "") {
+  // No key: what the dropdown offers. An empty key: its blank entry (O2C-06's delivery block removed), as on the other surfaces.
+  if (wanted === undefined || wanted === null) {
     if (known) return { steps: [], note: `${n.id} shows ${shown ? entryText(shown) : `"${now}"`}. Its entries (key "text"): ${entryList(known)}. Choose one by key or text: {"do":"combo","id":"${n.id}","key":"<key or text>"}`, answer: "no" };
     return {
       steps: [],
@@ -459,6 +460,22 @@ export function planCombo(s: DiagScreen, action: Action, g: Geometry, entries?: 
   if (off) throw new ActionError(off);
   if (e.row - scrolledRows(n.window) > lastClickRow(n.window) || e.row < scrolledRows(n.window)) throw new ActionError(`${n.id} is at the bottom edge of SAP GUI's window, under its scroll bars, where a click lands elsewhere: nothing was done.${n.cell ? ` Scroll the table so that the row comes up ({"do":"scroll","id":"${n.cell.table.name}","to":${n.cell.row}}), then choose.` : " Make SAP GUI's window larger (maximize it)."}`);
   const asked = clean(String(wanted));
+  if (!asked) {
+    if (!now) return { steps: [], note: `${n.id} is already blank`, answer: "no" };
+    const [bx, by] = g.at(n.window, e.row, e.col, e.width);
+    const blank = (sc: DiagScreen): string | undefined => {
+      const m = namedControl(sc, n.id);
+      if (m?.kind !== "dropdown") return undefined;
+      return clean(m.element.key) ? `${n.id} still has "${clean(m.element.key)}": the blank entry did not take` : `${n.id} is now blank`;
+    };
+    const fc = !!e.fcode;
+    return {
+      steps: [{ do: "combo", x: bx, y: by, value: "", how: "clear", ...(fc ? { fcode: true } : {}), settle: 300 }],
+      note: `chose the blank entry in ${n.id}${fc ? "" : "; sent with the next Enter"}`,
+      answer: fc ? "yes" : "maybe",
+      ...(fc ? { confirm: (after: DiagScreen | undefined) => (after ? blank(after) : undefined) } : { later: blank }),
+    };
+  }
   const entry = known ? comboEntry(known, asked) : undefined;
   if (known && !entry) throw new ActionError(`${n.id} has no entry "${asked}" (or more than one starts with it): nothing was chosen. Its entries (key "text"): ${entryList(known)}.`);
   const key = entry ? clean(entry.key) : asked;

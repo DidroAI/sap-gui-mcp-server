@@ -64,6 +64,22 @@ describe("set on a dropdown chooses its entry", () => {
   });
 });
 
+describe("a dropdown's entry by its place in the list; the blank entry", () => {
+  // Live 2026-11-26 (VA01, FB50): the click leaves the list closed; Home and Down change the entry at once, then Tab.
+  test("by default the entry's place in the cached list, no Enter", async () => {
+    const f = fakeDriver(s, ENTRIES);
+    await f.d.act({ do: "set", id: "TABLE", row: 1, col: "D/C", value: "Credit" });
+    expect(f.log.find((x) => x.op === "act")?.action).toMatchObject({ do: "combo", how: "arrows", index: 1 });
+  });
+  test("an empty key chooses the blank entry; no key lists the entries", async () => {
+    const set = { ...s, windows: [{ ...s.windows[0], tables: [{ ...TABLE, rows: TABLE.rows.map((r) => ({ ...r, cells: r.cells.map((c, i) => (i === 1 ? { ...c, text: "S", key: "S" } : c)) })) }] }] } as typeof s;
+    const f = fakeDriver(set, ENTRIES);
+    expect(await f.d.act({ do: "combo", id: "ACGL_ITEM-SHKZG[0]", key: "" })).toContain("chose the blank entry in ACGL_ITEM-SHKZG[0]");
+    expect(f.log.find((x) => x.op === "act")?.action).toMatchObject({ do: "combo", how: "clear" });
+    expect(await f.d.act({ do: "combo", id: "ACGL_ITEM-SHKZG[1]" })).toContain('Its entries (key "text"): S "Debit", H "Credit"');
+  });
+});
+
 describe("a set after a choice on the same row", () => {
   // Live 2026-11-26: the caret was still in the D/C dropdown on the row, so the check "the caret is on the row" passed,
   // and the amount was typed into the dropdown (blank). The input host now wants the caret between the field's edges.
