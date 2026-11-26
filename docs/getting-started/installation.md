@@ -31,7 +31,8 @@ npx -y sap-ui-automation setup             # change it
 ```
 
 It adds no settings, so writes stay off. With the Chrome extension, run
-`setup --extension`: new entries get `SAP_BROWSER=extension`. Then run
+`setup --extension`: new entries get `SAP_BROWSER=extension`, and the
+extension's helper is installed too. Then run
 `npx -y sap-ui-automation doctor` to check what the server can reach (SAP
 GUI scripting, Chrome). Or have your agent do all of it: [Set up with your
 agent](setup-prompt.md).
