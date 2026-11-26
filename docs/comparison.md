@@ -24,7 +24,7 @@ vision models (a `vision` capability adds coordinate-based input).
 | After an action on the same screen | a new snapshot | only the lines that changed |
 | SAP GUI for Windows | no: it is not a browser | yes, through SAP GUI scripting or the network reader |
 | Guard on writes to SAP | none specific to SAP | Save, Post, Delete and other writes refused by default (`SAP_WRITE`), transaction and system lists ([Safety model](concepts/safety.md)) |
-| Logs on | can fill a logon form like any form | never; works in sessions you opened |
+| Logs on | can fill a logon form like any form | works in sessions you opened; with the Chrome extension, `sap_logon` opens a system you registered and the extension types its saved password, which the agent never sees |
 | Record and replay | no SAP test format | `sap_record`, `sap_replay`, exports ([Recording and replay](guides/record-replay.md)) |
 | Other web apps | yes | no: non-SAP tabs are left alone |
 
