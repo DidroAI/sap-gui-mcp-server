@@ -111,7 +111,8 @@ GUI's traffic through a local SAProuter.
 
 ## Benchmark
 
-Our benchmark: six long SAP ECC processes of 10 to 15 screens each, run
+Our benchmark: six long SAP ECC processes (five of 10 to 15 screens, one of
+7 screens and 24 steps), run
 with Claude Haiku 5.5, Sonnet 5.5 and Opus 5.5, 443 runs in all. A run
 passes when checks on the SAP database pass.
 
