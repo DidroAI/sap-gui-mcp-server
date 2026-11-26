@@ -465,6 +465,11 @@ export class ClassicState {
           const w = this.win();
           w.list ??= { rows: [] };
           w.list.totalRows = i32(0);
+          // The third and fifth: the lines on show and the first one on show (ME2L's 54 lines came as 25 from 0, 25, 50).
+          if (v.length >= 20) {
+            w.list.visibleRows = i32(2);
+            w.list.firstRow = i32(4);
+          }
         } else if (this.scrollOf === "table" && this.build && v.length >= 20) {
           this.build.table.totalRows = i32(0);
           this.build.table.visibleRows = i32(2);

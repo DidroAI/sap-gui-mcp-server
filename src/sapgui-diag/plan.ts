@@ -575,7 +575,7 @@ export function position(n: Named): { first: number; visible: number; total: num
   }
   if (n.kind === "list") {
     const l = n.window.list;
-    return { first: l?.firstRow ?? 0, visible: Math.max(1, l?.rows.length ?? 1), total: l?.totalRows };
+    return { first: l?.firstRow ?? 0, visible: Math.max(1, l?.visibleRows || l?.rows.length || 1), total: l?.totalRows };
   }
   return undefined;
 }

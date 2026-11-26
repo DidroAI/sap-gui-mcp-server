@@ -183,7 +183,8 @@ function listLines(list: DiagList, maxRows: number): string[] {
   }
   const [shared, n] = [...count].sort((a, b) => b[1] - a[1])[0] ?? ["", 0];
   const regular = n >= 3 && n * 10 >= rows.length * 4 && shared.includes(",") ? shared : undefined;
-  const total = list.totalRows !== undefined && list.totalRows > rows.length ? `${list.totalRows} rows, ${rows.length} on show` : `${rows.length} rows`;
+  const from = list.firstRow ? ` from line ${list.firstRow}` : "";
+  const total = list.totalRows !== undefined && list.totalRows > rows.length ? `${list.totalRows} rows, ${rows.length} on show${from}` : `${rows.length} rows`;
   const out = [`list  ${total}${regular ? `; columns at ${regular.split(",").map((c) => `c${c}`).join(" ")}` : ""}`];
   for (const r of rows.slice(0, maxRows)) {
     const sig = r.cells.map((c) => c.col).join(",");
