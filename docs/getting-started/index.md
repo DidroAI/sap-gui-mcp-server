@@ -21,8 +21,8 @@ questions.
 
 > Status: 0.2, early. It works on real systems, but parts are young, and
 > each guide lists the limits of its surface. Experimental: the network
-> reader for SAP GUI without scripting. The Chrome extension is in review
-> in the Chrome Web Store and is loaded unpacked until then. MIT licence.
+> reader for SAP GUI without scripting. The Chrome extension is in the
+> [Chrome Web Store](https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn) (unlisted). MIT licence.
 
 ## Requirements
 

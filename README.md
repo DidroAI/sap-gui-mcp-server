@@ -80,9 +80,9 @@ the server's environment ([guide](docs/guides/chrome.md)):
   `npx -y sap-ui-automation browser`, open your SAP address there and log
   on once.
 - `extension`: your everyday Chrome, through the **UI Automation for SAP**
-  extension. The extension is in review in the Chrome Web Store; until it
-  is published, load it unpacked:
-  `npx -y sap-ui-automation extension install`, then
+  extension. Add it from the
+  [Chrome Web Store](https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn),
+  then run `npx -y sap-ui-automation extension helper` and
   `npx -y sap-ui-automation setup --extension`
   ([steps](docs/guides/chrome.md#install-the-extension)).
 - `attach`: your running Chrome or Edge, with remote debugging allowed in
@@ -146,8 +146,8 @@ are young.
 - **Experimental:** the network reader for SAP GUI without scripting
   (read-only tasks on one system so far). Record and replay have been
   checked live on Web GUI only.
-- **The Chrome extension** is in review in the Chrome Web Store, and is
-  loaded unpacked until it is published.
+- **The Chrome extension** is in the Chrome Web Store as an unlisted item:
+  it installs from its link, and does not show up in the store's search.
 - **Not supported:** SAP GUI for Java, Firefox, Safari, SNC-encrypted
   connections with the network reader.
 - No benchmark results are published yet ([benchmarks](docs/benchmarks.md)).
