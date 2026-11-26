@@ -409,12 +409,19 @@ export function comboEntry(entries: readonly ComboEntry[], wanted: string): Comb
   return (
     one((e) => clean(e.key) === clean(wanted)) ??
     one((e) => lower(clean(e.key)) === w) ??
+    one((e) => sameKey(e.key, wanted)) ??
     one((e) => lower(clean(e.value)) === w) ??
     one((e) => lower(`${clean(e.key)} ${clean(e.value)}`) === w) ??
     one((e) => lower(clean(e.value)).startsWith(w)) ??
     one((e) => lower(clean(e.key)).startsWith(w))
   );
 }
+
+/** Two keys of a dropdown are the same: in any case, and without leading zeros (SAP sends BP's "01" as "1"). */
+const sameKey = (a: string | undefined, b: string | undefined): boolean => {
+  const n = (k: string | undefined) => lower(k).replace(/^0+(?=.)/, "");
+  return n(a) === n(b);
+};
 
 const entryText = (e: ComboEntry) => (clean(e.key) ? `${clean(e.key)} "${clean(e.value)}"` : `"${clean(e.value)}"`);
 const entryList = (entries: readonly ComboEntry[], max = 60) => `${entries.slice(0, max).map(entryText).join(", ")}${entries.length > max ? `, and ${entries.length - max} more` : ""}`;
@@ -431,7 +438,7 @@ export function planCombo(s: DiagScreen, action: Action, g: Geometry, entries?: 
   const now = clean(e.key);
   const wanted = action.key ?? action.value;
   const known = entries?.length ? entries : undefined;
-  const shown = known?.find((x) => clean(x.key) === now);
+  const shown = known?.find((x) => clean(x.key) === now) ?? known?.find((x) => sameKey(x.key, now));
   if (wanted === undefined || wanted === null || clean(String(wanted)) === "") {
     if (known) return { steps: [], note: `${n.id} shows ${shown ? entryText(shown) : `"${now}"`}. Its entries (key "text"): ${entryList(known)}. Choose one by key or text: {"do":"combo","id":"${n.id}","key":"<key or text>"}`, answer: "no" };
     return {
@@ -449,7 +456,7 @@ export function planCombo(s: DiagScreen, action: Action, g: Geometry, entries?: 
   if (known && !entry) throw new ActionError(`${n.id} has no entry "${asked}" (or more than one starts with it): nothing was chosen. Its entries (key "text"): ${entryList(known)}.`);
   const key = entry ? clean(entry.key) : asked;
   const text = entry ? clean(entry.value) : asked;
-  if (lower(now) === lower(key) || (!entry && lower(now) === lower(text))) return { steps: [], note: `${n.id} already has ${entry ? entryText(entry) : `"${now}"`}`, answer: "no" };
+  if (sameKey(now, key) || (!entry && lower(now) === lower(text))) return { steps: [], note: `${n.id} already has ${entry ? entryText(entry) : `"${now}"`}`, answer: "no" };
   const [x, y] = g.at(n.window, e.row, e.col, e.width);
   const keyAfter = (sc: DiagScreen): string | undefined => {
     const m = namedControl(sc, n.id);
@@ -458,8 +465,8 @@ export function planCombo(s: DiagScreen, action: Action, g: Geometry, entries?: 
   const verdict = (sc: DiagScreen): string | undefined => {
     const k = keyAfter(sc);
     if (k === undefined) return undefined;
-    if (lower(k) === lower(key) || (!entry && lower(k) === lower(text))) return `${n.id} now has ${entry ? entryText(entry) : `"${k}"`}`;
-    const got = known?.find((x) => clean(x.key) === k);
+    if (sameKey(k, key) || (!entry && lower(k) === lower(text))) return `${n.id} now has ${entry ? entryText(entry) : `"${k}"`}`;
+    const got = known?.find((x) => clean(x.key) === k) ?? known?.find((x) => sameKey(x.key, k));
     if (k === now) return `${n.id} still has "${k}": the choice did not take (look, then choose again)`;
     return `${n.id} now has ${got ? entryText(got) : `the key "${k}"`}, not the entry meant by "${asked}"`;
   };

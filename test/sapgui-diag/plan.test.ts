@@ -360,6 +360,22 @@ describe("dropdowns", () => {
     expect(by("RO").later?.(next("RE"))).toBe('ZHDR-TYPE now has RE "Returns", not the entry meant by "RO"');
     expect(by("RO").later?.(next("RO"))).toBe('ZHDR-TYPE now has RO "Rush order"');
   });
+  test("a key SAP sends without the list's leading zeros is the same entry (BP's Find: \"1\" and 01)", () => {
+    // Live S/4 2026-11-25: "chose 01 Business Partner ... still has 1: the choice did not take", about the entry on show.
+    const entries = [
+      { key: "01", value: "Business Partner" },
+      { key: "02", value: "Persons" },
+    ];
+    const s = screen([win({ elements: [el({ kind: "dropdown", name: "BUS_LOCA_SRCH01-SEARCH_TYPE", key: "1", fcode: "SRCH_TYPE", row: 1, col: 20 })] })]);
+    const by = (key: string) => planCombo(s, { do: "combo", id: "BUS_LOCA_SRCH01-SEARCH_TYPE", key }, geo, entries);
+    expect(by("01")).toMatchObject({ steps: [], note: 'BUS_LOCA_SRCH01-SEARCH_TYPE already has 01 "Business Partner"' });
+    expect(by("Business Partner").steps).toEqual([]);
+    expect(by("2").steps[0]).toMatchObject({ do: "combo", value: "Persons" });
+    const p = by("Persons");
+    const after = (key: string) => screen([win({ elements: [el({ kind: "dropdown", name: "BUS_LOCA_SRCH01-SEARCH_TYPE", key, fcode: "SRCH_TYPE", row: 1, col: 20 })] })]);
+    expect(p.confirm?.(after("2"), true)).toBe('BUS_LOCA_SRCH01-SEARCH_TYPE now has 02 "Persons"');
+    expect(p.confirm?.(after("1"), true)).toContain("still has");
+  });
   test("already chosen; not a dropdown", () => {
     expect(plan({ do: "combo", id: "ZHDR-TYPE", key: "or" }).steps).toEqual([]);
     expect(() => plan({ do: "combo", id: "TC_ITEMS", key: "X" })).toThrow("not a dropdown");
