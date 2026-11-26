@@ -36,7 +36,7 @@
  *   with an empty part, the last one sent as a call without answer),
  *   followed by an empty message that ends the step.
  */
-import { ClassicState } from "./classic.js";
+import { ClassicState, type SentCell } from "./classic.js";
 import { Controls } from "./controls.js";
 import { parseRfc } from "./rfc.js";
 import type { DiagControl, DiagElement, DiagScreen, DiagWindow } from "./screen.js";
@@ -90,6 +90,8 @@ class Mode {
   /** The user acted since the last screen: the next server message opens a new step. */
   userActed = true;
   screen: DiagScreen | undefined;
+  /** The table cells SAP GUI sent with its last request. */
+  sent: SentCell[] = [];
 
   /** Traffic for this mode may have been lost: say so on the next screen, and on later ones while what SAP GUI holds may be stale. */
   damage(): void {
@@ -180,6 +182,11 @@ export class DiagDecoder {
     return m === undefined ? undefined : this.modes.get(m)?.screen;
   }
 
+  /** The table cells SAP GUI sent with its last request in a mode (what reached SAP of the cells typed into). */
+  sentCells(mode: number): SentCell[] {
+    return this.modes.get(mode)?.sent ?? [];
+  }
+
   /** The current screen of every mode of the connection, by mode number. */
   screens(): Map<number, DiagScreen> {
     const out = new Map<number, DiagScreen>();
@@ -264,7 +271,15 @@ export class DiagDecoder {
     }
     if (!answer && items.length) mode.userActed = true;
     // What the user typed, as SAP GUI sends it: the fields hold it until SAP sends them again.
-    if (!answer) mode.classic.clientValues(items);
+    if (!answer) {
+      const cells = mode.classic.clientValues(items);
+      mode.sent = cells;
+      // The screen on show holds them too (it is the one SAP GUI sent them from).
+      for (const c of cells) {
+        const cell = mode.screen?.windows.at(-1)?.tables.find((t) => t.name === c.table)?.rows.find((r) => r.index === c.index)?.cells[c.column];
+        if (cell && cell.kind !== "checkbox" && cell.kind !== "radio") cell.text = c.text;
+      }
+    }
   }
 
   /** One RFC item. Returns true when it is a call SAP GUI still has to answer (the step goes on). */

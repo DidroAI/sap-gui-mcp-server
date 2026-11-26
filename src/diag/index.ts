@@ -4,6 +4,7 @@
  * Protocol, screen model and text view; no MCP surface here.
  */
 export { DiagDecoder, pairLabels } from "./decoder.js";
+export type { SentCell } from "./classic.js";
 export { isLzh, LzhError, lzhCompress, lzhDecompress } from "./lzh.js";
 export { parseRfc, type RfcCall, type RfcField, type RfcTable, rfcFields } from "./rfc.js";
 export type * from "./screen.js";

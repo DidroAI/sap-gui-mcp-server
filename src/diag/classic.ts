@@ -143,6 +143,14 @@ export function layoutColumns(table: DiagTable): void {
   });
 }
 
+/** A table cell SAP GUI sent with a request: the table, its own row number, the column index and the text. */
+export interface SentCell {
+  table: string;
+  index: number;
+  column: number;
+  text: string;
+}
+
 /** Table control while its items arrive. */
 interface TableBuild {
   table: DiagTable;
@@ -239,9 +247,10 @@ export class ClassicState {
    * user typed into with their new text. They become the text of the fields at those places, so that a field
    * SAP later sends again without its text keeps what the user typed (elementList).
    */
-  clientValues(items: DiagItem[]): void {
+  clientValues(items: DiagItem[]): SentCell[] {
     const w = this.windows[this.windows.length - 1];
-    if (!w) return;
+    const sent: SentCell[] = [];
+    if (!w) return sent;
     const path = this.path;
     this.path = [];
     try {
@@ -252,12 +261,40 @@ export class ClassicState {
           const kind = LEVELS.get(it.sid);
           if (kind && it.value.length >= 9) this.path.push({ kind, name: "", row: it.value.readUInt16BE(1), col: it.value.readUInt16BE(3), width: it.value.readUInt16BE(5), height: it.value.readUInt16BE(7) });
         } else if (it.id === ID.screen && it.sid === 0x02) this.clientElements(w, it.value);
+        else if (it.id === ID.screen && it.sid === 0x09) sent.push(...this.clientCells(w, it.value));
       }
     } catch (e) {
       this.note(`values from SAP GUI not read: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       this.path = path;
     }
+    return sent;
+  }
+
+  /**
+   * The cells of a table control SAP GUI sends with a request (item 09/09): per cell its line on show and its
+   * column (1-based), 0x65, the text, NUL. The table is the one at the request's area, else the window's only one.
+   */
+  private clientCells(w: WindowState, v: Buffer): SentCell[] {
+    const o = this.origin();
+    const table = w.tables.find((t) => t.row === o.row && t.col === o.col) ?? (w.tables.length === 1 ? w.tables[0] : undefined);
+    const out: SentCell[] = [];
+    if (!table) return out;
+    const first = table.rows[0]?.index ?? 0;
+    for (let i = 0; i + 5 <= v.length; ) {
+      const line = v.readUInt16BE(i);
+      const column = v.readUInt16BE(i + 2) - 1;
+      let j = i + 5;
+      while (j < v.length && v[j] !== 0) j++;
+      const text = clean(this.text(v.subarray(i + 5, j))).trim();
+      i = j + 1;
+      if (line < 1 || column < 0) continue;
+      const index = first + line - 1;
+      out.push({ table: table.name, index, column, text });
+      const cell = table.rows.find((r) => r.index === index)?.cells[column];
+      if (cell && cell.kind !== "checkbox" && cell.kind !== "radio") cell.text = text;
+    }
+    return out;
   }
 
   private clientElements(w: WindowState, v: Buffer): void {

@@ -35,13 +35,13 @@ import { join } from "node:path";
 import { ONE_LINE_NOTE, oneLine } from "../core/action.js";
 import { ActionError, type Action, type Assessment, type DoctorCheck, type Driver, type LookOptions, type SessionInfo, type Surface } from "../core/types.js";
 import { actWord, CLOSES_SESSIONS, commitCode, commitWord, isLogonScreen, LOGON_REFUSAL, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS, searchButton } from "../core/words.js";
-import { type DiagControl, DiagDecoder, type DiagElement, type DiagKey, type DiagScreen, type DiagTable, type DiagWindow, diagView, menuView, statusLine } from "../diag/index.js";
+import { type DiagControl, DiagDecoder, type SentCell, type DiagElement, type DiagKey, type DiagScreen, type DiagTable, type DiagWindow, diagView, menuView, statusLine } from "../diag/index.js";
 import { notationNote } from "../core/notation.js";
 import { HostError, MAX_TIMEOUT_MS, powershellExe, PsHost, READ_TIMEOUT_MS } from "../sapgui/host.js";
 import type { Transport } from "../sapgui/facts.js";
 import { vkeyNumber } from "../sapgui/keys.js";
 import { type Cells, cellMetrics, cellPoint, cellsFromEnv, type HostWindow, pickWindow, type Rect } from "./geometry.js";
-import { type ComboEntry, type Geometry, type Named, namedControl, type Plan, plainMisuse, planCombo, planGrid, planGridScroll, planGridSet, planPage, planPlain, planScreenScroll, planTabOn, planTableRow, planToolbar, planTree, position, scrollables, scrolledRows, screenScrolls, scrollTarget, type Step, type TreeChange, toolbarKey, untypedKey } from "./plan.js";
+import { type ComboEntry, type ComboHow, type Geometry, type Named, namedControl, type Plan, plainMisuse, planCombo, planGrid, planGridScroll, planGridSet, planPage, planPlain, planScreenScroll, planTabOn, planTableRow, planToolbar, planTree, position, scrollables, scrolledRows, screenScrolls, scrollTarget, type Step, type TreeChange, toolbarKey, untypedKey } from "./plan.js";
 import { type Hop, startRouter } from "./router.js";
 import { lookControl } from "./rows.js";
 import { MAYBE_REQUEST_MS, Traffic, type WaitOptions, waitNote, waitOptions } from "./traffic.js";
@@ -621,9 +621,22 @@ const sameValue = (a: string, b: string) => {
  * when it is still the screen they were typed on (a field SAP changed or
  * did not take). One line each.
  */
-export function typedMisses(typed: Typed[], after: DiagScreen): string[] {
+export function typedMisses(typed: Typed[], after: DiagScreen, sentCells: readonly SentCell[] = []): string[] {
   const out: string[] = [];
   for (const t of typed) {
+    // A table cell SAP GUI's request did not carry as typed: the input never reached the cell (FB50's D/C after a
+    // dropdown whose list did not open went out blank). Said as such, not as something SAP refused.
+    if (t.table && t.checked === undefined && sentCells.some((c) => c.table === t.table?.name)) {
+      const went = sentCells.find((c) => c.table === t.table?.name && c.index === t.table?.index && c.column === t.table?.column);
+      if (!went || !sameValue(went.text, t.value)) {
+        // Where it went instead: another cell of the row that SAP GUI sent with the value (or its start, cut to the cell).
+        const other = sentCells.find((c) => c.table === t.table?.name && c.index === t.table?.index && c.column !== t.table?.column && c.text.length >= 2 && clean(t.value).toUpperCase().startsWith(c.text.toUpperCase()));
+        const columns = after.windows[t.window]?.tables.find((x) => x.name === t.table?.name)?.columns;
+        const into = other ? columns?.find((c) => c.index === other.column) : undefined;
+        out.push(`${t.name}[${t.table.index}]: SAP GUI did not send the "${t.value}" typed there (it sent ${went ? `"${went.text}"` : "nothing"} for that cell), so the input did not reach it${into ? `: it went into ${into.name}${clean(into.title) ? ` ("${clean(into.title)}")` : ""} of the same row instead, where it has to be cleared` : ""}. Type it again.`);
+        continue;
+      }
+    }
     const w = after.windows[t.window];
     if (!w || w.program !== t.program || w.dynpro !== t.dynpro) continue;
     const target = t.table ? w.tables.find((x) => x.name === t.table?.name)?.rows.find((r) => r.index === t.table?.index)?.cells[t.table.column] : w.elements.find((x) => x.name === t.name && x.row === t.row && x.col === t.col);
@@ -1013,7 +1026,7 @@ export class DiagDriver implements Driver {
     let plan: Plan;
     switch (action.do) {
       case "combo":
-        plan = planCombo(s, action, g, await this.entriesOf(s, action.id));
+        plan = planCombo(s, action, g, await this.entriesOf(s, action.id), this.comboHow());
         this.keepChosen(s, action, plan);
         break;
       case "tree":
@@ -1055,7 +1068,7 @@ export class DiagDriver implements Driver {
           break;
         }
         if (named?.kind === "dropdown" && action.do === "set") {
-          plan = planCombo(s, { ...action, do: "combo", key: action.value }, g, await this.entriesOf(s, action.id));
+          plan = planCombo(s, { ...action, do: "combo", key: action.value }, g, await this.entriesOf(s, action.id), this.comboHow());
           this.keepChosen(s, action, plan);
           break;
         }
@@ -1081,7 +1094,7 @@ export class DiagDriver implements Driver {
     const moved = (this.conn.steps.get(this.mode) ?? 0) !== before;
     // The status bar is the view's (sbar line): the server puts an error, a warning or a termination first.
     const lines = [note];
-    if (after && moved && sent.length) lines.push(...typedMisses(sent, after));
+    if (after && moved && sent.length) lines.push(...typedMisses(sent, after, this.conn.decoder.sentCells?.(this.mode) ?? []));
     if (after && moved) lines.push(...passedMessages(this.conn.messages?.get(this.mode) ?? [], before, after.message ? statusLine(after.message) : undefined));
     // A termination message that was confirmed: SAP has ended the transaction, and the answer says so.
     if (after && moved && s.message?.type === "A" && after.message?.type !== "A")
@@ -1110,6 +1123,12 @@ export class DiagDriver implements Driver {
       return;
     }
     if (key !== undefined && (t?.kind === "element" || t?.kind === "cell")) this.keepTyped(t, key, s);
+  }
+
+  /** SAP_DIAG_COMBO: "arrows" picks a dropdown's entry by its place in the list ("arrows+1": one line above the cached entries), else by its text. */
+  private comboHow(): ComboHow {
+    const m = /^arrows(?:\+(\d))?$/.exec((this.shared.env.SAP_DIAG_COMBO ?? "").trim());
+    return m ? { how: "arrows", offset: Number(m[1] ?? 0) } : { how: "type", offset: 0 };
   }
 
   /** Value lists read from SAP GUI's cache, by id: a list's id names its content, so it never changes. */

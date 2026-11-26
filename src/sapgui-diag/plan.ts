@@ -50,7 +50,7 @@ export type Step = (
   /** The mouse wheel over a point, `notches` times (negative: down): SAP GUI scrolls a screen taller than its window. */
   | { do: "wheel"; x: number; y: number; notches: number }
   /** A dropdown in one input: click (opens its list), type the entry's text, Enter. `index`: its place in the list. */
-  | { do: "combo"; x: number; y: number; value: string; index?: number; fcode?: boolean }
+  | { do: "combo"; x: number; y: number; value: string; index?: number; fcode?: boolean; how?: "arrows" }
   /** A Windows button by its accessible name or description, inside `within` (screen pixels): BM_CLICK, no mouse. */
   | { do: "press"; name: string; within?: Rect }
 ) & { settle?: number };
@@ -432,7 +432,13 @@ const entryList = (entries: readonly ComboEntry[], max = 60) => `${entries.slice
  * input goes as one step to the input host (a click opens the list, the entry's text is typed, Enter), so
  * that nothing brings another window forward while the list is open.
  */
-export function planCombo(s: DiagScreen, action: Action, g: Geometry, entries?: readonly ComboEntry[]): Plan {
+/** How a dropdown's entry is picked in its open list: by typing its text, or by its place (Home, Down n; `offset` lines the list shows above the cached entries). */
+export interface ComboHow {
+  how: "type" | "arrows";
+  offset: number;
+}
+
+export function planCombo(s: DiagScreen, action: Action, g: Geometry, entries?: readonly ComboEntry[], pick: ComboHow = { how: "type", offset: 0 }): Plan {
   const n = need(s, action, ["dropdown"], "dropdown") as Named & { kind: "dropdown" };
   const e = n.element;
   const now = clean(e.key);
@@ -474,7 +480,7 @@ export function planCombo(s: DiagScreen, action: Action, g: Geometry, entries?: 
   const sends = !!e.fcode;
   const index = entry && known ? known.indexOf(entry) : -1;
   return {
-    steps: [{ do: "combo", x, y, value: text, ...(index >= 0 ? { index } : {}), ...(sends ? { fcode: true } : {}), settle: 300 }],
+    steps: [{ do: "combo", x, y, value: text, ...(index >= 0 ? { index: index + pick.offset } : {}), ...(pick.how === "arrows" && index >= 0 ? { how: "arrows" } : {}), ...(sends ? { fcode: true } : {}), settle: 300 }],
     note: `chose ${entry ? entryText(entry) : `"${text}"`} in ${n.id}${sends ? "" : "; SAP gets it with the next Enter or function key"}`,
     // Without a function code SAP gets the choice with the next step; a request now means the list did not open and the
     // Enter meant for it went to SAP with the screen (what was typed before went too).
