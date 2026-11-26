@@ -1,12 +1,28 @@
 import { describe, expect, test } from "bun:test";
 import { normalizeAction } from "../src/core/action.js";
-import { commandFieldRefusal, currentTcode, decide, isCommandField, leavesTransaction, okcodeKind, policyFromEnv, sessionRefusal, systemAllowed, tcodeOf } from "../src/core/guard.js";
+import { commandFieldRefusal, currentTcode, decide, isCommandField, leavesTransaction, mayDestroy, okcodeKind, policyFromEnv, sessionRefusal, systemAllowed, tcodeOf } from "../src/core/guard.js";
 
 describe("guard", () => {
-  test("writes are off by default", () => {
-    const p = policyFromEnv({});
-    expect(decide(p, { do: "key", key: 11 }, { risk: "commit", reason: "Save" })).toMatchObject({ run: false });
+  test("writes wait for the user's yes by default (confirm)", () => {
+    for (const env of [{}, { SAP_WRITE: "" }, { SAP_WRITE: " " }]) {
+      const p = policyFromEnv(env);
+      expect(p.write).toBe("confirm");
+      expect(decide(p, { do: "key", key: 11 }, { risk: "commit", reason: "Save" })).toEqual({ run: false, confirm: "Save" });
+      expect(decide(p, { do: "set", id: "x", value: "1" }, { risk: "navigate", reason: "" })).toEqual({ run: true });
+    }
+  });
+  test("off is read-only: every write refused, navigation runs", () => {
+    const p = policyFromEnv({ SAP_WRITE: "off" });
+    expect(decide(p, { do: "key", key: 11 }, { risk: "commit", reason: "Save" })).toMatchObject({ run: false, refused: expect.stringContaining("writes are off") });
     expect(decide(p, { do: "set", id: "x", value: "1" }, { risk: "navigate", reason: "" })).toEqual({ run: true });
+  });
+  test("mayDestroy (the destructiveHint): only when a write or a log off can run without the server asking", () => {
+    expect(mayDestroy(policyFromEnv({}))).toBe(false);
+    expect(mayDestroy(policyFromEnv({ SAP_WRITE: "confirm" }))).toBe(false);
+    expect(mayDestroy(policyFromEnv({ SAP_WRITE: "off" }))).toBe(false);
+    expect(mayDestroy(policyFromEnv({ SAP_WRITE: "on" }))).toBe(true);
+    expect(mayDestroy(policyFromEnv({ SAP_WRITE: "off", SAP_ALLOW_LOGOFF: "on" }))).toBe(true);
+    expect(mayDestroy(policyFromEnv({ SAP_ALLOW_LOGOFF: "on" }))).toBe(true);
   });
   test("confirm mode holds commits", () => {
     const v = decide(policyFromEnv({ SAP_WRITE: "confirm" }), { do: "key", key: 11 }, { risk: "commit", reason: "Save" });
@@ -150,7 +166,7 @@ describe("the transaction a session is in", () => {
 
 describe("a second write refusal in a session is one line", () => {
   test("the first says it all; the next one the rule only (live 2026-11-23: 600 characters each time)", () => {
-    const policy = policyFromEnv({});
+    const policy = policyFromEnv({ SAP_WRITE: "off" });
     const action = normalizeAction({ do: "key", key: 11 });
     const assessment = { risk: "commit" as const, reason: "key 11 is Save" };
     const first = decide(policy, action, assessment);
@@ -164,7 +180,7 @@ describe("a second write refusal in a session is one line", () => {
 
 describe("a refusal on Fiori gives Fiori's way out", () => {
   test("Discard Draft, Back or #Shell-home; no okcode, no F3 (live 2026-11-23 #30)", () => {
-    const policy = policyFromEnv({});
+    const policy = policyFromEnv({ SAP_WRITE: "off" });
     const action = normalizeAction({ do: "press", id: "edit" });
     const assessment = { risk: "commit" as const, reason: 'objectpageheaderactionbutton "Edit": creates a draft on the server' };
     for (const again of [false, true]) {

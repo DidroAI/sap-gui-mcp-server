@@ -181,16 +181,16 @@ describe("fiori actions", () => {
   });
   test("a Save button is refused by default and held in confirm mode", () => {
     const a = assessAction({ do: "press", id: "Save" }, save);
-    expect(decide(policyFromEnv({}), { do: "press", id: "Save" }, a)).toMatchObject({ run: false, refused: expect.stringContaining("writes are off") });
+    expect(decide(policyFromEnv({ SAP_WRITE: "off" }), { do: "press", id: "Save" }, a)).toMatchObject({ run: false, refused: expect.stringContaining("writes are off") });
     expect(decide(policyFromEnv({ SAP_WRITE: "confirm" }), { do: "press", id: "Save" }, a)).toMatchObject({ run: false, confirm: expect.stringContaining("Save") });
   });
   test("Edit creates a draft: refused with writes off, asked in confirm mode; Discard Draft runs (live 2026-11-23, #32)", () => {
     const edit: ControlFacts = { type: "sap.uxap.ObjectPageHeaderActionButton", id: "po::sap.suite.ui.generic.template.ObjectPage.view.Details::C_PurchaseOrderItemTP--edit", text: "Edit" };
     const a = assessAction({ do: "press", id: "C_PurchaseOrderItemTP--edit" }, edit, EN);
-    expect(decide(policyFromEnv({}), { do: "press", id: "C_PurchaseOrderItemTP--edit" }, a)).toMatchObject({ run: false, refused: expect.stringContaining("creates a draft") });
+    expect(decide(policyFromEnv({ SAP_WRITE: "off" }), { do: "press", id: "C_PurchaseOrderItemTP--edit" }, a)).toMatchObject({ run: false, refused: expect.stringContaining("creates a draft") });
     expect(decide(policyFromEnv({ SAP_WRITE: "confirm" }), { do: "press", id: "C_PurchaseOrderItemTP--edit" }, a)).toMatchObject({ run: false, confirm: expect.stringContaining("draft") });
     const discard = assessAction({ do: "press", id: "discard" }, button("Discard Draft", { id: `${V2}discard` }), EN);
-    expect(decide(policyFromEnv({}), { do: "press", id: "discard" }, discard).run).toBe(true);
+    expect(decide(policyFromEnv({ SAP_WRITE: "off" }), { do: "press", id: "discard" }, discard).run).toBe(true);
   });
 });
 

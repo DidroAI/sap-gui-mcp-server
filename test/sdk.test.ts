@@ -76,6 +76,15 @@ describe("acting and asserting", () => {
     await other.key(0);
     await bunExpect(other.key(11)).rejects.toThrow(/needs an onConfirm/);
   });
+  test("by default (no write, SAP_WRITE unset) a script is in confirm: without onConfirm a save is refused", async () => {
+    const fake = new FakeSap();
+    const sap = await connect({ surfaces: [fake], env: {} });
+    await sap.okcode("/nZA01");
+    await sap.set("ctxtZORD-KUNNR", "2200");
+    await sap.key(0);
+    await bunExpect(sap.key(11)).rejects.toThrow(/write is "confirm", the default: a script needs an onConfirm callback.*write: "on"/);
+    bunExpect(fake.orders.size).toBe(1);
+  });
   test("blocked transactions are refused", async () => {
     const sap = await connect({ surfaces: [new FakeSap()], blockTcodes: ["ZA01"] });
     await bunExpect(sap.okcode("/nZA01")).rejects.toThrow(/blocked/);

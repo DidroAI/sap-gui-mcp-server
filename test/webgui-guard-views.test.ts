@@ -336,7 +336,7 @@ describe("a key on a popup is the button it presses (KEY-03)", () => {
 });
 
 describe("closing the logon is its own risk (KEY-02)", () => {
-  const off = policyFromEnv({});
+  const off = policyFromEnv({ SAP_WRITE: "off" });
   const on = policyFromEnv({ SAP_WRITE: "on" });
   const allowed = policyFromEnv({ SAP_ALLOW_LOGOFF: "on" });
   for (const value of ["/nex", "/nend", "/i", "/i3", "/NEX"])

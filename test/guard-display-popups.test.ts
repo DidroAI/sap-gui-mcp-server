@@ -13,7 +13,7 @@ import { showsOnly } from "../src/core/words.js";
 // Synthetic screens, built like the live ones, in both formats: the Web GUI reader's full view and the
 // SAP GUI host's facts. Each case says what SAP_WRITE=off does with it: a refused write, or it runs.
 
-const off = policyFromEnv({});
+const off = policyFromEnv({ SAP_WRITE: "off" });
 const lines = (...l: string[]) => l.join("\n");
 
 // ---- Web GUI: full views ----------------------------------------------------------------------

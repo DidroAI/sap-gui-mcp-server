@@ -127,7 +127,7 @@ async function setup(env: Record<string, string> = {}, sap = new FakeSap()) {
   const dir = await mkdtemp(join(tmpdir(), "saprec-"));
   const record = recorderOptionsFromEnv({ SAP_RECORD_DIR: dir, ...env }, "test");
   record.now = () => new Date("2026-01-02T03:04:05Z");
-  const policy = policyFromEnv(env);
+  const policy = policyFromEnv({ SAP_WRITE: "off", ...env });
   const { server } = createServer({ policy, surfaces: [sap], record });
   const client = new Client({ name: "test", version: "0" });
   const [a, b] = InMemoryTransport.createLinkedPair();
@@ -372,7 +372,7 @@ describe("replay", () => {
   test("a step that may write is refused unless writes are on", async () => {
     const { test: t, sap } = await recordCreateAndDisplay();
     const before = sap.orders.size;
-    const r = await replay(sap.driver(), policyFromEnv({}), t);
+    const r = await replay(sap.driver(), policyFromEnv({ SAP_WRITE: "off" }), t);
     expect(r.steps[4]?.outcome).toBe("fail");
     expect(r.steps[4]?.failures[0]).toContain("writes are off");
     expect(sap.orders.size).toBe(before);

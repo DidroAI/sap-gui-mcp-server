@@ -65,7 +65,8 @@ export default defineConfig({
   outputDir: "sap-results",
   use: {
     surface: ${surface},
-${a.system ? `    system: ${q(a.system)},\n` : `    // system: "ABA/800",  // default: the first SAP session found\n`}    // Actions that may save in SAP: "off" refuses them, "confirm" asks, "on" runs them.
+${a.system ? `    system: ${q(a.system)},\n` : `    // system: "ABA/800",  // default: the first SAP session found\n`}    // Actions that may save in SAP: "off" refuses them, "on" runs them. "confirm" (the default) refuses
+    // them too here: a test has nobody to ask.
     write: ${q(a.write)},
     // allowTcodes: ["VA03", "SU3"],
     // blockTcodes: ["SE38", "SM30"],

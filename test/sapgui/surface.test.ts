@@ -167,7 +167,7 @@ describe("sapgui surface", () => {
   test("Save is refused while writes are off, in every form", async () => {
     const { surface: s, asked } = surface();
     const d = await s.open((await s.discover())[0]!);
-    const policy = policyFromEnv({});
+    const policy = policyFromEnv({ SAP_WRITE: "off" });
     for (const action of [
       { do: "key", key: 11 },
       { do: "okcode", value: "/11" },

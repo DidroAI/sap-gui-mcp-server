@@ -274,7 +274,7 @@ describe("F1: drafts", () => {
   });
   test("Edit is refused with writes off", () => {
     const a = assessAction({ do: "press", id: "C_PurchaseOrderItemTP--edit" }, { type: "sap.uxap.ObjectPageHeaderActionButton", id: "x::C_PurchaseOrderItemTP--edit", text: "Edit" });
-    expect(decide(policyFromEnv({}), { do: "press", id: "C_PurchaseOrderItemTP--edit" }, a).run).toBe(false);
+    expect(decide(policyFromEnv({ SAP_WRITE: "off" }), { do: "press", id: "C_PurchaseOrderItemTP--edit" }, a).run).toBe(false);
   });
 });
 

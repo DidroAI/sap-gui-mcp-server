@@ -73,8 +73,8 @@ ${TEST_HELP}
 ${AGENT_HELP}
 
 Environment:
-  SAP_WRITE=off|confirm|on      actions that may write to SAP: refused (default), confirmed by the user in the client
-                                (MCP elicitation; refused where the client cannot ask), or allowed
+  SAP_WRITE=confirm|off|on      actions that may write to SAP: confirmed by the user in the client (default; MCP
+                                elicitation, refused where the client cannot ask), refused (off: read-only), or allowed
   SAP_ALLOW_SYSTEMS=ABA/800,S4H only these systems (and clients)
   SAP_ALLOW_TCODES / SAP_BLOCK_TCODES   transactions the agent may / may not open or work in
   SAP_ALLOW_ORIGINS=https://myhost:44300  only browser tabs of these origins (comma list)

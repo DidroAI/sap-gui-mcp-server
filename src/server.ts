@@ -772,7 +772,7 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
   const canElicit = () => !!server.server.getClientCapabilities()?.elicitation?.form;
   /** Why a write is refused under confirm when the client cannot ask the user. */
   const cannotAsk = (reason: string) =>
-    `this action may write to SAP (${reason}) and writing is set to confirm, but this client cannot ask the user (it does not support MCP elicitation). Nothing ran. Tell the user what you would have saved; do not look for another way. ${LEAVE_UNSAVED} The user can set SAP_WRITE=on and approve sap_act in the client's own tool approval, or use a client that asks (MCP elicitation).`;
+    `this action may write to SAP (${reason}) and writing is set to confirm, but this client cannot ask the user (it does not support MCP elicitation). Nothing ran. Tell the user what you would have saved; do not look for another way. ${LEAVE_UNSAVED} To get writes, the user can use a client that asks (MCP elicitation), or set SAP_WRITE=on on a test system and approve sap_act in the client's own tool approval; SAP_WRITE=off makes the server read-only.`;
   /**
    * Confirm mode with a client that cannot ask the user: said once, before
    * anything else of the first answer, so the agent knows before the work

@@ -144,7 +144,7 @@ describe("FIORI-04: the guard around a draft", () => {
       expect(assessControl(facts, EN)).toMatchObject({ risk, rule });
     });
   test("with writes off: out of the draft and to the errors, not to Save", () => {
-    const off = policyFromEnv({});
+    const off = policyFromEnv({ SAP_WRITE: "off" });
     const run = (f: ControlFacts) => decide(off, { do: "press", id: f.id }, assessAction({ do: "press", id: f.id }, f, EN)).run;
     expect(run(TABLE[0]?.[1] as ControlFacts)).toBe(true);
     expect(run(TABLE[4]?.[1] as ControlFacts)).toBe(true);
@@ -187,7 +187,7 @@ describe("FIORI-03: opening an app, and the launchpad's own entries", () => {
   test("the transaction lists are checked against the intent before it opens", () => {
     const a = { do: "open", app: "#SalesOrder-manage?x=1" };
     const nav = assessAction(a, undefined);
-    expect(decide(policyFromEnv({}), a, nav)).toEqual({ run: true });
+    expect(decide(policyFromEnv({ SAP_WRITE: "off" }), a, nav)).toEqual({ run: true });
     expect(decide(policyFromEnv({ SAP_BLOCK_TCODES: "SalesOrder-manage" }), a, nav)).toMatchObject({ run: false, refused: expect.stringContaining("SALESORDER-MANAGE is blocked") });
     expect(decide(policyFromEnv({ SAP_ALLOW_TCODES: "SalesOrder-display" }), a, nav)).toMatchObject({ run: false });
     expect(decide(policyFromEnv({ SAP_ALLOW_TCODES: "SalesOrder-display,SalesOrder-manage" }), a, nav)).toEqual({ run: true });

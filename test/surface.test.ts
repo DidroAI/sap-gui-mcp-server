@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { recorderOptionsFromEnv } from "../src/record/recorder.js";
 import { codeFromEnv, createServer, type ServerOptions, withNextStep } from "../src/server.js";
+import { confirmLogNote } from "../src/stdio.js";
 import { FakeSurface } from "./fakes.js";
 
 /** Save (key 11) commits; everything else navigates. */
@@ -44,8 +45,8 @@ describe("tools/list", () => {
     }
   });
 
-  test("annotations: a closed system everywhere; reads are idempotent; acting is destructive", async () => {
-    const { client } = await setup({ SAP_WRITE: "confirm" });
+  test("annotations: a closed system everywhere; reads are idempotent; acting is destructive with writes on", async () => {
+    const { client } = await setup({ SAP_WRITE: "on" });
     const { tools } = await client.listTools();
     const of = (name: string) => tools.find((t) => t.name === name)?.annotations ?? {};
     for (const t of tools) expect([t.name, t.annotations?.openWorldHint]).toEqual([t.name, false]);
@@ -53,15 +54,19 @@ describe("tools/list", () => {
     for (const name of ["sap_act", "sap_replay"]) expect([name, of(name).destructiveHint]).toEqual([name, true]);
     expect([of("sap_use").readOnlyHint, of("sap_use").idempotentHint]).toEqual([true, true]);
   });
-  test("acting is destructive only when the guard lets a write or a log off through", async () => {
+  test("acting is destructive only when a write or a log off can run without the server asking", async () => {
+    // Under confirm (the default) the server asks before each write itself: the client need not ask before each call.
     for (const [env, want] of [
       [{}, false],
+      [{ SAP_WRITE: "confirm" }, false],
+      [{ SAP_WRITE: "off" }, false],
+      [{ SAP_WRITE: "confirm", SAP_ALLOW_LOGOFF: "on" }, true],
       [{ SAP_WRITE: "off", SAP_ALLOW_LOGOFF: "on" }, true],
       [{ SAP_WRITE: "on" }, true],
     ] as const) {
       const { client } = await setup(env);
       const { tools } = await client.listTools();
-      expect([env, tools.find((t) => t.name === "sap_act")?.annotations?.destructiveHint]).toEqual([env, want]);
+      for (const name of ["sap_act", "sap_replay"]) expect([env, name, tools.find((t) => t.name === name)?.annotations?.destructiveHint]).toEqual([env, name, want]);
     }
   });
   test("the server says who it is", async () => {
@@ -205,8 +210,28 @@ describe("error answers say what to do next", () => {
     for (const w of ["cannot ask the user", "Nothing ran", "do not look for another way", "SAP_WRITE=on", "MCP elicitation"]) expect([w, r.text.includes(w)]).toEqual([w, true]);
     expect(surface.acts()).toEqual([]);
   });
-  test("a write refused with writing off: tell the user, do not look for another way", async () => {
+  test("by default (confirm, never chosen), a client that cannot ask gets the write refused, and how to get writes or go read-only", async () => {
     const { surface, call } = await setup();
+    surface.add({ id: "chrome:1", system: "ABA", client: "800", transaction: "VA02" }, { assess });
+    const look = await call("sap_look");
+    expect(look.text).toStartWith("NOTE: writing is set to confirm, and this client cannot ask the user");
+    const r = await call("sap_act", { do: "key", key: 11 });
+    expect(r.error).toBe(true);
+    for (const w of ["writing is set to confirm", "cannot ask the user", "Nothing ran", "use a client that asks", "SAP_WRITE=on on a test system", "SAP_WRITE=off makes the server read-only"])
+      expect([w, r.text.includes(w)]).toEqual([w, true]);
+    expect(surface.acts()).toEqual([]);
+  });
+  test("the server log says once that a client that cannot ask gets writes refused, and how to get writes or silence it", () => {
+    const unset = confirmLogNote({}, false) ?? "";
+    expect(unset).toContain("SAP_WRITE is confirm (the default)");
+    for (const w of ["will be refused", "use a client that supports elicitation", "SAP_WRITE=on on a test system", "SAP_WRITE=off to make the server read-only"]) expect([w, unset.includes(w)]).toEqual([w, true]);
+    expect(confirmLogNote({ SAP_WRITE: "confirm" }, false)).toContain("SAP_WRITE=confirm, but");
+    expect(confirmLogNote({}, true)).toBeUndefined();
+    expect(confirmLogNote({ SAP_WRITE: "off" }, false)).toBeUndefined();
+    expect(confirmLogNote({ SAP_WRITE: "on" }, false)).toBeUndefined();
+  });
+  test("a write refused with writing off: tell the user, do not look for another way", async () => {
+    const { surface, call } = await setup({ SAP_WRITE: "off" });
     surface.add({ id: "chrome:1", system: "ABA" }, { assess });
     const r = await call("sap_act", { do: "key", key: 11 });
     expect(r.error).toBe(true);
