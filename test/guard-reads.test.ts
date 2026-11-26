@@ -15,7 +15,7 @@ import { assessAction as webAssess } from "../src/webgui/assess.js";
 // transactions and list functions refused, and a refusal text that told the agent to give up. Screens are
 // rebuilt from the runs' views.
 
-const off = policyFromEnv({});
+const off = policyFromEnv({ SAP_WRITE: "off" });
 const lines = (...l: string[]) => l.join("\n");
 const refusedText = (a: Assessment, action: Action = { do: "press", id: "x" }): string => {
   const v = decide(off, normalizeAction(action), a);

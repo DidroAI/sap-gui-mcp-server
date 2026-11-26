@@ -31,8 +31,10 @@ To report a vulnerability, see
   and types them into SAP's logon page itself; the server and the agent
   never see them
   ([extension/PRIVACY.md](https://github.com/DidroAI/sap-ui-automation/blob/main/extension/PRIVACY.md)).
-- **Writes are off by default.** Anything that may save is refused until
-  the user changes `SAP_WRITE`.
+- **Each write waits for the user's yes by default.** Anything that may
+  save runs only after the user accepts it in the MCP client
+  (`SAP_WRITE=confirm`), and is refused where the client cannot ask.
+  `SAP_WRITE=off` refuses every write.
 - **Files are written only to local folders**, named by environment
   variables (with defaults in the working directory), and only when a
   recording, saved test code, a download or a debug capture is asked for.
@@ -97,8 +99,8 @@ scrolling), **navigate** (typing, Enter, tabs, Back, Execute F8) or
 
 | `SAP_WRITE` | Read and navigate | Commit (Save, Post, Delete, Release, Yes on a save popup, unknown buttons) |
 | --- | --- | --- |
-| `off` (default) | allowed | refused |
-| `confirm` | allowed | run only after the user says yes to that exact action in the MCP client; refused when the client cannot ask |
+| `confirm` (default) | allowed | run only after the user says yes to that exact action in the MCP client; refused when the client cannot ask |
+| `off` (read-only) | allowed | refused |
 | `on` | allowed | allowed |
 
 Under every setting:
@@ -129,7 +131,8 @@ machine. See
 
 With `confirm`, the MCP client asks the user (MCP elicitation), so the
 agent cannot answer for them. A client without elicitation cannot ask, and
-every write is refused. With such a client, `SAP_WRITE=on` plus the
+every write is refused. Codex in Full Access mode (approvals set to never)
+accepts the question without showing it: there use `off`. With such a client, `SAP_WRITE=on` plus the
 client's own approval of each `sap_act` call is the alternative; that
 approval is then the only check on writes. The agent CLI cannot ask either.
 See
@@ -159,8 +162,8 @@ Start with a test or sandbox system. For a production system:
 - **A dedicated SAP user with display authorisations only.** The server
   cannot exceed what the user may do; this is the control that holds when
   everything else fails.
-- **`SAP_WRITE=off`** (the default). Use `confirm` only on systems where a
-  wrong save can be reversed.
+- **`SAP_WRITE=off`** (read-only; the default is `confirm`). Use `confirm`
+  only on systems where a wrong save can be reversed.
 - **`SAP_ALLOW_SYSTEMS=PRD/100`**: name the systems and clients the agent
   may see. Sessions on others are hidden.
 - **`SAP_ALLOW_TCODES`** with the transactions the task needs, or at least
@@ -202,7 +205,8 @@ an SAP screen; other programs on the same machine, which can reach the
 browser's DevTools endpoint and the network reader's local port; anyone who
 gets a recording or a capture.
 
-**Mitigations:** writes off by default and failing closed; allow lists of
+**Mitigations:** each write asked about by default (or refused, with
+`SAP_WRITE=off`), failing closed; allow lists of
 systems, transactions and browser origins on every call; the command field
 only through `okcode`; no logon, no passwords; confirmations bound to one
 action and the screen it was asked on; a write runs only on the screen the

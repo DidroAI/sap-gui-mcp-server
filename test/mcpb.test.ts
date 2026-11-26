@@ -57,7 +57,7 @@ describe("Claude Desktop extension manifest", () => {
 
   test("settings left blank mean the same as unset", () => {
     const env = envFor();
-    expect(env.SAP_WRITE).toBe("off");
+    expect(env.SAP_WRITE).toBe("confirm");
     expect(policyFromEnv(env)).toEqual(policyFromEnv({}));
     expect(surfacesFromEnv(env).map((s) => s.name)).toEqual(surfacesFromEnv({}).map((s) => s.name));
     expect(allowedOrigins(env)).toBeUndefined();
@@ -65,9 +65,9 @@ describe("Claude Desktop extension manifest", () => {
     expect(downloadDir(env, "/w")).toBe(downloadDir({}, "/w"));
   });
 
-  test("an empty SAP_WRITE is off, not an error", () => {
-    expect(policyFromEnv({ SAP_WRITE: "" }).write).toBe("off");
-    expect(policyFromEnv({ SAP_WRITE: " " }).write).toBe("off");
+  test("an empty SAP_WRITE is the default (confirm), not an error", () => {
+    expect(policyFromEnv({ SAP_WRITE: "" }).write).toBe("confirm");
+    expect(policyFromEnv({ SAP_WRITE: " " }).write).toBe("confirm");
     expect(policyFromEnv({ SAP_ALLOW_LOGOFF: "" }).allowLogoff).toBe(false);
     expect(() => policyFromEnv({ SAP_WRITE: "yes" })).toThrow(/SAP_WRITE/);
   });

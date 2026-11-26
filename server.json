@@ -2,8 +2,8 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.DidroAI/sap-ui-automation",
   "title": "SAP UI Automation",
-  "description": "Let agents see and drive your open SAP screens: SAP GUI, Web GUI, Fiori. Writes off by default.",
-  "version": "0.3.0",
+  "description": "Let agents see and drive your open SAP screens: SAP GUI, Web GUI, Fiori. Writes wait for your yes.",
+  "version": "0.4.1",
   "websiteUrl": "https://docs.didro.ai/sap-ui-automation/",
   "repository": {
     "url": "https://github.com/DidroAI/sap-ui-automation",
@@ -14,17 +14,17 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "sap-ui-automation",
-      "version": "0.3.0",
+      "version": "0.4.1",
       "runtimeHint": "npx",
       "transport": { "type": "stdio" },
       "environmentVariables": [
         {
           "name": "SAP_WRITE",
-          "description": "Actions that may save, post or delete: off (refused, the default), confirm (each waits for your yes in the client) or on.",
+          "description": "Actions that may save, post or delete: confirm (each waits for your yes in the client; the default), off (read-only: refused) or on.",
           "format": "string",
           "isRequired": false,
-          "default": "off",
-          "choices": ["off", "confirm", "on"]
+          "default": "confirm",
+          "choices": ["confirm", "off", "on"]
         },
         {
           "name": "SAP_ALLOW_SYSTEMS",

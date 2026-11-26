@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  *   sap-ui-automation            the stdio MCP server (default)
- *   sap-ui-automation setup      adds the server to Claude Code, Codex, Claude Desktop, Cursor, Windsurf and VS Code
+ *   sap-ui-automation setup      sets up the coding agents found here: the MCP server and the skills (src/cli/agents.ts)
  *   sap-ui-automation init       sets a project up: sap.config.ts, an example test, skills, MCP clients
  *   sap-ui-automation install --skills   copies the bundled agent skills into a project (or --global)
  *   sap-ui-automation doctor     checks what the server can reach on this machine
@@ -16,7 +16,9 @@ import { AGENT_COMMANDS, AGENT_HELP, agentCommand, daemonRunning } from "./cli/a
 import { doctorReport } from "./cli/doctor.js";
 import { EXTENSION_HELP, extensionCommand } from "./cli/extension.js";
 import { init } from "./cli/init.js";
-import { setup } from "./cli/setup.js";
+import { AGENT_IDS } from "./cli/agents.js";
+import { setupCommand } from "./cli/setup.js";
+import { useColor } from "./cli/style.js";
 import { installSkills, SKILL_TARGETS, type SkillTarget } from "./cli/skills.js";
 import { policyFromEnv } from "./core/guard.js";
 import { Registry } from "./core/registry.js";
@@ -27,13 +29,33 @@ import { serveStdio } from "./stdio.js";
 import { showTraceCommand, TRACE_HELP } from "./trace/cli.js";
 import { surfacesFromEnv } from "./surfaces.js";
 
+/** Wraps a list for the help text, indented. */
+function wrap(text: string, indent: number, width: number): string {
+  const lines: string[] = [];
+  let line = "";
+  for (const word of text.split(" ")) {
+    if (line && indent + line.length + 1 + word.length > width) {
+      lines.push(line);
+      line = word;
+    } else line = line ? `${line} ${word}` : word;
+  }
+  if (line) lines.push(line);
+  return lines.map((l) => " ".repeat(indent) + l).join("\n");
+}
+
 const HELP = `sap-ui-automation ${SERVER_VERSION}: an MCP server that sees and drives SAP screens you have open.
 
 Usage:
   sap-ui-automation            start the stdio server (what MCP clients run)
-  sap-ui-automation setup [claude-code|codex|claude-desktop|cursor|windsurf|vscode] [--extension] [--no-skills] [--dry-run]
-                                add the server to the MCP clients found on this machine, and its skills to
-                                Claude Code, Codex and Cursor (--no-skills: not the skills)
+  sap-ui-automation setup [<agent>...] [--agent <ids>] [--yes] [--dry-run] [--verbose] [--no-skills] [--no-mcp] [--extension]
+                                set up the coding agents found on this machine: the MCP server in each one's config,
+                                the skills in its skills folder (one copy in ~/.agents/skills, linked). In a terminal
+                                it asks which agents (the ones found are ticked); --yes, or no terminal: every agent
+                                found. --agent claude-code,codex (or '*': every one found) names them. --no-skills /
+                                --no-mcp: one part only; --dry-run: say what it would do; --verbose: one line per
+                                agent, with its paths. --extension: through the Chrome extension (an entry of ours
+                                gets SAP_BROWSER=extension), and installs its helper too. Agents:
+${wrap(AGENT_IDS.join(", "), 32, 118)}
   sap-ui-automation init [--yes] [--force] [--dry-run]
                                 set this project up: sap.config.ts, sap-tests/example.sap.ts, agent skills,
                                 MCP clients, .gitignore (asks a few questions; --yes takes the defaults)
@@ -53,8 +75,8 @@ ${TEST_HELP}
 ${AGENT_HELP}
 
 Environment:
-  SAP_WRITE=off|confirm|on      actions that may write to SAP: refused (default), confirmed by the user in the client
-                                (MCP elicitation; refused where the client cannot ask), or allowed
+  SAP_WRITE=confirm|off|on      actions that may write to SAP: confirmed by the user in the client (default; MCP
+                                elicitation, refused where the client cannot ask), refused (off: read-only), or allowed
   SAP_ALLOW_SYSTEMS=ABA/800,S4H only these systems (and clients)
   SAP_ALLOW_TCODES / SAP_BLOCK_TCODES   transactions the agent may / may not open or work in
   SAP_ALLOW_ORIGINS=https://myhost:44300  only browser tabs of these origins (comma list)
@@ -105,12 +127,7 @@ async function main(argv: string[]): Promise<number> {
     console.log(report.text);
     return report.ok ? 0 : 1;
   }
-  if (cmd === "setup") {
-    const only = argv.slice(1).filter((a) => !a.startsWith("--"));
-    const r = setup({ dryRun: argv.includes("--dry-run"), extension: argv.includes("--extension"), skills: !argv.includes("--no-skills"), only });
-    console.log(r.lines.join("\n"));
-    return 0;
-  }
+  if (cmd === "setup") return setupCommand(argv.slice(1), { out: (l) => console.log(l), tty: !!process.stdin.isTTY && !!process.stdout.isTTY, color: useColor(process.stdout) });
   if (cmd === "browser") {
     try {
       const w = await openSapWindow(process.env);

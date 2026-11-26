@@ -12,7 +12,8 @@
  * It runs over the same `Registry` and `Driver`s as the MCP server, and every
  * action goes through the same guard (core/guard.ts): with SAP_WRITE=off a
  * save is refused in a script exactly as it is for an agent. A script has
- * nobody to ask, so `write: "confirm"` refuses unless `onConfirm` says yes.
+ * nobody to ask, so `write: "confirm"` (the default) refuses unless
+ * `onConfirm` says yes.
  *
  * Waits: the drivers already wait for SAP after each action (the round trip,
  * busy indicators, a page that redraws). Assertions (`expect`) retry on top
@@ -48,7 +49,7 @@ export function isAt(screen: ParsedScreen, place: Place): boolean {
 /** Errors already named with their step: an error that leaves nested steps is named once, by the innermost. */
 const named = new WeakSet<object>();
 
-export const SDK_VERSION = "0.3.0";
+export const SDK_VERSION = "0.4.1";
 
 /** The guard said no: the action did not run. */
 export class Refused extends Error {
@@ -70,7 +71,7 @@ export interface ConnectOptions {
   system?: string;
   /** Any session reference `sap_sessions` accepts: a list number, an id, a transaction, part of a title. */
   session?: string;
-  /** Actions that may write: refused (default), confirmed by `onConfirm`, or run. Default: SAP_WRITE. */
+  /** Actions that may write: "confirm" (asks `onConfirm`; without one, refused), "off" (refused) or "on" (run). Default: SAP_WRITE, else "confirm". */
   write?: WriteMode;
   allowTcodes?: string[];
   blockTcodes?: string[];
@@ -443,7 +444,7 @@ export class Sap {
     if (verdict.run) return;
     if ("refused" in verdict) throw new Refused(`${actionText(action)}: ${verdict.refused}`);
     const yes = this.options.onConfirm ? await this.options.onConfirm({ action, reason: verdict.confirm, session }) : false;
-    if (!yes) throw new Refused(`${actionText(action)} may write to SAP (${verdict.confirm}) and was not confirmed${this.options.onConfirm ? "" : ' (write: "confirm" needs an onConfirm callback in a script)'}.`);
+    if (!yes) throw new Refused(`${actionText(action)} may write to SAP (${verdict.confirm}) and was not confirmed${this.options.onConfirm ? "" : ' (write is "confirm", the default: a script needs an onConfirm callback to ask; on a test system, write: "on" lets it run; write: "off" refuses every write)'}.`);
   }
 
   /** Types a command into the command field: "/nVA03", "/n", "/11". */

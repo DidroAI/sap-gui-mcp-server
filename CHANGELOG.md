@@ -80,6 +80,22 @@ change the tools or the view format.
 
 ### Changed
 
+- **`SAP_WRITE=confirm` is the default**, instead of `off`. Each action
+  that may write waits for your yes, asked in the client (MCP elicitation)
+  or, in a script, by `onConfirm`. A client that cannot ask (Claude
+  Desktop, Cursor, `claude -p`, `codex exec`), the agent CLI (`sap-gui`),
+  and a test or script without `onConfirm` still get every write refused;
+  the refusal and the server's log say how to get writes.
+- To keep the old behaviour, set `SAP_WRITE=off`: read-only, every write
+  refused, no question and no note. `on` is unchanged.
+- In Codex's Full Access mode (approvals set to never), Codex accepts the
+  question without showing it, so `confirm` protects nothing there: use
+  `off`.
+- `sap_act`, `sap_replay` and `sap_code_test` are marked destructive only
+  with `SAP_WRITE=on` or `SAP_ALLOW_LOGOFF=on`. Under `confirm` the server
+  asks before each write itself, so clients such as Codex do not also ask
+  before every navigation.
+
 - Network reader: a shorter compact view. A grid names each column by one
   title and its empty columns by id only; a table control names its open
   columns right of the edge by title only; the keys every screen has, and on
@@ -87,6 +103,58 @@ change the tools or the view format.
   text; an icon with a quick info shows the text. 17% fewer characters over
   the screens of two captured runs (46% on Easy Access). The full view and a
   look by id keep everything.
+
+## 0.4.1 (2026-11-26)
+
+### Changed
+
+- The extension (0.4.1) shows `npx -y sap-ui-automation setup --extension`
+  as its one setup command, in the first-run steps and wherever it says
+  how to install the helper.
+- `setup` prints a short summary instead of a line per agent: the agents
+  grouped by what they got (server and skills, server only, skills only,
+  not set up, skipped), counts instead of paths, short names. What needs
+  doing by hand comes in one "Needs your attention" block, one item per
+  issue with the agents under it, and the next steps are numbered. The old
+  per-agent lines, with their paths, are behind the new `--verbose`.
+- The picker lists the agents found first and the others under "Not
+  found", and leaves one line ("19 agents selected") once answered.
+- Colour on a terminal (a green ✓, a yellow !, dim secondary text), none
+  when `NO_COLOR` is set or the output is not a terminal.
+- `setup --extension` switches an existing `sap-ui-automation` entry to the
+  extension: in a JSON file or Codex's `config.toml` it adds
+  `SAP_BROWSER=extension` to the entry's env and changes nothing else. For
+  Claude Code it gives the command that re-adds the entry with it.
+
+## 0.4.0 (2026-11-26)
+
+### Changed
+
+- `setup` works like `npx skills add`, with the MCP server too: it lists the
+  coding agents it finds, asks in a terminal which to set up (the ones found
+  are ticked), and gives each one the server and the skills. It knows 25
+  agents: besides Claude Code, Codex, Claude Desktop, Cursor, Windsurf and
+  VS Code, now GitHub Copilot CLI, Gemini CLI, Antigravity, OpenCode, Cline,
+  Kiro, Zed, Goose, Amp, Junie, Warp, Qwen Code and Factory Droid (server
+  and skills), and Roo Code, Crush, Augment, Continue, Kilo Code and Trae
+  (skills only). See the table in [CLI commands](docs/reference/cli.md#the-agents).
+- New options: `--agent <ids>` / `-a` (`'*'`: every agent found), `--yes` /
+  `-y` (no question), `--no-mcp` (the skills only). Names given as before
+  (`setup codex cursor`) still work.
+- The skills get one copy in `~/.agents/skills` and a link to it in each
+  other agent's folder (a copy where no link can be made). A rerun updates
+  the copy in place.
+- Config files keep their comments and layout where setup adds the server.
+- For agents setup does not know, `npx skills add DidroAI/sap-ui-automation`
+  installs the skills.
+
+## 0.3.1 (2026-11-26)
+
+### Changed
+
+- `setup --extension` installs the extension's helper too: one command sets
+  up the agent apps, the skills and the helper. Its closing lines say what
+  to do in Chrome, with the store's link.
 
 ### Documentation
 

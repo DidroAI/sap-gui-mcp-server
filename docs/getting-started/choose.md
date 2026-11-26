@@ -60,7 +60,8 @@ With `SAP_BROWSER=extension`, run `setup --extension` instead of `setup`.
    ([what each ✗ means](../faq.md)).
 2. Restart your agent, open an SAP screen, log on, and ask: *"Look at my
    SAP screen and tell me which fields are required."*
-3. Writes stay off until you change `SAP_WRITE`:
+3. Each action that may save waits for your yes, or is refused where your
+   client cannot ask. `SAP_WRITE` changes that:
    [Your first session](first-session.md).
 
 Stuck? Open a [setup problem](https://github.com/DidroAI/sap-ui-automation/issues/new?template=setup_problem.yml)

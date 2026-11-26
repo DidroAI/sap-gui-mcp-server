@@ -17,7 +17,7 @@ Set up the sap-ui-automation MCP server (npm package sap-ui-automation) on this 
      A Chrome window opens (the SAP window). Ask me to open my SAP address there (Web GUI or the Fiori launchpad) and to log on, and wait until I say it is done.
    - SAP GUI for Windows: in SAP GUI options, Accessibility & Scripting → Scripting, tick "Enable scripting" and untick the two "Notify when a script…" boxes, then restart SAP Logon. If doctor says scripting is not allowed on the SAP system, I need my SAP basis team to set sapgui/user_scripting = TRUE: tell me so and go on.
 4. When doctor says Ready, ask me to open an SAP screen (in SAP GUI, or Web GUI or Fiori in the SAP window), and to restart this agent if setup said so. Then call sap_sessions and sap_look, and describe the screen you see in three lines.
-5. Tell me how writes work: by default the server refuses anything that may save in SAP; SAP_WRITE=confirm makes it ask me first. Do not change that setting unless I ask.
+5. Tell me how writes work: by default the server asks me before anything that may save in SAP, and refuses it if this client cannot ask me; SAP_WRITE=off makes it read-only. Do not change that setting unless I ask.
 
 Never type an SAP password and never log on to SAP for me: I log on myself.
 ```

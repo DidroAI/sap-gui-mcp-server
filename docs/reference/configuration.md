@@ -4,7 +4,7 @@ Every setting is an environment variable of the server process. Set it in
 your MCP client's `env` block, or in the shell before a CLI command:
 
 ```sh
-claude mcp add sap-ui-automation --scope user -e SAP_WRITE=confirm -- npx -y sap-ui-automation
+claude mcp add sap-ui-automation --scope user -e SAP_WRITE=off -- npx -y sap-ui-automation
 SAP_ALLOW_SYSTEMS=ABA/800 npx -y sap-ui-automation sessions
 ```
 
@@ -20,7 +20,7 @@ Lists are separated by commas or spaces and are not case-sensitive.
 
 | Variable | Default | Values | Effect |
 | --- | --- | --- | --- |
-| `SAP_WRITE` | `off` | `off`, `confirm`, `on` | what happens to actions that may write to SAP: refused, asked about in your MCP client (refused when it cannot ask), or run. See [Safety model](../concepts/safety.md) and [Confirm mode](../concepts/confirm-mode.md) |
+| `SAP_WRITE` | `confirm` | `confirm`, `off`, `on` | what happens to actions that may write to SAP: asked about in your MCP client (refused when it cannot ask), refused (`off`: read-only), or run. See [Safety model](../concepts/safety.md) and [Confirm mode](../concepts/confirm-mode.md) |
 | `SAP_ALLOW_SYSTEMS` | all | `ABA/800,S4H` | only these systems, optionally with a client, are visible and usable. Checked on every tool call: a session that moves to another system is refused from then on |
 | `SAP_ALLOW_TCODES` | all | `VA03,MM03` | the only transactions the agent may open or work in. On Fiori, app intents (`SalesOrder-display`) |
 | `SAP_BLOCK_TCODES` | none | `SE38,SM30` | transactions the agent may not open or work in |

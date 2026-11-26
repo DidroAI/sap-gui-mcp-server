@@ -21,8 +21,9 @@ ctxtVBAK-VKORG  field  Sales Organization = ""  (edit)
 ctxtVBAK-VTWEG  field  Distribution Channel = ""  (edit)
 ```
 
-- **Writes are off by default.** Actions that may save to SAP are refused
-  unless you allow them, or your client asks you first
+- **You confirm each write.** An action that may save to SAP waits for
+  your yes in your client, and is refused where the client cannot ask.
+  `SAP_WRITE=off` makes the server read-only
   ([safety model](docs/concepts/safety.md)).
 - **Your sessions, your authorisations.** It works in the sessions you
   opened, as you. The server never logs on and never sees a password.
@@ -54,10 +55,10 @@ npx -y sap-ui-automation setup             # add the server and the skills
 npx -y sap-ui-automation doctor            # check what it can reach
 ```
 
-`setup` adds the server to Claude Code, Codex, Claude Desktop, Cursor,
-Windsurf and VS Code where it finds them, and installs the skills
-`sap-ui-automation` and `sap-ui-automation-cli` for Claude Code, Codex and
-Cursor. Restart the agent afterwards. One client by hand:
+`setup` finds your coding agents (Claude Code, Codex, Cursor, Copilot,
+Gemini CLI, OpenCode, Zed, Goose and [more](docs/reference/cli.md#the-agents)),
+lets you pick, and gives each one the server and the skills
+`sap-ui-automation` and `sap-ui-automation-cli`. Restart the agent afterwards. One client by hand:
 
 | Client | |
 | --- | --- |
@@ -82,8 +83,8 @@ the server's environment ([guide](docs/guides/chrome.md)):
 - `extension`: your everyday Chrome, through the **UI Automation for SAP**
   extension. Add it from the
   [Chrome Web Store](https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn),
-  then run `npx -y sap-ui-automation extension helper` and
-  `npx -y sap-ui-automation setup --extension`
+  then run `npx -y sap-ui-automation setup --extension`, which sets up
+  your agent apps, the skills and the extension's helper in one go
   ([steps](docs/guides/chrome.md#install-the-extension)).
 - `attach`: your running Chrome or Edge, with remote debugging allowed in
   `chrome://inspect/#remote-debugging`.
@@ -126,13 +127,22 @@ SAP Cloud ALM.
 
 ## Writes
 
-Every snippet above is read-only: writes are refused. Set `SAP_WRITE` in
-the server's environment to change that:
+`SAP_WRITE` in the server's environment decides what happens to an action
+that may save, post or delete:
 
-- `confirm`: your client asks you before each write. Claude Code, VS Code
-  and Codex can ask; other clients may refuse the write instead
+- `confirm` (the default): your client asks you before each write. Claude
+  Code, VS Code and Codex can ask. A client that cannot ask (Claude
+  Desktop, Cursor, headless runs such as `claude -p` or `codex exec`) gets
+  every write refused
   ([which clients can ask](docs/concepts/confirm-mode.md#which-clients-can-ask)).
+  So does the `sap-gui` command line: it cannot ask either.
+- `off`: read-only. Every write is refused. It was the default in 0.4
+  and earlier; set it to keep that behaviour.
 - `on`: writes run; your client's tool approval is the only check.
+
+In Codex's Full Access mode (approvals set to never), Codex accepts the
+question without showing it to you, so `confirm` protects nothing there:
+use `off`.
 
 Use a test system and a user with only the authorisations you want the
 agent to have. [Safety model](docs/concepts/safety.md) says what the guard

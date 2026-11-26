@@ -16,7 +16,7 @@ Or in `~/.cursor/mcp.json` (every project) or `.cursor/mcp.json` (one project):
 }
 ```
 
-Writes stay `off`. Cursor lists MCP elicitation as supported, but it is
+The snippet sets `off` (read-only); the default is `confirm`. Cursor lists MCP elicitation as supported, but it is
 reported unreliable (the question not showing on Windows, buttons hidden,
 a short timeout); try `confirm` on a test system before relying on it.
 

@@ -1,6 +1,6 @@
 {
   "name": "sap-ui-automation",
-  "version": "0.3.0",
+  "version": "0.4.1",
   "description": "MCP server, CLI and SDK that let an agent see and drive SAP screens: SAP GUI for Windows, SAP GUI for HTML (Web GUI) and SAP Fiori, in a compact, complete text view",
   "license": "MIT",
   "author": "Didro",
@@ -87,6 +87,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
+    "jsonc-parser": "3.3.1",
     "playwright-core": "1.65.1",
     "zod": "4.6.7"
   },

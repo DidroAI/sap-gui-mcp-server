@@ -12,7 +12,7 @@ sap-ui-automation <command> [options]
 | Command | Does | Exit code |
 | --- | --- | --- |
 | (none) | starts the stdio MCP server: what MCP clients run | runs until the client closes it |
-| [`setup`](#setup) | adds the server to the MCP clients found on this machine | 0 |
+| [`setup`](#setup) | sets up the coding agents found on this machine: the MCP server and the skills | 0; 1 when cancelled; 2 for an unknown agent or option |
 | `init`, `install`, `test`, `show-trace`, agent CLI | see the table below | |
 | [`doctor`](#doctor) | checks what the server can reach, and says what to change | 0 ready, 1 not ready |
 | [`browser`](#browser) | opens the SAP window (the Chrome the server starts for Web GUI and Fiori) | 0; 1 when Chrome could not start |
@@ -56,51 +56,143 @@ from Chrome without closing it.
 ## setup
 
 ```sh
-sap-ui-automation setup [claude-code|codex|claude-desktop|cursor|windsurf|vscode]... [--extension] [--no-skills] [--dry-run]
+sap-ui-automation setup [<agent>...] [--agent <ids>] [--yes] [--dry-run] [--verbose] [--no-skills] [--no-mcp] [--extension]
 ```
 
-Adds the server, as `sap-ui-automation`, to the MCP clients it finds, and
-the bundled skills to those that read skills:
+Sets up the coding agents on this machine, the way `npx skills add` does
+for skills, but with both parts:
 
-| Client | How | Found when |
-| --- | --- | --- |
-| Claude Code | `claude mcp add sap-ui-automation --scope user -- <command>` | the `claude` command is on the PATH |
-| Codex | a `[mcp_servers.sap-ui-automation]` table in `~/.codex/config.toml` (`$CODEX_HOME/config.toml`) | the `codex` command is on the PATH, or the folder exists |
-| Claude Desktop | an `mcpServers["sap-ui-automation"]` entry in `claude_desktop_config.json` | its folder exists (macOS: `~/Library/Application Support/Claude`; Windows: `%APPDATA%\Claude`) |
-| Cursor | an `mcpServers["sap-ui-automation"]` entry in the project's `.cursor/mcp.json` when that file exists, else in `~/.cursor/mcp.json` | one of those exists |
-| Windsurf (Devin Desktop) | an `mcpServers["sap-ui-automation"]` entry in `~/.config/devin/mcp_config.json` (`$XDG_CONFIG_HOME/devin`; Windows: `%APPDATA%\devin`) | that folder or `~/.codeium/windsurf` exists |
-| VS Code (Copilot) | a `servers["sap-ui-automation"]` entry in the project's `.vscode/mcp.json` | that file exists, or `vscode` is named. Otherwise it is not listed |
+- the MCP server, as `sap-ui-automation`, in each agent's MCP config;
+- the skills `sap-ui-automation` and `sap-ui-automation-cli`, in each
+  agent's skills folder, so the agent uses one when a task matches it.
+
+In a terminal it asks which agents to set up: the ones found come first,
+ticked, then the others under "Not found" (↑/↓ move, space ticks, `a`
+ticks all, Enter confirms). Once answered, the list gives way to one line,
+such as "19 agents selected". With `--yes`, or when it does not run in a
+terminal, it prints the agents found on one line and sets up every one.
+Names given on the command line win over both.
 
 | Option | Effect |
 | --- | --- |
-| `claude-code`, `codex`, `claude-desktop`, `cursor`, `windsurf`, `vscode` | only these clients; default every one found |
-| `--extension` | new entries get `SAP_BROWSER=extension` (through the Chrome extension) |
-| `--no-skills` | do not install the skills |
-| `--dry-run` | say what would change, change nothing |
+| `<agent>...` | these agents (ids from the table below), found or not |
+| `--agent <ids>`, `-a <ids>` | the same, comma-separated or repeated; `'*'` is every agent found |
+| `--yes`, `-y` | no question: every agent found |
+| `--dry-run` | say what would change, change nothing (the same summary, with "would") |
+| `--verbose`, `-v` | one line per agent, with its config file and skills folder, instead of the grouped summary |
+| `--no-skills` | the MCP server only |
+| `--no-mcp` | the skills only |
+| `--extension` | through the Chrome extension: new entries get `SAP_BROWSER=extension`, an existing entry of ours is switched to it (see below), and the extension's helper is installed too |
 
-The skills (`sap-ui-automation`, `sap-ui-automation-cli`) go where each app that has the
-server reads a user's skills, so the agent uses one when a task matches it:
+It prints a short summary, the agents grouped by what they got:
 
-| App | Folder |
-| --- | --- |
-| Claude Code | `~/.claude/skills` (`$CLAUDE_CONFIG_DIR/skills` when set) |
-| Codex | `~/.agents/skills` |
-| Cursor | the Claude Code folder when Claude Code is set up too, else the Codex folder, else `~/.cursor/skills` |
-| Claude Desktop, Windsurf, VS Code | none: they read no skills from disk |
+```
+✓ Server and skills  Claude Code, Codex, Cursor, Windsurf, Copilot CLI, Gemini CLI, … (14)
+✓ Skills only        Roo Code, Crush, Continue, Kilo Code, Trae
+  Server added for 9 agents, already there for 2, switched to the extension for Codex, Cursor and Windsurf
+  Skills installed in ~/.agents/skills, linked for 15 agents
+✓ Chrome helper      installed
+```
 
-Each skill folder it writes holds a `.sap-ui-automation` marker: running
-setup again replaces those copies with the current version, and a folder
-of the same name that is not from this package is left as it is.
+An agent it could not set up is under "Not set up", one it had nothing to do
+for under "Skipped". Then, only when there is something to do by hand, a
+"Needs your attention" block, one item per issue with the agents under it:
+an entry left under the server's old name, with the command that removes
+it; an entry without `SAP_BROWSER=extension` that setup does not change; a
+write or a helper install that failed, with what to do instead. Last, the
+next steps, numbered. `--verbose` prints one line per agent instead of the
+groups, with its config file and skills folder, and the skills' old names
+removed in each folder.
 
-- It never overwrites an existing `sap-ui-automation` entry.
-- It keeps a `.bak` copy of a file before it changes it.
-- The command it writes depends on how it was started: `npx -y
-  sap-ui-automation` when run through `npx`, `sap-ui-automation` when
-  installed on the PATH, else Node with the path of the script. On Windows
-  it is wrapped in `cmd /c`.
-- When it finds no client, it prints the command to add by hand.
-- It adds no settings: the server starts with `SAP_WRITE=off`. Add
-  variables in the client's configuration.
+Colour (a green ✓, a yellow !, dim secondary text) is used only when the
+output is a terminal and `NO_COLOR` is not set; the text is the same
+without it.
+
+### `--extension` and an entry that is already there
+
+With `--extension`, an existing `sap-ui-automation` entry in a JSON file or
+in Codex's `config.toml` gets `SAP_BROWSER=extension` added to its env and
+is reported as switched to the extension. Nothing else in the entry or the
+file changes: its command, its other variables and fields, the other
+servers. An entry that sets `SAP_BROWSER` to another value, Goose's YAML
+file, and an entry in a form setup does not read are left as they are and
+named under "Needs your attention", with what to add.
+
+Claude Code's entry is read with `claude mcp get sap-ui-automation`.
+`claude mcp` cannot change an entry, and what it prints is not enough to
+re-add one faithfully, so setup does not touch it: when it lacks the
+variable, setup gives the command that re-adds it with its own variables
+kept, `claude mcp remove ... && claude mcp add ... -e SAP_BROWSER=extension ...`.
+Check its arguments before you run it: an argument with a space reads as two.
+
+### The agents
+
+| Agent | Id | Found when | MCP server | Skills folder |
+| --- | --- | --- | --- | --- |
+| Claude Code | `claude-code` | `claude` on the PATH | `claude mcp add sap-ui-automation --scope user` | `~/.claude/skills` (`$CLAUDE_CONFIG_DIR/skills`) |
+| Codex | `codex` | `codex` on the PATH, or `~/.codex` | `[mcp_servers.sap-ui-automation]` in `~/.codex/config.toml` (`$CODEX_HOME`) | `~/.agents/skills` |
+| Claude Desktop | `claude-desktop` | its folder (macOS `~/Library/Application Support/Claude`, Windows `%APPDATA%\Claude`) | `mcpServers` in `claude_desktop_config.json` | none |
+| Cursor | `cursor` | `~/.cursor`, or `.cursor/mcp.json` in the project | `mcpServers` in the project's `.cursor/mcp.json` when it exists, else `~/.cursor/mcp.json` | `~/.agents/skills` |
+| Windsurf (Devin Desktop) | `windsurf` | `~/.config/devin` (`%APPDATA%\devin`) or `~/.codeium/windsurf` | `mcpServers` in `~/.config/devin/mcp_config.json` | `~/.agents/skills` |
+| VS Code (GitHub Copilot) | `vscode` | `.vscode/mcp.json` in the project | `servers` in the project's `.vscode/mcp.json` | `~/.copilot/skills` |
+| GitHub Copilot CLI | `copilot-cli` | `copilot` on the PATH, or `~/.copilot` | `mcpServers` in `~/.copilot/mcp-config.json` (`$COPILOT_HOME`) | `~/.copilot/skills` |
+| Gemini CLI | `gemini-cli` | `gemini` on the PATH, or `~/.gemini/settings.json` | `mcpServers` in `~/.gemini/settings.json` | `~/.gemini/skills` |
+| Antigravity | `antigravity` | `~/.gemini/antigravity` | `mcpServers` in `~/.gemini/config/mcp_config.json` | `~/.gemini/config/skills` |
+| OpenCode | `opencode` | `opencode` on the PATH, or `~/.config/opencode` | `mcp.servers` in `~/.config/opencode/opencode.json` (or `.jsonc`) | `~/.config/opencode/skills` |
+| Cline | `cline` | `cline` on the PATH, or `~/.cline` | `mcpServers` in `~/.cline/data/settings/cline_mcp_settings.json` | `~/.agents/skills` |
+| Roo Code | `roo` | `~/.roo` | not written (see below) | `~/.roo/skills` |
+| Kiro | `kiro` | `kiro-cli` on the PATH, or `~/.kiro` | `mcpServers` in `~/.kiro/settings/mcp.json` | `~/.kiro/skills` |
+| Zed | `zed` | `~/.config/zed` (Windows `%APPDATA%\Zed`) | `context_servers` in its `settings.json` | `~/.agents/skills` |
+| Goose | `goose` | `goose` on the PATH, or `~/.config/goose` (Windows `%APPDATA%\Block\goose\config`) | an `extensions:` entry in `config.yaml` | `~/.config/goose/skills` |
+| Amp | `amp` | `amp` on the PATH, or `~/.config/amp` | `amp.mcpServers` in `~/.config/amp/settings.json` (or `.jsonc`) | `~/.config/agents/skills` |
+| Junie | `junie` | `junie` on the PATH, or `~/.junie` | `mcpServers` in `~/.junie/mcp/mcp.json` | `~/.junie/skills` |
+| Warp | `warp` | `~/.warp` | `mcpServers` in `~/.warp/.mcp.json` (not on Windows) | `~/.agents/skills` |
+| Qwen Code | `qwen-code` | `qwen` on the PATH, or `~/.qwen` | `mcpServers` in `~/.qwen/settings.json` | `~/.qwen/skills` |
+| Factory Droid | `droid` | `droid` on the PATH, or `~/.factory` | `mcpServers` in `~/.factory/mcp.json` | `~/.factory/skills` |
+| Crush, Augment, Continue, Kilo Code, Trae | `crush`, `augment`, `continue`, `kilo`, `trae` | their folder in the home folder | not written | `~/.config/crush/skills`, `~/.augment/skills`, `~/.continue/skills`, `~/.kilo/skills`, `~/.trae/skills` |
+
+`~` is the home folder (`%USERPROFILE%` on Windows); `~/.config` is
+`$XDG_CONFIG_HOME` when it is set. Each MCP format comes from the agent's
+own documentation. Where that documentation does not give the file (Roo
+Code keeps its in VS Code's storage) or the format (Crush now reads a
+`crushrc` file), setup installs the skills only: add the server in the
+agent's MCP settings with the command setup prints. The Cline file is the
+one its docs name for the Cline CLI; the VS Code extension may keep its own
+list.
+
+### How the skills are installed
+
+One real copy goes to `~/.agents/skills/<name>`, which Codex, Cursor,
+Windsurf, Cline, Zed and Warp read. Every other agent's folder gets a link
+to it (a junction on Windows). Where no link can be made, the folder gets a
+copy instead, and the summary says so. Agents that share a folder are written
+once. Running setup again updates the copy in place and leaves the links.
+
+Each copy holds a `.sap-ui-automation` marker. A folder of the same name
+that is not from this package is never replaced or removed. Copies under
+the skills' old names (`sap-gui-drive`, `sap-gui-cli`) are removed only when
+they are this package's.
+
+For an agent setup does not know, `npx skills add DidroAI/sap-ui-automation`
+installs the same skills.
+
+### What it never does
+
+- It never replaces an existing `sap-ui-automation` entry; with
+  `--extension` it only adds `SAP_BROWSER=extension` to its env (see above).
+- It keeps the rest of a config file as it was: other servers, settings,
+  comments (in the JSON files that allow them) and layout.
+- It keeps a `.bak` copy of a config file before it first changes it.
+- A file it cannot read safely is left alone, with the entry to add by hand.
+- It names an entry left under the server's old names (`sap-gui-mcp-server`,
+  `sap-gui`) and says how to remove it.
+- It adds no settings: the server starts with `SAP_WRITE=confirm`, the
+  default. Add variables in the agent's configuration.
+
+The command it writes depends on how it was started: `npx -y
+sap-ui-automation` when run through `npx`, `sap-ui-automation` when
+installed on the PATH, else Node with the path of the script. On Windows it
+is wrapped in `cmd /c`.
 
 ## doctor
 

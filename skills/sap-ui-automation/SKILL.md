@@ -113,11 +113,11 @@ Saving, posting, releasing and deleting change the system for real. The
 user's write setting decides what happens, and `sap_act` says which one
 applies:
 
-- **off** (default): the action is refused. Tell the user what you would
+- **confirm** (default): the client asks the user before the action runs.
+  If they decline, ask how to go on. A client that cannot ask gets the
+  action refused: tell the user what you would have saved and stop.
+- **off** (read-only): the action is refused. Tell the user what you would
   have saved and stop.
-- **confirm**: the client asks the user before the action runs. If they
-  decline, ask how to go on. A client that cannot ask gets the action
-  refused, as under off.
 - **on**: the action runs. Say what you saved, with the document number.
 
 Save with `{"do":"key","key":"Save"}` on every surface (in Web GUI the

@@ -26,8 +26,9 @@ Fiori and SAP S/4HANA are trademarks of SAP SE.
 ## Install (Mac, Windows, Linux)
 
 Add it from the [Chrome Web Store](https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn)
-(unlisted: it opens from this link, not from a search), then install its
-helper with `npx -y sap-ui-automation extension helper`. You need Node.js 22
+(unlisted: it opens from this link, not from a search), then run
+`npx -y sap-ui-automation setup --extension`: it sets up your agent apps
+and the skills, and installs the extension's helper. You need Node.js 22
 or later (`node --version` in a terminal; if it is missing, install it from
 nodejs.org).
 
@@ -108,7 +109,7 @@ sap-ui-automation. For Claude Desktop (Settings → Developer → Edit Config):
 Quit and reopen Claude Desktop. The agent then has two more tools:
 `sap_systems` lists your systems, and `sap_logon` opens one and logs on.
 `SAP_WRITE=off` keeps it to reading: saving and posting in SAP are refused
-until you allow them (see the main README).
+(the default, `confirm`, would ask you first; see the main README).
 
 To check the setup, run:
 
