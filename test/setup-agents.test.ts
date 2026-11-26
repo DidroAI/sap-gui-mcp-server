@@ -139,6 +139,7 @@ describe("choosing the agents", () => {
     expect(out[0]).toBe("Agents found: Codex, Kiro.");
     expect(out).toContain("Setting up: Codex, Kiro.");
     expect(existsSync(join(home, ".kiro", "settings", "mcp.json"))).toBe(true);
+    expect(out).toContain("Next: restart Kiro; start a new Codex session (a new session loads what changed), then ask your agent to look at your SAP screen.");
   });
 
   test("a terminal: the picker lists every agent with the found ones ticked; its answer is set up", async () => {

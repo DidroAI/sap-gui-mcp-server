@@ -363,10 +363,12 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
       `or add this command to your agent's MCP settings by hand: ${command.join(" ")}`,
       `Skills for other agents: npx skills add DidroAI/sap-ui-automation`,
     );
-  const how = restart.map((a) => (a.reload ? `${a.reload}` : `restart ${a.name}`));
+  const plain = restart.filter((a) => !a.reload).map((a) => a.name);
+  const and = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : (xs[0] ?? ""));
+  const how = [...(plain.length ? [`restart ${and(plain)}`] : []), ...restart.flatMap((a) => (a.reload ? [a.reload] : []))];
   lines.push(
     "",
-    how.length ? `Next: ${how.join(", ")} (a new session loads the server and the skills), then ask your agent to look at your SAP screen.` : "Next: ask your agent to look at your SAP screen.",
+    how.length ? `Next: ${how.join("; ")} (a new session loads what changed), then ask your agent to look at your SAP screen.` : "Next: ask your agent to look at your SAP screen.",
     ...(opts.extension
       ? [
           `In Chrome: add UI Automation for SAP if you have not (${STORE_URL}),${helperOk ? " restart Chrome once," : ""} then click its icon and Pair in the side panel, and add your SAP systems there.`,
