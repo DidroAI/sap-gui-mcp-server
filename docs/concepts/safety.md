@@ -14,8 +14,8 @@ yourself.
 
 | Setting | Effect |
 | --- | --- |
-| `SAP_WRITE=off` (default) | actions that may write to SAP are refused: Save, Post, Delete, Release, Approve, "Yes" on a save popup |
-| `SAP_WRITE=confirm` | your MCP client asks you before each such action; refused when it cannot ask (see [Confirm mode](confirm-mode.md)) |
+| `SAP_WRITE=confirm` (default) | your MCP client asks you before each action that may write to SAP (Save, Post, Delete, Release, Approve, "Yes" on a save popup); refused when it cannot ask (see [Confirm mode](confirm-mode.md)) |
+| `SAP_WRITE=off` | read-only: every such action is refused |
 | `SAP_WRITE=on` | such actions run |
 | `SAP_ALLOW_SYSTEMS=ABA/800,S4H` | only these systems, optionally with a client, are visible and usable. Checked on every tool, each time: a session that moves to another system is refused from then on |
 | `SAP_ALLOW_ORIGINS=https://myhost:44300` | only browser tabs of these origins are looked at |
@@ -115,9 +115,10 @@ one table for all surfaces.
 
 ### The cost of failing closed
 
-With `SAP_WRITE=off`, some harmless buttons are refused too (for example
-"Continue" on a popup whose text the server does not know as safe). The
-agent is told why, and can tell you.
+Some harmless buttons count as commits too (for example "Continue" on a
+popup whose text the server does not know as safe): with `SAP_WRITE=confirm`
+you are asked about them, with `off` they are refused. The agent is told
+why, and can tell you.
 
 ### A screen that only displays (Web GUI)
 

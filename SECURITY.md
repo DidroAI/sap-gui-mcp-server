@@ -119,10 +119,11 @@ has no server side, and no account.
 
 ### Mitigations
 
-- **Writes are off by default.** Each surface classifies an action as read,
-  navigate or commit before it runs, and fails closed: anything not known
-  to be safe is a commit. Commits are refused (`SAP_WRITE=off`), asked
-  about in your MCP client (`confirm`), or allowed (`on`).
+- **Each write waits for your yes by default.** Each surface classifies an
+  action as read, navigate or commit before it runs, and fails closed:
+  anything not known to be safe is a commit. Commits are asked about in
+  your MCP client (`SAP_WRITE=confirm`, the default; refused when the
+  client cannot ask), refused (`off`: read-only), or allowed (`on`).
 - **Where:** allow lists of systems and clients (`SAP_ALLOW_SYSTEMS`), of
   browser origins (`SAP_ALLOW_ORIGINS`), and allow and block lists of
   transactions (`SAP_ALLOW_TCODES`, `SAP_BLOCK_TCODES`), checked on every
@@ -161,7 +162,8 @@ SAP's own authorisations.
   in `SAP_BLOCK_TCODES`.
 - **Confirm mode needs a client that asks you.** With `SAP_WRITE=confirm`
   the server asks you through the MCP client (elicitation); a client that
-  cannot ask gets every write refused. With `SAP_WRITE=on`, the only check
+  cannot ask gets every write refused. Codex in Full Access mode accepts
+  the question without showing it: use `off` there. With `SAP_WRITE=on`, the only check
   left is your client's own approval of each `sap_act` call, which you
   configure in the client. The agent CLI asks
   nothing itself.

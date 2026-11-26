@@ -16,7 +16,7 @@ interface Ask {
 
 async function setup(env: Record<string, string> = {}, elicit?: (ask: Ask) => "accept" | "decline" | "cancel" | Promise<"accept" | "decline" | "cancel">) {
   const surface = new FakeSurface("webgui");
-  const { server } = createServer({ policy: policyFromEnv(env), surfaces: [surface] });
+  const { server } = createServer({ policy: policyFromEnv({ SAP_WRITE: "off", ...env }), surfaces: [surface] });
   const client = new Client({ name: "test", version: "0" }, { capabilities: elicit ? { elicitation: {} } : {} });
   const asked: Ask[] = [];
   if (elicit)

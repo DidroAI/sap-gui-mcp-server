@@ -396,6 +396,22 @@ describe("what test.use may set (review, 2026-11-24)", () => {
     expect(r.tests[0]?.error?.message).toMatch(/Refused|refused|confirm/);
     expect(fake.acts.some((a) => a.do === "key" && a.key === 11)).toBe(false);
   });
+  test("by default (SAP_WRITE unset: confirm) a test's save is refused; write: on lets it run", async () => {
+    const saved = process.env.SAP_WRITE;
+    delete process.env.SAP_WRITE;
+    try {
+      const dir = await project({
+        "a.sap.ts": `${head}test("refused", async ({ sap }) => { await sap.okcode("/nZA01"); await sap.set("ctxtZORD-KUNNR", "2200"); await sap.key(0); await sap.key(11); });\ntest("saves", { use: { write: "on" } }, async ({ sap }) => { await sap.okcode("/nZA01"); await sap.set("ctxtZORD-KUNNR", "2200"); await sap.key(0); await sap.key(11); });`,
+      });
+      const fake = new FakeSap();
+      const r = await runTests({ config: await configFor(dir), surfaces: [fake] });
+      expect(r.tests.map((t) => t.status)).toEqual(["failed", "passed"]);
+      expect(r.tests[0]?.error?.message).toContain('write is "confirm", the default');
+    } finally {
+      if (saved === undefined) delete process.env.SAP_WRITE;
+      else process.env.SAP_WRITE = saved;
+    }
+  });
 });
 
 describe("the sap fixture", () => {

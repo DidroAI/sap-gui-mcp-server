@@ -3,7 +3,7 @@
     "sap-ui-automation": {
       "command": "npx",
       "args": ["-y", "sap-ui-automation"],
-      "env": { "SAP_WRITE": "${SAP_WRITE:-off}" }
+      "env": { "SAP_WRITE": "${SAP_WRITE:-confirm}" }
     }
   }
 }

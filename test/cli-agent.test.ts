@@ -75,7 +75,7 @@ const pathOf = (out: string) => /(?:screen|full answer|screenshot): (\S+)$/m.exe
 
 describe("look", () => {
   test("prints the header line and the file that holds the screen", async () => {
-    const { surface, run, read } = setup();
+    const { surface, run, read } = setup({ SAP_WRITE: "off" });
     surface.add({ id: "chrome:1", system: "XYZ", transaction: "ZT01" }, { view: SCREEN });
     const r = await run(["look"]);
     expect(r.code).toBe(0);
@@ -83,7 +83,7 @@ describe("look", () => {
     expect(read(pathOf(r.out))).toBe(SCREEN);
   });
   test("--print prints the whole screen; --id, --rows and --cols reach sap_look", async () => {
-    const { surface, run } = setup();
+    const { surface, run } = setup({ SAP_WRITE: "off" });
     surface.add({ id: "chrome:1", system: "XYZ" }, { view: SCREEN });
     expect((await run(["look", "--print"])).out).toBe(SCREEN);
     await run(["look", "--id", "cntlGRID/shell", "--rows=2-3", "--cols", "A,B"]);
@@ -204,7 +204,16 @@ describe("confirm", () => {
     surface.add({ id: "chrome:1", system: "XYZ", transaction: "ZT01" }, { view: SCREEN, assess });
     const look = await run(["look"]);
     expect(look.code).toBe(0);
-    expect(look.lines[0]).toStartWith("NOTE: writing is set to confirm, and this client cannot ask the user");
+    expect(look.lines[0]).toStartWith("NOTE: writing is set to confirm, and the sap-gui CLI cannot ask the user");
+    const r = await run(["act", "key", "11"]);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("cannot ask the user");
+    expect(surface.acts()).toEqual([]);
+  });
+
+  test("confirm is the default, and the CLI still refuses a write without SAP_WRITE=on", async () => {
+    const { surface, run } = setup({});
+    surface.add({ id: "chrome:1", system: "XYZ", transaction: "ZT01" }, { view: SCREEN, assess });
     const r = await run(["act", "key", "11"]);
     expect(r.code).toBe(1);
     expect(r.err).toContain("cannot ask the user");

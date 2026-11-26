@@ -43,10 +43,12 @@ ask the user before a call; the server's own guard does not read them.
 | `sap_code_test` | false | see below | | false |
 
 An empty cell means the tool does not set that hint. `destructiveHint` on
-`sap_act`, `sap_replay` and `sap_code_test` follows the settings: false with
-`SAP_WRITE=off` and `SAP_ALLOW_LOGOFF` off, where the guard refuses every write
-and every log off; true otherwise. Clients that ask before each call of a
-destructive tool (Codex, for one) then ask only when a write can go through. `sap_use` is
+`sap_act`, `sap_replay` and `sap_code_test` follows the settings: true with
+`SAP_WRITE=on` or `SAP_ALLOW_LOGOFF=on`, where a write or a log off can run
+without the server asking; false otherwise. Under `SAP_WRITE=confirm` (the
+default) the server asks before each write itself, and under `off` it
+refuses them. Clients that ask before each call of a destructive tool
+(Codex, for one) then do not ask before every navigation. `sap_use` is
 read-only for SAP: it changes only which session the other tools use by
 default. `openWorldHint` is false because the tools work in one closed SAP
 system, not the open web.
@@ -218,7 +220,7 @@ Other answers:
   only on the screen the server last showed the agent; sent again, it runs
   ([Safety model](../concepts/safety.md#a-write-goes-only-to-the-screen-the-agent-saw)).
   This also holds for the first write of a batch.
-- **Asked** (with `SAP_WRITE=confirm`): the client asks the user through
+- **Asked** (with `SAP_WRITE=confirm`, the default): the client asks the user through
   MCP elicitation, and the answer is the result once they accept, or
   `Not run: the user declined ...`, which tells the agent to stop and not
   retry. A client without elicitation gets `Refused: ... this client cannot
@@ -489,7 +491,7 @@ the screen after the run (`isError`).
 
 Answers are text. Code that reads them without `SAP_STRUCTURED=on` can rely
 on this order for `sap_act`, top to bottom (each line only
-when it applies). Under `SAP_WRITE=confirm` with a client without MCP
+when it applies). Under `SAP_WRITE=confirm` (the default) with a client without MCP
 elicitation, the first `sap_look` or `sap_act` answer of the server starts
 with one more line before these: `NOTE: writing is set to confirm, and this
 client cannot ask the user ...`.

@@ -12,7 +12,7 @@ import { buttonLine, shortcutText } from "../src/webgui/labels.js";
 // Live run of 2026-11-23 (NOTES P5, P7, P10): S/4 Web GUI button names "Company Code  ((Ctrl+F2))", "Enter
 // Emphasized ((Enter))" and a menu button's screen-reader hint; ME21N / VA01 item buttons refused with writes off.
 
-const off = policyFromEnv({});
+const off = policyFromEnv({ SAP_WRITE: "off" });
 const lines = (...l: string[]) => l.join("\n");
 const EN = { language: "EN" };
 

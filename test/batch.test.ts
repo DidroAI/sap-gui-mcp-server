@@ -17,7 +17,7 @@ import { FakeSap } from "./record-fakes.js";
 async function setup(env: Record<string, string> = {}, elicit?: "accept" | "decline") {
   const sap = new FakeSap();
   const dir = await mkdtemp(join(tmpdir(), "sapbatch-"));
-  const { server } = createServer({ policy: policyFromEnv(env), surfaces: [sap], record: recorderOptionsFromEnv({ SAP_RECORD_DIR: dir }, "test") });
+  const { server } = createServer({ policy: policyFromEnv({ SAP_WRITE: "off", ...env }), surfaces: [sap], record: recorderOptionsFromEnv({ SAP_RECORD_DIR: dir }, "test") });
   const client = new Client({ name: "test", version: "0" }, { capabilities: elicit ? { elicitation: {} } : {} });
   const asked: string[] = [];
   if (elicit)

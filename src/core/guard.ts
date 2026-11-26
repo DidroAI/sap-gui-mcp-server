@@ -8,7 +8,10 @@
  */
 import type { Action, Assessment, SessionInfo } from "./types.js";
 
-/** off: commits are refused (default). confirm: each commit runs after the user's yes, asked through the client (MCP elicitation) or a script's onConfirm. on: commits run. */
+/**
+ * confirm (default): each commit runs after the user's yes, asked through the client (MCP elicitation) or a
+ * script's onConfirm; refused where nobody can be asked. off: read-only, every commit refused. on: commits run.
+ */
 export type WriteMode = "off" | "confirm" | "on";
 
 export interface Policy {
@@ -52,7 +55,7 @@ export function checkedList(name: string, entries: string[], kind: "tcode" | "sy
 
 export function policyFromEnv(env: Record<string, string | undefined> = process.env): Policy {
   // An empty value counts as unset: clients such as Claude Desktop pass "" for a setting left blank.
-  const w = (env.SAP_WRITE?.trim() || "off").toLowerCase();
+  const w = (env.SAP_WRITE?.trim() || "confirm").toLowerCase();
   if (w !== "off" && w !== "confirm" && w !== "on") throw new Error(`SAP_WRITE must be off, confirm or on (got "${env.SAP_WRITE}")`);
   const off = (env.SAP_ALLOW_LOGOFF?.trim() || "off").toLowerCase();
   if (off !== "off" && off !== "on") throw new Error(`SAP_ALLOW_LOGOFF must be off or on (got "${env.SAP_ALLOW_LOGOFF}")`);
@@ -241,10 +244,11 @@ export function decide(policy: Policy, action: Action, assessment: Assessment, a
 }
 
 /**
- * The destructiveHint of the tools that act: false only when the guard refuses every write and every
- * log off (SAP_WRITE=off, SAP_ALLOW_LOGOFF off). Clients such as Codex ask before each call of a tool
- * marked destructive: with writes off that is a question per navigation for nothing the guard lets through.
+ * The destructiveHint of the tools that act: true only when a write or a log off can run without the
+ * server asking the user first (SAP_WRITE=on, or SAP_ALLOW_LOGOFF=on). Under confirm the server asks
+ * before each write itself (and refuses it when it cannot ask); under off it refuses every write.
+ * Clients such as Codex ask before each call of a tool marked destructive: a question per navigation.
  */
 export function mayDestroy(policy: Policy): boolean {
-  return policy.write !== "off" || policy.allowLogoff === true;
+  return policy.write === "on" || policy.allowLogoff === true;
 }
