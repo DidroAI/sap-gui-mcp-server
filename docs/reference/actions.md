@@ -369,7 +369,7 @@ refused with the verbs Fiori takes.
 
 ### What the network reader refuses
 
-The network reader (`SAP_GUI_METHOD=diag`, experimental) acts with the
+The network reader (experimental) acts with the
 keyboard and the mouse, and refuses an action when it cannot be sure what
 the input does. Each refusal says what to do instead.
 

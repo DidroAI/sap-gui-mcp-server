@@ -6,7 +6,7 @@ view format and the same actions.
 
 | Surface | Name in `sap_sessions` | How the server reaches it | Runs on |
 | --- | --- | --- | --- |
-| SAP GUI for Windows | `sapgui` | SAP GUI scripting, through Windows PowerShell; or, experimental, SAP GUI's network traffic (`SAP_GUI_METHOD=diag`) | Windows |
+| SAP GUI for Windows | `sapgui` | SAP GUI scripting, through Windows PowerShell, and, experimental, SAP GUI's network traffic (the network reader); both by default, `SAP_GUI_METHOD` keeps to one | Windows |
 | SAP GUI for HTML (Web GUI) | `webgui` | Chrome, through the DevTools protocol: a Chrome window the server starts, your Chrome with remote debugging, or your Chrome through the extension (`SAP_BROWSER`) | Windows, macOS, Linux |
 | SAP Fiori | `fiori` | the same Chrome, through SAPUI5 in the page | Windows, macOS, Linux |
 
@@ -19,7 +19,8 @@ Mac, use Web GUI or Fiori.
 The default is `sapgui,webgui,fiori` on Windows and `webgui,fiori`
 elsewhere. An unknown name is an error at start.
 
-SAP GUI for Windows can be read two ways: SAP GUI scripting, or `diag`,
+SAP GUI for Windows can be read two ways: SAP GUI scripting, or the
+network reader (`diag`),
 which reads SAP GUI from its network traffic. By default both run:
 `sap_sessions` lists what each one sees (a session read from the traffic
 says "through the DIAG router"), and the agent works in the session it

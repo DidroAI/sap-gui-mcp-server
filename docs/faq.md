@@ -1,7 +1,8 @@
 # FAQ and troubleshooting
 
-Start with `doctor`. It checks what the server can reach on this machine
-and says what to change:
+This page answers the questions people ask most about setting up and using
+sap-ui-automation. Start with `doctor`. It checks what the server can reach
+on this machine and says what to change:
 
 ```sh
 npx -y sap-ui-automation doctor
@@ -112,7 +113,12 @@ on Windows.
 **Fix.** Run the server on the Windows machine where SAP GUI is open, or
 use Web GUI or Fiori in Chrome, which work everywhere.
 
-## Troubleshooting: the network reader (`SAP_GUI_METHOD=diag`)
+## Troubleshooting: the network reader
+
+On Windows the network reader runs next to SAP GUI scripting by default.
+`doctor` checks both and is ready when one of them works: a ✗ here does
+not matter while scripting sees your session, unless you set
+`SAP_GUI_METHOD=diag`.
 
 ### DIAG router
 
@@ -299,7 +305,7 @@ No. SAP GUI for Java has no scripting interface the server can use.
 ### Does it work with SNC-encrypted connections?
 
 With SAP GUI scripting, yes: scripting works inside SAP GUI, after
-decryption. With the network reader (`SAP_GUI_METHOD=diag`), no: it reads
+decryption. With the network reader, no: it reads
 the traffic, and cannot read SNC-encrypted connections.
 
 ### Does it work with Microsoft Edge?
@@ -312,9 +318,13 @@ and Safari are not supported.
 
 ### Does it log on?
 
-No. It never logs on, never stores a password, never types into a password
-field, and refuses every action on a logon screen. It works in sessions you
-have opened, as you, under your SAP authorisations. The exported Playwright
+The server does not. It never logs on, never stores a password, never
+types into a password field, and refuses every action on a logon screen.
+It works in sessions you have opened, as you, under your SAP
+authorisations. With the Chrome extension (`SAP_BROWSER=extension`), the
+extension can log on to a system you registered in it, with the password
+it keeps in your keychain; the server and the agent never see that
+password ([Chrome](guides/chrome.md#use-your-everyday-chrome-with-the-extension)). The exported Playwright
 spec is the one thing that logs on, from `SAP_USER` and `SAP_PASSWORD`: it
 is a file you run yourself, not the server.
 

@@ -1,6 +1,8 @@
 # Choose your setup
 
-Four questions take you to the right page. Each path ends with
+Which setup do you need? Four questions take you to the right page: which
+SAP screens, which Chrome, whether SAP GUI scripting is allowed, and which
+agent. Each path ends with
 `npx -y sap-ui-automation doctor`, which checks what the server can reach
 and says what to change.
 
@@ -46,9 +48,9 @@ Both methods run by default (`SAP_GUI_METHOD=auto`); set
 
 | Your agent | Path |
 | --- | --- |
-| Claude Code, Codex, Cursor, Claude Desktop, Windsurf, VS Code | `npx -y sap-ui-automation setup` adds the server to each one it finds, and the skills to Claude Code and Codex. One client by hand: [Install in your client](installation.md) |
+| Claude Code, Codex, Cursor, Claude Desktop, Windsurf, VS Code, Gemini CLI, Copilot CLI, OpenCode, Goose, Cline and [more](../reference/cli.md#the-agents) | `npx -y sap-ui-automation setup` adds the server and the skills to each one it finds. One client by hand: [Install in your client](installation.md) |
 | Claude Desktop, one click | the `.mcpb` file from the [latest release](https://github.com/DidroAI/sap-ui-automation/releases/latest) ([details](installation.md#claude-desktop)) |
-| Another MCP client (Gemini CLI, Copilot CLI, opencode, Goose, Cline…) | a stdio server with the command `npx -y sap-ui-automation` ([details](installation.md#other-clients)) |
+| Another MCP client | a stdio server with the command `npx -y sap-ui-automation` ([details](installation.md#other-clients)) |
 | An agent with a shell and no MCP, or you want screens kept out of the chat | the `sap-gui` command line and its skill ([CLI for coding agents](../guides/cli-for-agents.md)) |
 | No agent: scripts and tests in CI | the SDK and the test runner ([Writing tests](../guides/sdk-tests.md)), or replay what an agent recorded ([Recording and replay](../guides/record-replay.md)) |
 
@@ -71,7 +73,7 @@ with the output of `doctor`.
 
 | Surface | Windows | macOS | Linux | Method |
 | --- | --- | --- | --- | --- |
-| SAP GUI for Windows | yes | no | no | SAP GUI scripting (default), or the network reader (experimental) |
+| SAP GUI for Windows | yes | no | no | SAP GUI scripting and the network reader (experimental), both by default |
 | Web GUI | yes | yes | yes | Chrome: `launch`, `attach` or `extension` |
 | Fiori | yes | yes | yes | Chrome: `launch`, `attach` or `extension` |
 | SAP GUI for Java | no | no | no | not supported |

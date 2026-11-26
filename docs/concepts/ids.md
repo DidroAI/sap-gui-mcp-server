@@ -1,7 +1,8 @@
 # Ids and handles
 
-Every line of the view starts with the id of its control. The agent acts on
-those ids, as the view shows them.
+Every line of the view starts with the id of its control, and the agent
+acts on those ids as the view shows them. This page explains what the ids
+are on each surface and how the compact view shortens them.
 
 ## Scripting ids and handles
 
@@ -62,8 +63,8 @@ its intent (`#SalesOrder-manage`), not by an id; see [Chrome: Web GUI and Fiori]
 
 ## The network reader
 
-Without scripting (`SAP_GUI_METHOD=diag`) there are no scripting ids in the
-traffic. Controls go by SAP field names (`VBAK-VBELN`), function codes in
+A session read by the network reader has no scripting ids: there are none
+in the traffic. Controls go by SAP field names (`VBAK-VBELN`), function codes in
 braces (`{HEAD}`), button texts (`Back`), `FIELD[n]` table cells and
 `@row,col` positions; a scripting id written nearly right is still taken
 when it means one thing. See [Network reader](../guides/network-reader.md#ids).

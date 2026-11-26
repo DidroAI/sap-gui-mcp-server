@@ -264,7 +264,7 @@ that logs on by itself, export to Playwright.
 
 ## With the network reader
 
-Recordings made with `SAP_GUI_METHOD=diag` name controls the way that
+Recordings made on a session the network reader reads name controls the way that
 method's actions do, and record the method, so they are replayed with the
 same method and are not exported to VBS. Information popups are passed with
 their Enter key. A recorded Enter on a popup that only informed is not sent

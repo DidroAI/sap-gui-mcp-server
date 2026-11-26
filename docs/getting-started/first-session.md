@@ -1,6 +1,8 @@
 # Your first session
 
-This page assumes the server is added to your MCP client
+Your first session goes in four steps: log on to SAP, ask the agent in
+plain words, watch it work with a few tools, and answer when it wants to
+save. This page assumes the server is added to your MCP client
 ([Install in your client](installation.md)) and that
 `npx -y sap-ui-automation doctor` says Ready.
 
@@ -9,7 +11,8 @@ This page assumes the server is added to your MCP client
 Open the SAP screen you want to work in and log on yourself: an SAP GUI
 window, a Web GUI tab or a Fiori launchpad tab in Chrome. The server never
 logs on, never types a password, and refuses every action on a logon
-screen.
+screen. (With the Chrome extension, the agent can ask the extension to log
+on to a system you registered: [Chrome](../guides/chrome.md#use-your-everyday-chrome-with-the-extension).)
 
 To check what the server finds, outside the agent:
 
