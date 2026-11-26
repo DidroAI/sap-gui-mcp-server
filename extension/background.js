@@ -1318,7 +1318,7 @@ async function pairWithHelper() {
 // they would sit unencrypted on disk. Without a keychain no password is saved (the user logs on in the tab).
 async function savePassword(sys, password) {
   const h = await helperInfo(true);
-  if (!h.ok) throw new Error("To save a password, install the helper first: in a terminal, run npx -y sap-ui-automation extension install, then restart Chrome. Or leave the password empty and log on in the tab.");
+  if (!h.ok) throw new Error("To save a password, install the helper first: in a terminal, run npx -y sap-ui-automation setup --extension, then restart Chrome. Or leave the password empty and log on in the tab.");
   if (!h.keychain) throw new Error("This computer has no keychain the helper can use, so the password is not saved. Leave it empty and log on in the tab.");
   const r = await native({ cmd: "secret.set", id: sys.id, value: password, label: sys.name });
   if (!r || !r.ok) throw new Error(`The keychain did not take the password${r && r.error ? `: ${r.error}` : ""}.`);
