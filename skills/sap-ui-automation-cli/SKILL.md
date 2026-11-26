@@ -37,7 +37,7 @@ find an id, read values or see a list.
    submits them, as one JSON list in single quotes.
 
    ```sh
-   sap-gui act '[{"do":"set","id":"ctxtVBAK-AUART","value":"OR"},{"do":"set","id":"ctxtVBAK-VKORG","value":"1000"},{"do":"key","key":0}]'
+   sap-gui act --session '<verified-id>' '[{"do":"set","id":"ctxtVBAK-AUART","value":"OR"},{"do":"set","id":"ctxtVBAK-VKORG","value":"1000"},{"do":"key","key":0}]'
    ```
 
 3. **Read the answer, not the screen again.** It prints what ran, then the

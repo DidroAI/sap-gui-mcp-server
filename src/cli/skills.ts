@@ -14,7 +14,7 @@
  * --force): then it is kept, as the user may have edited it.
  */
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, constants, cpSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -194,10 +194,26 @@ const releasedFiles: Record<string, readonly string[]> = {
   "sap-ui-automation-cli": ["946fba483b3a535ebb0dac860df77032ffe4b34626ad8ea77c11167fb03ce44f", "b330a1f7430faaef60d5d3470d46e89f765c6544ba17a20ac86f39694b3afd0f"],
 };
 
+/** Read one regular file by its opened handle; a link or a changed entry cannot establish ownership. */
+function skillFile(path: string): Buffer | undefined {
+  let fd: number | undefined;
+  try {
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
+    const file = fstatSync(fd);
+    const entry = lstatSync(path);
+    if (file.isFile() && entry.isFile() && entry.dev === file.dev && entry.ino === file.ino) return readFileSync(fd);
+  } catch {
+    // A missing, inaccessible or concurrently replaced file is not an ownership match.
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+  return undefined;
+}
+
 function releasedFile(path: string, key: string): boolean {
   const hashes = releasedFiles[key];
-  if (!hashes || !lstat(path)?.isFile()) return false;
-  return hashes.includes(createHash("sha256").update(readFileSync(path)).digest("hex"));
+  const bytes = hashes && skillFile(path);
+  return !!bytes && hashes.includes(createHash("sha256").update(bytes).digest("hex"));
 }
 
 export function ownSkill(target: string, skill?: Skill): boolean {
@@ -255,15 +271,14 @@ const remove = (p: string) => (lstat(p)?.isSymbolicLink() ? unlinkSync(p) : rmSy
 function sameSkill(skill: Skill, target: string): boolean {
   try {
     const matches = (source: string, dest: string): boolean => {
-      const entries = readdirSync(source);
+      const entries = readdirSync(source, { withFileTypes: true });
       const installed = readdirSync(dest).filter((name) => dest !== target || name !== SKILL_MARKER);
       if (entries.length !== installed.length) return false;
-      return entries.every((name) => {
-        const a = join(source, name);
-        const b = join(dest, name);
-        const entry = lstat(b);
-        if (statSync(a).isDirectory()) return !!entry?.isDirectory() && matches(a, b);
-        return !!entry?.isFile() && readFileSync(a).equals(readFileSync(b));
+      return entries.every((entry) => {
+        const a = join(source, entry.name);
+        const b = join(dest, entry.name);
+        if (entry.isDirectory()) return !!lstat(b)?.isDirectory() && matches(a, b);
+        return skillFile(b)?.equals(readFileSync(a)) === true;
       });
     };
     return matches(skill.dir, target);
