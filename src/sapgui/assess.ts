@@ -337,6 +337,9 @@ export function assess(screen: Screen, action: Action, target?: Control): Assess
       if (!target) throw new ActionError(`No control "${action.id ?? ""}" on this screen. Use an id from sap_look (the screen may have changed).`);
       if (BUTTON_TYPES.has(target.type)) return assessButton(screen, target, "button ");
       if (INERT_TYPES.has(target.type)) return { risk: "navigate", reason: action.do };
+      // A click on a grid's or a table's row: the driver selects the row (and puts the cursor on the cell), as "select" with "row".
+      if ((action.do === "press" || action.do === "click") && action.row !== undefined && ((target.type === "GuiShell" && target.sub === "GridView") || target.type === "GuiTableControl"))
+        return { risk: "navigate", reason: "select a row" };
       // A shell (grid, tree, HTML viewer): selecting it moves the focus. Anything else is not known.
       if (target.type === "GuiShell" && action.do !== "press" && action.do !== "click") return { risk: "navigate", reason: action.do };
       return notSafe(`${action.do} on ${target.type} "${shown(target)}"`);

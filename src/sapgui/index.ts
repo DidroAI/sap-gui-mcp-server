@@ -24,11 +24,11 @@ import { type Action, ActionError, type Assessment, type Driver, type LookOption
 import { isLogonScreen, LOGON_REFUSAL } from "../core/words.js";
 import { assess } from "./assess.js";
 import type { Control, DoctorEngine, DoctorLocal, Screen, SessionFacts, SessionsFacts, Transport } from "./facts.js";
-import { fullView, listsOnly } from "./format.js";
+import { esc, forAgent, fullView, listsOnly } from "./format.js";
 import { vkeyNumber } from "./keys.js";
 import { HostError, MAX_TIMEOUT_MS, type PowershellPolicy, powershellPolicy, PsHost, READ_TIMEOUT_MS } from "./host.js";
 import { relativeId, resolve, resolveStrict } from "./resolve.js";
-import { focusedRow, gridColumn, localKey, nextField, tableCell } from "./table.js";
+import { cellParts, focusedRow, gridColumn, localKey, nextField, tableCell, tableOfColumn } from "./table.js";
 
 const PREFIX = "sapgui:";
 /** How long a screen read may serve the step that follows it (assess, then act). */
@@ -108,10 +108,45 @@ function explain(e: unknown): Error {
   }
 }
 
+/**
+ * Why a field takes no input. After an error or a warning SAP opens only the
+ * fields its message is about (live: FB50 after "Enter valid date" refused
+ * the header text, and the agent read "invalid argument" as a wrong value).
+ */
+export function readOnlyText(id: string, screen: Screen): string {
+  const bar = screen.windows.flatMap((w) => w.controls).find((c) => c.type === "GuiStatusbar" && c.text);
+  const type = bar?.messageType ?? "";
+  if (type === "E" || type === "W")
+    return `${id} is read-only now: after the ${type === "E" ? "error" : "warning"} "${esc(bar?.text)}" SAP keeps the other fields closed. ${type === "E" ? "Correct the field the message names, then Enter" : "Enter accepts the warning"}; the fields open again, then set this one.`;
+  return `${id} is read-only on this screen: it takes no input here (a display, or a field SAP fills in). Change mode or another screen may have it.`;
+}
+
+/**
+ * The screen after an action that SAP GUI keeps to itself, worked out from
+ * the screen before it: "set" into a text field or a text editor (its text),
+ * "focus" (the cursor). undefined for every other action, and for a field
+ * the screen does not have: then the screen is read again.
+ *
+ * Each read walks every control of the screen through COM; FB50's table of
+ * 74 columns took seconds, and a batch read it twice per field typed (live,
+ * 2026-11-25: 23 s for 7 cells and Enter).
+ */
+export function typed(screen: Screen, action: Record<string, unknown>): Screen | undefined {
+  if (action.do !== "set" && action.do !== "focus") return undefined;
+  const id = String(action.id ?? "");
+  const at = screen.windows.flatMap((w) => w.controls).find((c) => c.id === id);
+  if (!at) return undefined;
+  if (action.do === "focus") return { ...screen, focus: id };
+  const text = at.type === "GuiTextField" || at.type === "GuiCTextField" || (at.type === "GuiShell" && at.sub === "TextEdit");
+  if (!text || typeof action.value !== "string") return undefined;
+  return { ...screen, windows: screen.windows.map((w) => ({ ...w, controls: w.controls.map((c) => (c.id === id ? { ...c, text: action.value as string } : c)) })) };
+}
+
 class SapguiDriver implements Driver {
   info: SessionInfo;
   private sid: string;
-  private last: { at: number; screen: Screen } | undefined;
+  /** The last screen read; `typed`: it is that read with what "set" or "focus" changed since (no read in between). */
+  private last: { at: number; screen: Screen; typed?: boolean } | undefined;
   /** Trees longer than the host reads at once: the node each is read from, until the screen changes. */
   private treeFrom: Record<string, number> = {};
 
@@ -147,9 +182,11 @@ class SapguiDriver implements Driver {
   }
 
   async look(options: LookOptions): Promise<string> {
-    const screen = await this.screen();
+    // Right after "set" or "focus" the screen is the last read with that change: SAP GUI has not gone to the server.
+    const screen = await this.screen(this.last?.typed === true);
     const full = fullView(screen);
-    if (!options.id) return options.compact ? compact(full) : full;
+    // The compact view leaves out what SAP GUI adds around the transaction (forAgent); the full view keeps all.
+    if (!options.id) return options.compact ? compact(fullView(forAgent(screen))) : full;
     const target = this.strict(screen, options.id);
     const missing = () => new ActionError(`No control "${options.id}" on this screen. Use an id from sap_look (the screen may have changed).`);
     if (!target) throw missing();
@@ -159,6 +196,8 @@ class SapguiDriver implements Driver {
       return readRows(
         {
           scrollTo: async (row) => {
+            // A list with no scrollbar (all its rows on screen, MI24 live) has nothing to scroll: its rows are read as they are.
+            if (target.type === "GuiUserArea" && !target.scroll) return;
             await this.scroll(target, row);
           },
           block: async () => {
@@ -227,7 +266,8 @@ class SapguiDriver implements Driver {
   }
 
   async assess(action: Action): Promise<Assessment> {
-    const screen = await this.screen();
+    // A read of the last moment serves (the server reads the screen after every action of a batch, then judges the next).
+    const screen = await this.screen(true);
     if (isLogonScreen(screen.program, screen.screen)) throw new ActionError(LOGON_REFUSAL);
     // Tab and Space have no virtual key: they are judged as what they become (a focus, a tick, a row selection).
     if (action.do === "key" && localKey(action.key ?? action.value)) {
@@ -290,6 +330,16 @@ class SapguiDriver implements Driver {
     }
     if (typeof action.id !== "string" || !action.id.trim()) throw new ActionError(`${doing} needs "id": a control id from sap_look`);
     const target = await this.target(screen, action);
+    // A column named by one of its cells' ids without the place, with a row: that row's cell, not the first one found.
+    if (target && action.row !== undefined && cellParts(target.id) && !/\[\d+,\d+\]$/.test(String(action.id).trim())) {
+      const p = cellParts(target.id) as { table: string; field: string };
+      return this.act({ ...action, id: p.table, col: p.field });
+    }
+    if (!target && action.row !== undefined) {
+      // A table's column named as the id, with a row: that table's cell.
+      const column = tableOfColumn(screen, action.id);
+      if (column) return this.act({ ...action, id: column.table.id, col: column.col });
+    }
     if (!target) throw new ActionError(`No control "${action.id}" on this screen. Use an id from sap_look (the screen may have changed).`);
     const id = target.id;
     switch (doing) {
@@ -313,9 +363,16 @@ class SapguiDriver implements Driver {
         if (target.type === "GuiShell" && target.sub === "TextEdit") return this.run({ do: "set", id, value: String(action.value ?? "").replace(/\r\n?|\n/g, "\r\n") }, `set ${id}`, timeoutMs);
         if (!SET_TYPES.has(target.type))
           throw new ActionError(`${id} is a ${target.type}, not a field: "set" types into fields only, or into a table's or grid's cell given "row" and "col". Use "press" for a button, "select" for a tab or a menu entry.`);
+        // SAP GUI answers a read-only field with "The method got an invalid argument": say why instead.
+        if (target.changeable === false) throw new ActionError(readOnlyText(id, screen));
         const single = oneLine(String(action.value ?? ""));
         return this.run({ do: "set", id, value: single.text }, `set ${id} = "${single.text}"${single.had ? ` (${ONE_LINE_NOTE})` : ""}`, timeoutMs);
       case "press":
+        // A click on a grid's cell (live: "click" with row and col on FB02's line items) puts the cursor there and selects the row.
+        if (target.type === "GuiShell" && target.sub === "GridView" && action.row !== undefined) return this.act({ ...action, do: action.col === undefined ? "select" : "grid", how: "select" });
+        if (target.type === "GuiTableControl" && action.row !== undefined) return this.act({ ...action, do: "grid", how: action.col === undefined ? "select" : "cell" });
+        // A tab is clicked to open it: that is "select" (live, MM02's tabs, 2026-11-25).
+        if (target.type === "GuiTab") return this.act({ ...action, do: "select" });
         if (target.type !== "GuiButton") throw new ActionError(`${id} is a ${target.type}, not a button: use "select" for a tab or a menu entry, "set" for a field.`);
         return this.run({ do: doing, id }, `${doing} ${id}`, timeoutMs);
       case "select": {
@@ -348,6 +405,12 @@ class SapguiDriver implements Driver {
         return this.run({ do: "check", id, value }, `${value ? "checked" : "unchecked"} ${id}`, timeoutMs);
       }
       case "combo": {
+        // A dropdown in a table control's cell, by row and column (live, FB50's D/C column, 2026-11-25).
+        if (target.type === "GuiTableControl")
+          return this.tableAct(target, action, (cell) => {
+            const { row: _row, col: _col, ...rest } = action;
+            return this.act({ ...rest, id: cell.id });
+          }, timeoutMs);
         if (target.type !== "GuiComboBox") throw new ActionError(`${id} is a ${target.type}, not a dropdown.`);
         const entries = target.entries ?? [];
         // No key: the entries, and nothing is chosen.
@@ -379,7 +442,8 @@ class SapguiDriver implements Driver {
         }
         if (!isRow(action.row) || typeof action.col !== "string") throw new ActionError('grid needs "row" (a number from 0, from "row N:") and "col" (column id, e.g. "VBELN")');
         const how = action.how ?? "double";
-        if (!["double", "select"].includes(how)) throw new ActionError('grid "how" is double or select');
+        // "cell": the cursor on the cell, nothing opened or selected (as on a table control).
+        if (!["double", "select", "cell"].includes(how)) throw new ActionError('grid "how" is double, select or cell');
         const col = target.type === "GuiShell" && target.sub === "GridView" ? gridColumn(target, action.col) : action.col;
         return this.run({ do: "grid", id, row: action.row, col, how }, `grid ${how} row ${action.row}, column ${action.col} in ${id}`, timeoutMs);
       }
@@ -431,10 +495,14 @@ class SapguiDriver implements Driver {
   }
 
   private async run(action: Record<string, unknown>, note: string, timeoutMs = ACT_MS): Promise<string> {
+    const prior = this.last;
     this.last = undefined;
+    const local = prior && Date.now() - prior.at < FRESH_MS ? typed(prior.screen, action) : undefined;
     // Another screen may follow: a tree's paging belongs to the screen it was asked on.
-    this.treeFrom = {};
+    if (!local) this.treeFrom = {};
     await this.ask("act", { action }, timeoutMs);
+    // Typing into a field or moving the cursor stays in SAP GUI: the screen is the one read, with that change.
+    if (local) this.last = { at: Date.now(), screen: local, typed: true };
     return note;
   }
 

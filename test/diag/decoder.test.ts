@@ -304,9 +304,9 @@ describe("DiagDecoder: popup, list, table control", () => {
     expect(t?.columns.map((c) => c.col)).toEqual([4, 13, 11, 32, 36]);
     expect(t?.columns.every((c) => c.visible)).toBe(true);
     expect(t?.rows.map((r) => [r.index, r.row, r.empty])).toEqual([
-      [0, 6, false],
-      [1, 7, false],
-      [2, 8, true],
+      [0, 7, false],
+      [1, 8, false],
+      [2, 9, true],
     ]);
     expect(t?.rows[0]?.cells.map((c) => [c.kind, c.text, c.input, c.checked])).toEqual([
       ["field", "10", false, undefined],

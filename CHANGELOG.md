@@ -4,6 +4,95 @@ All notable changes to this project are listed here. The project follows
 [Semantic Versioning](https://semver.org); before 1.0, a minor version may
 change the tools or the view format.
 
+## Unreleased
+
+### Fixed
+
+- SAP GUI for Windows: `set` into a field SAP keeps closed says why (after
+  an error or a warning SAP opens only the fields its message names)
+  instead of "The method got an invalid argument".
+- SAP GUI for Windows: a click on an ALV grid's or a table control's row
+  selects the row; it was refused as "not a button", and under
+  `SAP_WRITE=off` as a possible write.
+- SAP GUI for Windows: a field's id with another type in front
+  (`ctxtRF05L-BELNR` for `txtRF05L-BELNR`), a selection criterion's name
+  (`MS_MATNR`) and a table column written as the legend shows it
+  (`txtKONP-KBETR`) find their control.
+- SAP GUI for Windows: a table column's id with a `row` (`set` on
+  `txtRV45A-KWMENG` with row 1) is that row's cell; a dropdown in a table
+  cell takes `row` and `col`; `press` on a tab selects it; an ALV grid takes
+  `"how":"cell"`; `WERKS-LOW` finds `MS_WERKS-LOW` when only one field ends
+  so; the rows of a list without a scrollbar are read instead of refused.
+- An Enter right after an okcode that only expects "any screen" or "a
+  popup" is skipped like a bare one; it ran on the empty initial screen
+  ("Enter valid date").
+- `sap_act` with `actions` and a top-level `expect`, `"do":"look"` or `app`
+  runs the actions (the `expect` goes to the last one) instead of refusing
+  "one action or actions, not both"; an empty `sap_act` answers with the
+  screen.
+- After a table's columns were said once ("as listed before"), the next
+  change on that screen came back as the whole view: the diff printed the
+  old column legend as removed. It is now the changed lines only (VA02: 5.4k
+  characters to 170), on every surface.
+- The number notation is read from grouped quantities with three decimals
+  (`9.983,000`) and from tree nodes too (MMBE's stock overview said
+  `NUMBERS unknown`).
+- Network reader (SAP GUI without scripting), from the first end-to-end runs
+  with writes (ECC, Claude Haiku):
+  - `check` sets a box to the state asked for; a box already there is not
+    clicked (it was toggled whatever the value said).
+  - The Enter of a message popup (an error or information with only text,
+    labelled "Confirm") acknowledges it, as on the other surfaces; with
+    `SAP_WRITE=off` it was refused as a write.
+  - A table cell can be named the way `sap_act` describes it, the table's id
+    with `row` and `col`, or a column's field name with `row`.
+  - A table's head names the columns open for input even while they are
+    empty.
+  - A screen SAP sends again with only what changed (FB50 after a warning)
+    keeps the fields' texts, the values typed included, and its tabs; they
+    showed as empty read-only fields.
+  - `btn[N]`, a toolbar button's text with its key ("Display Document
+    (F2)") and a tab's caption are ids, as on the other surfaces.
+  - Dropdowns: the entries are read from SAP GUI's own cache on the PC, so
+    `combo` lists them, takes a key or a text, refuses one that is not there,
+    and chooses in one input (the list closed before when another window was
+    brought forward); a choice shows as typed until the next Enter.
+  - `set` in a cell of an editable ALV grid (ME51N's items).
+  - A table cell right of what SAP GUI shows is reached with Tab from the
+    nearest cell on show (SAP GUI scrolls the table sideways); the reader
+    follows a table scrolled sideways (its fixed columns stay). Other actions
+    on such a cell are refused: a click there typed into another cell.
+  - Table rows were placed one row too high in tables with a title, and the
+    click point of a row was at its upper edge: clicks into item tables
+    missed. A row under the window's scroll bars is refused, with the scroll
+    that brings it up.
+  - A step whose answer goes through more than one screen keeps the status
+    messages of the screens before the last: FB50's "Document ... was
+    posted" was replaced by the next screen's error, and the agent posted
+    again.
+  - A screen taller than SAP GUI's window scrolls (`scroll` with id
+    `screen`, the mouse wheel); clicks follow the scroll SAP reports, and a
+    field under the window's edge is refused with that scroll instead of
+    being clicked where another field is.
+  - A popup SAP sends again as an update (after SAP GUI's type-ahead call)
+    keeps its fields; it came back empty.
+  - `set` clicks again when a dropdown chosen just before swallowed the click,
+    and types nothing when the cursor still did not come; a second cell
+    further right in a row reached with Tab goes on with Tab.
+  - When SAP GUI shows a popup the traffic did not describe, the refusal
+    says so and how to close it.
+
+### Changed
+
+- SAP GUI for Windows: the compact view leaves out SAP GUI's window line,
+  the status bar's panes, its own toolbar buttons (new window, shortcut,
+  settings, More, Enter), labels repeated on their fields and a selection
+  screen's text fields. The full view keeps them.
+- SAP GUI for Windows: typing into fields and moving the cursor no longer
+  read the screen again, and the guard judges an action on the read of the
+  moment before; a table control's cells are read without their tooltip
+  and label. Batches that fill a form are several times faster.
+
 ## 0.2.1 (2026-11-25)
 
 ### Fixed

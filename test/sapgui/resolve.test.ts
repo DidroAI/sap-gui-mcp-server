@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { relativeId, resolve } from "../../src/sapgui/resolve.js";
+import { relativeId, resolve, resolveStrict } from "../../src/sapgui/resolve.js";
+import type { Screen } from "../../src/sapgui/facts.js";
 import { screen } from "./fixtures.js";
 
 const TAB = "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\\01/ssubSUBSCREEN_BODY:SAPMV45A:4400";
@@ -33,5 +34,66 @@ describe("sapgui ids", () => {
   test("nothing matches", () => {
     expect(resolve(screen("va01"), "ctxtNOPE")).toBeUndefined();
     expect(resolve(screen("va01"), "wnd[0]/usr/ctxtNOPE")).toBeUndefined();
+  });
+});
+
+describe("sapgui ids: a selection criterion by its name (MMBE, live 2026-11-25)", () => {
+  const sel: Screen = {
+    transaction: "MMBE",
+    program: "RMMMBESTN",
+    screen: "1000",
+    activeWindow: "wnd[0]",
+    windows: [
+      {
+        id: "wnd[0]",
+        title: "Stock Overview",
+        controls: [
+          { id: "wnd[0]/usr/txt%_MS_MATNR_%_APP_%-TEXT", type: "GuiTextField", name: "%_MS_MATNR_%_APP_%-TEXT", text: "Material", changeable: false },
+          { id: "wnd[0]/usr/ctxtMS_MATNR-LOW", type: "GuiCTextField", name: "MS_MATNR-LOW", text: "", changeable: true },
+          { id: "wnd[0]/usr/ctxtMS_WERKS-LOW", type: "GuiCTextField", name: "MS_WERKS-LOW", text: "", changeable: true },
+          { id: "wnd[0]/usr/ctxtMS_WERKS-HIGH", type: "GuiCTextField", name: "MS_WERKS-HIGH", text: "", changeable: true },
+          { id: "wnd[0]/usr/ctxtVERNU", type: "GuiCTextField", name: "VERNU", text: "1", changeable: true },
+        ],
+      },
+    ],
+  };
+  test("the name, or the short id without -LOW, is the from field", () => {
+    expect(resolveStrict(sel, "MS_MATNR")).toEqual({ control: expect.objectContaining({ id: "wnd[0]/usr/ctxtMS_MATNR-LOW" }) });
+    expect(resolveStrict(sel, "ctxtMS_WERKS")).toEqual({ control: expect.objectContaining({ id: "wnd[0]/usr/ctxtMS_WERKS-LOW" }) });
+    // -HIGH and a plain parameter are what they say.
+    expect(resolveStrict(sel, "MS_WERKS-HIGH")).toEqual({ control: expect.objectContaining({ id: "wnd[0]/usr/ctxtMS_WERKS-HIGH" }) });
+    expect(resolveStrict(sel, "VERNU")).toEqual({ control: expect.objectContaining({ id: "wnd[0]/usr/ctxtVERNU" }) });
+    expect(resolveStrict(sel, "MS_NOPE")).toEqual({ none: true });
+    // Without the report's prefix (MM60, live): the one field that ends so.
+    expect(resolveStrict(sel, "ctxtWERKS-LOW")).toEqual({ control: expect.objectContaining({ id: "wnd[0]/usr/ctxtMS_WERKS-LOW" }) });
+    expect(resolveStrict(sel, "WERKS-HIGH")).toEqual({ control: expect.objectContaining({ id: "wnd[0]/usr/ctxtMS_WERKS-HIGH" }) });
+    expect(resolveStrict(sel, "MATNR-HIGH")).toEqual({ none: true });
+  });
+});
+
+describe("sapgui ids: a field's id with the wrong type in front (FB02, live 2026-11-25)", () => {
+  const fb02: Screen = {
+    transaction: "FB02",
+    program: "SAPMF05L",
+    screen: "100",
+    activeWindow: "wnd[0]",
+    windows: [
+      {
+        id: "wnd[0]",
+        title: "Change Document: Initial Screen",
+        controls: [
+          { id: "wnd[0]/usr/lblRF05L-BELNR", type: "GuiLabel", name: "RF05L-BELNR", text: "Document Number" },
+          { id: "wnd[0]/usr/txtRF05L-BELNR", type: "GuiTextField", name: "RF05L-BELNR", text: "", changeable: true },
+          { id: "wnd[0]/usr/ctxtRF05L-BUKRS", type: "GuiCTextField", name: "RF05L-BUKRS", text: "", changeable: true },
+          { id: "wnd[0]/usr/lblONLY", type: "GuiLabel", name: "ONLY", text: "Only a label" },
+        ],
+      },
+    ],
+  };
+  test("ctxt for txt, txt for ctxt: the field of that name", () => {
+    expect(resolveStrict(fb02, "ctxtRF05L-BELNR")).toEqual({ control: expect.objectContaining({ id: "wnd[0]/usr/txtRF05L-BELNR" }) });
+    expect(resolveStrict(fb02, "txtRF05L-BUKRS")).toEqual({ control: expect.objectContaining({ id: "wnd[0]/usr/ctxtRF05L-BUKRS" }) });
+    // Never a label for a field.
+    expect(resolveStrict(fb02, "txtONLY")).toEqual({ none: true });
   });
 });

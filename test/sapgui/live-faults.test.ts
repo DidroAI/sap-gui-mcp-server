@@ -68,7 +68,7 @@ describe("sapgui: a selection screen is no list", () => {
       "120",
     );
     const { d } = await on(list);
-    expect(await d.look({ compact: false })).toContain("wnd[0]/usr  list  201 rows (visible 34; scroll for the others)");
+    expect(await d.look({ compact: false })).toContain("wnd[0]/usr  list  201 rows (visible 34; scroll for the others, or read them in one call: sap_look with this id and \"rows\")");
   });
 });
 
@@ -118,5 +118,176 @@ describe("sapgui: a toolbar's menu button (ME23N's document overview, Selection 
     expect((await d.assess({ do: "toolbar", id: "shell[0]", button: "REFRESH", value: "Purchase orders" })).risk).toBe("navigate");
     expect((await d.assess({ do: "toolbar", id: "shell[0]", button: "REFRESH", value: "Delete" })).risk).toBe("commit");
     expect((await d.assess({ do: "toolbar", id: "shell[0]", button: "SELECT", value: "Purchase orders" })).risk).toBe("navigate");
+  });
+});
+
+describe("sapgui: a field SAP keeps closed is refused with the reason (FB50, live 2026-11-25)", () => {
+  const closed = (type: string, text: string) =>
+    one([
+      { id: "wnd[0]/usr/ctxtACGL_HEAD-BLDAT", type: "GuiCTextField", name: "ACGL_HEAD-BLDAT", text: "", label: "Document Date", changeable: true },
+      { id: "wnd[0]/usr/txtACGL_HEAD-BKTXT", type: "GuiTextField", name: "ACGL_HEAD-BKTXT", text: "", label: "Doc.Header Text", changeable: false },
+      { id: "wnd[0]/sbar", type: "GuiStatusbar", name: "sbar", text, messageType: type },
+    ]);
+  test("after an error: correct the field it names, then Enter; nothing is sent", async () => {
+    const { d, acts } = await on(closed("E", "Enter valid date"));
+    await expect(d.act({ do: "set", id: "txtACGL_HEAD-BKTXT", value: "X" })).rejects.toThrow('read-only now: after the error "Enter valid date" SAP keeps the other fields closed. Correct the field the message names, then Enter');
+    expect(acts).toEqual([]);
+  });
+  test("after a warning: Enter accepts it", async () => {
+    const { d } = await on(closed("W", "Check the tax code"));
+    await expect(d.act({ do: "set", id: "txtACGL_HEAD-BKTXT", value: "X" })).rejects.toThrow("Enter accepts the warning");
+  });
+  test("without a message: a display field", async () => {
+    const { d } = await on(closed("", ""));
+    await expect(d.act({ do: "set", id: "txtACGL_HEAD-BKTXT", value: "X" })).rejects.toThrow("read-only on this screen");
+  });
+  test("a field that takes input is set as before", async () => {
+    const { d, acts } = await on(closed("E", "Enter valid date"));
+    await d.act({ do: "set", id: "ctxtACGL_HEAD-BLDAT", value: "25.11.2026" });
+    expect(acts).toEqual([{ do: "set", id: "wnd[0]/usr/ctxtACGL_HEAD-BLDAT", value: "25.11.2026" }]);
+  });
+});
+
+describe("sapgui: a click on a grid's cell selects its row (FB02, live 2026-11-25)", () => {
+  const grid = one([
+    {
+      id: "wnd[0]/usr/cntlCTRL_CONTAINERBSEG/shellcont/shell",
+      type: "GuiShell",
+      name: "shell",
+      sub: "GridView",
+      grid: { cols: ["KTONR", "KOBEZ"], titles: ["Account", "Name"], rowCount: 3, rows: [["1000", "A"], ["1100", "B"], ["1200", "C"]] },
+    },
+  ]);
+  test("click with row and col: the cursor on the cell, the row selected", async () => {
+    const { d, acts } = await on(grid);
+    expect(await d.act({ do: "click", id: "cntlCTRL_CONTAINERBSEG/shell", row: 1, col: "KTONR" })).toContain("grid select row 1");
+    expect(acts).toEqual([{ do: "grid", id: "wnd[0]/usr/cntlCTRL_CONTAINERBSEG/shellcont/shell", row: 1, col: "KTONR", how: "select" }]);
+  });
+  test("press with row only: the row selected", async () => {
+    const { d, acts } = await on(grid);
+    await d.act({ do: "press", id: "cntlCTRL_CONTAINERBSEG/shell", row: 2 });
+    expect(acts).toEqual([{ do: "grid", id: "wnd[0]/usr/cntlCTRL_CONTAINERBSEG/shellcont/shell", row: 2, col: "", how: "select" }]);
+  });
+  test("the guard judges it as selecting a row, not as an unknown press", async () => {
+    const { d } = await on(grid);
+    expect(await d.assess({ do: "click", id: "cntlCTRL_CONTAINERBSEG/shell", row: 1, col: "KTONR" })).toMatchObject({ risk: "navigate" });
+    // Without a row it stays unknown: under writes off it is refused.
+    expect((await d.assess({ do: "click", id: "cntlCTRL_CONTAINERBSEG/shell" })).risk).not.toBe("navigate");
+  });
+});
+
+describe("sapgui: typing into fields does not read the screen again (FB50, live 2026-11-25: 23 s for 7 cells)", () => {
+  /** A host that counts screen reads; acts change nothing it shows. */
+  async function counting(screen: Screen) {
+    let reads = 0;
+    const acts: unknown[] = [];
+    const host: Transport = {
+      async request<T>(op: string, params: Record<string, unknown> = {}): Promise<T> {
+        if (op === "screen") {
+          reads++;
+          return structuredClone(screen) as T;
+        }
+        if (op === "describe") return { found: false } as T;
+        if (op === "act") acts.push(params.action);
+        return { done: true } as T;
+      },
+      close() {},
+    };
+    const d = await sapguiSurface({}, { platform: "win32", transport: host }).open({ id: "sapgui:/app/con[0]/ses[0]", surface: "sapgui", where: "test" });
+    return { d, acts, reads: () => reads };
+  }
+  const form = one([
+    { id: "wnd[0]/tbar[0]/btn[11]", type: "GuiButton", name: "btn[11]", text: "Save", tip: "Save (Ctrl+S)", changeable: true },
+    { id: "wnd[0]/usr/ctxtZ-A", type: "GuiCTextField", name: "Z-A", text: "", label: "A", changeable: true },
+    { id: "wnd[0]/usr/txtZ-B", type: "GuiTextField", name: "Z-B", text: "", label: "B", changeable: true },
+  ]);
+  test("assess, set, look: one read, and the view shows what was typed", async () => {
+    const { d, reads } = await counting(form);
+    await d.assess({ do: "set", id: "ctxtZ-A", value: "1000" });
+    await d.act({ do: "set", id: "ctxtZ-A", value: "1000" });
+    const view = await d.look({ compact: true });
+    expect(view).toContain('ctxtZ-A  field  A = "1000"');
+    await d.assess({ do: "set", id: "txtZ-B", value: "x" });
+    await d.act({ do: "set", id: "txtZ-B", value: "x" });
+    expect(await d.look({ compact: true })).toContain('txtZ-B  field  B = "x"');
+    expect(reads()).toBe(1);
+  });
+  test("after a key or a button the screen is read again", async () => {
+    const { d, reads } = await counting(form);
+    await d.act({ do: "set", id: "ctxtZ-A", value: "1000" });
+    await d.act({ do: "key", key: 0 });
+    await d.look({ compact: true });
+    expect(reads()).toBe(2);
+    // The fake shows the field empty: the view is SAP's, not what was typed.
+    expect(await d.look({ compact: true })).toContain('ctxtZ-A  field  A = ""');
+  });
+  test("a plain look after a while reads again", async () => {
+    const { d, reads } = await counting(form);
+    await d.look({ compact: true });
+    await d.look({ compact: true });
+    expect(reads()).toBe(2);
+  });
+});
+
+describe("sapgui: a table's dropdown cell and a pressed tab (FB50, MM02, live 2026-11-25)", () => {
+  const T = "wnd[0]/usr/tblSAPLFSKBTABLE";
+  const screen = one([
+    { id: "wnd[0]/usr/tabsTABSPR1/tabpSP12", type: "GuiTab", name: "SP12", text: "MRP 1" },
+    { id: T, type: "GuiTableControl", name: "SAPLFSKBTABLE", rowCount: 16, visibleRowCount: 2, firstRow: 0, columns: ["G/L acct", "D/C"] },
+    { id: `${T}/ctxtACGL_ITEM-HKONT[1,0]`, type: "GuiCTextField", name: "ACGL_ITEM-HKONT", text: "", changeable: true },
+    { id: `${T}/cmbACGL_ITEM-SHKZG[3,0]`, type: "GuiComboBox", name: "ACGL_ITEM-SHKZG", key: "", entries: [["S", "Debit"], ["H", "Credit"]], changeable: true },
+  ]);
+  test("combo with the table, row and col chooses the cell's entry", async () => {
+    const { d, acts } = await on(screen);
+    await d.act({ do: "combo", id: "tblSAPLFSKBTABLE", row: 0, col: "cmbACGL_ITEM-SHKZG", key: "S" });
+    expect(acts).toEqual([{ do: "combo", id: `${T}/cmbACGL_ITEM-SHKZG[3,0]`, key: "S" }]);
+  });
+  test("press on a tab selects it", async () => {
+    const { d, acts } = await on(screen);
+    expect(await d.act({ do: "press", id: "tabpSP12" })).toBe("select wnd[0]/usr/tabsTABSPR1/tabpSP12");
+    expect(acts).toEqual([{ do: "select", id: "wnd[0]/usr/tabsTABSPR1/tabpSP12" }]);
+    expect((await d.assess({ do: "press", id: "tabpSP12" })).risk).toBe("navigate");
+  });
+});
+
+describe("sapgui: a column's id with a row means that table's cell; a grid's cell takes the cursor (VA01, VF01, VA05, live 2026-11-25)", () => {
+  const T = "wnd[0]/usr/tblSAPMV45ATCTRL_U_ERF_AUFTRAG";
+  const G = "wnd[0]/usr/cntlGRID1/shellcont/shell";
+  const screen = one([
+    { id: T, type: "GuiTableControl", name: "SAPMV45ATCTRL_U_ERF_AUFTRAG", rowCount: 10, visibleRowCount: 2, firstRow: 0, columns: ["Material", "Order Quantity"] },
+    { id: `${T}/ctxtRV45A-MABNR[1,0]`, type: "GuiCTextField", name: "RV45A-MABNR", text: "", changeable: true },
+    { id: `${T}/txtRV45A-KWMENG[2,0]`, type: "GuiTextField", name: "RV45A-KWMENG", text: "", changeable: true },
+    { id: `${T}/txtRV45A-KWMENG[2,1]`, type: "GuiTextField", name: "RV45A-KWMENG", text: "", changeable: true },
+    { id: G, type: "GuiShell", name: "shell", sub: "GridView", grid: { cols: ["VBELN", "NETWR"], titles: ["Doc", "Net"], rowCount: 2, rows: [["1", "2"], ["3", "4"]] } },
+  ]);
+  test("set with the column's id and a row: that row's cell", async () => {
+    const { d, acts } = await on(screen);
+    await d.act({ do: "set", id: "txtRV45A-KWMENG", row: 1, col: "2", value: "5" });
+    expect(acts).toEqual([{ do: "set", id: `${T}/txtRV45A-KWMENG[2,1]`, value: "5" }]);
+  });
+  test("without a row it is still no control", async () => {
+    const { d } = await on(screen);
+    await expect(d.act({ do: "set", id: "txtRV45A-KWMENG", value: "5" })).rejects.toThrow('No control "txtRV45A-KWMENG"');
+  });
+  test('grid how "cell" puts the cursor on the cell only', async () => {
+    const { d, acts } = await on(screen);
+    await d.act({ do: "grid", id: "cntlGRID1/shell", row: 0, col: "NETWR", how: "cell" });
+    expect(acts).toEqual([{ do: "grid", id: G, row: 0, col: "NETWR", how: "cell" }]);
+  });
+});
+
+describe("sapgui: rows of a list that has no scrollbar (MI24, live 2026-11-25)", () => {
+  const list = one([
+    { id: "wnd[0]/usr", type: "GuiUserArea", name: "usr" },
+    { id: "wnd[0]/usr/lbl[3,1]", type: "GuiLabel", name: "lbl[3,1]", text: "PhysInvDoc" },
+    { id: "wnd[0]/usr/lbl[14,1]", type: "GuiLabel", name: "lbl[14,1]", text: "Item" },
+    { id: "wnd[0]/usr/lbl[3,3]", type: "GuiLabel", name: "lbl[3,3]", text: "1000004" },
+    { id: "wnd[0]/usr/lbl[14,3]", type: "GuiLabel", name: "lbl[14,3]", text: "1" },
+  ]);
+  test("are read as they are, not refused as 'does not scroll'", async () => {
+    const { d, acts } = await on(list);
+    const view = await d.look({ compact: true, id: "wnd[0]/usr", rows: { from: 0, to: 10 } });
+    expect(view).toContain("1000004");
+    expect(acts).toEqual([]);
   });
 });

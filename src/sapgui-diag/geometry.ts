@@ -9,7 +9,7 @@
  *   2. the cell size SAP GUI reports to the server (traffic.ts `font`);
  *   3. the screen area's pixel size divided by its size in cells.
  * The offsets of the first cell (x0, y0) were measured on Quartz at 100%
- * (3 px from the area's left, the middle of row r at 27 (r + 1) - 2) and
+ * (3 px from the area's left, the middle of row r at 27 r + 30, see rowMiddle) and
  * are scaled with the cell size elsewhere: that scaling is a guess to
  * check on other themes (see the live checks in docs).
  *
@@ -44,8 +44,16 @@ export function cellsFromEnv(value: string | undefined): Cells | undefined {
   if (n.length < 2 || n.some((x) => !Number.isFinite(x) || x < 0)) return undefined;
   const [cw, ch, x0, y0] = n as [number, number, number?, number?];
   if (cw < 3 || ch < 6) return undefined;
-  return { cw, ch, x0: x0 ?? Math.round((3 * cw) / 8), y0: y0 ?? ch - Math.floor(ch / 10), source: "env" };
+  return { cw, ch, x0: x0 ?? Math.round((3 * cw) / 8), y0: y0 ?? rowMiddle(ch), source: "env" };
 }
+
+/**
+ * Where row 0's middle is, below the area's top. Measured on Quartz at 100%: 25 px with a window not
+ * maximized (VA01, VA03, 2026-11-20), 35 px maximized (FB50's fields and table rows, 2026-11-25; the first
+ * table row's top edge is at 30 and a click at 25 below it missed it). 30 px is inside a field and a
+ * table row in both.
+ */
+const rowMiddle = (ch: number): number => ch + Math.round(ch / 9);
 
 /** The cell metrics of a window's screen area: see the top of this file for the order. */
 export function cellMetrics(area: Rect, size: { rows: number; cols: number }, font?: { cw: number; ch: number }, env?: Cells): Cells {
@@ -53,8 +61,7 @@ export function cellMetrics(area: Rect, size: { rows: number; cols: number }, fo
   const [, , w, h] = area;
   const cw = font?.cw ?? Math.max(1, Math.floor(w / Math.max(1, size.cols)));
   const ch = font?.ch ?? Math.max(1, Math.floor(h / Math.max(1, size.rows + 1)));
-  // Measured on Quartz at 100% (VA01, VA03): x = 3 + 8 col, the middle of row r at 27 (r + 1) - 2.
-  return { cw, ch, x0: Math.round((3 * cw) / 8), y0: ch - Math.floor(ch / 10), source: font ? "traffic" : "area" };
+  return { cw, ch, x0: Math.round((3 * cw) / 8), y0: rowMiddle(ch), source: font ? "traffic" : "area" };
 }
 
 /** Cell to screen pixel, on a window's screen area: inside the element, near its left part. */

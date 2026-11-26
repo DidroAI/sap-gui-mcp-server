@@ -226,7 +226,7 @@ describe("sapgui: handles", () => {
 
 describe("sapgui full view: what scrolling adds", () => {
   test("a classic list that scrolls gets a line of its own, before its cells", () => {
-    expect(controlLines({ id: "wnd[0]/usr", type: "GuiUserArea", name: "usr", scroll: { position: 34, maximum: 167, pageSize: 34 } })).toEqual(["wnd[0]/usr  list  201 rows (visible 34, first 34; scroll for the others)"]);
+    expect(controlLines({ id: "wnd[0]/usr", type: "GuiUserArea", name: "usr", scroll: { position: 34, maximum: 167, pageSize: 34 } })).toEqual(["wnd[0]/usr  list  201 rows (visible 34, first 34; scroll for the others, or read them in one call: sap_look with this id and \"rows\")"]);
     expect(controlLines({ id: "wnd[0]/usr", type: "GuiUserArea", name: "usr" })).toEqual([]);
   });
   test("a table control says where it is scrolled to, only when it is", () => {

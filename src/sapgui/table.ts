@@ -35,7 +35,8 @@ export function tableColumn(screen: Screen, table: Control, col: unknown): numbe
     const n = Number(col);
     if (Number.isInteger(n) && n >= 0 && (n < titles.length || cells.some((c) => cellParts(c.id)?.col === n))) return n;
   } else if (typeof col === "string" && col.trim()) {
-    const want = norm(col);
+    // The column as the view's legend writes it: the cell's id without its place, "txtKONP-KBETR" (live, VK12, 2026-11-25).
+    const want = norm(col.trim().replace(/\[\d+,\d+\]$/, "").replace(/^(ctxt|txt|cmb|chk|rad|btn|lbl|pwd)(?=[A-Z0-9_%/]*-|[A-Z])/, ""));
     const byField = cells.find((c) => {
       const field = norm(c.name || (cellParts(c.id)?.field ?? ""));
       return field === want || field.endsWith(`-${want}`);
@@ -119,4 +120,21 @@ export function focusedRow(screen: Screen): { table: Control; row: number } | un
   const table = screen.windows.flatMap((w) => w.controls).find((c) => c.id === p.table && c.type === "GuiTableControl");
   if (!table) return undefined;
   return { table, row: (table.firstRow ?? 0) + p.vrow };
+}
+
+/**
+ * The table control a column's id belongs to, for an action that names the
+ * column as its id and gives a row ({"do":"set","id":"txtRV45A-KWMENG","row":0},
+ * live VA01 and VF01, 2026-11-25). `col` is the column's field name. Only when
+ * exactly one table on the screen has such a column.
+ */
+export function tableOfColumn(screen: Screen, ident: string): { table: Control; col: string } | undefined {
+  const want = ident.trim().replace(/^.*\//, "").replace(/\[\d+,\d+\]$/, "");
+  const field = want.replace(/^(ctxt|txt|cmb|chk|rad|btn|lbl|pwd)(?=[A-Z0-9_%])/, "");
+  if (!field) return undefined;
+  const all = screen.windows.flatMap((w) => w.controls);
+  const found = all.filter(
+    (t) => t.type === "GuiTableControl" && tableCells(screen, t).some((c) => (cellParts(c.id)?.field ?? "") === field || c.name === field),
+  );
+  return found.length === 1 ? { table: found[0] as Control, col: field } : undefined;
 }

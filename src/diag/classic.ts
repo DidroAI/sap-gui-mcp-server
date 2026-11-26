@@ -121,6 +121,28 @@ function comboValue(s: string, codeLength = 0): { key: string; valueList?: strin
   return { key: clean(rest).trim(), valueList: m[1] as string, ...(fcode ? { fcode } : {}) };
 }
 
+/**
+ * Where each column of a table control starts, and whether it is on show: after the row selector, one cell
+ * between columns, in the order shown. Scrolled sideways (`firstColumn`), the fixed columns stay and the
+ * others start at that one; those between are out of view.
+ */
+export function layoutColumns(table: DiagTable): void {
+  const order = [...table.columns].sort((a, b) => a.position - b.position);
+  const fixed = table.fixedColumns ?? 0;
+  const first = table.firstColumn && table.firstColumn > fixed ? table.firstColumn : 0;
+  let col = table.col + 2;
+  order.forEach((c, i) => {
+    c.col = col;
+    // Scrolled sideways, only the fixed columns are taken as on show: where SAP GUI draws the others was right
+    // for FB50 and wrong for ME21N (a click typed into Handover Location), so they are reached with Tab.
+    if (first && i >= fixed) {
+      c.visible = false;
+      if (i < first) return;
+    } else c.visible = table.width === 0 || col + c.width <= table.col + table.width;
+    col += c.width + 1;
+  });
+}
+
 /** Table control while its items arrive. */
 interface TableBuild {
   table: DiagTable;
@@ -149,6 +171,8 @@ export class ClassicState {
   private path: Level[] = [];
   private last: DiagElement | undefined;
   private build: TableBuild | undefined;
+  /** The windows as they were before the last window start: a popup sent again as an update finds itself there. */
+  private closed: WindowState[] = [];
   /** Parts of the window kept from its last sending, while SAP sends only what changed: replaced by what comes at their place. */
   private carried = new Set<unknown>();
   private listPos: { row: number; col: number } | undefined;
@@ -207,6 +231,49 @@ export class ClassicState {
       } catch (e) {
         this.note(`item ${itemKey(it)} not read: ${e instanceof Error ? e.message : String(e)}`);
       }
+    }
+  }
+
+  /**
+   * The values SAP GUI sends with a request: element lists in the areas of the window on top, the fields the
+   * user typed into with their new text. They become the text of the fields at those places, so that a field
+   * SAP later sends again without its text keeps what the user typed (elementList).
+   */
+  clientValues(items: DiagItem[]): void {
+    const w = this.windows[this.windows.length - 1];
+    if (!w) return;
+    const path = this.path;
+    this.path = [];
+    try {
+      for (const it of items) {
+        if (!hasId(it.type)) continue;
+        if (it.id === ID.area) {
+          if (it.sid === 0x01) this.path = [];
+          const kind = LEVELS.get(it.sid);
+          if (kind && it.value.length >= 9) this.path.push({ kind, name: "", row: it.value.readUInt16BE(1), col: it.value.readUInt16BE(3), width: it.value.readUInt16BE(5), height: it.value.readUInt16BE(7) });
+        } else if (it.id === ID.screen && it.sid === 0x02) this.clientElements(w, it.value);
+      }
+    } catch (e) {
+      this.note(`values from SAP GUI not read: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      this.path = path;
+    }
+  }
+
+  private clientElements(w: WindowState, v: Buffer): void {
+    const o = this.origin();
+    for (let i = 0; i + 13 <= v.length; ) {
+      const n = v.readUInt16BE(i);
+      if (n < 13 || i + n > v.length) return;
+      const a = v.subarray(i, i + n);
+      i += n;
+      const etype = a[4] ?? 0;
+      const body = a.subarray(13);
+      if ((etype !== EL.inputField && etype !== EL.outputField) || body.length < 6) continue;
+      const row = o.row + a.readUInt16BE(8);
+      const col = o.col + a.readUInt16BE(10);
+      const e = w.elements.find((x) => x.kind === "field" && x.input && !x.hidden && x.row === row && x.col === col);
+      if (e) e.text = clean(this.text(body.subarray(6, 6 + (body[2] ?? 0)))).trim();
     }
   }
 
@@ -282,7 +349,8 @@ export class ClassicState {
     w.size = { rows, cols };
     if (index > 0) w.position = { row: v[9] ?? 0, col: v[8] ?? 0 };
     // Menus, keys and GUI status are only sent when they change: a window sent again keeps them.
-    const before = this.windows[index];
+    // A popup sent again right after its main window was (an update of both) is found among those that one closed.
+    const before = this.windows[index] ?? this.closed[index];
     if (before) {
       w.menus = before.menus;
       w.toolbar = before.toolbar;
@@ -295,7 +363,8 @@ export class ClassicState {
     // error on the screen: the input fields and the message, not the labels, frames and buttons). What is not
     // sent again stays as it was. Seen in a capture: VA03's first screen after "not in the database".
     this.carried = new Set();
-    if (index === 0 && ((v[6] ?? 0) & 0x01) === 0 && before) {
+    // Byte 6 without 0x01 on a popup (0x10): the same, for the popup (XD01's initial popup after SAP GUI's type-ahead call).
+    if (((v[6] ?? 0) & 0x01) === 0 && before && (index === 0 || ((v[6] ?? 0) & 0x10) !== 0) && before.program && (index === 0 || before.modal)) {
       w.program = before.program;
       w.dynpro = before.dynpro;
       w.title = before.title;
@@ -307,6 +376,7 @@ export class ClassicState {
       for (const x of [...w.elements, ...w.tabstrips, ...w.tables]) this.carried.add(x);
     }
     // A window replaces itself and closes those above it.
+    this.closed = this.windows.slice(0);
     this.windows.length = Math.min(this.windows.length, index);
     while (this.windows.length < index) this.windows.push(newWindow(this.windows.length));
     this.windows[index] = w;
@@ -399,6 +469,12 @@ export class ClassicState {
           this.build.table.totalRows = i32(0);
           this.build.table.visibleRows = i32(2);
           this.build.firstRow = i32(4);
+          // The sixth: the first column on show after the fixed ones when SAP GUI scrolled the table sideways
+          // (FB50 scrolled to Assignment, its column 9, gave 9).
+          if (v.length >= 24 && i32(5) > 0 && i32(5) < this.build.table.columns.length) {
+            this.build.table.firstColumn = i32(5);
+            layoutColumns(this.build.table);
+          }
         }
         this.scrollOf = undefined;
         return;
@@ -635,6 +711,10 @@ export class ClassicState {
       strip = this.newTabstrip();
       this.pushTabstrip(w, strip);
     }
+    if (strip && this.tabsKept.has(strip)) {
+      strip.tabs = [];
+      this.tabsKept.delete(strip);
+    }
     let lastTab: DiagTab | undefined;
     let i = 0;
     while (i + 13 <= v.length) {
@@ -683,10 +763,12 @@ export class ClassicState {
       if (this.carried.size) {
         const at = w.elements.findIndex((x) => this.carried.has(x) && x.row === el.row && x.col === el.col);
         const old = w.elements[at];
-        // In an update a label comes with no text (00 00 00 00 00 00): it keeps the text it had.
-        if (old && etype === EL.label && !(body[2] ?? 0)) {
+        // In an update a label comes with no text (00 00 00 00 00 00): it keeps the text it had. So does a field
+        // sent without its text (its length 0, the width given): SAP GUI keeps showing what it held (FB50 closes
+        // its header fields after a warning and sends them so).
+        if (old && FIELDS.has(etype) && !(body[2] ?? 0) && (etype === EL.label || (old.kind === "field" && !el.hidden))) {
           el.text = old.text;
-          el.width = old.width;
+          if (etype === EL.label || !el.width) el.width = old.width;
           if (old.icon) el.icon = old.icon;
           if (old.tooltip) el.tooltip = old.tooltip;
         }
@@ -826,11 +908,26 @@ export class ClassicState {
     this.pushTabstrip(w, strip);
   }
 
-  /** A tabstrip sent anew takes the place of the one kept from the last sending. */
+  /**
+   * A tabstrip sent anew takes the place of the one kept from the last sending. In an update SAP may send
+   * its description without its tab buttons (FB50 after a warning): it keeps the tabs it had, until a tab
+   * list comes for it.
+   */
   private pushTabstrip(w: WindowState, strip: DiagTabstrip): void {
-    if (this.carried.size) w.tabstrips = w.tabstrips.filter((x) => !(this.carried.has(x) && x.name === strip.name));
+    if (this.carried.size) {
+      const old = w.tabstrips.find((x) => this.carried.has(x) && x.name === strip.name);
+      if (old && !strip.tabs.length && old.tabs.length) {
+        strip.tabs = old.tabs.map((t) => ({ ...t }));
+        this.tabsKept.add(strip);
+        this.markActiveTab(strip);
+      }
+      w.tabstrips = w.tabstrips.filter((x) => !(this.carried.has(x) && x.name === strip.name));
+    }
     w.tabstrips.push(strip);
   }
+
+  /** Tabstrips whose tabs were kept from the last sending: a tab list for them replaces those tabs. */
+  private tabsKept = new WeakSet<DiagTabstrip>();
 
   private activeTab = new WeakMap<DiagTabstrip, string>();
 
@@ -870,13 +967,10 @@ export class ClassicState {
       const it = iconText(clean(titles[c] ?? ""));
       table.columns.push({ index: c, position: position.get(c) ?? c, name: "", title: it.text, width: u16(widthsAt + 2 * c), col: 0, visible: false, ...(it.tooltip ? { tooltip: it.tooltip } : {}) });
     }
-    // Where each column starts: after the row selector, one cell between columns.
-    let col = table.col + 2;
-    for (const c of [...table.columns].sort((a, b) => a.position - b.position)) {
-      c.col = col;
-      c.visible = table.width === 0 || col + c.width <= table.col + table.width;
-      col += c.width + 1;
-    }
+    // Bytes 15-16: the columns that stay on show when the table scrolls sideways (FB50's items: 5, the first five
+    // SAP GUI shows left of its divider; VA01's: 2; MM03's view list, all of its columns).
+    table.fixedColumns = Math.min(u16(15), count);
+    layoutColumns(table);
     if (this.carried.size) w.tables = w.tables.filter((x) => !(this.carried.has(x) && x.name === table.name));
     w.tables.push(table);
     this.build = { table, refs: new Map(), firstRow: 0 };
@@ -938,7 +1032,9 @@ export class ClassicState {
     if (t > tokens.length) this.note(`table ${b.table.name}: a row has fewer values than cells`);
     // The row's line on show (1-based) is its screen row under the column titles; the table's line is that plus the scrolling.
     const line = b.line?.index ?? b.table.rows.length + 1;
-    b.table.rows.push({ index: b.firstRow + line - 1, row: b.table.row + line, empty: cells.every((c) => c.hidden || (!c.text && !c.checked)), cells });
+    // The table's area starts with its title, when it has one, then the column headers: FB50's items (title "0 Items")
+    // and VA01's ("All items") show their first line two rows below the area's top (checked live, 2026-11-25).
+    b.table.rows.push({ index: b.firstRow + line - 1, row: b.table.row + line + (b.table.title ? 1 : 0), empty: cells.every((c) => c.hidden || (!c.text && !c.checked)), cells });
     delete b.line;
   }
 }

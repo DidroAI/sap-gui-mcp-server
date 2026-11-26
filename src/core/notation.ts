@@ -13,10 +13,14 @@
  * notation once, under its header (`numbersLine`).
  */
 
-/** "1.250,00", "0,00", "1 250,5-": groups of three with a point or a space, a comma, one or two decimals. */
-const DECIMAL_COMMA = /^-?\d{1,3}(?:[. ]?\d{3})*,\d{1,2}-?$/;
-/** "1,250.00", "0.00". */
-const DECIMAL_POINT = /^-?\d{1,3}(?:[, ]?\d{3})*\.\d{1,2}-?$/;
+/**
+ * "1.250,00", "0,00", "1 250,5-": groups of three with a point or a space, a comma, one or two decimals;
+ * or any number of decimals after a group with a point ("9.983,000", a quantity on MMBE): a comma
+ * after a point is a decimal comma in every notation.
+ */
+const DECIMAL_COMMA = /^-?(?:\d{1,3}(?:[. ]?\d{3})*,\d{1,2}|\d{1,3}(?:\.\d{3})+,\d+)-?$/;
+/** "1,250.00", "0.00"; "9,983.000". */
+const DECIMAL_POINT = /^-?(?:\d{1,3}(?:[, ]?\d{3})*\.\d{1,2}|\d{1,3}(?:,\d{3})+\.\d+)-?$/;
 
 /** The values a view shows: what stands in quotes, and the cells of rows (a list's cells without their column in braces). */
 function valuesOf(view: string): string[] {
@@ -42,7 +46,8 @@ function valuesOf(view: string): string[] {
 export function decimalOf(view: string): { sign: "," | "."; example: string } | undefined {
   let comma: string | undefined;
   let point: string | undefined;
-  for (const v of valuesOf(view)) {
+  // Tree nodes count too (MMBE's stock is a column tree: "1000 Hamburg | 9.983,000").
+  for (const v of [...valuesOf(view), ...valuesIn(view)]) {
     if (!comma && DECIMAL_COMMA.test(v)) comma = v;
     else if (!point && DECIMAL_POINT.test(v)) point = v;
   }
