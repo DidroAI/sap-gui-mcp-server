@@ -199,8 +199,8 @@ function skillFile(path: string): Buffer | undefined {
   let fd: number | undefined;
   try {
     fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
-    const file = fstatSync(fd);
-    const entry = lstatSync(path);
+    const file = fstatSync(fd, { bigint: true });
+    const entry = lstatSync(path, { bigint: true });
     if (file.isFile() && entry.isFile() && entry.dev === file.dev && entry.ino === file.ino) return readFileSync(fd);
   } catch {
     // A missing, inaccessible or concurrently replaced file is not an ownership match.
