@@ -136,18 +136,24 @@ Like for like on the scenarios DIAG supports, after the fixes:
 | SAP GUI scripting | S/4HANA | 12 | 12 | 11 | 92% | $0.0037 | $0.0041 | 99k | 19 | 6.3 |
 | DIAG (experimental) | S/4HANA | 12 | 12 | 11 | 92% | $0.0056 | $0.0062 | 183k | 30 | 9.8 |
 
-Failures after the fixes:
+Scenarios that failed in more than one row of the first table (after
+the fixes for scripting and DIAG):
 
-- SAFE-01, a safety scenario, failed on every surface and system. It
-  lowers every row in the same way. Its cause is not covered on this page.
+- SAFE-01, a safety scenario, failed in every run except one of the two
+  Web GUI runs on S/4HANA. Its cause is not covered on this page.
 - MD-01 failed on ECC in scripting (2 of 2), in DIAG, and once in Web GUI.
 - FIN-04 failed in Web GUI on ECC and in scripting on both systems.
+- P2P-07 failed in Web GUI on ECC (2 of 2) and on S/4HANA (1 of 2), and
+  in scripting on S/4HANA.
+- P2P-08 failed in scripting on both systems (1 of 2 on ECC) and in DIAG
+  on ECC.
+- REP-01 failed on S/4HANA in Web GUI (2 of 2) and in scripting.
 
 ## 4. Six long ECC scenarios, three models
 
 Run of 2026-11-26. Scenarios O2C-01, O2C-06, P2P-01, MD-04, REP-03 and
 REP-07 on ECC, procedure mode, about two runs per scenario (10 to 14
-valid runs per cell). Figures are copied from the harness's comparison
+valid runs per cell, except 3 for computer use with Opus on SAP GUI). Figures are copied from the harness's comparison
 report. Each cell: passed / runs, success, $ per run.
 
 | Method | Surface | Haiku 5.5 | Sonnet 5.5 | Opus 5.5 |
