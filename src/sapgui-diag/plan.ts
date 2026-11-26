@@ -808,6 +808,35 @@ export function scrolledOutRefusal(w: DiagWindow, e: DiagElement | undefined, wh
   return `${what} is in a part of the screen that SAP GUI has scrolled out of view, where a click lands elsewhere: nothing was done. Scroll it ${down ? "down" : "up"} ({"do":"scroll","id":"screen","to":"${down ? "next" : "prev"}"}), send Enter, then act on it.`;
 }
 
+/**
+ * A field scrolled out of view, reached from the nearest field on show before it in the same container (row by
+ * row): the Tab presses, one per input field up to it. Undefined when anything else that may take the focus lies
+ * between (a button, a box, a dropdown: their Tab stops were not checked) or no field before it is on show.
+ */
+export function scrolledReach(w: DiagWindow, e: DiagElement): { anchor: DiagElement; tabs: number } | undefined {
+  if (e.kind !== "field" || !e.input) return undefined;
+  const key = e.path.join(">");
+  const order = w.elements.filter((o) => !o.hidden && o.path.join(">") === key && o.kind !== "label" && o.kind !== "group").sort((a, b) => a.row - b.row || a.col - b.col);
+  const at = order.indexOf(e);
+  let from = -1;
+  for (let i = at - 1; i >= 0; i--) {
+    const o = order[i] as DiagElement;
+    if (o.kind === "field" && o.input && !o.scrolledOut) {
+      from = i;
+      break;
+    }
+  }
+  if (from < 0) return undefined;
+  let tabs = 0;
+  for (let i = from + 1; i <= at; i++) {
+    const o = order[i] as DiagElement;
+    if (o.kind === "field" && !o.input) continue;
+    if (o.kind !== "field") return undefined;
+    tabs++;
+  }
+  return { anchor: order[from] as DiagElement, tabs };
+}
+
 /** Does the main window's screen scroll (taller than the window)? */
 export const screenScrolls = (w: DiagWindow): boolean => !w.modal && w.index === 0 && !!w.scroll && w.scroll.rows > w.scroll.visibleRows;
 
@@ -1006,6 +1035,25 @@ export function planPlain(s: DiagScreen, action: Action, target: PlainTarget | u
       const misuse = plainMisuse(action, x);
       if (misuse) throw new ActionError(misuse);
       if (x.kind === "element" && !x.element.input) throw new ActionError(`${x.what} is read-only.${besideNote(x.window, x.element)}`);
+      // A field scrolled out of view in a subscreen that scrolls on its own: reached with Tab from the field on show
+      // before it, when only input fields lie between (SAP GUI scrolls to the field that gets the cursor).
+      const reach = x.kind === "element" && x.element.scrolledOut ? scrolledReach(x.window, x.element) : undefined;
+      if (reach && x.kind === "element") {
+        const [ax, ay] = g.at(x.window, reach.anchor.row, reach.anchor.col, reach.anchor.width);
+        const single = oneLine(String(action.value ?? ""));
+        return {
+          steps: [
+            { do: "click", x: ax, y: ay, settle: 150 },
+            { do: "vk", vk: VK.TAB, count: reach.tabs, gap: TAB_GAP_MS, settle: 200 },
+            { do: "vk", vk: VK.HOME, settle: 40 },
+            { do: "vk", vk: VK.END, shift: true, settle: 40 },
+            { do: "vk", vk: VK.DELETE, settle: 40 },
+            { do: "type", value: single.text, settle: 150 },
+          ],
+          note: `typed into ${x.what}, reached with Tab from ${reach.anchor.name} (SAP GUI scrolls to it); SAP gets it with the next Enter or function key`,
+          answer: "no",
+        };
+      }
       const low = belowWindow(x);
       if (low) throw new ActionError(low);
       const [px, py] = g.at(x.window, x.row, x.col, x.kind === "cell" ? x.width : x.element.width);

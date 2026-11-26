@@ -50,8 +50,22 @@ const geo: Geometry = { at: (win, row, col, width = 1) => cellPoint(AREA, win.si
 const plan = (a: Action) => planPlain(s, a, resolveTarget(s, a), geo);
 
 describe("an element of a subscreen scrolled out of view", () => {
-  test("set, click and check are refused with the scroll that brings it up", () => {
-    expect(() => plan({ do: "set", id: "ADDR1_DATA-COUNTRY", value: "DE" })).toThrow('ADDR1_DATA-COUNTRY is in a part of the screen that SAP GUI has scrolled out of view, where a click lands elsewhere: nothing was done. Scroll it down ({"do":"scroll","id":"screen","to":"next"}), send Enter, then act on it.');
+  test("set reaches it with Tab from the field on show before it, when only fields lie between (SAP GUI scrolls to it)", () => {
+    // Round 3, MD-01: the country right after the city, which is on show.
+    const p = plan({ do: "set", id: "ADDR1_DATA-COUNTRY", value: "DE" });
+    expect(p.steps.map((x) => x.do)).toEqual(["click", "vk", "vk", "vk", "vk", "type"]);
+    expect(p.steps[1]).toMatchObject({ vk: 9, count: 1 });
+    expect(p.note).toContain("reached with Tab from ADDR1_DATA-CITY1");
+    const [x] = cellPoint(AREA, w.size, 15, 34, 10, CELLS);
+    expect(p.steps[0]).toMatchObject({ do: "click", x });
+  });
+  test("with a button between, set is refused with the scroll", () => {
+    const withButton = { ...w, elements: [...w.elements.slice(0, 3), el({ kind: "button", name: "", text: "More fields", fcode: "$2OC", row: 15, col: 80, width: 4, scrolledOut: false }), ...w.elements.slice(3)] } as unknown as DiagWindow;
+    const s2 = { ...s, windows: [withButton] } as DiagScreen;
+    const a = { do: "set", id: "ADDR1_DATA-COUNTRY", value: "DE" };
+    expect(() => planPlain(s2, a, resolveTarget(s2, a), geo)).toThrow('ADDR1_DATA-COUNTRY is in a part of the screen that SAP GUI has scrolled out of view, where a click lands elsewhere: nothing was done. Scroll it down ({"do":"scroll","id":"screen","to":"next"}), send Enter, then act on it.');
+  });
+  test("click and check are refused with the scroll that brings it up", () => {
     expect(() => plan({ do: "click", id: "ADDR1_DATA-COUNTRY" })).toThrow("scrolled out of view");
     expect(() => plan({ do: "check", id: "ADDR1_DATA-FLAG" })).toThrow("scrolled out of view");
   });
@@ -88,7 +102,8 @@ describe("the field that has the cursor, in a part scrolled out of view", () => 
     const f = fakeDriver(withFocus);
     expect(await f.d.act({ do: "set", id: "ADDR1_DATA-COUNTRY", value: "DE" })).toContain('set ADDR1_DATA-COUNTRY = "DE"');
     expect(sent(f)).toEqual(["vk", "vk", "vk", "type"]);
-    // After an input the cursor may have moved: refused again.
-    await expect(f.d.act({ do: "set", id: "ADDR1_DATA-COUNTRY", value: "DE" })).rejects.toThrow("scrolled out of view");
+    // After an input the cursor may have moved: reached with Tab from the city instead.
+    expect(await f.d.act({ do: "set", id: "ADDR1_DATA-COUNTRY", value: "DE" })).toContain('set ADDR1_DATA-COUNTRY = "DE"');
+    expect(sent(f).slice(4)).toEqual(["click", "vk", "vk", "vk", "vk", "type"]);
   });
 });
