@@ -78,3 +78,17 @@ describe("scroll screen on a window that fits, with a subscreen that scrolls", (
     expect(() => planScreenScroll(fits, "next", geo)).toThrow("does not scroll");
   });
 });
+
+describe("the field that has the cursor, in a part scrolled out of view", () => {
+  // Round 2, MD-01: after "Fill out all required entry fields" SAP puts the cursor on the country and SAP GUI scrolls
+  // the address tab to it, while SAP's own scroll position (what the view lays out by) says it is out of view.
+  test("is typed into where the cursor is, with no click, when nothing was input since SAP's screen", async () => {
+    const { fakeDriver, sent } = await import("./fake-driver.js");
+    const withFocus = { ...s, windows: [{ ...w, focus: { row: 16, col: 23, name: "ADDR1_DATA-COUNTRY" } }] } as DiagScreen;
+    const f = fakeDriver(withFocus);
+    expect(await f.d.act({ do: "set", id: "ADDR1_DATA-COUNTRY", value: "DE" })).toContain('set ADDR1_DATA-COUNTRY = "DE"');
+    expect(sent(f)).toEqual(["vk", "vk", "vk", "type"]);
+    // After an input the cursor may have moved: refused again.
+    await expect(f.d.act({ do: "set", id: "ADDR1_DATA-COUNTRY", value: "DE" })).rejects.toThrow("scrolled out of view");
+  });
+});

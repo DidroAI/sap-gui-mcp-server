@@ -637,6 +637,26 @@ export function successNote(moved: boolean, after: DiagScreen | undefined): stri
   return `SAP: ${statusLine(m).replace(/^sbar {2}status {2}/, "")}`;
 }
 
+/** Is this element where SAP put the cursor? */
+function atFocus(w: DiagWindow, e: DiagElement): boolean {
+  return !!w.focus && w.focus.row === e.row && w.focus.col === e.col && (!w.focus.name || w.focus.name === e.name);
+}
+
+/** Typing into the field the cursor is in: its text selected and replaced, no click. */
+function cursorPlan(what: string, value: string): Plan {
+  const single = oneLine(value);
+  return {
+    steps: [
+      { do: "vk", vk: 0x24, settle: 40 },
+      { do: "vk", vk: 0x23, shift: true, settle: 40 },
+      { do: "vk", vk: 0x2e, settle: 40 },
+      { do: "type", value: single.text, settle: 150 },
+    ],
+    note: `typed into ${what}, where SAP put the cursor`,
+    answer: "no",
+  };
+}
+
 /** "0010" and "10", "or" and "OR" are the same value as SAP shows it. */
 const sameValue = (a: string, b: string) => {
   const n = (v: string) => clean(v).toUpperCase().replace(/^0+(?=\d)/, "");
@@ -894,6 +914,7 @@ export class DiagDriver implements Driver {
       });
     }
     const inputEnd = Date.now();
+    if (plan.steps.length) this.lastInput = { step: this.conn.steps.get(this.mode) ?? 0, mode: this.mode };
     if (plan.tree) this.remember(plan.tree);
     let note = plan.note;
     let answered = false;
@@ -1116,7 +1137,10 @@ export class DiagDriver implements Driver {
         // check: the box's state as on show, a tick of this step included, decides whether it is clicked.
         const target = resolveTarget(action.do === "check" ? withTyped(s, this.typed()) : s, action);
         if (!target && /^(set|focus|check|click|dblclick|press|select|f4)$/.test(action.do)) throw new ActionError(noTargetText(s, String(action.id ?? action.name ?? "")));
-        plan = planPlain(s, action, target, g, local(named));
+        // The field SAP put the cursor on, scrolled out of view by SAP's count (SAP GUI scrolls to the cursor, MD-01's country
+        // after "Fill out all required entry fields"): typed where the cursor is, with no click, while nothing was input since.
+        const atCursor = action.do === "set" && target?.kind === "element" && target.element.scrolledOut && target.element.input && !this.inputSince(step0) && atFocus(active(s), target.element);
+        plan = atCursor ? cursorPlan(target.what, String(action.value ?? "")) : planPlain(s, action, target, g, local(named));
         if (action.do === "set" && (target?.kind === "element" || target?.kind === "cell")) plan = { ...plan, note: this.keepTyped(target, String(action.value ?? ""), s) };
         // A box ticked without a function code stays in SAP GUI until the next Enter: kept like a typed value.
         if (action.do === "check" && plan.answer === "no" && plan.steps.length && (target?.kind === "element" || target?.kind === "cell")) this.keepTicked(target, s);
@@ -1143,6 +1167,12 @@ export class DiagDriver implements Driver {
     if (after && moved && s.message?.type === "A" && after.message?.type !== "A")
       lines.push(`SAP ended transaction ${s.session.tcode ?? ""} after the termination message "${clean(s.message.text)}": input that was not saved there is lost. The screen below is where SAP went; start the transaction again to retry.`);
     return lines.join("\n");
+  }
+
+  /** The step of the mode at the last input sent to SAP GUI: the cursor SAP set may have moved since. */
+  private lastInput: { step: number; mode: number } | undefined;
+  private inputSince(step: number): boolean {
+    return !!this.lastInput && this.lastInput.mode === this.mode && this.lastInput.step === step;
   }
 
   /** The step at which SAP GUI's screen was scrolled with the wheel: its fields' places are known again with the next screen. */
