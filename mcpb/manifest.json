@@ -4,8 +4,8 @@
   "name": "sap-ui-automation",
   "display_name": "SAP UI Automation",
   "version": "0.5.0",
-  "description": "See and drive the SAP screens you have open: SAP GUI for Windows, Web GUI and Fiori, as a compact text view.",
-  "long_description": "Lets Claude see and drive the SAP screens you already have open, under your own SAP authorisations: **SAP GUI for Windows** (through SAP GUI scripting), **SAP GUI for HTML (Web GUI)** and **SAP Fiori** in Chrome.\n\nIt finds your open sessions by itself, reads each screen as one line per control with SAP's own ids, and acts on those ids. It never logs on and never stores a password.\n\n**Each action that may write to SAP waits for your yes** (`SAP_WRITE` = confirm, the default); where Claude Desktop cannot ask, it is refused. Set it to `off` to make the server read-only, or `on` to allow writes. You can also limit the systems, transactions and browser origins it may touch.\n\nWeb GUI and Fiori need Chrome (or Edge) with remote debugging allowed: open chrome://inspect/#remote-debugging once. See the documentation for details.",
+  "description": "Let Claude see and drive the SAP screens you have open: SAP GUI for Windows, Web GUI and Fiori. Each write waits for your yes.",
+  "long_description": "Lets Claude see and drive the SAP screens you already have open, under your own SAP authorisations: **SAP GUI for Windows** (through SAP GUI scripting), **SAP GUI for HTML (Web GUI)** and **SAP Fiori** in Chrome.\n\nIt finds your open sessions by itself, reads each screen as one line per control with SAP's own ids, and acts on those ids. It never logs on and never stores a password.\n\n**Each action that may write to SAP waits for your yes** (`SAP_WRITE` = confirm, the default); where Claude Desktop cannot ask, it is refused. Set it to `off` to make the server read-only, or `on` to allow writes. You can also limit the systems, transactions and browser origins it may touch.\n\nWeb GUI and Fiori need Google Chrome: by default the server opens a Chrome window of its own, where you log on to SAP. See the documentation for the other browser modes, including the UI Automation for SAP extension.",
   "author": {
     "name": "Didro",
     "url": "https://github.com/DidroAI"
@@ -14,11 +14,12 @@
     "type": "git",
     "url": "https://github.com/DidroAI/sap-ui-automation.git"
   },
-  "homepage": "https://github.com/DidroAI/sap-ui-automation#readme",
+  "homepage": "https://docs.didro.ai/sap-ui-automation/",
   "documentation": "https://github.com/DidroAI/sap-ui-automation/blob/main/docs/getting-started/installation.md",
+  "icon": "icon.png",
   "support": "https://github.com/DidroAI/sap-ui-automation/issues",
   "license": "MIT",
-  "keywords": ["sap", "sap-gui", "webgui", "fiori", "s4hana", "erp", "automation"],
+  "keywords": ["sap", "sap-gui", "sap-gui-scripting", "webgui", "fiori", "s4hana", "erp", "automation", "test-automation"],
   "server": {
     "type": "node",
     "entry_point": "dist/cli.js",

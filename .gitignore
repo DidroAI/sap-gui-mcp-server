@@ -10,6 +10,9 @@ captures/
 *.png
 # The extension's icons are part of it: Chrome refuses an unpacked extension whose icons are missing.
 !extension/icons/*.png
+# The product icon (MCP Registry, Claude Desktop, README, docs site): drawn, no screen content.
+!assets/icon.png
+!docs/public/icon.png
 # Recordings made while developing hold what was typed: they stay out of this repository.
 sap-tests/
 docs/.vitepress/cache/
