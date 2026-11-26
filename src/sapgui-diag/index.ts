@@ -728,7 +728,7 @@ export class DiagDriver implements Driver {
       : "";
     if (options.id?.trim().toLowerCase() === "mbar") return menuView(this.screen()) + recovered;
     if (options.id) return (await lookControl({ screen: () => this.screen(), scrollTo: (id, row) => this.scrollTo(id, row).then(() => undefined), entries: (id) => this.entriesOf(this.screen(), id) }, options)) + recovered;
-    const view = diagView(withTyped(this.screen(), this.typed()), options.compact ? {} : { maxRows: 100_000 });
+    const view = diagView(withTyped(this.screen(), this.typed()), options.compact ? { compact: true } : { maxRows: 100_000 });
     if (recovered) return view + recovered;
     return this.conn.traffic.pending(this.mode) ? `${view}\nNOTE SAP is still working on a step: this screen is from before it and will change. Look again in a moment, and act when the step has ended.` : view;
   }

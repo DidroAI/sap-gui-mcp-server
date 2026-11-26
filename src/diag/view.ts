@@ -36,7 +36,7 @@
  * lists them), what a window behind a popup cannot do (its keys and
  * toolbar).
  */
-import type { DiagControl, DiagElement, DiagKey, DiagList, DiagMenuEntry, DiagScreen, DiagStatus, DiagTable, DiagTabstrip, DiagWindow } from "./screen.js";
+import type { DiagControl, DiagElement, DiagGridColumn, DiagKey, DiagList, DiagMenuEntry, DiagScreen, DiagStatus, DiagTable, DiagTabstrip, DiagWindow } from "./screen.js";
 import { keyName } from "./text.js";
 
 export interface DiagViewOptions {
@@ -44,10 +44,27 @@ export interface DiagViewOptions {
   maxRows?: number;
   /** Menus, function keys and toolbar (default true). */
   chrome?: boolean;
+  /**
+   * The compact view (default false): a grid's columns by one title, its empty columns by id only; a table
+   * control's open columns right of the edge by title only; no keys every screen has, none on SAP Easy
+   * Access; a selection screen's texts as plain text; an icon's quick info as text. The full view and a look
+   * by id keep all of it.
+   */
+  compact?: boolean;
 }
 
 const one = (s: string): string => s.replace(/\s*\n\s*/g, " ").trim();
 const quote = (s: string): string => `"${one(s).replace(/"/g, '\\"')}"`;
+
+/** An icon with a quick info, "@5D\\QRelease possible@": its text. A bare icon code stays. */
+const iconText = (s: string): string => s.replace(/@[0-9A-Z]{2}\\Q([^@]*)@/g, "$1");
+
+/** Function keys every screen has (Help, Possible Entries, Find, Find Next, Print, New GUI Window, the page keys) and the unnamed ones. */
+const GENERIC_VKEYS = new Set([1, 4, 71, 74, 80, 81, 82, 83, 84, 86]);
+const genericKey = (k: DiagKey): boolean => GENERIC_VKEYS.has(k.vkey) || k.vkey > 86;
+
+/** A selection screen's text of a parameter or a select option (%_SAUART_%_APP_%-TEXT): a label. */
+const selectionText = (e: DiagElement): boolean => e.kind === "field" && !e.input && e.name.startsWith("%_") && /_%_APP_%-/.test(e.name);
 
 /** What marks something SAP shows greyed out: it takes no click on this screen. */
 export const GREYED = "(greyed out)";
@@ -65,8 +82,9 @@ export function statusLine(m: DiagStatus): string {
   return `sbar  status  ${m.type ? `${m.type}: ` : ""}${one(m.text)}${m.id ? `  (${m.id} ${m.number ?? ""})`.replace(/ \)$/, ")") : ""}${mark}`;
 }
 
-function elementText(e: DiagElement): string {
+function elementText(e: DiagElement, compact = false): string {
   const at = `@${e.col}`;
+  if (compact && selectionText(e)) return one(e.text);
   switch (e.kind) {
     case "label":
       return one(e.text || e.tooltip || "");
@@ -100,7 +118,10 @@ function tabLine(t: DiagTabstrip): string {
   return `r${t.row}  tabs ${t.name}: ${t.tabs.map((tab) => `${one(tab.text || tab.tooltip || tab.id)}${tab.active ? " (selected)" : ""} {${tab.fcode || tab.id}}`).join(" | ")}`;
 }
 
-function tableLines(t: DiagTable, maxRows: number): string[] {
+/** The most titles of columns right of a table control's edge the compact view names. */
+const MAX_EDGE_TITLES = 40;
+
+function tableLines(t: DiagTable, maxRows: number, compact = false): string[] {
   const columns = [...t.columns].sort((a, b) => a.position - b.position);
   const count = new Map<string, number>();
   for (const c of columns) count.set(c.title, (count.get(c.title) ?? 0) + 1);
@@ -122,9 +143,17 @@ function tableLines(t: DiagTable, maxRows: number): string[] {
     const c = r.cells[i];
     return !!c && !c.hidden && c.input && c.kind !== "button";
   });
-  const listed = filled.length ? columns.filter((c) => holds(c.index) || open(c.index)) : columns;
-  const rest = columns.length - listed.length;
-  const out = [`r${t.row}  table ${t.name}${t.title ? ` ${quote(t.title)}` : ""}  ${t.totalRows ?? t.rows.length} rows (${filled.length} with data on show), ${columns.length} columns: ${listed.map((c) => `${one(c.title || c.tooltip || "")} ${c.name}`.trim()).join(" | ")}${rest ? ` | (${rest} more, empty and read-only in the rows on show)` : ""}`];
+  // Compact: right of what SAP GUI shows, a column open for input and empty is named by its title only (an action takes it).
+  const edge = (c: DiagTable["columns"][number]) => compact && !c.visible && !holds(c.index) && open(c.index);
+  const listed = (filled.length ? columns.filter((c) => holds(c.index) || open(c.index)) : columns).filter((c) => !edge(c));
+  const edged = columns.filter(edge);
+  const rest = columns.length - listed.length - edged.length;
+  const edgeTitle = (c: DiagTable["columns"][number]) => {
+    const title = one(c.title || c.tooltip || "");
+    return title && count.get(c.title) === 1 ? title : `${title} ${c.name}`.trim();
+  };
+  const edgeText = edged.length ? ` | right of the edge, open: ${edged.slice(0, MAX_EDGE_TITLES).map(edgeTitle).join(", ")}${edged.length > MAX_EDGE_TITLES ? `, and ${edged.length - MAX_EDGE_TITLES} more (sap_look with the table's id names every column)` : ""}` : "";
+  const out = [`r${t.row}  table ${t.name}${t.title ? ` ${quote(t.title)}` : ""}  ${t.totalRows ?? t.rows.length} rows (${filled.length} with data on show), ${columns.length} columns: ${listed.map((c) => `${one(c.title || c.tooltip || "")} ${c.name}`.trim()).join(" | ")}${edgeText}${rest ? ` | (${rest} more, empty and read-only in the rows on show)` : ""}`];
   for (const r of filled.slice(0, maxRows)) {
     const cells: string[] = [];
     for (const c of columns) {
@@ -187,15 +216,27 @@ function treeTexts(n: { text: string; items: Record<string, string> }, headers: 
 /** The most nodes of a tree shown whole, closed folders included. */
 const WHOLE_TREE = 40;
 
-function controlLines(c: DiagControl, maxRows: number): string[] {
+function controlLines(c: DiagControl, maxRows: number, compact = false): string[] {
   const where = `${c.area ? `r${c.area.row}  ` : ""}`;
   const id = `${c.container ?? (c.dynpro ? "value-help" : "")} (shell ${c.id})`.trim();
   if (c.grid) {
     const g = c.grid;
-    const out = [`${where}grid ${id}  ${g.totalRows} rows, ${g.columns.length} columns: ${g.columns.map((col) => `${col.name}=${[col.title, ...col.titles.filter((t) => t !== col.title)].map(one).join(" / ")}`).join(" | ")}`];
-    for (const r of g.rows.slice(0, maxRows)) out.push(`  row ${r.index}: ${r.cells.map(one).join(" | ")}`);
-    const rest = g.totalRows - Math.min(g.rows.length, maxRows);
-    if (rest > 0) out.push(`  ... ${rest} more rows${g.rows.length < g.totalRows ? ` (${g.rows.length} sent so far; the grid loads the others when scrolled)` : " (all sent; a higher maxRows shows them)"}`);
+    const shown = g.rows.slice(0, maxRows);
+    // Compact: a column empty in every row on show is named by its id only, after the others, and left out of the rows.
+    const empty = new Set(compact && shown.length ? g.columns.map((_, i) => i).filter((i) => shown.every((r) => !one(r.cells[i] ?? ""))) : []);
+    const kept = g.columns.map((col, i) => ({ col, i })).filter(({ i }) => !empty.has(i));
+    const titles = (col: DiagGridColumn) => (compact ? one(col.title || col.titles[0] || "") : [col.title, ...col.titles.filter((t) => t !== col.title)].map(one).join(" / "));
+    const emptyText = empty.size ? `; empty in the rows on show: ${[...empty].map((i) => g.columns[i]?.name).join(", ")}` : "";
+    const out = [`${where}grid ${id}  ${g.totalRows} rows, ${g.columns.length} columns: ${kept.map(({ col }) => `${col.name}=${titles(col)}`).join(" | ")}${emptyText}`];
+    const text = (s: string) => (compact ? iconText(one(s)) : one(s));
+    for (const r of shown) out.push(`  row ${r.index}: ${kept.map(({ i }) => text(r.cells[i] ?? "")).join(" | ")}`);
+    const first = shown[0]?.index ?? 0;
+    // Rows read by range (sap_look with rows): which rows they are.
+    if (first > 0) out.push(`  (rows ${first} to ${shown[shown.length - 1]?.index ?? first} of ${g.totalRows})`);
+    else {
+      const rest = g.totalRows - Math.min(g.rows.length, maxRows);
+      if (rest > 0) out.push(`  ... ${rest} more rows${g.rows.length < g.totalRows ? ` (${g.rows.length} sent so far; the grid loads the others when scrolled)` : " (all sent; a higher maxRows shows them)"}`);
+    }
     return out;
   }
   if (c.tree) {
@@ -233,11 +274,14 @@ function windowLines(w: DiagWindow, top: boolean, o: Required<DiagViewOptions>):
   const out = [`WINDOW ${w.index}${w.modal ? " popup" : ""}  ${quote(w.title)}${w.index > 0 ? `  ${w.program} ${w.dynpro}` : ""}${place}  area ${w.size.rows}x${w.size.cols}`];
   if (o.chrome) {
     if (w.menus.length) out.push(`menu: ${w.menus.map((m) => `${one(m.text)}${m.enabled ? "" : ` ${GREYED}`}`).join(" | ")}${w.index === 0 ? '  (every entry: sap_look id "mbar")' : ""}`);
-    if (top) {
+    // SAP Easy Access: the command field is what is used there, not its keys.
+    if (top && o.compact && w.program === "SAPLSMTR_NAVIGATION" && w.index === 0) {
+      // nothing
+    } else if (top) {
       // A key that is also a toolbar button is written once, with the button's text.
       const toolbar = w.toolbar.filter((k) => k.enabled);
       const onToolbar = new Set(toolbar.map((k) => k.vkey));
-      const keys = w.keys.filter((k) => k.enabled && !onToolbar.has(k.vkey));
+      const keys = w.keys.filter((k) => k.enabled && !onToolbar.has(k.vkey) && !(o.compact && genericKey(k)));
       if (keys.length) out.push(`keys: ${keys.map(keyText).join(" | ")}`);
       if (toolbar.length) out.push(`toolbar: ${toolbar.map(keyText).join(" | ")}`);
       // Greyed out: on the screen, and taking no click. Said, so that "not here" and "not now" differ.
@@ -259,14 +303,14 @@ function windowLines(w: DiagWindow, top: boolean, o: Required<DiagViewOptions>):
   for (const [key, elements] of rows) {
     const parts = elements
       .sort((a, b) => a.col - b.col)
-      .map(elementText)
+      .map((e) => elementText(e, o.compact))
       .filter(Boolean);
     if (parts.length) blocks.push({ row: elements[0]?.row ?? 0, order: key.includes(" ") ? 4 : 0, lines: [`r${key}  ${parts.join("  ")}`] });
   }
   for (const t of w.tabstrips) blocks.push({ row: t.row, order: 1, lines: [tabLine(t)] });
-  for (const t of w.tables) blocks.push({ row: t.row, order: 2, lines: tableLines(t, o.maxRows) });
+  for (const t of w.tables) blocks.push({ row: t.row, order: 2, lines: tableLines(t, o.maxRows, o.compact) });
   for (const c of w.controls) {
-    const lines = controlLines(c, o.maxRows);
+    const lines = controlLines(c, o.maxRows, o.compact);
     if (lines.length) blocks.push({ row: c.area?.row ?? Number.MAX_SAFE_INTEGER, order: 3, lines });
   }
   blocks.sort((a, b) => a.row - b.row || a.order - b.order);
@@ -290,7 +334,7 @@ function decoderNotes(s: DiagScreen): string[] {
 }
 
 export function diagView(s: DiagScreen, options: DiagViewOptions = {}): string {
-  const o: Required<DiagViewOptions> = { maxRows: options.maxRows ?? 50, chrome: options.chrome ?? true };
+  const o: Required<DiagViewOptions> = { maxRows: options.maxRows ?? 50, chrome: options.chrome ?? true, compact: options.compact ?? false };
   const main = s.windows[0];
   const head = [`TRANSACTION ${s.session.tcode ?? ""}`, `PROGRAM ${main?.program ?? ""}`, `SCREEN ${main?.dynpro.replace(/^0+(?=\d)/, "") ?? ""}`, `SYSTEM ${s.session.system ?? ""}${s.session.client ? ` (${s.session.client})` : ""}`, ...(s.session.user ? [`USER ${s.session.user}`] : []), `MODE ${s.mode}`];
   const out = [head.join("  ")];
