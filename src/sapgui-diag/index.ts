@@ -35,7 +35,7 @@ import { join } from "node:path";
 import { ONE_LINE_NOTE, oneLine } from "../core/action.js";
 import { ActionError, type Action, type Assessment, type DoctorCheck, type Driver, type LookOptions, type SessionInfo, type Surface } from "../core/types.js";
 import { CLOSES_SESSIONS, commitCode, commitWord, isLogonScreen, LOGON_REFUSAL, MENU_PROGRAMS, okcodeKind, SAFE_VKEYS, safeCode, safeWord, SAVE_VKEYS } from "../core/words.js";
-import { type DiagControl, DiagDecoder, type DiagElement, type DiagKey, type DiagScreen, type DiagWindow, diagView, menuView, statusLine } from "../diag/index.js";
+import { type DiagControl, DiagDecoder, type DiagElement, type DiagKey, type DiagScreen, type DiagTable, type DiagWindow, diagView, menuView, statusLine } from "../diag/index.js";
 import { notationNote } from "../core/notation.js";
 import { HostError, MAX_TIMEOUT_MS, powershellExe, PsHost, READ_TIMEOUT_MS } from "../sapgui/host.js";
 import type { Transport } from "../sapgui/facts.js";
@@ -447,14 +447,25 @@ export function tableCell(s: DiagScreen, action: Action): Action {
   return { ...rest, id: `${c.name}[${row}]` };
 }
 
-/** Does the action click or type into this table control (a cell, a row, a scroll)? */
+/**
+ * A column that stays on show when SAP GUI scrolls the table sideways: one of its first `fixedColumns` in the
+ * order shown (FB50 keeps G/L account, D/C and amount). Its cells stay where they were.
+ */
+function fixedColumn(t: DiagTable | undefined, column: number | undefined): boolean {
+  if (!t?.fixedColumns || column === undefined) return false;
+  const order = [...t.columns].sort((a, b) => a.position - b.position);
+  const at = order.findIndex((c) => c.index === column);
+  return at >= 0 && at < t.fixedColumns;
+}
+
+/** Does the action click or type into this table control (a cell, a row, a scroll) where its sideways scroll moves things? */
 function touchesTable(s: DiagScreen, action: Action, table: string): boolean {
   const n = namedControl(s, action.id);
   if (n?.kind === "table" && n.table.name === table) return true;
-  if (n?.kind === "dropdown" && n.cell?.table.name === table) return true;
+  if (n?.kind === "dropdown" && n.cell?.table.name === table) return !fixedColumn(n.cell.table, n.cell.table.columns.find((c) => c.name === n.element.name)?.index);
   try {
     const t = resolveTarget(s, action);
-    return t?.kind === "cell" && t.table === table;
+    return t?.kind === "cell" && t.table === table && !fixedColumn(active(s).tables.find((x) => x.name === table), t.column);
   } catch {
     return false;
   }

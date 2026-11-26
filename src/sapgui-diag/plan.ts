@@ -666,7 +666,8 @@ export function plainMisuse(action: Action, x: PlainTarget): string | undefined 
   const press = k === "button" || k === "key" || k === "tab" ? ` To press it, use {"do":"press","id":"${String(action.id ?? "")}"}.` : "";
   switch (action.do) {
     case "set":
-      if (k === "field") return undefined;
+      // A dropdown takes set as the choice of an entry (the driver plans it as combo), as on the other surfaces.
+      if (k === "field" || k === "dropdown") return undefined;
       return `${x.what} does not take text (it is ${k === "key" ? "a toolbar button or function key" : `a ${k}`}), so nothing was typed: a click there would ${k === "checkbox" || k === "radio" ? "tick it" : "press or open it"}.${k === "checkbox" || k === "radio" ? ` Use {"do":"check","id":"${String(action.id ?? "")}"}.` : press}`;
     case "check":
       if (k === "checkbox" || k === "radio") return undefined;
@@ -851,6 +852,8 @@ export function planPlain(s: DiagScreen, action: Action, target: PlainTarget | u
     case "set": {
       const x = t();
       if (x.kind !== "element" && x.kind !== "cell") throw new ActionError(`${x.what} does not take text.`);
+      // Typed text never goes into a dropdown: a click there opens it. The driver chooses the entry instead (planCombo).
+      if (kindOf(x) === "dropdown") throw new ActionError(`${x.what} is a dropdown: choose its entry with {"do":"combo","id":"${id}","key":"<key or text>"}.`);
       const table = x.kind === "cell" ? x.window.tables.find((tb) => tb.name === x.table) : undefined;
       const off = x.kind === "cell" ? offScreenCell(table, x.column, x.what) : undefined;
       if (off && x.kind === "cell" && table && x.index !== undefined && x.column !== undefined) {
