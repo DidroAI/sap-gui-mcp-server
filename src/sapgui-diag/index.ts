@@ -978,7 +978,7 @@ export class DiagDriver implements Driver {
     const scrolledScreen = this.screenMoved && this.screenMoved.step === step0 && this.screenMoved.mode === this.mode && !active(s).modal;
     if (scrolledScreen && action.do !== "key" && action.do !== "okcode" && !(action.do === "scroll" && /^(screen|usr|wnd\[0\](\/usr)?)$/i.test(String(action.id ?? ""))))
       throw new ActionError('SAP GUI scrolled the screen with the mouse wheel, so where its fields are is not known until SAP\'s next screen: nothing was done. Send Enter ({"do":"key","key":0}) first.');
-    if (action.do === "scroll" && (/^(screen|usr|wnd\[0\](\/usr)?)$/i.test(String(action.id ?? "")) || ((action.id === undefined || action.id === "") && !scrollables(s).length && screenScrolls(active(s))))) {
+    if (action.do === "scroll" && (/^(screen|usr|wnd\[0\](\/usr)?)$/i.test(String(action.id ?? "")) || ((action.id === undefined || action.id === "") && !scrollables(s).length && (screenScrolls(active(s)) || active(s).elements.some((e) => e.scrolledOut && !e.hidden))))) {
       const wins = await this.windows(s);
       const plan = planScreenScroll(active(s), action.to, this.geometry(s, wins));
       this.screenMoved = { step: step0, mode: this.mode };

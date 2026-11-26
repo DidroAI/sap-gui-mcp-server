@@ -448,7 +448,7 @@ export function planCombo(s: DiagScreen, action: Action, g: Geometry, entries?: 
     };
   }
   if (!e.input) throw new ActionError(`${n.id} is read-only.`);
-  const off = n.cell ? offScreenCell(n.cell.table, n.cell.table.columns.find((c) => c.name === e.name)?.index, n.id) : undefined;
+  const off = n.cell ? offScreenCell(n.cell.table, n.cell.table.columns.find((c) => c.name === e.name)?.index, n.id) : scrolledOutRefusal(n.window, e, n.id);
   if (off) throw new ActionError(off);
   if (e.row - scrolledRows(n.window) > lastClickRow(n.window) || e.row < scrolledRows(n.window)) throw new ActionError(`${n.id} is at the bottom edge of SAP GUI's window, under its scroll bars, where a click lands elsewhere: nothing was done.${n.cell ? ` Scroll the table so that the row comes up ({"do":"scroll","id":"${n.cell.table.name}","to":${n.cell.row}}), then choose.` : " Make SAP GUI's window larger (maximize it)."}`);
   const asked = clean(String(wanted));
@@ -723,6 +723,32 @@ export function offScreenCell(t: DiagTable | undefined, column: number | undefin
 /** Rows of a main window SAP GUI scrolled the screen by (the server says so after SAP GUI sent it): 0 for popups. */
 export const scrolledRows = (w: DiagWindow): number => (w.index > 0 || w.modal ? 0 : Math.max(0, w.scroll?.firstRow ?? 0));
 
+/** The elements of a window on show (not hidden, not scrolled out of view) sharing the most containers with `e`, closest first. */
+function shownNear(w: DiagWindow, e: DiagElement): DiagElement[] {
+  const common = (x: DiagElement) => {
+    let n = 0;
+    while (n < x.path.length && n < e.path.length && x.path[n] === e.path[n]) n++;
+    return n;
+  };
+  return w.elements.filter((x) => !x.hidden && !x.scrolledOut && x.kind !== "group").sort((a, b) => common(b) - common(a) || Math.abs(a.row - e.row) - Math.abs(b.row - e.row));
+}
+
+/** Is an element below the part of its subscreen on show (else above)? */
+function belowShown(w: DiagWindow, e: DiagElement): boolean {
+  const near = shownNear(w, e)[0];
+  return !near || e.row > near.row;
+}
+
+/**
+ * The refusal for an element of a subscreen that scrolls on its own and is scrolled out of view (XD01's address
+ * tab): SAP GUI draws something else where its cell is.
+ */
+export function scrolledOutRefusal(w: DiagWindow, e: DiagElement | undefined, what: string): string | undefined {
+  if (!e?.scrolledOut) return undefined;
+  const down = belowShown(w, e);
+  return `${what} is in a part of the screen that SAP GUI has scrolled out of view, where a click lands elsewhere: nothing was done. Scroll it ${down ? "down" : "up"} ({"do":"scroll","id":"screen","to":"${down ? "next" : "prev"}"}), send Enter, then act on it.`;
+}
+
 /** Does the main window's screen scroll (taller than the window)? */
 export const screenScrolls = (w: DiagWindow): boolean => !w.modal && w.index === 0 && !!w.scroll && w.scroll.rows > w.scroll.visibleRows;
 
@@ -731,7 +757,19 @@ export const screenScrolls = (w: DiagWindow): boolean => !w.modal && w.index ===
  * step, so where its fields are is known again only from SAP's next screen.
  */
 export function planScreenScroll(w: DiagWindow, to: unknown, g: Geometry): Plan {
-  if (!screenScrolls(w)) throw new ActionError("This screen fits SAP GUI's window: it does not scroll. A table, grid, tree or list scrolls by its own id.");
+  if (!screenScrolls(w)) {
+    // A subscreen that scrolls on its own (XD01's address tab): the wheel over the part of it on show.
+    const out = w.elements.find((e) => e.scrolledOut && !e.hidden);
+    const anchor = out ? shownNear(w, out)[0] : undefined;
+    if (!out || !anchor) throw new ActionError("This screen fits SAP GUI's window: it does not scroll. A table, grid, tree or list scrolls by its own id.");
+    const down = to === undefined || to === "next" || to === "last" || typeof to === "number";
+    const [x, y] = g.at(w, anchor.row, anchor.col, Math.max(1, anchor.width));
+    return {
+      steps: [{ do: "wheel", x, y, notches: down ? -4 : 4, settle: 200 }],
+      note: `scrolled the part of the screen around ${anchor.name || `@${anchor.row},${anchor.col}`} ${down ? "down" : "up"} with the mouse wheel; where its fields are is known again after SAP's next screen: send Enter ({"do":"key","key":0}) before acting on it`,
+      answer: "no",
+    };
+  }
   const down = to === undefined || to === "next" || to === "last" || (typeof to === "number" && to > scrolledRows(w));
   const [x, y] = g.at(w, scrolledRows(w) + 2, Math.min(w.size.cols - 2, 100), 1);
   return {
@@ -752,6 +790,8 @@ export function lastClickRow(w: DiagWindow): number {
 /** The refusal for a click at a row SAP GUI's window does not show whole. */
 function belowWindow(x: PlainTarget): string | undefined {
   if (x.kind !== "element" && x.kind !== "cell") return undefined;
+  const out = x.kind === "element" ? scrolledOutRefusal(x.window, x.element, x.what) : undefined;
+  if (out) return out;
   const shown = x.row - scrolledRows(x.window);
   if (shown >= 0 && shown <= lastClickRow(x.window)) return undefined;
   const t = x.kind === "cell" ? x.window.tables.find((tb) => tb.name === x.table) : undefined;
