@@ -116,6 +116,15 @@ change the tools or the view format.
   the screens of two captured runs (46% on Easy Access). The full view and a
   look by id keep everything.
 
+## Unreleased
+
+### Fixed
+
+- Extension 0.4.3: on first run, the first system's password field stayed
+  off when the helper was installed after the extension (the usual order:
+  extension from the store, then `setup --extension`). An open form now
+  follows the helper, and the field opens up within seconds.
+
 ## 0.4.1 (2026-11-26)
 
 ### Changed

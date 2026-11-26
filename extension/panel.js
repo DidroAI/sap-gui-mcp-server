@@ -727,11 +727,13 @@ function updateCredFields() {
   const can = !!(h && h.ok && h.keychain);
   $("f-password").disabled = !can;
   $("f-show").disabled = !can;
-  $("pw-where").textContent = can
+  const text = can
     ? `Saved in ${keychainName(state)}, never in Chrome.`
     : h && h.ok
       ? "This computer has no keychain the helper can use, so no password is saved. You log on in the tab."
-      : "To save a password, install the helper: run npx -y sap-ui-automation setup --extension, then restart Chrome. Without it, you log on in the tab.";
+      : "To save a password, run npx -y sap-ui-automation setup --extension in a terminal. This field opens up once Chrome finds the helper; if it stays off, restart Chrome. Without it, you log on in the tab.";
+  // Called on every refresh while the form is open: the text is set only when it changes.
+  if ($("pw-where").textContent !== text) $("pw-where").textContent = text;
   updateHttpWarning();
 }
 
@@ -936,6 +938,9 @@ function render(s) {
     renderActivity(s);
     // While the menu is open the rows stay as they are, so it keeps its anchor.
     if ($("menu").hidden) renderSystems(s);
+    // An open form follows the helper: installed while the form was open (the usual order on first
+    // run: extension, then setup), the password field opens up without closing the form.
+    if (editing) updateCredFields();
     // The first system's form follows the tab in front until the user types in it.
     if (editing && editing.first && !formTouched) {
       const sug = currentSuggestion(s);
