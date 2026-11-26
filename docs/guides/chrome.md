@@ -111,11 +111,16 @@ into SAP's logon page itself. The agent and the server never see it.
    [Chrome Web Store](https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn).
    The listing is unlisted: it opens from this link, not from a search in
    the store.
-2. Run `npx -y sap-ui-automation extension helper`. It installs the
+2. Run `npx -y sap-ui-automation setup --extension`. In one go it adds the
+   server with `SAP_BROWSER=extension` to your agent apps (Claude Code,
+   Codex, Cursor, Claude Desktop, Windsurf; `setup vscode --extension` for
+   VS Code and GitHub Copilot), installs the skills, and installs the
    extension's helper, which pairs the extension in one click and keeps
    saved passwords in your system's keychain.
-3. Pin the icon (puzzle piece, then the pin). If Chrome was open during
-   step 2, restart it once: Chrome finds the helper at start.
+3. Restart Chrome once (Chrome finds the helper at start) and your agent
+   apps. Pin the extension's icon (puzzle piece, then the pin).
+
+`npx -y sap-ui-automation extension helper` installs the helper alone.
 
 Chrome updates the store's copy by itself.
 
@@ -135,11 +140,9 @@ install` again and click the reload arrow on the extension's card.
    instead** in the panel and paste the code.)
 2. Open your SAP system in a tab and click **Add this SAP page** in the
    panel. Add user and password if the extension should log on for you.
-3. Run `npx -y sap-ui-automation setup --extension` (it adds the server
-   with `SAP_BROWSER=extension` to your agent apps), or add
-   `"SAP_BROWSER": "extension"` to the `env` of sap-ui-automation in your
-   agent's settings yourself. An entry `setup` made before keeps its
-   settings: add the variable to it by hand. Restart the agent app.
+3. If you have not run `setup --extension` yet, do it now. An entry that
+   `setup` made before keeps its settings: add `"SAP_BROWSER": "extension"`
+   to its `env` by hand, and restart the agent app.
 4. Check: `SAP_BROWSER=extension npx -y sap-ui-automation doctor`. It waits
    up to 35 seconds for the extension to connect.
 

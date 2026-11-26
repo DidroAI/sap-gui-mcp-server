@@ -201,6 +201,24 @@ describe("setup --extension", () => {
     expect(again.lines.find((l) => l.includes("already in"))).toContain('Add "SAP_BROWSER": "extension" to its "env".');
     rmSync(join(home, ".cursor"), { recursive: true, force: true });
   });
+  test("one command: the helper is installed too, and the Chrome steps follow", () => {
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    let calls = 0;
+    const installHelper = () => (calls++, { hostDir: "/h", launcher: "/h/host.sh", registered: ["/chrome/x.json"] });
+    const r = setup({ dryRun: false, only: ["codex"], cwd, onPath: none, extension: true, installHelper }, {}, "linux", home);
+    expect(calls).toBe(1);
+    expect(r.lines).toContain("✓ Chrome extension helper: installed (1 browser profile folder(s)).");
+    expect(r.lines.some((l) => l.includes("chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn") && l.includes("restart Chrome once"))).toBe(true);
+    expect(r.lines.some((l) => l.includes("a Chrome window opens"))).toBe(false);
+    const none_ = setup({ dryRun: false, only: ["codex"], cwd, onPath: none, extension: true, installHelper: () => ({ hostDir: "/h", launcher: "/h/host.sh", registered: [] }) }, {}, "linux", home);
+    expect(none_.lines.some((l) => l.startsWith("✗ Chrome extension helper:") && l.includes("extension pair"))).toBe(true);
+    const failing = setup({ dryRun: false, only: ["codex"], cwd, onPath: none, extension: true, installHelper: () => { throw new Error("EACCES"); } }, {}, "linux", home);
+    expect(failing.lines).toContain("✗ Chrome extension helper: EACCES. Pair by hand: npx -y sap-ui-automation extension pair.");
+    const dry = setup({ dryRun: true, only: ["codex"], cwd, onPath: none, extension: true, installHelper: () => { throw new Error("must not run"); } }, {}, "linux", home);
+    expect(dry.lines).toContain("• Chrome extension helper: would install it, for the extension to pair in one click.");
+    const plain = setup({ dryRun: false, only: ["codex"], cwd, onPath: none, installHelper: () => { throw new Error("must not run"); } }, {}, "linux", home);
+    expect(plain.lines.some((l) => l.includes("Chrome extension helper"))).toBe(false);
+  });
   test("Codex's table carries the env", () => {
     expect(codexTable(["npx", "-y", "sap-ui-automation"], { SAP_BROWSER: "extension" })).toContain('env = { SAP_BROWSER = "extension" }');
   });
