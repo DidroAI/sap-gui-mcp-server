@@ -183,6 +183,8 @@ export class ClassicState {
   private closed: WindowState[] = [];
   /** Parts of the window kept from its last sending, while SAP sends only what changed: replaced by what comes at their place. */
   private carried = new Set<unknown>();
+  /** The row of its container's origin each element was laid out with: a container that scrolls on its own moves it. */
+  private origins = new WeakMap<DiagElement, number>();
   private listPos: { row: number; col: number } | undefined;
   private listFormat: Buffer | undefined;
   private listWidth = 0;
@@ -748,6 +750,19 @@ export class ClassicState {
     const w = this.win();
     const o = this.origin();
     const path = this.names();
+    // An update after a container scrolled on its own (XD01's address tab): what is kept of it moves with it.
+    if (this.carried.size) {
+      const key = path.join(">");
+      for (const x of w.elements) {
+        const was = this.origins.get(x);
+        if (!this.carried.has(x) || was === undefined || was === o.row || x.path.join(">") !== key) continue;
+        x.row += o.row - was;
+        this.origins.set(x, o.row);
+        const out = x.row < o.top || x.row >= o.bottom || x.col < o.left || x.col >= o.right;
+        if (out) x.scrolledOut = true;
+        else delete x.scrolledOut;
+      }
+    }
     let strip = tabs ? w.tabstrips[w.tabstrips.length - 1] : undefined;
     if (tabs && (!strip || this.carried.has(strip))) {
       strip = this.newTabstrip();
@@ -800,6 +815,7 @@ export class ClassicState {
       lastTab = undefined;
       const el: DiagElement = { kind: "other", name: "", text: "", row: o.row + row, col: o.col + col, width: 0, input: (attr & BIT.readOnly) === 0, hidden: (attr & BIT.hidden) !== 0, path, etype };
       if ((attr & BIT.valueHelp) !== 0) el.valueHelp = true;
+      this.origins.set(el, o.row);
       if (el.row < o.top || el.row >= o.bottom || el.col < o.left || el.col >= o.right) el.scrolledOut = true;
       this.element(el, a, body);
       if (this.carried.size) {
