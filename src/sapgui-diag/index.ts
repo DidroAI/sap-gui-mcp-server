@@ -840,7 +840,13 @@ export class DiagDriver implements Driver {
     const env = cellsFromEnv(this.shared.env.SAP_DIAG_CELL);
     // A popup is the host window of its title: a dialog SAP GUI left with no owner (a dropped connection's error,
     // live 2026-11-20) is listed among the session's windows too, so the n-th one is not always the n-th popup.
-    const titled = (w: DiagWindow) => (w.index > 0 ? wins.filter((x, i) => i > 0 && clean(x.title) === clean(w.title)) : []);
+    // By the title on show, else by the dynpro's own (a value help's caption replaces the first).
+    const titled = (w: DiagWindow) => {
+      if (w.index === 0) return [];
+      const by = (t: string | undefined) => (t ? wins.filter((x, i) => i > 0 && clean(x.title) === clean(t)) : []);
+      const hit = by(w.title);
+      return hit.length ? hit : by(w.dynproTitle);
+    };
     const hostOf = (w: DiagWindow): WindowFacts => (main ? wins[0] : (titled(w).length === 1 ? titled(w)[0] : wins[w.index])) ?? top;
     const cellsOf = (w: DiagWindow): Cells => {
       const area = hostOf(w).area;
