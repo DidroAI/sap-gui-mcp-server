@@ -141,9 +141,11 @@ function code can still go through the command field with `okcode`.
   id, but SAP GUI keeps every list in its cache on the PC
   (`%LOCALAPPDATA%\SAP\SAP GUI\Cache`), and the method reads it there.
   Without a key, `combo` lists the entries; with one, it takes a key or a
-  text, refuses an entry that is not in the list, and chooses it in one
-  input (a click opens the list, the text, Enter). With no cached list it
-  types the text it was given;
+  text, refuses an entry that is not in the list, and chooses it by its
+  place in the list (a click gives the dropdown the focus, Home and Down
+  move to the entry, Tab leaves it; no Enter). An empty key (`""`) chooses
+  the blank entry. With no cached list it types the text it was given
+  (`SAP_DIAG_COMBO=type` types it always);
 - `scroll` up and down (table controls, lists, grids, and with id `screen`
   a screen taller than SAP GUI's window, or a subscreen that scrolls on its
   own, such as XD01's address tab: the wheel turns over the part of it on
@@ -176,11 +178,12 @@ Each refusal says what to do instead.
   field to put the cursor in.
 - A click into a table cell right of what SAP GUI shows of the table (its
   columns beyond the window's width): it would land in another cell. `set`
-  reaches such a cell with Tab from the nearest cell on show that takes
+  reaches such a cell with Tab from the leftmost cell on show that takes
   text, as a person does, in the tables where the Tab stops were checked
-  (FB50's items); SAP GUI then scrolls the table sideways, and the table's
-  other cells are refused until SAP's next screen (send Enter). Elsewhere
-  (ME21N's items: the count put values two columns off) it is refused.
+  (FB50's G/L items, ME21N's items); SAP GUI then scrolls the table
+  sideways, and the table's other cells are refused until SAP's next screen
+  (send Enter), except the next ones in the same row (Tab or Shift+Tab on
+  from the cell typed last). Elsewhere it is refused.
   The fixed columns stay on show and stay in reach (FB50's G/L account, D/C
   and amount), and the view follows the scroll.
 - A click on an element of a subscreen scrolled out of view (the view marks
@@ -286,14 +289,25 @@ logon go on.
     (ME51N's editable grid, ME21N), dropdowns, tables scrolled sideways,
     screens taller than the window, and the guard on change and safety
     tasks. The bench checked in the database what was saved;
-  - not tried: S/4HANA beyond a first run, other themes, scalings and
+  - 26 November 2026, by hand and in a second round of the same processes:
+    FB50's whole entry in one batch (dropdowns, a cost center by Tab),
+    ME21N's requisition reference by Tab, VA01's delivery block (an entry
+    and the blank one), XD01's address tab scrolled, BP's Find on S/4HANA
+    with writes off, ME2L's list paged;
+  - not tried: S/4HANA beyond two rounds, other themes, scalings and
     screen sizes (expect to set `SAP_DIAG_CELL`), SNC, several SAP GUI
     connections at once.
 - **Click points are measured on one layout.** The middle of a row is
   taken 30 px below its top at Quartz 100% (between a window maximized and
   one that is not); the Tab stops of a table row (input cells and buttons)
   and the fixed columns of a table scrolled sideways were checked on FB50,
-  VA01 and ME21N only.
+  VA01 and ME21N only. Across a wide table control a click drifts to the
+  right (ME21N draws its columns a little wider than their characters), so
+  far cells are reached with Tab from the first column.
+- **A subscreen that scrolls on its own** (XD01's address tab): after the
+  wheel and Enter, SAP GUI may scroll it again to the field with the cursor,
+  so the rows the view gives can be off; a `set` there is refused rather
+  than typed elsewhere when the cursor does not come into the field.
 - **Dropdown entries come from SAP GUI's cache.** When a list is not in the
   cache (SAP GUI's cache off), `combo` types the text it is given and checks
   the key SAP received after the next step.
@@ -323,6 +337,12 @@ logon go on.
 - **The view is bounded by SAP GUI's window.** SAP sends a screen sized to
   the window, so a small window gives a short, narrow view, and lists are
   cut at its width. Maximise SAP GUI.
+- **What reached SAP is checked.** SAP GUI sends the table cells typed into
+  with its request, and the reader reads them: a value that did not reach
+  its cell is said as such ("SAP GUI did not send ..."), with the cell it
+  went into instead, apart from one SAP changed or refused. A `set` checks
+  that the text cursor came into the field (between its edges) before it
+  types.
 - **Inputs can miss.** An Enter or a double-click that SAP GUI did not turn
   into a request within `SAP_DIAG_REQUEST_MS` is answered "SAP GUI sent
   nothing to SAP ... the input may have missed": look, then send it again.
