@@ -43,7 +43,7 @@ export type Step = (
   /** A SAP virtual key: 0 Enter, 1-12 F1-F12, 13-24 Shift+, 25-36 Ctrl+, 37-48 Ctrl+Shift+, 80-83 the page keys. */
   | { do: "key"; key: number }
   /** A Windows key, `count` times. */
-  | { do: "vk"; vk: number; ctrl?: boolean; shift?: boolean; alt?: boolean; count?: number }
+  | { do: "vk"; vk: number; ctrl?: boolean; shift?: boolean; alt?: boolean; count?: number; gap?: number }
   | { do: "click" | "dblclick" | "f4"; x: number; y: number }
   | { do: "set"; x: number; y: number; value: string }
   | { do: "type"; value: string }
@@ -481,7 +481,7 @@ export function planCombo(s: DiagScreen, action: Action, g: Geometry, entries?: 
   const index = entry && known ? known.indexOf(entry) : -1;
   return {
     steps: [{ do: "combo", x, y, value: text, ...(index >= 0 ? { index: index + pick.offset } : {}), ...(pick.how === "arrows" && index >= 0 ? { how: "arrows" } : {}), ...(sends ? { fcode: true } : {}), settle: 300 }],
-    note: `chose ${entry ? entryText(entry) : `"${text}"`} in ${n.id}${sends ? "" : "; SAP gets it with the next Enter or function key"}`,
+    note: `chose ${entry ? entryText(entry) : `"${text}"`} in ${n.id}${sends ? "" : "; sent with the next Enter"}`,
     // Without a function code SAP gets the choice with the next step; a request now means the list did not open and the
     // Enter meant for it went to SAP with the screen (what was typed before went too).
     answer: sends ? "yes" : "maybe",
@@ -827,6 +827,9 @@ function belowWindow(x: PlainTarget): string | undefined {
   return `${x.what} is ${shown < 0 ? "above what SAP GUI's window shows of the screen" : "at the bottom edge of SAP GUI's window, under its scroll bars"}, where a click lands elsewhere: nothing was done.${t && x.kind === "cell" && shown >= 0 ? ` Scroll the table so that the row comes up ({"do":"scroll","id":"${t.name}","to":${x.index}}), then act on it.` : screen}`;
 }
 
+/** Milliseconds between the Tabs that reach a cell: SAP GUI redraws a table it scrolls sideways at a Tab. */
+const TAB_GAP_MS = 80;
+
 /** Cells the Tab key stops at in a table control's row: what takes input, buttons included (FB50, checked live). */
 const TAB_STOPS = new Set(["field", "dropdown", "checkbox", "radio", "button"]);
 
@@ -895,7 +898,7 @@ export function planTabOn(t: DiagTable, index: number, from: number, to: number,
   const single = oneLine(value);
   return {
     steps: [
-      { do: "vk", vk: VK.TAB, count: tabs, settle: 150 },
+      { do: "vk", vk: VK.TAB, count: tabs, gap: TAB_GAP_MS, settle: 150 },
       { do: "vk", vk: VK.HOME, settle: 40 },
       { do: "vk", vk: VK.END, shift: true, settle: 40 },
       { do: "vk", vk: VK.DELETE, settle: 40 },
@@ -942,7 +945,7 @@ export function planPlain(s: DiagScreen, action: Action, target: PlainTarget | u
         return {
           steps: [
             { do: "click", x: ax, y: ay, settle: 150 },
-            { do: "vk", vk: VK.TAB, count: reach.tabs, settle: 150 },
+            { do: "vk", vk: VK.TAB, count: reach.tabs, gap: TAB_GAP_MS, settle: 150 },
             { do: "vk", vk: VK.HOME, settle: 40 },
             { do: "vk", vk: VK.END, shift: true, settle: 40 },
             { do: "vk", vk: VK.DELETE, settle: 40 },

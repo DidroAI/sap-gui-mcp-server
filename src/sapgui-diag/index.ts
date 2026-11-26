@@ -982,7 +982,7 @@ export class DiagDriver implements Driver {
       const plan = t?.kind === "cell" && table ? planTabOn(table, t.index, chain.column, t.column, t.what, String(action.value ?? "")) : undefined;
       if (plan && t?.kind === "cell") {
         const wins = await this.windows(s);
-        plan.note = this.keepTyped(t, String(action.value ?? ""), s).replace("(typed;", "(typed, on with Tab;");
+        plan.note = this.keepTyped(t, String(action.value ?? ""), s).replace("(typed,", "(typed on with Tab,");
         this.tabCell = { ...chain, column: t.column, acts: this.acts };
         return this.run(s, plan, wins, waitOptions(action, this.shared.env, MAX_TIMEOUT_MS), t0);
       }
@@ -1171,7 +1171,7 @@ export class DiagDriver implements Driver {
     typed.push({ step, window: t.window.index, program: t.window.program, dynpro: t.window.dynpro, name, row: t.row, col: t.col, ...(t.kind === "cell" ? { table: { name: t.table, index: t.index, column: t.column } } : {}), value: single.text });
     this.conn.typed.set(this.mode, typed);
     const notation = notationNote(single.text, diagView(s));
-    return `set ${t.kind === "cell" ? `${name}[${t.index}]` : name || t.what} = "${single.text}" (typed; SAP gets it with the next Enter or function key)${single.had ? ` (${ONE_LINE_NOTE})` : ""}${notation ? ` (${notation})` : ""}`;
+    return `set ${t.kind === "cell" ? `${name}[${t.index}]` : name || t.what} = "${single.text}" (typed, sent with the next Enter)${single.had ? ` (${ONE_LINE_NOTE})` : ""}${notation ? ` (${notation})` : ""}`;
   }
 
   async screenshot(): Promise<Buffer> {

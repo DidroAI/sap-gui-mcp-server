@@ -360,7 +360,7 @@ describe("dropdowns", () => {
     ];
     const by = (key: string) => planCombo(screen(), { do: "combo", id: "ZHDR-TYPE", key }, geo, entries);
     expect(by("RO").steps[0]).toMatchObject({ do: "combo", value: "Rush order", index: 1 });
-    expect(by("rush order").note).toBe('chose RO "Rush order" in ZHDR-TYPE; SAP gets it with the next Enter or function key');
+    expect(by("rush order").note).toBe('chose RO "Rush order" in ZHDR-TYPE; sent with the next Enter');
     expect(by("Ret").steps[0]).toMatchObject({ value: "Returns", index: 2 });
     expect(by("Standard Order").steps).toEqual([]);
     expect(() => by("Credit")).toThrow('ZHDR-TYPE has no entry "Credit" (or more than one starts with it): nothing was chosen. Its entries (key "text"): OR "Standard Order", RO "Rush order", RE "Returns".');
