@@ -5,7 +5,7 @@ description: "An open-source MCP server that lets Claude, Codex, Cursor and othe
 
 # Introduction
 
-sap-ui-automation is an [MCP](https://modelcontextprotocol.io) server that
+sap-ui-automation is an open-source [MCP](https://modelcontextprotocol.io) server that
 lets an agent (Claude, Codex, Cursor and other MCP clients) **see and drive
 the SAP screens you already have open**:
 
@@ -18,16 +18,17 @@ the SAP screens you already have open**:
 It finds your open sessions by itself and works in them as you, under your
 SAP authorisations. The server never logs on and never sees a password
 (with the optional Chrome extension, the extension logs on for you and
-keeps the password in your keychain). Actions that may write to SAP are
-refused unless you allow them.
+keeps the password in your keychain). An action that may write to SAP
+waits for your yes in your client, and is refused where the client cannot
+ask ([Confirm mode](../concepts/confirm-mode.md)).
 
 Not sure which parts you need? [Choose your setup](choose.md) asks four
 questions.
 
-> Status: 0.2, early. It works on real systems, but parts are young, and
+> Status: 0.5, early. It works on real systems, but parts are young, and
 > each guide lists the limits of its surface. Experimental: the network
 > reader for SAP GUI without scripting. The Chrome extension is in the
-> [Chrome Web Store](https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn) (unlisted). MIT licence.
+> [Chrome Web Store](https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn). MIT licence.
 
 ## Requirements
 

@@ -5,7 +5,8 @@ description: "Every action sap_act takes, its fields, and which surface supports
 
 # Actions reference
 
-Every action `sap_act` takes, its fields, and which surface supports it.
+This page lists every action `sap_act` takes (16 verbs), its fields, and
+which surface supports it.
 For how an action is judged and run, see [Actions](../concepts/actions.md)
 and [Safety model](../concepts/safety.md).
 
@@ -108,8 +109,8 @@ Types a value into a field.
 - In a text editor, `"\n"` in the value is a line break.
 - Password fields are never typed into. The command field (`okcd`) is
   refused: use `okcode`.
-- With `row` and `col` on a grid that takes input (an editable ALV): that
-  cell. Web GUI only.
+- With `row` and `col` on a grid that takes input (an editable ALV), or on
+  a table control: that cell.
 - On SAP GUI for Windows with the network reader, a typed value reaches SAP
   only with the next Enter or function key. Until then the view marks it
   `(typed, sent with the next Enter)`.
@@ -351,11 +352,11 @@ address after `#`, with parameters if needed.
 
 | Verb | SAP GUI, scripting | SAP GUI, network reader (`diag`) | Web GUI | Fiori |
 | --- | --- | --- | --- | --- |
-| `set` | fields, text editors | fields, table cells | fields, text editors, grid cells (`row`, `col`), calendars | inputs |
+| `set` | fields, text editors, table and grid cells (`row`, `col`) | fields, table cells, grid cells, dropdowns | fields, text editors, grid cells (`row`, `col`), calendars | inputs |
 | `press` | buttons | buttons, toolbar keys | yes | yes |
 | `click` | as `press` | yes | no: use `press` | as `press` |
 | `key` | yes | yes | yes | its own key list |
-| `select` | yes; `row` is not used | yes, also rows and nodes | yes, also rows, menu paths | yes |
+| `select` | yes, also rows | yes, also rows and nodes | yes, also rows, menu paths | yes |
 | `check` | yes | checkboxes, radio buttons | yes, also rows | yes |
 | `combo` | yes | by the text shown | yes | yes |
 | `okcode` | yes | yes | yes | in a Web GUI app inside the launchpad |
@@ -374,7 +375,7 @@ refused with the verbs Fiori takes.
 
 ### What the network reader refuses
 
-The network reader (`SAP_GUI_METHOD=diag`, experimental) acts with the
+The network reader (experimental) acts with the
 keyboard and the mouse, and refuses an action when it cannot be sure what
 the input does. Each refusal says what to do instead.
 

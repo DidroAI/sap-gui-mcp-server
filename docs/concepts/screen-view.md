@@ -5,9 +5,10 @@ description: "How the server prints an SAP screen: a header, then one line per c
 
 # The screen view
 
-The server reads the screen the way SAP models it and prints it as text: a
-header that says where the session is, then one line per control, with
-SAP's own id, its type, the label next to it, its value and its state.
+What does the agent see? The server reads the screen the way SAP models it
+and prints it as text: a header that says where the session is, then one
+line per control, with SAP's own id, its type, the label next to it, its
+value and its state.
 
 ```
 TRANSACTION VA01  PROGRAM SAPMV45A  SCREEN 101  SYSTEM ABA (800)
@@ -142,8 +143,9 @@ Limits of long lists:
   by scrolling the tree first.
 - On Fiori, `sap_look` with an `id` reads that one control whole (also the
   part of a table below the fold); `rows` is not used there.
-- On SAP GUI for Windows, scrolling long lists is covered by tests against
-  a fake SAP GUI, but has not been run against a real SAP GUI yet.
+- On SAP GUI for Windows (scripting), long lists were run on SAP GUI 8.00
+  against ECC 6.0: an ALV grid of 162 rows and a classic list of 501 lines
+  ([SAP GUI for Windows](../guides/sap-gui-windows.md#limits)).
 
 ## When the text is not enough
 
