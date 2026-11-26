@@ -330,7 +330,7 @@ function renderPairing(s) {
   const num = $("step-helper").querySelector(".num");
   if (helper) setIcon(num, "check");
   else num.replaceChildren();
-  $("step-helper").querySelector(".step-title").textContent = helper ? "Helper installed" : "Install the helper";
+  $("step-helper").querySelector(".step-title").textContent = helper ? "Helper installed" : "Set up this computer";
   $("step-pair").className = `step ${helper ? "current" : "later"}`;
   // Without the helper, pairing with a code is the way: the step opens for it.
   if (!helper) $("step-pair").className = "step current";
@@ -731,7 +731,7 @@ function updateCredFields() {
     ? `Saved in ${keychainName(state)}, never in Chrome.`
     : h && h.ok
       ? "This computer has no keychain the helper can use, so no password is saved. You log on in the tab."
-      : "To save a password, install the helper: run npx -y sap-ui-automation extension helper, then restart Chrome. Without it, you log on in the tab.";
+      : "To save a password, install the helper: run npx -y sap-ui-automation setup --extension, then restart Chrome. Without it, you log on in the tab.";
   updateHttpWarning();
 }
 

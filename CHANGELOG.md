@@ -4,6 +4,14 @@ All notable changes to this project are listed here. The project follows
 [Semantic Versioning](https://semver.org); before 1.0, a minor version may
 change the tools or the view format.
 
+## Unreleased
+
+### Changed
+
+- The extension (0.4.1) shows `npx -y sap-ui-automation setup --extension`
+  as its one setup command, in the first-run steps and wherever it says
+  how to install the helper.
+
 ## 0.4.0 (2026-11-26)
 
 ### Changed
