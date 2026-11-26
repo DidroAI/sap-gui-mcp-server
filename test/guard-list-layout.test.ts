@@ -15,7 +15,7 @@ import type { MenuEntry } from "../src/webgui/page.js";
 // Synthetic screens in both formats. Each screen offers Save, so the "screen that only displays" rule
 // does not carry these cases: the words and codes must.
 
-const off = policyFromEnv({});
+const off = policyFromEnv({ SAP_WRITE: "off" });
 const lines = (...l: string[]) => l.join("\n");
 
 describe("words: list layouts and selection criteria", () => {

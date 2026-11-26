@@ -31,7 +31,10 @@ export interface UseOptions {
   system?: string;
   /** Any session reference `sap_sessions` accepts. */
   session?: string;
-  /** Actions that may write: refused (default), or run. "confirm" refuses too: a test has nobody to ask. */
+  /**
+   * Actions that may write: "off" refuses, "on" runs. "confirm", the default (SAP_WRITE, else confirm),
+   * refuses too: a test has nobody to ask. Writes run only under "on".
+   */
   write?: WriteMode;
   allowTcodes?: string[];
   blockTcodes?: string[];

@@ -1,6 +1,6 @@
 # Read-only investigation
 
-**Settings:** `SAP_WRITE=off` (the default). Optional:
+**Settings:** `SAP_WRITE=off` (read-only; the default, `confirm`, would ask before each write). Optional:
 `SAP_ALLOW_TCODES=VA03,VL03N,VF03,MMBE` to keep the agent to these
 transactions.
 

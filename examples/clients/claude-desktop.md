@@ -20,7 +20,7 @@ By hand, in `claude_desktop_config.json` (Settings > Developer > Edit Config):
 ```
 
 On Windows use `"command": "cmd"` and `"args": ["/c", "npx", "-y", "sap-ui-automation"]`.
-Writes stay `off`: Claude Desktop does not document whether it can ask
+The snippet sets `off` (read-only); the default is `confirm`. Claude Desktop does not document whether it can ask
 you about a write (MCP elicitation), so with `confirm` a write may be
 refused. Quit and reopen Claude Desktop. More: [installation](../../docs/getting-started/installation.md#claude-desktop).
 

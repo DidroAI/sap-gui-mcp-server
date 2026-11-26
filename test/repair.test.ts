@@ -85,7 +85,7 @@ describe("a failure says where the step failed", () => {
     (sap.orders.get("5000") as { customer: string }).customer = "3300";
     expect((await replay(sap.driver(), policy, t)).steps[2]?.phase).toBe("check");
     const c = await recordCreate();
-    expect((await replay(c.sap.driver(), policyFromEnv({}), c.test)).steps[4]?.phase).toBe("refused");
+    expect((await replay(c.sap.driver(), policyFromEnv({ SAP_WRITE: "off" }), c.test)).steps[4]?.phase).toBe("refused");
   });
 });
 
@@ -338,7 +338,7 @@ describe("what a repair may not do", () => {
     expect(c.sap.next).toBe(5002);
     // With write off the same Enter is refused by the guard as a write.
     c = await warned();
-    r = await replay(c.sap.driver(), policyFromEnv({}), c.test, { from: 5, repair: { why: "a warning", actions: [{ do: "key", key: 0 }], place: "after" }, leaveOnFailure: false });
+    r = await replay(c.sap.driver(), policyFromEnv({ SAP_WRITE: "off" }), c.test, { from: 5, repair: { why: "a warning", actions: [{ do: "key", key: 0 }], place: "after" }, leaveOnFailure: false });
     expect(c.sap.next).toBe(5002);
   });
 
@@ -360,7 +360,7 @@ describe("what a repair may not do", () => {
 
   test("write off: a repair cannot write either", async () => {
     const c = await recordCreate();
-    const r = await replay(c.sap.driver(), policyFromEnv({}), c.test, { from: 5, repair: { why: "x", actions: [{ do: "key", key: 11 }], place: "instead" } });
+    const r = await replay(c.sap.driver(), policyFromEnv({ SAP_WRITE: "off" }), c.test, { from: 5, repair: { why: "x", actions: [{ do: "key", key: 11 }], place: "instead" } });
     expect(r.steps[0]?.failures[0]).toContain("refused");
     expect(c.sap.next).toBe(5002);
   });

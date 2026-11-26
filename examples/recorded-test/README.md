@@ -29,7 +29,7 @@ Each step prints pass or fail; the exit code is 0 when all passed. Add
 `--loose` if your system's screen numbers differ.
 
 The test needs no write permission: it runs with the default
-`SAP_WRITE=off`. With `SAP_ALLOW_SYSTEMS` or `SAP_ALLOW_TCODES` set, `DEM`
+`SAP_WRITE=confirm`, or with `off`. With `SAP_ALLOW_SYSTEMS` or `SAP_ALLOW_TCODES` set, `DEM`
 and `VA03` are not special: your own system and VA03 must be allowed.
 
 From an agent, copy the file into `SAP_RECORD_DIR` (default `./sap-tests`

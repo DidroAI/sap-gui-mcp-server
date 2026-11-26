@@ -141,8 +141,8 @@ popup and reuse a session you no longer need. Do not send `/o` again.
 Saving, posting, releasing and deleting change the system for real. The
 user's `SAP_WRITE` setting decides what happens:
 
-- **off** (default) and **confirm**: the action is refused. The CLI cannot
-  ask the user, so confirm refuses here too. Tell the user what you would
+- **confirm** (default) and **off** (read-only): the action is refused.
+  The CLI cannot ask the user, so confirm refuses here too. Tell the user what you would
   have saved, leave the transaction without saving (`sap-gui okcode /n`) so
   that SAP releases the document's lock, and stop.
 - **on**: the action runs, and the user's approval of your command is the

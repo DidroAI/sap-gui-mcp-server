@@ -15,7 +15,7 @@ import { assessAction } from "../src/webgui/assess.js";
 // (Manage Prices - Sales). Synthetic screens built like the live ones (S/4 Web GUI and launchpad, checked
 // live the same day). Each screen offers Create, so nothing here rides on the display-screen rule.
 
-const off = policyFromEnv({});
+const off = policyFromEnv({ SAP_WRITE: "off" });
 const lines = (...l: string[]) => l.join("\n");
 const LOC = "wnd[0]/usr/subSCREEN_3000_RESIZING_AREA:SAPLBUS_LOCATOR:2240/subSCREEN_1010_LEFT_AREA:SAPLBUS_LOCATOR:3100/tabsGS_SCREEN_3100_TABSTRIP/tabpBUS_LOCATOR_TAB_02/ssubSCREEN_3100_TABSTRIP_AREA:SAPLBUS_LOCATOR:3202/subSCREEN_3200_SEARCH_AREA:SAPLBUS_LOCATOR:3211/subSCREEN_3200_SEARCH_BUTTON_AREA:SAPLBUS_LOCATOR:3240";
 

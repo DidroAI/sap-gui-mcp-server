@@ -12,10 +12,10 @@ command = "npx"
 args = ["-y", "sap-ui-automation"]
 
 [mcp_servers.sap-ui-automation.env]
-SAP_WRITE = "confirm"   # off (default) | confirm | on
+SAP_WRITE = "confirm"   # confirm (default) | off (read-only) | on
 ```
 
-`confirm` makes Codex ask you before each write (Codex 0.119 or later).
+`confirm`, the default, makes Codex ask you before each write (Codex 0.119 or later).
 `codex exec` cancels such questions, so the write does not run, and in
 Full Access mode Codex accepts them without asking: use `off` there.
 
