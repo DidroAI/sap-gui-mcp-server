@@ -130,7 +130,7 @@ function code can still go through the command field with `okcode`.
 ## Actions that work
 
 - `okcode`, `key`, `set` (a field, a table cell, a cell of an editable
-  grid);
+  grid; on a dropdown, `set` chooses the entry as `combo` does);
 - `press`, `click`, `dblclick` and `select` (buttons, tabs, fields, list
   positions, table rows, grid rows, tree nodes);
 - `check` (checkboxes and radio buttons), to the state `value` asks for: a
@@ -145,7 +145,9 @@ function code can still go through the command field with `okcode`.
   input (a click opens the list, the text, Enter). With no cached list it
   types the text it was given;
 - `scroll` up and down (table controls, lists, grids, and with id `screen`
-  a screen taller than SAP GUI's window);
+  a screen taller than SAP GUI's window, or a subscreen that scrolls on its
+  own, such as XD01's address tab: the wheel turns over the part of it on
+  show; send Enter after it);
 - `tree`, `grid`;
 - `toolbar`: the screen's toolbar by text or a known ALV function code
   such as `&SORT_ASC`; a grid's own toolbar by a button's whole name;
@@ -179,7 +181,10 @@ Each refusal says what to do instead.
   (FB50's items); SAP GUI then scrolls the table sideways, and the table's
   other cells are refused until SAP's next screen (send Enter). Elsewhere
   (ME21N's items: the count put values two columns off) it is refused.
-  The fixed columns stay on show, and the view follows the scroll.
+  The fixed columns stay on show and stay in reach (FB50's G/L account, D/C
+  and amount), and the view follows the scroll.
+- A click on an element of a subscreen scrolled out of view (the view marks
+  its row `(scrolled out of view)`): the refusal gives the scroll.
 - A click at a row under the window's scroll bars (the last row of a screen
   taller or wider than the window): the refusal gives the scroll that brings
   a table row up.
@@ -292,8 +297,13 @@ logon go on.
 - **Dropdown entries come from SAP GUI's cache.** When a list is not in the
   cache (SAP GUI's cache off), `combo` types the text it is given and checks
   the key SAP received after the next step.
-- **A screen taller than the window** scrolls with the mouse wheel; SAP GUI
-  says where to with the next step only, so send Enter after scrolling.
+- **A screen taller than the window**, and a subscreen that scrolls on its
+  own, scroll with the mouse wheel; SAP GUI says where to with the next step
+  only, so send Enter after scrolling.
+- **The compact view leaves things out** that the full view (`full`) and a
+  look by id keep: a grid's other column titles and the ids of its empty
+  columns, the SAP names of a table's open columns right of its edge, the
+  function keys every screen has, and all keys on SAP Easy Access.
 - **Popups SAP GUI draws itself** (some termination messages) are not in
   the traffic: an action refused with "a popup is open" says so; close it
   with Enter.
