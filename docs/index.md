@@ -31,3 +31,19 @@ features:
   - title: Every MCP client
     details: Claude Code, Claude Desktop, Codex, Cursor, Windsurf, VS Code and any other client that starts a stdio server; a command line for agents without MCP.
 ---
+
+<div class="launch-video">
+  <h2>See it in 8 minutes</h2>
+  <p>The Chrome extension, one setup command, then Codex working in two SAP sessions at once.</p>
+  <div class="frame">
+    <iframe src="https://www.youtube-nocookie.com/embed/YwM0q31qy2k" title="SAP UI Automation launch video" loading="lazy" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+  </div>
+</div>
+
+<style>
+.launch-video { max-width: 960px; margin: 48px auto 0; padding: 0 24px; }
+.launch-video h2 { font-size: 24px; font-weight: 600; margin: 0 0 8px; border: 0; padding: 0; }
+.launch-video p { margin: 0 0 16px; color: var(--vp-c-text-2); }
+.launch-video .frame { position: relative; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: var(--vp-c-bg-soft); }
+.launch-video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+</style>
