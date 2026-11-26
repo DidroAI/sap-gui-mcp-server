@@ -26,7 +26,7 @@ Fiori and SAP S/4HANA are trademarks of SAP SE.
 ## Install (Mac, Windows, Linux)
 
 Add it from the [Chrome Web Store](https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn)
-(unlisted: it opens from this link, not from a search), then run
+(search for "UI Automation for SAP"), then run
 `npx -y sap-ui-automation setup --extension`: it sets up your agent apps
 and the skills, and installs the extension's helper. You need Node.js 22
 or later (`node --version` in a terminal; if it is missing, install it from

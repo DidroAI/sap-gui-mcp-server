@@ -25,7 +25,7 @@ export const NATIVE_HOST = "ai.didro.sap_ui_automation";
  * unpacked copy has the same id on every machine. A Web Store build gets its own
  * id, to be added here.
  */
-/** The extension's page in the Chrome Web Store (unlisted: it opens from this link). */
+/** The extension's page in the Chrome Web Store. */
 export const STORE_URL = "https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn";
 
 /** The unpacked extension (its id fixed by `key` in manifest.json), then the Chrome Web Store's. */
