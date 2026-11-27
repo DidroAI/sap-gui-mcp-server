@@ -22,7 +22,7 @@ CI runs 22 and 24).
 
 ```sh
 git clone https://github.com/DidroAI/sap-ui-mcp.git
-cd sap-ui-automation
+cd sap-ui-mcp
 bun install --frozen-lockfile
 bun run typecheck
 bun run test
