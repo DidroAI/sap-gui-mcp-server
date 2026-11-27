@@ -4,6 +4,15 @@ All notable changes to this project are listed here. The project follows
 [Semantic Versioning](https://semver.org); before 1.0, a minor version may
 change the tools or the view format.
 
+## Unreleased
+
+### Changed
+
+- The product is now called SAP UI MCP, and the repository is
+  DidroAI/sap-ui-mcp. The npm package, the commands, the skills and the MCP
+  server id keep the name `sap-ui-automation`, so existing setups keep working.
+- Chrome extension 0.4.4: named SAP UI MCP, with the new icon.
+
 ## 0.5.1
 
 ### Fixed
