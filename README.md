@@ -2,9 +2,9 @@
 
 <img src="assets/readme-icon.png" alt="" width="72">
 
-# SAP UI Automation
+# SAP UI MCP
 
-**Let AI agents see and drive SAP.**<br>
+**Let AI agents see and interact with SAP screens.**<br>
 An MCP server, CLI and SDK for Claude Code, Codex, Cursor, Copilot or your own agent,<br>
 on SAP GUI for HTML (Web GUI), SAP Fiori and SAP GUI for Windows.
 
