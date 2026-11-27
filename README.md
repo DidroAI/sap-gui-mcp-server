@@ -227,6 +227,10 @@ read them offline.
 
 MIT, see [LICENSE](LICENSE). Built by [Didro](https://didro.ai). 
 
+Didro is a company building AI software that gives IT teams a living model of
+their SAP systems and business processes. Teams can use it to see what a change
+could affect, then design and run the tests needed to validate it.
+
 Happy to chat to anyone interested in AI to improve SAP transformation: pierre@didro.eu
 
 This project is not affiliated with, endorsed by or sponsored by SAP SE.
