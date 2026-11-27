@@ -1,5 +1,3 @@
-
-https://github.com/user-attachments/assets/17b5f02c-81e5-4a2b-9d79-49e6b42a59d3
 <div align="center">
 
 <img src="assets/readme-icon.png" alt="" width="72">
