@@ -225,7 +225,9 @@ read them offline.
 
 ## Licence and trademarks
 
-MIT, see [LICENSE](LICENSE). Built by [Didro](https://didro.ai).
+MIT, see [LICENSE](LICENSE). Built by [Didro](https://didro.ai). 
+
+Happy to chat to anyone interested in AI to improve SAP transformation: pierre@didro.eu
 
 This project is not affiliated with, endorsed by or sponsored by SAP SE.
 SAP, SAP GUI, SAP Fiori, SAPUI5, SAP S/4HANA, ABAP and other SAP products
