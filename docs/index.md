@@ -16,7 +16,7 @@ hero:
       link: /getting-started/installation
     - theme: alt
       text: GitHub
-      link: https://github.com/DidroAI/sap-ui-automation
+      link: https://github.com/DidroAI/sap-ui-mcp
 features:
   - title: The screens you already have open
     details: Finds your SAP GUI, Web GUI and Fiori sessions and works in them as you, under your SAP authorisations. It never sees a password. You log on, or the Chrome extension types the password itself.

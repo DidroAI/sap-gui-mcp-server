@@ -2,15 +2,15 @@
 
 <img src="assets/readme-icon.png" alt="" width="72">
 
-# SAP UI Automation
+# SAP UI MCP
 
-**Let AI agents see and drive SAP.**<br>
+**Let AI agents see and interact with SAP screens.**<br>
 An MCP server, CLI and SDK for Claude Code, Codex, Cursor, Copilot or your own agent,<br>
 on SAP GUI for HTML (Web GUI), SAP Fiori and SAP GUI for Windows.
 
 [![npm](https://img.shields.io/npm/v/sap-ui-automation?label=npm)](https://www.npmjs.com/package/sap-ui-automation)
 [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/geglpbkaklfpmnbidfcpflegmdkjodkn?label=Chrome%20extension)](https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn)
-[![CI](https://github.com/DidroAI/sap-ui-automation/actions/workflows/ci.yml/badge.svg)](https://github.com/DidroAI/sap-ui-automation/actions/workflows/ci.yml)
+[![CI](https://github.com/DidroAI/sap-ui-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/DidroAI/sap-ui-mcp/actions/workflows/ci.yml)
 [![MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
 [Docs](https://docs.didro.ai/sap-ui-automation/) ·
@@ -71,7 +71,7 @@ recording, then replay it. [Example prompt](examples/prompts/record-a-test.md)
 <summary><b>Let your agent set it up</b>: a prompt to paste into Claude Code, Codex or Cursor</summary>
 
 ```text
-Set up sap-ui-automation for me (npm package sap-ui-automation, https://github.com/DidroAI/sap-ui-automation). Say what each command does before you run it, and wait for me when I have to click something.
+Set up sap-ui-automation for me (npm package sap-ui-automation, https://github.com/DidroAI/sap-ui-mcp). Say what each command does before you run it, and wait for me when I have to click something.
 Rules: never type, ask for or store an SAP password, and never log on to SAP for me. Do not set or change SAP_WRITE. Do not save, post or change anything in SAP. Ask before you install software.
 1. Check node -v is 22 or later; if not, tell me how to install it and stop.
 2. Ask me to add the UI Automation for SAP extension to Chrome: https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn and wait.
@@ -91,11 +91,11 @@ The longer version, also for SAP GUI for Windows:
 
 | Client | |
 | --- | --- |
-| Claude Code | `claude mcp add sap-ui-automation --scope user -- npx -y sap-ui-automation`, or the plugin: `/plugin marketplace add DidroAI/sap-ui-automation`, then `/plugin install sap-ui-automation@sap-ui-automation` |
+| Claude Code | `claude mcp add sap-ui-automation --scope user -- npx -y sap-ui-automation`, or the plugin: `/plugin marketplace add DidroAI/sap-ui-mcp`, then `/plugin install sap-ui-automation@sap-ui-automation` |
 | Codex | `codex mcp add sap-ui-automation -- npx -y sap-ui-automation` |
 | Cursor | [![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=sap-ui-automation&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsInNhcC11aS1hdXRvbWF0aW9uIl19%3D%3D) |
 | VS Code | [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_sap--ui--automation-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522sap-ui-automation%2522%252C%2522type%2522%253A%2522stdio%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522sap-ui-automation%2522%255D%257D) or `code --add-mcp '{"name":"sap-ui-automation","type":"stdio","command":"npx","args":["-y","sap-ui-automation"]}'` |
-| Claude Desktop | open [`sap-ui-automation.mcpb`](https://github.com/DidroAI/sap-ui-automation/releases/latest/download/sap-ui-automation.mcpb) from the latest release |
+| Claude Desktop | open [`sap-ui-automation.mcpb`](https://github.com/DidroAI/sap-ui-mcp/releases/latest/download/sap-ui-automation.mcpb) from the latest release |
 | Other MCP clients | a stdio server with the command `npx -y sap-ui-automation` |
 
 These use a Chrome window the server opens. For your own Chrome with the
@@ -216,8 +216,8 @@ read them offline.
 
 - Setup does not work: run `npx -y sap-ui-automation doctor`, read the
   [FAQ](docs/faq.md), then open a
-  [setup problem](https://github.com/DidroAI/sap-ui-automation/issues/new?template=setup_problem.yml).
-- Bugs and ideas: [issues](https://github.com/DidroAI/sap-ui-automation/issues/new/choose).
+  [setup problem](https://github.com/DidroAI/sap-ui-mcp/issues/new?template=setup_problem.yml).
+- Bugs and ideas: [issues](https://github.com/DidroAI/sap-ui-mcp/issues/new/choose).
   Leave real SAP data out.
 - Security issues: privately, as [SECURITY.md](SECURITY.md) says.
 - Code: [CONTRIBUTING.md](CONTRIBUTING.md). The tests run without an SAP
@@ -226,6 +226,10 @@ read them offline.
 ## Licence and trademarks
 
 MIT, see [LICENSE](LICENSE). Built by [Didro](https://didro.ai). 
+
+Didro is a company building AI software that gives IT teams a living model of
+their SAP systems and business processes. Teams can use it to see what a change
+could affect, then design and run the tests needed to validate it.
 
 Happy to chat to anyone interested in AI to improve SAP transformation: pierre@didro.eu
 

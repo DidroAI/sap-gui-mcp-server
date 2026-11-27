@@ -164,7 +164,7 @@ waits for your yes to save. While the server works in a tab, Chrome shows
 there stops the sharing until you click **Share again** in the side panel.
 `npx -y sap-ui-automation extension uninstall` removes the helper, the
 saved passwords and the copied folder. See
-[extension/README.md](https://github.com/DidroAI/sap-ui-automation/blob/main/extension/README.md)
+[extension/README.md](https://github.com/DidroAI/sap-ui-mcp/blob/main/extension/README.md)
 for what happens on a wrong password or a locked user, where passwords are
 kept, permissions, IT deployment and limits. The extension is not
 affiliated with SAP SE.

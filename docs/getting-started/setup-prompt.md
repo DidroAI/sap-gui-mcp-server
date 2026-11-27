@@ -19,7 +19,7 @@ What the prompt does not let the agent do:
 - install software or change SAP GUI options without telling you first.
 
 ```text
-Set up sap-ui-automation for me (npm package sap-ui-automation, https://github.com/DidroAI/sap-ui-automation). Work step by step. Before each command, say in one sentence what it does. Wait for me whenever I have to click something or decide.
+Set up sap-ui-automation for me (npm package sap-ui-automation, https://github.com/DidroAI/sap-ui-mcp). Work step by step. Before each command, say in one sentence what it does. Wait for me whenever I have to click something or decide.
 
 Rules for the whole task:
 - Never type, ask for or store an SAP password, and never log on to SAP for me. I log on myself.
@@ -61,6 +61,6 @@ are required."* ([Your first session](first-session.md))
   and tell the agent to run `setup --extension` in step 2
   ([steps](../guides/chrome.md#install-the-extension)).
 - To use a build from a checkout instead of npm (see
-  [CONTRIBUTING.md](https://github.com/DidroAI/sap-ui-automation/blob/main/CONTRIBUTING.md)),
+  [CONTRIBUTING.md](https://github.com/DidroAI/sap-ui-mcp/blob/main/CONTRIBUTING.md)),
   run `npm link` in the checkout after `bun run build`, and replace
   `npx -y sap-ui-automation` with `sap-ui-automation` in the prompt.

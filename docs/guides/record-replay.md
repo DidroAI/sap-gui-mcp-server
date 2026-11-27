@@ -326,7 +326,7 @@ command line takes paths, because the user types them.
 #### What is recorded
 
 The server calls the recorder around every action it runs
-([`src/server.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/server.ts), one line in `perform`). While a recording is on, for the
+([`src/server.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/src/server.ts), one line in `perform`). While a recording is on, for the
 recorded session:
 
 1. read the full view of the screen (before);
@@ -509,7 +509,7 @@ same step already ran without getting it through: they are not run again,
 and the proposed recording holds them before the new ones.
 
 The server calls no model. It carries out the repair under rules the caller
-cannot change ([`src/record/repair.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/record/repair.ts)):
+cannot change ([`src/record/repair.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/src/record/repair.ts)):
 
 - every action passes the guard, as in `sap_act`;
 - no write the recording does not have: an action that may write is refused
@@ -837,10 +837,10 @@ Run on an SAP ERP 6.0 demo system through Web GUI in Chrome, read-only
   on, with the spec's log-off hook removed. Its own logon from a new browser
   was not verified: during the check the system sent every new logon of the
   test user back to the logon page without an error, for this repository's
-  own [`test/dev/webgui-logon.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/test/dev/webgui-logon.ts) too.
+  own [`test/dev/webgui-logon.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/test/dev/webgui-logon.ts) too.
 
-Unit tests ([`test/record.test.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/test/record.test.ts), 43 tests when this was checked; 54 in November 2026) run record, replay and the
-exports against a small SAP in memory ([`test/record-fakes.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/test/record-fakes.ts)), including
+Unit tests ([`test/record.test.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/test/record.test.ts), 43 tests when this was checked; 54 in November 2026) run record, replay and the
+exports against a small SAP in memory ([`test/record-fakes.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/test/record-fakes.ts)), including
 what the live check could not: a document created by one step and used by
 the next, a field moved to another subscreen, a write refused by the guard,
 and two tests in a row.
@@ -880,7 +880,7 @@ Not run:
 6. **Fiori.** Field checks need the reader of this file to understand the
    Fiori view, or the Fiori view to move towards the common format.
 7. **Format of the view.** Replay reads facts from the text view
-   ([`src/record/screen.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/record/screen.ts)). If the view changes, that file changes. A
+   ([`src/record/screen.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/src/record/screen.ts)). If the view changes, that file changes. A
    structured screen from the drivers would be firmer, and is a larger
    change to the `Driver` contract.
 
@@ -888,15 +888,15 @@ Not run:
 
 | | |
 | --- | --- |
-| [`src/record/format.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/record/format.ts) | the file format, its schema, variables |
-| [`src/record/screen.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/record/screen.ts) | reads a screen's facts from its text view; finds a control again |
-| [`src/record/checks.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/record/checks.ts) | evaluates checks and captures |
-| [`src/record/recorder.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/record/recorder.ts) | the recorder |
-| [`src/record/replay.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/record/replay.ts) | the replay, its text and JUnit output |
-| [`src/record/repair.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/record/repair.ts) | a repair of one step: its rules, the capture, the proposed test |
-| [`src/record/tools.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/record/tools.ts) | `sap_record` and `sap_replay` |
-| [`src/record/tidy.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/record/tidy.ts) | tidy (the rules, the log, the TODO list) and `verifyTidy` |
-| [`src/record/code-tools.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/record/code-tools.ts) | `sap_code_save` and `sap_code_test` (off unless `SAP_CODE_TOOLS=on`) |
-| [`src/record/cli.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/record/cli.ts) | `replay` and `export` on the command line |
-| [`src/record/export/`](https://github.com/DidroAI/sap-ui-automation/tree/main/src/record/export) | `calm.ts`, `vbs.ts`, `playwright.ts`, `sap-ts.ts` (with `sap-ts-tidy.ts`), `gherkin.ts`, and `words.ts` (a step in a tester's words) |
-| [`src/server.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/server.ts), [`src/cli.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/cli.ts), [`src/index.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/index.ts) | the hook in `perform`, the two commands, the exports of the package |
+| [`src/record/format.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/src/record/format.ts) | the file format, its schema, variables |
+| [`src/record/screen.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/src/record/screen.ts) | reads a screen's facts from its text view; finds a control again |
+| [`src/record/checks.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/src/record/checks.ts) | evaluates checks and captures |
+| [`src/record/recorder.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/src/record/recorder.ts) | the recorder |
+| [`src/record/replay.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/src/record/replay.ts) | the replay, its text and JUnit output |
+| [`src/record/repair.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/src/record/repair.ts) | a repair of one step: its rules, the capture, the proposed test |
+| [`src/record/tools.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/src/record/tools.ts) | `sap_record` and `sap_replay` |
+| [`src/record/tidy.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/src/record/tidy.ts) | tidy (the rules, the log, the TODO list) and `verifyTidy` |
+| [`src/record/code-tools.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/src/record/code-tools.ts) | `sap_code_save` and `sap_code_test` (off unless `SAP_CODE_TOOLS=on`) |
+| [`src/record/cli.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/src/record/cli.ts) | `replay` and `export` on the command line |
+| [`src/record/export/`](https://github.com/DidroAI/sap-ui-mcp/tree/main/src/record/export) | `calm.ts`, `vbs.ts`, `playwright.ts`, `sap-ts.ts` (with `sap-ts-tidy.ts`), `gherkin.ts`, and `words.ts` (a step in a tester's words) |
+| [`src/server.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/src/server.ts), [`src/cli.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/src/cli.ts), [`src/index.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/src/index.ts) | the hook in `perform`, the two commands, the exports of the package |

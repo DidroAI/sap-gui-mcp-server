@@ -7,7 +7,7 @@ claude mcp add sap-ui-automation --scope user -- npx -y sap-ui-automation
 Or the plugin, which adds the `sap-ui-automation` skill as well:
 
 ```text
-/plugin marketplace add DidroAI/sap-ui-automation
+/plugin marketplace add DidroAI/sap-ui-mcp
 /plugin install sap-ui-automation@sap-ui-automation
 ```
 

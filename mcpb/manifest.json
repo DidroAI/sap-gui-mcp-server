@@ -12,12 +12,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/DidroAI/sap-ui-automation.git"
+    "url": "https://github.com/DidroAI/sap-ui-mcp.git"
   },
   "homepage": "https://docs.didro.ai/sap-ui-automation/",
-  "documentation": "https://github.com/DidroAI/sap-ui-automation/blob/main/docs/getting-started/installation.md",
+  "documentation": "https://github.com/DidroAI/sap-ui-mcp/blob/main/docs/getting-started/installation.md",
   "icon": "icon.png",
-  "support": "https://github.com/DidroAI/sap-ui-automation/issues",
+  "support": "https://github.com/DidroAI/sap-ui-mcp/issues",
   "license": "MIT",
   "keywords": ["sap", "sap-gui", "sap-gui-scripting", "webgui", "fiori", "s4hana", "erp", "automation", "test-automation"],
   "server": {

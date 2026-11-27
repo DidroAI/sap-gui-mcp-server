@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Before you open this, run `npx -y sap-ui-automation doctor` and look up each ✗ in [FAQ and troubleshooting](https://github.com/DidroAI/sap-ui-automation/blob/main/docs/faq.md). **Leave real SAP data out**: replace host names, system names and user names with made-up ones.
+        Before you open this, run `npx -y sap-ui-automation doctor` and look up each ✗ in [FAQ and troubleshooting](https://github.com/DidroAI/sap-ui-mcp/blob/main/docs/faq.md). **Leave real SAP data out**: replace host names, system names and user names with made-up ones.
   - type: dropdown
     id: path
     attributes:

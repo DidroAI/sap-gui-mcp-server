@@ -21,7 +21,7 @@ CI uses 1.4.4) and Node.js 22 or later (the built server runs on plain Node;
 CI runs 22 and 24).
 
 ```sh
-git clone https://github.com/DidroAI/sap-ui-automation.git
+git clone https://github.com/DidroAI/sap-ui-mcp.git
 cd sap-ui-automation
 bun install --frozen-lockfile
 bun run typecheck
@@ -164,7 +164,7 @@ npm package; the server itself makes no such call.
   need `bun run docs:build` to pass, nothing else.
 
 Issues labelled
-[good first issue](https://github.com/DidroAI/sap-ui-automation/labels/good%20first%20issue)
+[good first issue](https://github.com/DidroAI/sap-ui-mcp/labels/good%20first%20issue)
 are a place to start.
 
 ## Add a surface

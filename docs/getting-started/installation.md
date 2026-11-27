@@ -46,7 +46,7 @@ too. Then run `npx -y sap-ui-automation doctor` to check what the server can
 reach (SAP GUI scripting, Chrome). Or have your agent do all of it: [Set up
 with your agent](setup-prompt.md).
 
-For an agent `setup` does not know, `npx skills add DidroAI/sap-ui-automation`
+For an agent `setup` does not know, `npx skills add DidroAI/sap-ui-mcp`
 installs the skills; add the server in its MCP settings as below.
 :::
 
@@ -90,7 +90,7 @@ claude mcp add --scope user --env SAP_WRITE=off --transport stdio sap-ui-automat
 ```
 
 ```text [Plugin]
-/plugin marketplace add DidroAI/sap-ui-automation
+/plugin marketplace add DidroAI/sap-ui-mcp
 /plugin install sap-ui-automation@sap-ui-automation
 ```
 
@@ -104,18 +104,18 @@ write under `confirm` does not run unless a hook answers.
 The **plugin** brings the server and two skills: `sap-ui-automation`, which teaches
 the agent how to work in SAP transactions with the tools, and `sap-ui-automation-cli`,
 the same work from the shell with the CLI. From your shell, the same is
-`claude plugin marketplace add DidroAI/sap-ui-automation` then
+`claude plugin marketplace add DidroAI/sap-ui-mcp` then
 `claude plugin install sap-ui-automation@sap-ui-automation`. The plugin starts the
 server with `SAP_WRITE` from your environment (default `confirm`). Its files:
-[`.claude-plugin/plugin.json`](https://github.com/DidroAI/sap-ui-automation/blob/main/.claude-plugin/plugin.json),
-[`.mcp.json`](https://github.com/DidroAI/sap-ui-automation/blob/main/.mcp.json),
-[`skills/sap-ui-automation`](https://github.com/DidroAI/sap-ui-automation/blob/main/skills/sap-ui-automation/SKILL.md),
-[`skills/sap-ui-automation-cli`](https://github.com/DidroAI/sap-ui-automation/blob/main/skills/sap-ui-automation-cli/SKILL.md).
+[`.claude-plugin/plugin.json`](https://github.com/DidroAI/sap-ui-mcp/blob/main/.claude-plugin/plugin.json),
+[`.mcp.json`](https://github.com/DidroAI/sap-ui-mcp/blob/main/.mcp.json),
+[`skills/sap-ui-automation`](https://github.com/DidroAI/sap-ui-mcp/blob/main/skills/sap-ui-automation/SKILL.md),
+[`skills/sap-ui-automation-cli`](https://github.com/DidroAI/sap-ui-mcp/blob/main/skills/sap-ui-automation-cli/SKILL.md).
 
 ## Claude Desktop
 
 **One click:** download `sap-ui-automation-<version>.mcpb` from the
-[latest release](https://github.com/DidroAI/sap-ui-automation/releases/latest)
+[latest release](https://github.com/DidroAI/sap-ui-mcp/releases/latest)
 and open it (double-click, or drag it onto Claude Desktop, or **Settings >
 Extensions > Advanced settings > Install Extension…**). Claude Desktop shows
 the settings: writes (`confirm`, the default, `off` or `on`), allowed systems and
@@ -341,7 +341,7 @@ with no arguments.
 
 Next: [Your first session](first-session.md). Ready-made snippets and example
 prompts for each client are in
-[examples/clients](https://github.com/DidroAI/sap-ui-automation/tree/main/examples/clients).
+[examples/clients](https://github.com/DidroAI/sap-ui-mcp/tree/main/examples/clients).
 
 ## Badges for the README
 
@@ -349,7 +349,7 @@ prompts for each client are in
 [![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=sap-ui-automation&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsInNhcC11aS1hdXRvbWF0aW9uIl19%3D%3D)
 [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_sap--ui--automation-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522sap-ui-automation%2522%252C%2522type%2522%253A%2522stdio%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522sap-ui-automation%2522%255D%257D)
 [![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_sap--ui--automation-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode-insiders%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522sap-ui-automation%2522%252C%2522type%2522%253A%2522stdio%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522sap-ui-automation%2522%255D%257D)
-[![Claude Desktop extension](https://img.shields.io/badge/Claude_Desktop-Download_.mcpb-D97757?style=flat-square&logo=claude&logoColor=white)](https://github.com/DidroAI/sap-ui-automation/releases/latest/download/sap-ui-automation.mcpb)
+[![Claude Desktop extension](https://img.shields.io/badge/Claude_Desktop-Download_.mcpb-D97757?style=flat-square&logo=claude&logoColor=white)](https://github.com/DidroAI/sap-ui-mcp/releases/latest/download/sap-ui-automation.mcpb)
 ```
 
 GitHub does not follow `cursor://` or `vscode:` links in a README, so the

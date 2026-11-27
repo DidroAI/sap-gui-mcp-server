@@ -178,7 +178,7 @@ that is not from this package is never replaced or removed. Copies under
 the skills' old names (`sap-gui-drive`, `sap-gui-cli`) are removed only when
 they are this package's.
 
-For an agent setup does not know, `npx skills add DidroAI/sap-ui-automation`
+For an agent setup does not know, `npx skills add DidroAI/sap-ui-mcp`
 installs the same skills.
 
 ### What it never does

@@ -1,7 +1,7 @@
 # Claude Desktop
 
 One click: download `sap-ui-automation-<version>.mcpb` from the
-[latest release](https://github.com/DidroAI/sap-ui-automation/releases/latest)
+[latest release](https://github.com/DidroAI/sap-ui-mcp/releases/latest)
 and open it. Claude Desktop asks for the settings (writes, allowed systems,
 transactions, origins).
 

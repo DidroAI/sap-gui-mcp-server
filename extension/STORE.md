@@ -30,8 +30,8 @@ The extension is distributed unpacked until the first store release.
   86% against 90% and 89%. Update the figures when the benchmark is
   published.
 
-- **Privacy policy URL:** https://github.com/DidroAI/sap-ui-automation/blob/main/extension/PRIVACY.md
-- **Homepage / support:** https://github.com/DidroAI/sap-ui-automation (issues for support)
+- **Privacy policy URL:** https://github.com/DidroAI/sap-ui-mcp/blob/main/extension/PRIVACY.md
+- **Homepage / support:** https://github.com/DidroAI/sap-ui-mcp (issues for support)
 
 ## Single purpose
 

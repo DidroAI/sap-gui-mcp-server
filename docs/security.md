@@ -11,7 +11,7 @@ leaves the machine, what is written to disk, and what the agent can do
 under each setting.
 
 To report a vulnerability, see
-[SECURITY.md](https://github.com/DidroAI/sap-ui-automation/blob/main/SECURITY.md).
+[SECURITY.md](https://github.com/DidroAI/sap-ui-mcp/blob/main/SECURITY.md).
 
 ## In short
 
@@ -35,7 +35,7 @@ To report a vulnerability, see
   the passwords of the systems registered in it in the system's keychain
   and types them into SAP's logon page itself; the server and the agent
   never see them
-  ([extension/PRIVACY.md](https://github.com/DidroAI/sap-ui-automation/blob/main/extension/PRIVACY.md)).
+  ([extension/PRIVACY.md](https://github.com/DidroAI/sap-ui-mcp/blob/main/extension/PRIVACY.md)).
 - **The default requests MCP client approval.** A flagged write
   runs only after the client accepts it
   (`SAP_WRITE=confirm`), and is refused where the client cannot ask.
@@ -230,4 +230,4 @@ SAP user's authorisations allow once writes are on. The guard is a safety
 net for an agent that makes mistakes, not a security boundary.
 
 The full threat model is in
-[SECURITY.md](https://github.com/DidroAI/sap-ui-automation/blob/main/SECURITY.md).
+[SECURITY.md](https://github.com/DidroAI/sap-ui-mcp/blob/main/SECURITY.md).

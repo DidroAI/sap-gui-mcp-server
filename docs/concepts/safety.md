@@ -119,7 +119,7 @@ English, German, French, Spanish, Portuguese, Italian and Dutch. Safe words
 (Display, Find, Refresh, Next, Back...) are known in English, German,
 French and Spanish. In another logon language, only ids, keys and function
 codes count as safe, so more actions are held. The lists are in
-[`src/core/words.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/core/words.ts),
+[`src/core/words.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/src/core/words.ts),
 one table for all surfaces.
 
 ### The cost of failing closed
