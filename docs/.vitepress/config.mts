@@ -10,8 +10,8 @@ import { faqJsonLd, softwareJsonLd, writeLlmsTxt } from "./seo.mts";
 // build writes llms.txt and llms-full.txt. Canonical links and sitemap.xml need the address the
 // site is served at: set DOCS_SITE_URL (for example https://example.com/sap-ui-automation) to get them.
 const SITE = process.env.DOCS_SITE_URL?.replace(/\/+$/, "");
-const NAME = "SAP UI Automation";
-const DESCRIPTION = "Let an AI agent see and drive the SAP screens you have open: SAP GUI for Windows, Web GUI and Fiori. Each write waits for your yes.";
+const NAME = "SAP UI MCP";
+const DESCRIPTION = "Let an AI agent see and interact with the SAP screens you have open: SAP GUI for Windows, Web GUI and Fiori. Each write waits for your yes.";
 const VERSION: string = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version;
 
 /** The page's address under SITE, as VitePress serves it with cleanUrls. */

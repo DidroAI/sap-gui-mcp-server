@@ -1,5 +1,5 @@
 ---
-title: "SAP UI Automation FAQ and troubleshooting"
+title: "SAP UI MCP FAQ and troubleshooting"
 description: "One entry per check doctor can fail, then common questions: Mac and Linux, SAP GUI for Java, SNC, Edge, logon, where data goes, writes."
 ---
 
@@ -206,7 +206,7 @@ machine with a desktop, or a Chrome installed from Google's package.
 
 ### Chrome extension: no extension connected
 
-**Symptom.** `✗ Chrome extension: no UI Automation for SAP extension
+**Symptom.** `✗ Chrome extension: no SAP UI MCP extension
 connected to port 47823 within 35 s` (`SAP_BROWSER=extension`).
 
 **Cause.** The extension is not installed or not paired, or Chrome is not
