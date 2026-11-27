@@ -119,8 +119,8 @@ export default defineConfig({
         ],
       },
     ],
-    socialLinks: [{ icon: "github", link: "https://github.com/DidroAI/sap-ui-automation" }],
-    editLink: { pattern: "https://github.com/DidroAI/sap-ui-automation/edit/main/docs/:path" },
+    socialLinks: [{ icon: "github", link: "https://github.com/DidroAI/sap-ui-mcp" }],
+    editLink: { pattern: "https://github.com/DidroAI/sap-ui-mcp/edit/main/docs/:path" },
     footer: {
       message: "MIT licence. Not affiliated with, endorsed by or sponsored by SAP SE. SAP and other SAP products are trademarks of SAP SE.",
     },

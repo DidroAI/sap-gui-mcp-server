@@ -31,11 +31,11 @@
   "mcpName": "io.github.DidroAI/sap-ui-automation",
   "homepage": "https://docs.didro.ai/sap-ui-automation/",
   "bugs": {
-    "url": "https://github.com/DidroAI/sap-ui-automation/issues"
+    "url": "https://github.com/DidroAI/sap-ui-mcp/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/DidroAI/sap-ui-automation.git"
+    "url": "git+https://github.com/DidroAI/sap-ui-mcp.git"
   },
   "type": "module",
   "main": "./dist/index.js",

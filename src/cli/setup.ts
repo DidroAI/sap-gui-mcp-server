@@ -549,7 +549,7 @@ export function setup(opts: SetupOptions, env: Env = process.env, platform: Node
     lines.push(
       `No agent found. Name one: npx -y ${PACKAGE} setup --agent <id> (${AGENT_IDS.join(", ")}),`,
       `or add this command to your agent's MCP settings by hand: ${command.join(" ")}`,
-      `Skills for other agents: npx skills add DidroAI/sap-ui-automation`,
+      `Skills for other agents: npx skills add DidroAI/sap-ui-mcp`,
     );
   lines.push(...attentionLines(rows, folders, helper, { show, s }));
   lines.push(...nextLines(restart, helper, { extension: !!opts.extension, dry, s }));
