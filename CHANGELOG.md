@@ -4,6 +4,10 @@ All notable changes to this project are listed here. The project follows
 [Semantic Versioning](https://semver.org); before 1.0, a minor version may
 change the tools or the view format.
 
+## Unreleased
+
+- The docs, CLI help and agent skills use the package name `sap-ui-automation` for shell commands.
+
 ## 0.5.1
 
 ### Fixed
@@ -105,7 +109,7 @@ change the tools or the view format.
 - **`SAP_WRITE=confirm` is the default**, instead of `off`. Each action
   that may write waits for your yes, asked in the client (MCP elicitation)
   or, in a script, by `onConfirm`. A client that cannot ask (Claude
-  Desktop, Cursor, `claude -p`, `codex exec`), the agent CLI (`sap-gui`),
+  Desktop, Cursor, `claude -p`, `codex exec`), the agent CLI (`sap-ui-automation`),
   and a test or script without `onConfirm` still get every write refused;
   the refusal and the server's log say how to get writes.
 - To keep the old behaviour, set `SAP_WRITE=off`: read-only, every write
@@ -456,7 +460,7 @@ Preparing the first public release.
 
 ### Fixes
 
-- `sap-gui test` loads `sap.config.ts` and `*.sap.ts` as ES modules in a
+- `sap-ui-automation test` loads `sap.config.ts` and `*.sap.ts` as ES modules in a
   project whose `package.json` says `"type": "commonjs"` (what `npm init`
   writes). It used to fail with "Cannot use import statement outside a
   module".
