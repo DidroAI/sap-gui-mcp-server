@@ -1,19 +1,19 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.DidroAI/sap-ui-automation",
-  "title": "SAP UI Automation",
+  "title": "SAP UI MCP",
   "description": "Let agents see and drive SAP GUI, Web GUI and Fiori screens with configurable write approvals.",
   "version": "0.5.1",
   "icons": [
     {
-      "src": "https://raw.githubusercontent.com/DidroAI/sap-ui-automation/main/assets/icon.png",
+      "src": "https://raw.githubusercontent.com/DidroAI/sap-ui-mcp/main/assets/icon.png",
       "mimeType": "image/png",
       "sizes": ["512x512"]
     }
   ],
   "websiteUrl": "https://docs.didro.ai/sap-ui-automation/",
   "repository": {
-    "url": "https://github.com/DidroAI/sap-ui-automation",
+    "url": "https://github.com/DidroAI/sap-ui-mcp",
     "source": "github"
   },
   "packages": [

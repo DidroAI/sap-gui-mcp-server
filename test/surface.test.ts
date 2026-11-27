@@ -71,7 +71,7 @@ describe("tools/list", () => {
   });
   test("the server says who it is", async () => {
     const { client } = await setup({});
-    expect(client.getServerVersion()).toMatchObject({ name: "sap-ui-automation", title: "SAP UI Automation", websiteUrl: "https://github.com/DidroAI/sap-ui-automation" });
+    expect(client.getServerVersion()).toMatchObject({ name: "sap-ui-automation", title: "SAP UI MCP", websiteUrl: "https://github.com/DidroAI/sap-ui-mcp" });
   });
 });
 

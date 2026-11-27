@@ -345,9 +345,9 @@ export function createServer({ policy, surfaces, view = "diff", record, code = c
     {
       name: SERVER_NAME,
       version: SERVER_VERSION,
-      title: "SAP UI Automation",
+      title: "SAP UI MCP",
       description: "See and drive the SAP screens open on this machine (SAP GUI for Windows, Web GUI, Fiori), with guardrails on writes",
-      websiteUrl: "https://github.com/DidroAI/sap-ui-automation",
+      websiteUrl: "https://github.com/DidroAI/sap-ui-mcp",
     },
     { instructions: instructions(policy, !!systems) });
   // The extension's side panel learns who the agent is once the client said its name.

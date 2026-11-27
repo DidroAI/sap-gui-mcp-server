@@ -26,9 +26,9 @@ save and run test code when you turn them on (`SAP_CODE_TOOLS=on`,
 | [`sap_code_save`](#sap-code-save) | checks and saves a `*.sap.ts` test | `SAP_CODE_TOOLS=on` |
 | [`sap_code_test`](#sap-code-test) | runs a saved `*.sap.ts` test | `SAP_CODE_TOOLS=on` |
 
-Source: [`src/server.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/server.ts),
-[`src/record/tools.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/record/tools.ts)
-and [`src/record/code-tools.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/src/record/code-tools.ts).
+Source: [`src/server.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/src/server.ts),
+[`src/record/tools.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/src/record/tools.ts)
+and [`src/record/code-tools.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/src/record/code-tools.ts).
 The parameter tables below follow the tools' input schemas.
 
 ## Annotations

@@ -6,6 +6,8 @@ change the tools or the view format.
 
 ## Unreleased
 
+- The docs, MCP server, Registry manifest and Desktop bundle display the project name SAP UI MCP.
+
 - The docs, CLI help and agent skills use the package name `sap-ui-automation` for shell commands.
 
 ## 0.5.1
@@ -180,7 +182,7 @@ change the tools or the view format.
   other agent's folder (a copy where no link can be made). A rerun updates
   the copy in place.
 - Config files keep their comments and layout where setup adds the server.
-- For agents setup does not know, `npx skills add DidroAI/sap-ui-automation`
+- For agents setup does not know, `npx skills add DidroAI/sap-ui-mcp`
   installs the skills.
 
 ## 0.3.1 (2026-11-26)

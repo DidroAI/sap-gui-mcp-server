@@ -1,5 +1,5 @@
 ---
-title: "SAP UI Automation compared with Playwright MCP and other tools"
+title: "SAP UI MCP compared with Playwright MCP and other tools"
 description: "How this server relates to browser MCP servers, SAP GUI scripting and test tools, with a source for each fact."
 ---
 
@@ -10,7 +10,7 @@ team can use on SAP screens? This page sets it next to browser MCP servers,
 other SAP GUI MCP servers, and SAP test-automation suites. Facts about other tools are as of November 2026, from their
 public docs and READMEs, linked in each row. They change; check the source
 before you rely on a row. Facts about this server come from its code and
-its [README](https://github.com/DidroAI/sap-ui-automation/blob/main/README.md).
+its [README](https://github.com/DidroAI/sap-ui-mcp/blob/main/README.md).
 
 Early measured results, with their caveats, are in [Benchmarks](benchmarks.md).
 The other SAP GUI MCP servers below were not part of those results.

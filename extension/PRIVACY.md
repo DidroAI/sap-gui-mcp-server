@@ -51,4 +51,4 @@ not read by humans.
 
 ## Contact
 
-Questions: open an issue at https://github.com/DidroAI/sap-ui-automation/issues.
+Questions: open an issue at https://github.com/DidroAI/sap-ui-mcp/issues.

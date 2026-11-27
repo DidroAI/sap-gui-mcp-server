@@ -21,7 +21,7 @@ CI uses 1.4.4) and Node.js 22 or later (the built server runs on plain Node;
 CI runs 22 and 24).
 
 ```sh
-git clone https://github.com/DidroAI/sap-ui-automation.git
+git clone https://github.com/DidroAI/sap-ui-mcp.git
 cd sap-ui-automation
 bun install --frozen-lockfile
 bun run typecheck
@@ -164,7 +164,7 @@ npm package; the server itself makes no such call.
   need `bun run docs:build` to pass, nothing else.
 
 Issues labelled
-[good first issue](https://github.com/DidroAI/sap-ui-automation/labels/good%20first%20issue)
+[good first issue](https://github.com/DidroAI/sap-ui-mcp/labels/good%20first%20issue)
 are a place to start.
 
 ## Add a surface
@@ -302,6 +302,11 @@ The [pull request template](.github/PULL_REQUEST_TEMPLATE.md) holds the same
 list.
 
 ## Releasing (maintainers)
+
+The npm package is `sap-ui-automation`. Its trusted publisher on npm must
+point to GitHub repository `DidroAI/sap-ui-mcp`, workflow `release.yml`,
+environment `npm`. A maintainer can check it with
+`npm trust list sap-ui-automation` before tagging a release.
 
 1. Set the version in `package.json`, `server.json` (twice),
    `mcpb/manifest.json`, `.claude-plugin/plugin.json`, and `SERVER_VERSION`

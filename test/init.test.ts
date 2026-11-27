@@ -372,7 +372,7 @@ describe("setup: Cursor, Windsurf, VS Code", () => {
   test("nothing found: nothing written, and how to name an agent", () => {
     const r = setup({ verbose: true, dryRun: false, cwd, onPath: none }, {}, "linux", home);
     expect(r.lines.some((l) => l.startsWith("No agent found. Name one:"))).toBe(true);
-    expect(r.lines).toContain("Skills for other agents: npx skills add DidroAI/sap-ui-automation");
+    expect(r.lines).toContain("Skills for other agents: npx skills add DidroAI/sap-ui-mcp");
     expect(readdirSync(home)).toEqual([]);
     mkdirSync(join(home, ".cursor"));
     const dry = setup({ verbose: true, dryRun: true, cwd, onPath: none }, {}, "linux", home);

@@ -4,7 +4,7 @@
   "version": "0.5.1",
   "author": { "name": "Didro" },
   "homepage": "https://docs.didro.ai/sap-ui-automation/",
-  "repository": "https://github.com/DidroAI/sap-ui-automation",
+  "repository": "https://github.com/DidroAI/sap-ui-mcp",
   "license": "MIT",
   "keywords": ["sap", "sap-ui-automation", "sap-gui", "fiori", "webgui", "s4hana", "mcp", "test-automation"]
 }

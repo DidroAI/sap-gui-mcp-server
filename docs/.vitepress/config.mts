@@ -10,7 +10,7 @@ import { faqJsonLd, softwareJsonLd, writeLlmsTxt } from "./seo.mts";
 // build writes llms.txt and llms-full.txt. Canonical links and sitemap.xml need the address the
 // site is served at: set DOCS_SITE_URL (for example https://example.com/sap-ui-automation) to get them.
 const SITE = process.env.DOCS_SITE_URL?.replace(/\/+$/, "");
-const NAME = "SAP UI Automation";
+const NAME = "SAP UI MCP";
 const DESCRIPTION = "Let an AI agent see and drive the SAP screens you have open: SAP GUI for Windows, Web GUI and Fiori. Each write waits for your yes.";
 const VERSION: string = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version;
 
@@ -119,8 +119,8 @@ export default defineConfig({
         ],
       },
     ],
-    socialLinks: [{ icon: "github", link: "https://github.com/DidroAI/sap-ui-automation" }],
-    editLink: { pattern: "https://github.com/DidroAI/sap-ui-automation/edit/main/docs/:path" },
+    socialLinks: [{ icon: "github", link: "https://github.com/DidroAI/sap-ui-mcp" }],
+    editLink: { pattern: "https://github.com/DidroAI/sap-ui-mcp/edit/main/docs/:path" },
     footer: {
       message: "MIT licence. Not affiliated with, endorsed by or sponsored by SAP SE. SAP and other SAP products are trademarks of SAP SE.",
     },

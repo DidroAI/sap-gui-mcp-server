@@ -1,14 +1,14 @@
 blank_issues_enabled: false
 contact_links:
   - name: Report a security issue
-    url: https://github.com/DidroAI/sap-ui-automation/security/advisories/new
+    url: https://github.com/DidroAI/sap-ui-mcp/security/advisories/new
     about: Privately, please. See SECURITY.md.
   - name: Choose your setup
-    url: https://github.com/DidroAI/sap-ui-automation/blob/main/docs/getting-started/choose.md
+    url: https://github.com/DidroAI/sap-ui-mcp/blob/main/docs/getting-started/choose.md
     about: Which guide fits your SAP front end and your agent.
   - name: Documentation
-    url: https://github.com/DidroAI/sap-ui-automation/tree/main/docs
+    url: https://github.com/DidroAI/sap-ui-mcp/tree/main/docs
     about: Installation, guides per surface, the safety model and configuration.
   - name: Troubleshooting and FAQ
-    url: https://github.com/DidroAI/sap-ui-automation/blob/main/docs/faq.md
+    url: https://github.com/DidroAI/sap-ui-mcp/blob/main/docs/faq.md
     about: Common setup problems. Run `npx -y sap-ui-automation doctor` first.

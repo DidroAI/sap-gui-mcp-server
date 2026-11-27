@@ -4,8 +4,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DefaultTheme, SiteConfig } from "vitepress";
 
-const REPO = "https://github.com/DidroAI/sap-ui-automation";
-const RAW = "https://raw.githubusercontent.com/DidroAI/sap-ui-automation/main/docs";
+const REPO = "https://github.com/DidroAI/sap-ui-mcp";
+const RAW = "https://raw.githubusercontent.com/DidroAI/sap-ui-mcp/main/docs";
 const NPM = "https://www.npmjs.com/package/sap-ui-automation";
 const STORE = "https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn";
 const PRODUCT_PAGE = "https://docs.didro.ai/sap-ui-automation/";
@@ -16,7 +16,7 @@ export function softwareJsonLd(version: string, description: string) {
   return {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
-    name: "SAP UI Automation",
+    name: "SAP UI MCP",
     alternateName: ["SAP GUI MCP server", "SAP Fiori MCP server", "sap-ui-automation"],
     description,
     url: PRODUCT_PAGE,
@@ -122,7 +122,7 @@ export function writeLlmsTxt(config: SiteConfig<DefaultTheme.Config>, o: { name:
     "Ways to connect:",
     "",
     "- `npx -y sap-ui-automation setup` adds the server and its skills to the coding agents it finds (Claude Code, Codex, Cursor and more); `npx -y sap-ui-automation doctor` checks what it can reach.",
-    "- Claude Code plugin: `/plugin marketplace add DidroAI/sap-ui-automation`, then `/plugin install sap-ui-automation@sap-ui-automation`.",
+    "- Claude Code plugin: `/plugin marketplace add DidroAI/sap-ui-mcp`, then `/plugin install sap-ui-automation@sap-ui-automation`.",
     `- Claude Desktop: open ${REPO}/releases/latest/download/sap-ui-automation.mcpb`,
     `- Chrome extension "UI Automation for SAP", to work in your everyday Chrome: ${STORE}`,
     "- MCP Registry: io.github.DidroAI/sap-ui-automation",

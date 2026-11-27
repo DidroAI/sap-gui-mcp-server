@@ -88,7 +88,7 @@ the whole screen for one action, and `SAP_VIEW=full` for all of them.
 
 On one read-only flow of 51 steps on Web GUI (VA01 without saving, VA03,
 VA05, SE16N, SE16, MM03;
-[`test/dev/soak.ts`](https://github.com/DidroAI/sap-ui-automation/blob/main/test/dev/soak.ts),
+[`test/dev/soak.ts`](https://github.com/DidroAI/sap-ui-mcp/blob/main/test/dev/soak.ts),
 one run, tokens counted with the Anthropic `count_tokens` API), the answers
 cost 58k tokens in all, and 73k with `SAP_VIEW=full`, where every action
 answers with the whole screen. Typing into a field answers with about 50

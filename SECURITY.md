@@ -3,7 +3,7 @@
 ## Report a vulnerability
 
 Please do not open a public issue. Report it privately through GitHub:
-[Security → Report a vulnerability](https://github.com/DidroAI/sap-ui-automation/security/advisories/new).
+[Security → Report a vulnerability](https://github.com/DidroAI/sap-ui-mcp/security/advisories/new).
 
 Without a GitHub account, email pierre@didro.ai.
 

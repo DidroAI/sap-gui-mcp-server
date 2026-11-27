@@ -2,15 +2,16 @@
 
 <img src="assets/readme-icon.png" alt="" width="72">
 
-# SAP UI Automation
+# SAP UI MCP
 
-**Let AI agents see and drive SAP.**<br>
+### Let AI agents see and interact with SAP screens.
+
 An MCP server, CLI and SDK for Claude Code, Codex, Cursor, Copilot or your own agent,<br>
 on SAP GUI for HTML (Web GUI), SAP Fiori and SAP GUI for Windows.
 
 [![npm](https://img.shields.io/npm/v/sap-ui-automation?label=npm)](https://www.npmjs.com/package/sap-ui-automation)
 [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/geglpbkaklfpmnbidfcpflegmdkjodkn?label=Chrome%20extension)](https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn)
-[![CI](https://github.com/DidroAI/sap-ui-automation/actions/workflows/ci.yml/badge.svg)](https://github.com/DidroAI/sap-ui-automation/actions/workflows/ci.yml)
+[![CI](https://github.com/DidroAI/sap-ui-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/DidroAI/sap-ui-mcp/actions/workflows/ci.yml)
 [![MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
 [Docs](https://docs.didro.ai/sap-ui-automation/) ·
@@ -23,12 +24,14 @@ on SAP GUI for HTML (Web GUI), SAP Fiori and SAP GUI for Windows.
 
 *Watch the launch video (8 min): the Chrome extension, one setup command, and Codex working in two SAP sessions at once.*
 
+<p align="right">By <a href="https://didro.ai"><img src="assets/didro-wordmark.svg" alt="Didro" width="76"></a></p>
+
 </div>
 
 ## Why
 
 From a screenshot or a page's HTML, an agent has to guess which SAP field
-is which. SAP UI Automation reads the screen the way SAP models it and
+is which. SAP UI MCP reads the screen the way SAP models it and
 gives the agent one line per control, with SAP's own ids, labels, values
 and whether each can be edited. After an action it sends only what
 changed on the same screen.
@@ -71,7 +74,7 @@ recording, then replay it. [Example prompt](examples/prompts/record-a-test.md)
 <summary><b>Let your agent set it up</b>: a prompt to paste into Claude Code, Codex or Cursor</summary>
 
 ```text
-Set up sap-ui-automation for me (npm package sap-ui-automation, https://github.com/DidroAI/sap-ui-automation). Say what each command does before you run it, and wait for me when I have to click something.
+Set up sap-ui-automation for me (npm package sap-ui-automation, https://github.com/DidroAI/sap-ui-mcp). Say what each command does before you run it, and wait for me when I have to click something.
 Rules: never type, ask for or store an SAP password, and never log on to SAP for me. Do not set or change SAP_WRITE. Do not save, post or change anything in SAP. Ask before you install software.
 1. Check node -v is 22 or later; if not, tell me how to install it and stop.
 2. Ask me to add the UI Automation for SAP extension to Chrome: https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn and wait.
@@ -91,11 +94,11 @@ The longer version, also for SAP GUI for Windows:
 
 | Client | |
 | --- | --- |
-| Claude Code | `claude mcp add sap-ui-automation --scope user -- npx -y sap-ui-automation`, or the plugin: `/plugin marketplace add DidroAI/sap-ui-automation`, then `/plugin install sap-ui-automation@sap-ui-automation` |
+| Claude Code | `claude mcp add sap-ui-automation --scope user -- npx -y sap-ui-automation`, or the plugin: `/plugin marketplace add DidroAI/sap-ui-mcp`, then `/plugin install sap-ui-automation@sap-ui-automation` |
 | Codex | `codex mcp add sap-ui-automation -- npx -y sap-ui-automation` |
 | Cursor | [![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=sap-ui-automation&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsInNhcC11aS1hdXRvbWF0aW9uIl19%3D%3D) |
 | VS Code | [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_sap--ui--automation-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522sap-ui-automation%2522%252C%2522type%2522%253A%2522stdio%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522sap-ui-automation%2522%255D%257D) or `code --add-mcp '{"name":"sap-ui-automation","type":"stdio","command":"npx","args":["-y","sap-ui-automation"]}'` |
-| Claude Desktop | open [`sap-ui-automation.mcpb`](https://github.com/DidroAI/sap-ui-automation/releases/latest/download/sap-ui-automation.mcpb) from the latest release |
+| Claude Desktop | open [`sap-ui-automation.mcpb`](https://github.com/DidroAI/sap-ui-mcp/releases/latest/download/sap-ui-automation.mcpb) from the latest release |
 | Other MCP clients | a stdio server with the command `npx -y sap-ui-automation` |
 
 These use a Chrome window the server opens. For your own Chrome with the
@@ -125,16 +128,16 @@ passes when checks on the SAP database pass.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/benchmark-dark.svg">
-  <img alt="Cost per successful run and seconds per run. Against SAP UI Automation on Web GUI, Playwright MCP costs 7.6, 3.9 and 2.6 times more and takes 5.4, 4.1 and 3.6 times longer on Haiku, Sonnet and Opus; Claude computer use costs 2.4, 2.1 and 1.6 times more and takes 4.4, 3.0 and 3.3 times longer." src="assets/benchmark-light.svg" width="880">
+  <img alt="Cost per successful run and seconds per run. Against SAP UI MCP on Web GUI, Playwright MCP costs 7.6, 3.9 and 2.6 times more and takes 5.4, 4.1 and 3.6 times longer on Haiku, Sonnet and Opus; Claude computer use costs 2.4, 2.1 and 1.6 times more and takes 4.4, 3.0 and 3.3 times longer." src="assets/benchmark-light.svg" width="880">
 </picture>
 
-| On Web GUI, against SAP UI Automation | Haiku 5.5 | Sonnet 5.5 | Opus 5.5 |
+| On Web GUI, against SAP UI MCP | Haiku 5.5 | Sonnet 5.5 | Opus 5.5 |
 | --- | --- | --- | --- |
 | Playwright MCP: cost per success / time per run | 7.6× / 5.4× | 3.9× / 4.1× | 2.6× / 3.6× |
 | Claude computer use: cost per success / time per run | 2.4× / 4.4× | 2.1× / 3.0× | 1.6× / 3.3× |
-| SAP UI Automation: passed | 12/12 | 12/12 | 12/12 |
+| SAP UI MCP: passed | 12/12 | 12/12 | 12/12 |
 
-SAP UI Automation also passed 12/12 on every model through SAP GUI
+SAP UI MCP also passed 12/12 on every model through SAP GUI
 scripting. On Haiku, a successful run cost $0.010 and took 43 s, against
 $0.024 and 191 s for computer use and $0.076 and 231 s for Playwright MCP.
 The other options passed most runs too; the difference is cost and time.
@@ -216,8 +219,8 @@ read them offline.
 
 - Setup does not work: run `npx -y sap-ui-automation doctor`, read the
   [FAQ](docs/faq.md), then open a
-  [setup problem](https://github.com/DidroAI/sap-ui-automation/issues/new?template=setup_problem.yml).
-- Bugs and ideas: [issues](https://github.com/DidroAI/sap-ui-automation/issues/new/choose).
+  [setup problem](https://github.com/DidroAI/sap-ui-mcp/issues/new?template=setup_problem.yml).
+- Bugs and ideas: [issues](https://github.com/DidroAI/sap-ui-mcp/issues/new/choose).
   Leave real SAP data out.
 - Security issues: privately, as [SECURITY.md](SECURITY.md) says.
 - Code: [CONTRIBUTING.md](CONTRIBUTING.md). The tests run without an SAP
@@ -226,6 +229,10 @@ read them offline.
 ## Licence and trademarks
 
 MIT, see [LICENSE](LICENSE). Built by [Didro](https://didro.ai). 
+
+Didro is a company building AI software that gives IT teams a living model of
+their SAP systems and business processes. Teams can use it to see what a change
+could affect, then design and run the tests needed to validate it.
 
 Happy to chat to anyone interested in AI to improve SAP transformation: pierre@didro.eu
 

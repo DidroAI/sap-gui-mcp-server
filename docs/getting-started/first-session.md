@@ -101,7 +101,7 @@ they do not.
 
 ## Tips for the agent
 
-The [`sap-ui-automation` skill](https://github.com/DidroAI/sap-ui-automation/blob/main/skills/sap-ui-automation/SKILL.md)
+The [`sap-ui-automation` skill](https://github.com/DidroAI/sap-ui-mcp/blob/main/skills/sap-ui-automation/SKILL.md)
 teaches an agent how SAP screens behave: fields take effect on Enter,
 popups first, value help (F4) instead of guessed codes, F3 or F12 to leave
 without saving, and never working around the write setting. `setup` and
