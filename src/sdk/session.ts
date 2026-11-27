@@ -49,7 +49,7 @@ export function isAt(screen: ParsedScreen, place: Place): boolean {
 /** Errors already named with their step: an error that leaves nested steps is named once, by the innermost. */
 const named = new WeakSet<object>();
 
-export const SDK_VERSION = "0.5.0";
+export const SDK_VERSION = "0.5.1";
 
 /** The guard said no: the action did not run. */
 export class Refused extends Error {
@@ -142,13 +142,13 @@ export async function connect(options: ConnectOptions = {}): Promise<Sap> {
   const [sys, cl] = (options.system ?? "").toUpperCase().split("/");
   const fits = (s: SessionInfo) => wanted.includes(s.surface) && (!sys || (s.system ?? "").toUpperCase() === sys) && (!cl || (s.client ?? "") === cl);
   let info: SessionInfo | undefined;
-  if (options.session) {
+  if (options.session !== undefined) {
     info = registry.resolve(options.session);
     if (info && !fits(info)) info = undefined;
   } else info = sessions.find(fits);
   if (!info) {
     await registry.closeAll();
-    const what = [options.surface && `surface ${wanted.join("/")}`, options.system && `system ${options.system}`, options.session && `session "${options.session}"`].filter(Boolean).join(", ");
+    const what = [options.surface && `surface ${wanted.join("/")}`, options.system && `system ${options.system}`, options.session !== undefined && `session "${options.session}"`].filter(Boolean).join(", ");
     const found = sessions.length ? ` Open now: ${sessions.map((s) => `${s.surface} ${s.system ?? "?"}${s.client ? `/${s.client}` : ""} ${s.transaction ?? ""}`.trim()).join("; ")}.` : "";
     throw new Error(`No open SAP session${what ? ` with ${what}` : ""}.${found}${errors.length ? ` Discovery: ${errors.join(" | ")}` : ""}`);
   }

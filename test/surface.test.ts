@@ -237,8 +237,8 @@ describe("error answers say what to do next", () => {
     expect(r.error).toBe(true);
     expect(r.text).toContain("Tell the user what you would have saved; do not look for another way.");
     // How to leave so the lock is released (live 2026-11-20: VA02 and MM02 were left open and locked).
-    expect(r.text).toContain('leave it now without saving so SAP releases the lock on that document: {"do":"okcode","value":"/n"}');
-    expect(r.text).toContain("Do not leave it open for the user to save by hand");
+    expect(r.text).toContain('leave without saving to release the lock. Use {"do":"okcode","value":"/n"}');
+    expect(r.text).toContain("stay on the screen and ask the user");
   });
   test("a declined confirmation says to stop", async () => {
     const surface = new FakeSurface("webgui");

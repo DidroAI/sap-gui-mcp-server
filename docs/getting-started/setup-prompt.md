@@ -13,8 +13,7 @@ step at a time, and ends with a short report.
 What the prompt does not let the agent do:
 
 - type or ask for an SAP password, or log on to SAP for you;
-- change `SAP_WRITE`: writes stay at the default, `confirm`, where each
-  write waits for your yes;
+- change `SAP_WRITE`: preserve the configured write mode;
 - save, post or delete anything in SAP: it only reads the screen at the
   end;
 - install software or change SAP GUI options without telling you first.
@@ -24,7 +23,7 @@ Set up sap-ui-automation for me (npm package sap-ui-automation, https://github.c
 
 Rules for the whole task:
 - Never type, ask for or store an SAP password, and never log on to SAP for me. I log on myself.
-- Do not set or change SAP_WRITE. The default (confirm) asks me before each write.
+- Do not set or change SAP_WRITE.
 - Do not save, post, delete or change anything in SAP. Only read screens.
 - Do not install software or change system settings without asking me first.
 
@@ -39,13 +38,13 @@ Rules for the whole task:
    - SAP GUI for Windows: ask me to open SAP GUI options, Accessibility & Scripting > Scripting, tick "Enable scripting", untick the two "Notify when a script..." boxes, and restart SAP Logon. If doctor says scripting is not allowed on the SAP system, tell me that my SAP Basis team has to set sapgui/user_scripting = TRUE, and go on.
    - If I use only one of the two, skip the other's ✗ lines.
 4. Ask me to open one SAP screen. Then run: npx -y sap-ui-automation sessions
-   and, if it lists a session, run: npx -y sap-ui-automation look --print
+   Verify the intended session with me if several match. With its actual ID, run: npx -y sap-ui-automation look --session "<verified-id>" --print
    Describe the screen you see in three lines.
 5. Report, in at most ten lines:
    - the version (npx -y sap-ui-automation --version) and the agents setup changed;
    - each doctor area with ✓ or ✗, and what is still left for me to do;
    - whether I have to restart this agent (or other agents) to get the MCP tools;
-   - how writes work: by default the server asks me before anything that may save in SAP, and refuses it if the client cannot ask; the sap-gui command line refuses every write; SAP_WRITE=off makes the server read-only.
+   - the effective write mode. Under confirm the server requests approval for flagged writes. CLI refuses them, interactive clients may prompt, and Codex Full Access can accept automatically. SAP_WRITE=off refuses flagged writes.
 ```
 
 After the restart, try: *"Look at my SAP screen and tell me which fields

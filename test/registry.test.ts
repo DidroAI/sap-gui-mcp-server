@@ -70,6 +70,16 @@ describe("driver cache", () => {
     delete s.broken;
     expect((await registry.session()).info.id).toBe("chrome:1");
   });
+  test("a stale attachment never reinterprets its list number on another session", async () => {
+    const { webgui, registry } = setup();
+    const old = webgui.add({ id: "chrome:old", system: "ABA" });
+    await registry.driver("1");
+    webgui.sessions = [];
+    webgui.add({ id: "chrome:new", system: "XYZ", title: old.info.id });
+    await expect(registry.driver("1")).rejects.toThrow("sap_sessions");
+    expect(registry.resolve(old.info.id)).toBeUndefined();
+    expect(webgui.opened).toBe(1);
+  });
   test("the same tab id on another surface gets that surface's driver", async () => {
     const { webgui, fiori, registry } = setup();
     const s = webgui.add({ id: "chrome:T", system: "S4H", transaction: "VA03" });

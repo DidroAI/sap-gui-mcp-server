@@ -1,13 +1,12 @@
 ---
 title: "Your first SAP session with an AI agent"
-description: "Log on to SAP yourself, ask the agent to look at the screen, and approve each write: the first steps after installing sap-ui-automation."
+description: "Log on to SAP yourself, ask the agent to look at the screen, and check your write settings: the first steps after installing sap-ui-automation."
 ---
 
 # Your first session
 
 Your first session goes in four steps: log on to SAP, ask the agent in
-plain words, watch it work with a few tools, and answer when it wants to
-save. This page assumes the server is added to your MCP client
+plain words, watch it work with a few tools, and check how your client handles writes. This page assumes the server is added to your MCP client
 ([Install in your client](installation.md)) and that
 `npx -y sap-ui-automation doctor` says Ready.
 
@@ -49,7 +48,9 @@ The agent works with a few tools (all of them: [MCP tools](../reference/tools.md
    program, screen, system), then one line per control. See
    [The screen view](../concepts/screen-view.md).
 3. **`sap_act`** runs one action on an id from that view, such as
-   `{"do":"okcode","value":"/nVA03"}` or
+   `{"do":"okcode","value":"/oVA03"}` to open VA03 in a new GUI session.
+   Verify the new session in `sap_sessions`, then pass its exact id on each
+   call. On VA03 use
    `{"do":"set","id":"ctxtVBAK-VBELN","value":"19097"}`, then
    `{"do":"key","key":0}` (Enter). Each action answers with the new screen,
    or with only what changed when the screen is the same one, so the agent
@@ -66,17 +67,16 @@ to end, and its answer says how long it waited.
 `sap_screenshot` gives a PNG of the window or tab, for charts and panels
 the text view cannot read.
 
-## 4. Each write waits for your yes
+A named transaction is not permission to discard the current screen. `/nVA03`
+replaces it and can lose unsaved input. Use that shortcut only in a known
+clean session or when the user has authorized discarding the input.
 
-By default every action that may write to SAP (Save, Post, Delete, Release,
-Approve, "Yes" on a save popup...) runs only after you say yes to it in
-your client ([Confirm mode](../concepts/confirm-mode.md)). Everything else
-(typing, Enter, tabs, Back, value help, reports with F8) runs. If you
-decline, nothing is saved.
+## 4. Check your write settings
 
-A client that cannot ask you ([which clients can](../concepts/confirm-mode.md#which-clients-can-ask))
-gets every such action refused, and the agent is told why. A refused
-action changes nothing.
+With the default `SAP_WRITE=confirm`, the server requests approval for
+actions it identifies as possible writes. An interactive client can show you
+the request. A client without elicitation gets a refusal. Codex Full Access
+can accept automatically. [Client-specific behavior](../concepts/confirm-mode.md)
 
 To change this, set `SAP_WRITE` in the server's environment:
 

@@ -17,6 +17,7 @@ describe("connect", () => {
   });
   test("says what is open when nothing fits", async () => {
     const fake = new FakeSap("webgui", "ABA");
+    await bunExpect(connect({ surfaces: [fake], session: "" })).rejects.toThrow('session ""');
     await bunExpect(connect({ surfaces: [fake], system: "PRD" })).rejects.toThrow(/No open SAP session with system PRD\. Open now: webgui ABA\/800/);
   });
 });

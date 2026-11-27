@@ -17,11 +17,11 @@ The format is described in
 
 Log on to Web GUI in Chrome yourself (the server never logs on): in the
 SAP window that `npx -y sap-ui-automation browser` opens, or in the Chrome
-of another browser mode (see [Chrome](../../docs/guides/chrome.md#choose-a-browser-mode)). Then:
+of another browser mode (see [Chrome](../../docs/guides/chrome.md#choose-a-browser-mode)). List sessions with `npx -y sap-ui-automation sessions` and verify the id of a clean test session. Replay starts with `/nVA03`, which replaces the current transaction.
 
 ```sh
 npx -y sap-ui-automation replay examples/recorded-test/va03-display-order.saptest.json \
-  --var order=<an order on your system> --var customer=<its sold-to party>
+  --session "<test-session-id>" --var order=<an order on your system> --var customer=<its sold-to party>
 ```
 
 Each step prints pass or fail; the exit code is 0 when all passed. Add
@@ -36,7 +36,7 @@ From an agent, copy the file into `SAP_RECORD_DIR` (default `./sap-tests`
 in the server's working directory) and ask:
 
 ```
-sap_replay {"name":"VA03 display order","variables":{"order":"...","customer":"..."}}
+sap_replay {"session":"<test-session-id>","name":"VA03 display order","variables":{"order":"...","customer":"..."}}
 ```
 
 ## Export it

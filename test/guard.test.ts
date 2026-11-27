@@ -173,7 +173,9 @@ describe("a second write refusal in a session is one line", () => {
     const again = decide(policy, action, assessment, true);
     if (first.run || !("refused" in first) || again.run || !("refused" in again)) throw new Error("not refused");
     expect(first.refused).toContain("SAP_WRITE=confirm or on");
-    expect(again.refused).toBe('this action may write to SAP (key 11 is Save) and writes are off. As before: tell the user, leave without saving ({"do":"okcode","value":"/n"}), do not look for another way.');
+    expect(again.refused).toContain("Preserve pre-existing edits");
+    expect(again.refused).toContain("Discard only your own disposable input (/n)");
+    expect(again.refused).toContain("If unsure, stay and ask");
     expect(again.refused.length).toBeLessThan(first.refused.length / 2);
   });
 });
@@ -186,6 +188,7 @@ describe("a refusal on Fiori gives Fiori's way out", () => {
     for (const again of [false, true]) {
       const v = decide(policy, action, assessment, again, true);
       if (v.run || !("refused" in v)) throw new Error("not refused");
+      expect(v.refused).toContain("Preserve pre-existing");
       expect(v.refused).toContain("Discard Draft");
       expect(v.refused).toContain("#Shell-home");
       expect(v.refused).not.toContain("okcode");

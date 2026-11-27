@@ -274,14 +274,21 @@ describe("setup: the skills too", () => {
     expect(r.lines).toContain(`✓ Codex: server already in ${join("~", ".codex", "config.toml")}; skill sap-ui-automation updated in ${sk}; skill sap-ui-automation-cli in ${sk} not from this package, left as it is.`);
   });
 
-  test("a copy from install --skills --global (no marker) counts as ours and is updated", () => {
+  test("setup preserves edits and extra files in unmarked copies from install --skills --global", () => {
     mkdirSync(join(home, ".codex"));
     installSkills({ targets: ["codex"], global: true, cwd, home, env: {} });
     const dir = shared();
-    writeFileSync(join(dir, "sap-ui-automation", "SKILL.md"), read(join(dir, "sap-ui-automation", "SKILL.md")) + "\nedited");
-    setup({ verbose: true, dryRun: false, only: ["codex"], cwd, onPath: none }, {}, "linux", home);
-    expect(read(join(dir, "sap-ui-automation", "SKILL.md"))).toBe(read(join(packageRoot(), "skills", "sap-ui-automation", "SKILL.md")));
-    expect(existsSync(join(dir, "sap-ui-automation", ".sap-ui-automation"))).toBe(true);
+    const main = join(dir, "sap-ui-automation", "SKILL.md");
+    const edited = read(main) + "\nmy local instructions";
+    writeFileSync(main, edited);
+    const extra = join(dir, "sap-ui-automation-cli", "notes.md");
+    writeFileSync(extra, "local notes");
+    const r = setup({ verbose: true, dryRun: false, only: ["codex"], cwd, onPath: none }, {}, "linux", home);
+    expect(read(main)).toBe(edited);
+    expect(read(extra)).toBe("local notes");
+    expect(r.lines.join("\n")).toContain("left as they are");
+    for (const name of ["sap-ui-automation", "sap-ui-automation-cli"])
+      expect(existsSync(join(dir, name, ".sap-ui-automation"))).toBe(false);
   });
 
   test("copies under the old names (sap-gui-drive, sap-gui-cli) that this package wrote are removed; someone else's stay", () => {
@@ -300,10 +307,15 @@ describe("setup: the skills too", () => {
     expect(skillsIn(dir)).toEqual(["sap-gui-cli", "sap-ui-automation", "sap-ui-automation-cli"]);
   });
 
-  test("install --skills removes this package's old-named copies and Cursor rules; init without --force keeps them", () => {
+  test("install removes a marked old skill and preserves custom old-named skills and Cursor rules", () => {
     const old = join(cwd, ".claude", "skills", "sap-gui-drive");
     mkdirSync(old, { recursive: true });
     writeFileSync(join(old, "SKILL.md"), "---\nname: sap-gui-drive\n---\nUses the sap-ui-automation tools.");
+    writeFileSync(join(old, ".sap-ui-automation"), "");
+    const custom = join(cwd, ".claude", "skills", "sap-gui-cli");
+    mkdirSync(custom);
+    writeFileSync(join(custom, "SKILL.md"), "---\nname: sap-gui-cli\n---\nUses sap-ui-automation.");
+    writeFileSync(join(custom, "notes"), "local notes");
     mkdirSync(join(cwd, ".cursor", "rules"), { recursive: true });
     writeFileSync(join(cwd, ".cursor", "rules", "sap-gui-cli.mdc"), "---\ndescription: x\n---\nsap-ui-automation CLI");
     const kept = installSkills({ targets: ["claude", "cursor"], cwd, home, env: {}, overwrite: false });
@@ -311,9 +323,9 @@ describe("setup: the skills too", () => {
     expect(existsSync(old)).toBe(true);
     const r = installSkills({ targets: ["claude", "cursor"], cwd, home, env: {} });
     expect(r.lines.some((l) => l.startsWith("• Claude Code skill sap-gui-drive: removed, now sap-ui-automation"))).toBe(true);
-    expect(r.lines.some((l) => l.startsWith("• Cursor skill sap-gui-cli: removed, now sap-ui-automation-cli"))).toBe(true);
+    expect(read(join(custom, "notes"))).toBe("local notes");
     expect(existsSync(old)).toBe(false);
-    expect(existsSync(join(cwd, ".cursor", "rules", "sap-gui-cli.mdc"))).toBe(false);
+    expect(read(join(cwd, ".cursor", "rules", "sap-gui-cli.mdc"))).toBe("---\ndescription: x\n---\nsap-ui-automation CLI");
   });
 
   test("--no-skills, a dry run, and apps that read no skills write none", () => {

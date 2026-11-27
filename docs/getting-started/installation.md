@@ -62,13 +62,13 @@ command and `/c npx -y sap-ui-automation` as its arguments:
 `setup` does this for you on Windows.
 :::
 
-Each write to SAP waits for your yes. Settings are environment
+Write controls are configurable. Settings are environment
 variables of the server; all of them are in
 [Configuration](../reference/configuration.md). The one to decide first is
 `SAP_WRITE`:
 
-- `confirm` (the default): your client asks you before each action that
-  may save. This needs a client that supports MCP elicitation: Claude
+- `confirm` (the default): the server requests client approval for flagged writes.
+  Codex Full Access can accept automatically. This needs a client that supports MCP elicitation: Claude
   Code, VS Code and Codex do. A client that cannot ask gets every such
   action refused ([which clients can ask](../concepts/confirm-mode.md#which-clients-can-ask)).
 - `off`: read-only, anything that may save is refused. The snippets below
@@ -82,7 +82,7 @@ variables of the server; all of them are in
 ::: code-group
 
 ```sh [CLI]
-# asks you before each write (SAP_WRITE=confirm, the default):
+# requests MCP client approval for flagged writes (SAP_WRITE=confirm, the default):
 claude mcp add sap-ui-automation --scope user -- npx -y sap-ui-automation
 
 # read-only:
@@ -168,7 +168,7 @@ the server's log. Try `confirm` on a test system before you rely on it.
 ::: code-group
 
 ```sh [CLI]
-# asks you before each write (SAP_WRITE=confirm, the default):
+# requests MCP client approval for flagged writes (SAP_WRITE=confirm, the default):
 codex mcp add sap-ui-automation -- npx -y sap-ui-automation
 
 # read-only (use it in Full Access mode):

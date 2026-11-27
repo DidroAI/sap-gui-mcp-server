@@ -19,8 +19,7 @@ It finds your open sessions by itself and works in them as you, under your
 SAP authorisations. The server never logs on and never sees a password
 (with the optional Chrome extension, the extension logs on for you and
 keeps the password in your keychain). An action that may write to SAP
-waits for your yes in your client, and is refused where the client cannot
-ask ([Confirm mode](../concepts/confirm-mode.md)).
+requires an affirmative client response under the default write setting. Codex Full Access can accept automatically ([Confirm mode](../concepts/confirm-mode.md)).
 
 Not sure which parts you need? [Choose your setup](choose.md) asks four
 questions.

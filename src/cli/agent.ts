@@ -184,7 +184,7 @@ interface Call {
 
 function callOf(cmd: string, p: Parsed): Call {
   const session = p.flags.get("session") as string | undefined;
-  const withSession = (args: Record<string, unknown>) => (session ? { ...args, session } : args);
+  const withSession = (args: Record<string, unknown>) => (session !== undefined ? { ...args, session } : args);
   const print = p.flags.get("print") === true;
   switch (cmd) {
     case "sessions":

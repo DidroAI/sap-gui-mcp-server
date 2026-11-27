@@ -93,7 +93,7 @@ in `surfacesFromEnv`.
 
 ## Run it without an SAP system
 
-Everything CI runs needs no SAP system and no SAP GUI:
+The Linux Node 24 check installs the Chromium version pinned by Playwright and runs the browser tests. All CI tests run without a live SAP system or SAP GUI:
 
 | What | How | Needs |
 | --- | --- | --- |

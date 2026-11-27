@@ -26,4 +26,4 @@ The CLI, the IDE extension and the desktop app share this file. More:
 
 - "Look at my SAP screen and list the required fields, with their technical names."
 - "In the open SE16N session, show the first 20 rows of table MARA for material type FERT and write them to mara.csv."
-- With `SAP_WRITE=confirm`: "Record what I do in MM02 as a test, then replay it once with material 4711. Ask me before each save."
+- With `SAP_WRITE=confirm`: "In a clean test session, record yourself displaying material 4711 in MM03, check its description, then replay the test."

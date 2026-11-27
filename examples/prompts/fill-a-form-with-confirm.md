@@ -1,6 +1,6 @@
 # Fill a form, with your yes before saving
 
-**Settings:** `SAP_WRITE=confirm`. Use a test system.
+**Settings:** `SAP_WRITE=confirm`. Use a test system and an interactive MCP client that shows elicitation prompts. Codex Full Access can accept them automatically.
 
 **Before:** log on yourself and open the transaction, or let the agent
 open it.
@@ -13,9 +13,7 @@ open it.
 >
 > Fill in the fields, press Enter after each screen and read the status
 > bar. If SAP shows a warning or an error, stop and tell me what it says.
-> Before you save, show me the values on the overview screen. The server
-> will ask me to confirm the save: wait for my answer, and do nothing else
-> meanwhile. After saving, tell me the order number from the status bar.
+> Before you save, show me the values on the overview screen. Wait for my explicit approval in chat before sending the Save action. After saving, tell me the order number from the status bar.
 
 ## What to expect
 

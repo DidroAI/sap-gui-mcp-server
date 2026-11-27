@@ -52,7 +52,7 @@ await sap.close();
 | --- | --- | --- |
 | `surface` | `SAP_SURFACES`, else every surface this machine can serve | `"sapgui"`, `"webgui"`, `"fiori"`, or a list |
 | `system` | any | `"ABA"` or `"ABA/800"`: the first session of that system |
-| `session` | the first that fits | any reference `sap_sessions` accepts: a list number, an id, a transaction, part of a title |
+| `session` | the first that fits | an explicit reference must resolve and satisfy the filters. Use the exact id for targeted work. Accepted references include a list number, an id, a transaction, part of a title |
 | `write` | `SAP_WRITE`, else `confirm` | `confirm` (refused without `onConfirm`; a test has none), `off` or `on` |
 | `onConfirm` | none | called for each action that may write when `write` is `confirm`; without it, such an action is refused |
 | `allowSystems`, `allowTcodes`, `blockTcodes` | the environment's | override `SAP_ALLOW_SYSTEMS`, `SAP_ALLOW_TCODES`, `SAP_BLOCK_TCODES` |

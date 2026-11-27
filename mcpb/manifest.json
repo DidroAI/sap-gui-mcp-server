@@ -3,9 +3,9 @@
   "manifest_version": "0.3",
   "name": "sap-ui-automation",
   "display_name": "SAP UI Automation",
-  "version": "0.5.0",
-  "description": "Let Claude see and drive the SAP screens you have open: SAP GUI for Windows, Web GUI and Fiori. Each write waits for your yes.",
-  "long_description": "Lets Claude see and drive the SAP screens you already have open, under your own SAP authorisations: **SAP GUI for Windows** (through SAP GUI scripting), **SAP GUI for HTML (Web GUI)** and **SAP Fiori** in Chrome.\n\nIt finds your open sessions by itself, reads each screen as one line per control with SAP's own ids, and acts on those ids. It never logs on and never stores a password.\n\n**Each action that may write to SAP waits for your yes** (`SAP_WRITE` = confirm, the default); where Claude Desktop cannot ask, it is refused. Set it to `off` to make the server read-only, or `on` to allow writes. You can also limit the systems, transactions and browser origins it may touch.\n\nWeb GUI and Fiori need Google Chrome: by default the server opens a Chrome window of its own, where you log on to SAP. See the documentation for the other browser modes, including the UI Automation for SAP extension.",
+  "version": "0.5.1",
+  "description": "Let Claude see and drive the SAP screens you have open: SAP GUI for Windows, Web GUI and Fiori. Configure how flagged writes are approved.",
+  "long_description": "Lets Claude see and drive the SAP screens you already have open, under your own SAP authorisations: **SAP GUI for Windows** (through SAP GUI scripting), **SAP GUI for HTML (Web GUI)** and **SAP Fiori** in Chrome.\n\nIt finds your open sessions by itself, reads each screen as one line per control with SAP's own ids, and acts on those ids. It never logs on and never stores a password.\n\nBy default (`SAP_WRITE=confirm`), flagged writes require an affirmative client response. Clients without elicitation support cannot approve them. Set `off` to refuse flagged writes or `on` to allow them. You can also limit the systems, transactions and browser origins it may touch.\n\nWeb GUI and Fiori need Google Chrome: by default the server opens a Chrome window of its own, where you log on to SAP. See the documentation for the other browser modes, including the UI Automation for SAP extension.",
   "author": {
     "name": "Didro",
     "url": "https://github.com/DidroAI"
@@ -57,7 +57,7 @@
     "SAP_WRITE": {
       "type": "string",
       "title": "Writes to SAP (SAP_WRITE)",
-      "description": "confirm (default): you are asked before each action that may write to SAP, if Claude Desktop supports it (MCP elicitation, not documented); otherwise they are refused. off: read-only, every such action is refused. on: they run.",
+      "description": "confirm (default) requires an affirmative client response for flagged writes. Clients without elicitation support cannot approve them. off refuses flagged writes. on allows them.",
       "default": "confirm",
       "required": false
     },
