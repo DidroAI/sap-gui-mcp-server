@@ -2,9 +2,12 @@
 
 <img src="assets/readme-icon.png" alt="" width="72">
 
+<p>By <a href="https://didro.ai"><img src="assets/didro-wordmark.jpg" alt="Didro" width="62"></a></p>
+
 # SAP UI MCP
 
-**Let AI agents see and interact with SAP screens.**<br>
+### Let AI agents see and interact with SAP screens.
+
 An MCP server, CLI and SDK for Claude Code, Codex, Cursor, Copilot or your own agent,<br>
 on SAP GUI for HTML (Web GUI), SAP Fiori and SAP GUI for Windows.
 
