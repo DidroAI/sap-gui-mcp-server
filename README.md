@@ -31,7 +31,7 @@ on SAP GUI for HTML (Web GUI), SAP Fiori and SAP GUI for Windows.
 ## Why
 
 From a screenshot or a page's HTML, an agent has to guess which SAP field
-is which. SAP UI Automation reads the screen the way SAP models it and
+is which. SAP UI MCP reads the screen the way SAP models it and
 gives the agent one line per control, with SAP's own ids, labels, values
 and whether each can be edited. After an action it sends only what
 changed on the same screen.
@@ -128,16 +128,16 @@ passes when checks on the SAP database pass.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/benchmark-dark.svg">
-  <img alt="Cost per successful run and seconds per run. Against SAP UI Automation on Web GUI, Playwright MCP costs 7.6, 3.9 and 2.6 times more and takes 5.4, 4.1 and 3.6 times longer on Haiku, Sonnet and Opus; Claude computer use costs 2.4, 2.1 and 1.6 times more and takes 4.4, 3.0 and 3.3 times longer." src="assets/benchmark-light.svg" width="880">
+  <img alt="Cost per successful run and seconds per run. Against SAP UI MCP on Web GUI, Playwright MCP costs 7.6, 3.9 and 2.6 times more and takes 5.4, 4.1 and 3.6 times longer on Haiku, Sonnet and Opus; Claude computer use costs 2.4, 2.1 and 1.6 times more and takes 4.4, 3.0 and 3.3 times longer." src="assets/benchmark-light.svg" width="880">
 </picture>
 
-| On Web GUI, against SAP UI Automation | Haiku 5.5 | Sonnet 5.5 | Opus 5.5 |
+| On Web GUI, against SAP UI MCP | Haiku 5.5 | Sonnet 5.5 | Opus 5.5 |
 | --- | --- | --- | --- |
 | Playwright MCP: cost per success / time per run | 7.6× / 5.4× | 3.9× / 4.1× | 2.6× / 3.6× |
 | Claude computer use: cost per success / time per run | 2.4× / 4.4× | 2.1× / 3.0× | 1.6× / 3.3× |
-| SAP UI Automation: passed | 12/12 | 12/12 | 12/12 |
+| SAP UI MCP: passed | 12/12 | 12/12 | 12/12 |
 
-SAP UI Automation also passed 12/12 on every model through SAP GUI
+SAP UI MCP also passed 12/12 on every model through SAP GUI
 scripting. On Haiku, a successful run cost $0.010 and took 43 s, against
 $0.024 and 191 s for computer use and $0.076 and 231 s for Playwright MCP.
 The other options passed most runs too; the difference is cost and time.
@@ -188,8 +188,8 @@ network reader.
 
 ```sh
 npm install -g sap-ui-automation
-sap-gui look                              # the screen, written to a file
-sap-gui act set ctxtVBAK-VBELN 4711       # one action
+sap-ui-automation look                              # the screen, written to a file
+sap-ui-automation act set ctxtVBAK-VBELN 4711       # one action
 
 npm install --save-dev sap-ui-automation
 npx sap-ui-automation init                # sap.config.ts, an example test, skills

@@ -1,5 +1,5 @@
 ---
-title: "SAP UI Automation FAQ and troubleshooting"
+title: "SAP UI MCP FAQ and troubleshooting"
 description: "One entry per check doctor can fail, then common questions: Mac and Linux, SAP GUI for Java, SNC, Edge, logon, where data goes, writes."
 ---
 

@@ -16,7 +16,7 @@ export function softwareJsonLd(version: string, description: string) {
   return {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
-    name: "SAP UI Automation",
+    name: "SAP UI MCP",
     alternateName: ["SAP GUI MCP server", "SAP Fiori MCP server", "sap-ui-automation"],
     description,
     url: PRODUCT_PAGE,

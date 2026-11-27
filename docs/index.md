@@ -1,10 +1,10 @@
 ---
 layout: home
-title: "SAP UI Automation: an MCP server for SAP GUI, Web GUI and Fiori"
+title: "SAP UI MCP: an MCP server for SAP GUI, Web GUI and Fiori"
 titleTemplate: false
 description: "Let Claude, Codex, Cursor and other AI agents see and drive the SAP screens you have open: SAP GUI for Windows, Web GUI and Fiori."
 hero:
-  name: SAP UI Automation
+  name: SAP UI MCP
   text: Let your agent see and drive SAP
   tagline: SAP GUI for Windows, Web GUI and Fiori, in a compact text view. Runs on your machine.
   actions:
@@ -36,7 +36,7 @@ features:
   <h2>See it in 8 minutes</h2>
   <p>The Chrome extension, one setup command, then Codex working in two SAP sessions at once.</p>
   <div class="frame">
-    <iframe src="https://www.youtube-nocookie.com/embed/YwM0q31qy2k" title="SAP UI Automation launch video" loading="lazy" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+    <iframe src="https://www.youtube-nocookie.com/embed/YwM0q31qy2k" title="SAP UI MCP launch video" loading="lazy" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
   </div>
 </div>
 
