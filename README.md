@@ -1,3 +1,5 @@
+
+https://github.com/user-attachments/assets/17b5f02c-81e5-4a2b-9d79-49e6b42a59d3
 <div align="center">
 
 <img src="assets/readme-icon.png" alt="" width="72">
@@ -20,7 +22,7 @@ on SAP GUI for HTML (Web GUI), SAP Fiori and SAP GUI for Windows.
 [Chrome extension](https://chromewebstore.google.com/detail/ui-automation-for-sap/geglpbkaklfpmnbidfcpflegmdkjodkn) ·
 [llms.txt](https://docs.didro.ai/llms.txt)
 
-<a href="https://www.youtube.com/watch?v=YwM0q31qy2k"><img src="https://img.youtube.com/vi/YwM0q31qy2k/maxresdefault.jpg" alt="Launch video: install with one command, then Codex works in two SAP sessions in parallel" width="720"></a>
+https://github.com/user-attachments/assets/d1cb2602-76b2-46d0-8757-982c35e9327d
 
 *Watch the launch video (8 min): the Chrome extension, one setup command, and Codex working in two SAP sessions at once.*
 
