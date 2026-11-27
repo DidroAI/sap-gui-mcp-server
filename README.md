@@ -4,7 +4,8 @@
 
 # SAP UI MCP
 
-**Let AI agents see and interact with SAP screens.**<br>
+### Let AI agents see and interact with SAP screens.
+
 An MCP server, CLI and SDK for Claude Code, Codex, Cursor, Copilot or your own agent,<br>
 on SAP GUI for HTML (Web GUI), SAP Fiori and SAP GUI for Windows.
 
@@ -22,6 +23,8 @@ on SAP GUI for HTML (Web GUI), SAP Fiori and SAP GUI for Windows.
 <a href="https://www.youtube.com/watch?v=YwM0q31qy2k"><img src="https://img.youtube.com/vi/YwM0q31qy2k/maxresdefault.jpg" alt="Launch video: install with one command, then Codex works in two SAP sessions in parallel" width="720"></a>
 
 *Watch the launch video (8 min): the Chrome extension, one setup command, and Codex working in two SAP sessions at once.*
+
+<p align="right">By <a href="https://didro.ai"><img src="assets/didro-wordmark.svg" alt="Didro" width="76"></a></p>
 
 </div>
 
