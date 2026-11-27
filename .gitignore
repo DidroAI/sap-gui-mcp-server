@@ -10,8 +10,9 @@ captures/
 *.png
 # The extension's icons are part of it: Chrome refuses an unpacked extension whose icons are missing.
 !extension/icons/*.png
-# The product icon (MCP Registry, Claude Desktop, README, docs site): drawn, no screen content.
+# The product icon and separate README artwork contain no screen content.
 !assets/icon.png
+!assets/readme-icon.png
 !docs/public/icon.png
 # The README's side panel: made by scripts/extension-screenshots.mjs from made-up systems on sap.example.com.
 !assets/side-panel.png

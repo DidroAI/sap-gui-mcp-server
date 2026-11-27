@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="extension/icons/128.png" alt="" width="72">
+<img src="assets/readme-icon.png" alt="" width="72">
 
 # SAP UI Automation
 
